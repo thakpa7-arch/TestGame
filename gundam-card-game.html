@@ -257,6 +257,7 @@
     position: fixed; inset: 0; background: rgba(5,8,16,.92);
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     z-index: 100; text-align: center; gap: 16px; padding: 20px;
+    overflow-y: auto;
   }
   #overlay h2 {
     font-size: 34px; letter-spacing: 3px;
@@ -309,6 +310,7 @@
     #log { width: 44vw; max-width: 180px; max-height: 110px; font-size: 9px; bottom: 6px; right: 6px; opacity: .92; }
     .prompt { font-size: 11px; padding: 6px 12px; width: 92%; max-width: 92%; text-align: center; }
 
+    #overlay { justify-content: flex-start; padding: 24px 18px 40px; gap: 12px; }
     #overlay h2 { font-size: 26px; }
     #overlay p, #overlay .rules { font-size: 12px; }
   }
@@ -376,6 +378,7 @@
      Command the Earth Federation against the Zeon AI. Spend resources to deploy mobile
      suits, pair them with pilots, unleash command cards, and break through your
      opponent's shields.</p>
+  <button id="startBtn">START BATTLE</button>
   <div class="rules">
     <b>How to win:</b> Destroy all 6 of your opponent's <span class="badge">🛡 Shields</span>, then land one more attack to win.<br><br>
     <b>Each turn:</b>
@@ -390,7 +393,6 @@
     <b>Combat:</b> Tap a unit to <b>rest</b> it and attack. The defender may <b>block</b> with an active
     unit (units trade AP as damage). Unblocked attacks destroy a shield, or — once shields are gone — win the game.
   </div>
-  <button id="startBtn">START BATTLE</button>
 </div>
 
 <script>
