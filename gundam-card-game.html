@@ -282,8 +282,8 @@ const GUNDAM_CARDS = [{"id":"ST01-001","name":"Gundam","type":"unit","color":"Bl
 
 const SHIELD_MAX = 6, RES_MAX = 10, HAND_START = 5, HAND_MAX = 10, FIELD_MAX = 6;
 const FACTIONS = {
-  player: { name: 'E.F.S.F. (YOU)', colors: ['Blue','White'] },
-  enemy:  { name: 'ZEON (AI)',      colors: ['Green','Red','Purple'] },
+  player: { name: 'E.F.S.F. (YOU)', colors: ['Blue','White'], signatures: [] },
+  enemy:  { name: 'ZEON (AI)',      colors: ['Green','Red'],  signatures: ['Wing Gundam Zero'] },
 };
 
 // ---- helpers to read card effect text ----
@@ -337,27 +337,60 @@ function makeCard(def, owner){
 
 function shuffle(a){ for (let i=a.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; [a[i],a[j]]=[a[j],a[i]]; } return a; }
 
-function buildDeck(owner){
-  const colors = FACTIONS[owner].colors;
-  const pool = GUNDAM_CARDS.filter(c => colors.includes(c.color));
-  const units = pool.filter(c=>c.type==='unit');
-  const pilots = pool.filter(c=>c.type==='pilot');
-  const cmds = pool.filter(c=>c.type==='command');
-  const bases = pool.filter(c=>c.type==='base');
-  shuffle(units); shuffle(pilots); shuffle(cmds); shuffle(bases);
+// ---- competitive deck building (curve-tuned, max 4 copies per card name) ----
+function unitScore(c){
+  let s=(c.ap+c.hp)/Math.max(1,c.cost);
+  if (hasKeyword(c.effect,'blocker')) s+=1.2;
+  if (hasKeyword(c.effect,'first'))   s+=1.4;
+  if (hasKeyword(c.effect,'high'))    s+=1.0;
+  if (hasKeyword(c.effect,'repair'))  s+=0.8;
+  if (hasKeyword(c.effect,'blitz'))   s+=1.0;
+  return s;
+}
+function cmdScore(c){ const t=plain(c.effect).toLowerCase(); let m;
+  if ((m=t.match(/deal (\d+) damage/))) return 5+(+m[1]);
+  if (/draw \d/.test(t)) return 5;
+  if (/ap\+|gets ap/.test(t)) return 3;
+  return 1;
+}
+function pilotScore(c){ return (c.ap+c.hp)/Math.max(1,c.cost); }
 
-  const deck = [];
-  const add = (def, n) => { for (let i=0;i<n && deck.length<50;i++) deck.push(makeCard(def, owner)); };
-  // weight toward a playable curve: many units, some pilots/commands, few bases
-  let ui=0, pi=0, ci=0, bi=0;
-  while (deck.length < 50){
-    const r = Math.random();
-    if (r < 0.58 && units.length){ add(units[ui++ % units.length], 1); }
-    else if (r < 0.74 && pilots.length){ add(pilots[pi++ % pilots.length], 1); }
-    else if (r < 0.93 && cmds.length){ add(cmds[ci++ % cmds.length], 1); }
-    else if (bases.length){ add(bases[bi++ % bases.length], 1); }
-    else if (units.length){ add(units[ui++ % units.length], 1); }
+function buildDeck(owner){
+  const fac = FACTIONS[owner], colors = fac.colors;
+  const inColor = c => colors.includes(c.color);
+  // dedupe candidates by card name, keeping the best-scoring printing
+  const byName = (list, sc) => {
+    const m = new Map();
+    for (const c of list){ const k=c.name; if (!m.has(k) || sc(c)>sc(m.get(k))) m.set(k,c); }
+    return [...m.values()].sort((a,b)=>sc(b)-sc(a));
+  };
+  const units  = byName(GUNDAM_CARDS.filter(c=>inColor(c)&&c.type==='unit'),  unitScore);
+  const cmds   = byName(GUNDAM_CARDS.filter(c=>inColor(c)&&c.type==='command'),cmdScore);
+  const pilots = byName(GUNDAM_CARDS.filter(c=>inColor(c)&&c.type==='pilot'), pilotScore);
+  const bases  = byName(GUNDAM_CARDS.filter(c=>inColor(c)&&c.type==='base'),  c=>c.hp/Math.max(1,c.cost));
+
+  const deck=[], copies=new Map();
+  const room = id => 4-(copies.get(id)||0);
+  const add = (def,n) => { n=Math.min(n,room(def.id)); for(let i=0;i<n&&deck.length<50;i++){ deck.push(makeCard(def,owner)); copies.set(def.id,(copies.get(def.id)||0)+1); } };
+
+  // signature finishers (by name) up to 4 copies
+  for (const name of (fac.signatures||[])){ const d=units.find(u=>u.name===name); if (d) add(d,4); }
+
+  // mana curve for the unit core
+  const quota={1:6,2:8,3:7,4:5,5:3,6:1};
+  const bucket = n => n>=6 ? units.filter(u=>u.cost>=6) : units.filter(u=>u.cost===n);
+  for (const cost of [1,2,3,4,5,6]){
+    let need=quota[cost], list=bucket(cost), i=0;
+    while (need>0 && i<list.length){ const d=list[i++], a=Math.min(need,room(d.id),cost<=2?4:3); if(a>0){ add(d,a); need-=a; } }
   }
+  // removal / draw commands
+  { let need=11,i=0; while(need>0&&i<cmds.length){ const d=cmds[i++], a=Math.min(need,3,room(d.id)); add(d,a); need-=a; } }
+  // pilots
+  { let need=7,i=0; while(need>0&&i<pilots.length){ const d=pilots[i++], a=Math.min(need,3,room(d.id)); add(d,a); need-=a; } }
+  // a couple of bases
+  { let need=2,i=0; while(need>0&&i<bases.length){ add(bases[i++],1); need--; } }
+  // top up to 50 with the best remaining units
+  let i=0; while(deck.length<50 && i<units.length){ add(units[i++],4); }
   return shuffle(deck);
 }
 
