@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pong</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      font-family: monospace;
+      color: #fff;
+    }
+    canvas { border: 2px solid #333; }
+    #instructions {
+      margin-top: 12px;
+      font-size: 13px;
+      color: #888;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="canvas" width="800" height="500"></canvas>
+  <div id="instructions">
+    W/S — Left paddle &nbsp;|&nbsp; ↑/↓ — Right paddle &nbsp;|&nbsp; Space — Start/Pause
+  </div>
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
+    const W = canvas.width;
+    const H = canvas.height;
+    const PADDLE_W = 12;
+    const PADDLE_H = 80;
+    const BALL_SIZE = 10;
+    const PADDLE_SPEED = 5;
+    const WIN_SCORE = 7;
+
+    const state = {
+      running: false,
+      over: false,
+      scores: [0, 0],
+      paddles: [
+        { x: 20, y: H / 2 - PADDLE_H / 2 },
+        { x: W - 20 - PADDLE_W, y: H / 2 - PADDLE_H / 2 },
+      ],
+      ball: null,
+      keys: {},
+    };
+
+    function resetBall(dir = 1) {
+      const angle = (Math.random() * 60 - 30) * Math.PI / 180;
+      const speed = 5;
+      state.ball = {
+        x: W / 2,
+        y: H / 2,
+        vx: Math.cos(angle) * speed * dir,
+        vy: Math.sin(angle) * speed,
+      };
+    }
+
+    resetBall();
+
+    document.addEventListener('keydown', e => {
+      state.keys[e.key] = true;
+      if (e.key === ' ') {
+        e.preventDefault();
+        if (state.over) {
+          state.scores = [0, 0];
+          state.over = false;
+          resetBall();
+        }
+        state.running = !state.running;
+      }
+    });
+    document.addEventListener('keyup', e => { state.keys[e.key] = false; });
+
+    function clampPaddle(p) {
+      p.y = Math.max(0, Math.min(H - PADDLE_H, p.y));
+    }
+
+    function update() {
+      if (!state.running || state.over) return;
+
+      const [left, right] = state.paddles;
+
+      if (state.keys['w'] || state.keys['W']) left.y -= PADDLE_SPEED;
+      if (state.keys['s'] || state.keys['S']) left.y += PADDLE_SPEED;
+      if (state.keys['ArrowUp']) right.y -= PADDLE_SPEED;
+      if (state.keys['ArrowDown']) right.y += PADDLE_SPEED;
+      clampPaddle(left);
+      clampPaddle(right);
+
+      const b = state.ball;
+      b.x += b.vx;
+      b.y += b.vy;
+
+      // Top/bottom bounce
+      if (b.y - BALL_SIZE / 2 <= 0) { b.y = BALL_SIZE / 2; b.vy *= -1; }
+      if (b.y + BALL_SIZE / 2 >= H) { b.y = H - BALL_SIZE / 2; b.vy *= -1; }
+
+      // Paddle collisions
+      function hitPaddle(paddle) {
+        return b.x - BALL_SIZE / 2 < paddle.x + PADDLE_W &&
+               b.x + BALL_SIZE / 2 > paddle.x &&
+               b.y + BALL_SIZE / 2 > paddle.y &&
+               b.y - BALL_SIZE / 2 < paddle.y + PADDLE_H;
+      }
+
+      if (b.vx < 0 && hitPaddle(left)) {
+        b.x = left.x + PADDLE_W + BALL_SIZE / 2;
+        const rel = (b.y - (left.y + PADDLE_H / 2)) / (PADDLE_H / 2);
+        const angle = rel * 60 * Math.PI / 180;
+        const speed = Math.min(Math.hypot(b.vx, b.vy) * 1.05, 15);
+        b.vx = Math.cos(angle) * speed;
+        b.vy = Math.sin(angle) * speed;
+      }
+
+      if (b.vx > 0 && hitPaddle(right)) {
+        b.x = right.x - BALL_SIZE / 2;
+        const rel = (b.y - (right.y + PADDLE_H / 2)) / (PADDLE_H / 2);
+        const angle = rel * 60 * Math.PI / 180;
+        const speed = Math.min(Math.hypot(b.vx, b.vy) * 1.05, 15);
+        b.vx = -Math.cos(angle) * speed;
+        b.vy = Math.sin(angle) * speed;
+      }
+
+      // Scoring
+      if (b.x < 0) {
+        state.scores[1]++;
+        if (state.scores[1] >= WIN_SCORE) { state.over = true; state.running = false; return; }
+        resetBall(1);
+      }
+      if (b.x > W) {
+        state.scores[0]++;
+        if (state.scores[0] >= WIN_SCORE) { state.over = true; state.running = false; return; }
+        resetBall(-1);
+      }
+    }
+
+    function draw() {
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, W, H);
+
+      // Center dashes
+      ctx.setLineDash([10, 10]);
+      ctx.strokeStyle = '#333';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(W / 2, 0);
+      ctx.lineTo(W / 2, H);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Scores
+      ctx.fillStyle = '#fff';
+      ctx.font = '48px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(state.scores[0], W / 2 - 80, 60);
+      ctx.fillText(state.scores[1], W / 2 + 80, 60);
+
+      // Paddles
+      ctx.fillStyle = '#fff';
+      for (const p of state.paddles) {
+        ctx.fillRect(p.x, p.y, PADDLE_W, PADDLE_H);
+      }
+
+      // Ball
+      const b = state.ball;
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(b.x - BALL_SIZE / 2, b.y - BALL_SIZE / 2, BALL_SIZE, BALL_SIZE);
+
+      // Overlay messages
+      if (!state.running && !state.over) {
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = '#fff';
+        ctx.font = '28px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('Press SPACE to start', W / 2, H / 2);
+      }
+
+      if (state.over) {
+        const winner = state.scores[0] >= WIN_SCORE ? 'Left' : 'Right';
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = '#fff';
+        ctx.font = '36px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${winner} player wins!`, W / 2, H / 2 - 20);
+        ctx.font = '20px monospace';
+        ctx.fillText('Press SPACE to play again', W / 2, H / 2 + 24);
+      }
+    }
+
+    function loop() {
+      update();
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    loop();
+  </script>
+</body>
+</html>
