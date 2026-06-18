@@ -142,6 +142,12 @@
   #inspect .ins-eff { font-size: 12.5px; line-height: 1.5; color: var(--txt); }
   #inspect .ins-btns { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
 
+  #blockModal { position: fixed; inset: 0; background: rgba(4,7,14,.84); z-index: 95; display: none; align-items: center; justify-content: center; padding: 18px; }
+  #blockModal.show { display: flex; }
+  #blockModal .block-box { background: var(--panel); border: 1px solid var(--red); border-radius: 14px; max-width: 460px; width: 100%; padding: 18px; box-shadow: 0 0 24px rgba(239,68,68,.35); }
+  #blockModal #blockMsg { font-size: 14px; line-height: 1.5; margin-bottom: 12px; }
+  #blockModal .ins-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+
   #overlay { position: fixed; inset: 0; background: rgba(5,8,16,.93); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; text-align: center; gap: 14px; padding: 24px 18px; overflow-y: auto; }
   #overlay h2 { font-size: 32px; letter-spacing: 3px; background: linear-gradient(90deg, var(--cyan), var(--blue)); -webkit-background-clip: text; background-clip: text; color: transparent; }
   #overlay p { color: var(--muted); max-width: 600px; line-height: 1.6; font-size: 14px; }
@@ -228,6 +234,11 @@
   </div>
 </div></div>
 
+<div id="blockModal"><div class="block-box">
+  <div id="blockMsg"></div>
+  <div id="blockBtns" class="ins-btns"></div>
+</div></div>
+
 <div id="overlay">
   <h2>MOBILE SUIT CLASH</h2>
   <p>A tactical duel built on the real <b>Gundam Card Game</b> card pool. You command the
@@ -235,16 +246,31 @@
      Every card below is a genuine card — real names, art, costs, AP/HP and effect text.</p>
   <button id="startBtn">START BATTLE</button>
   <div class="rules">
-    <b>Goal:</b> Destroy all 6 enemy <span class="badge">🛡 Shields</span>, then land one more hit to win.<br><br>
-    <b>Each turn:</b> draw a card, gain +1 resource (max 10), then deploy units / pair pilots / play commands / attack.<br><br>
-    <b>Cards:</b> <b>Units</b> battle with AP (attack) and HP. <b>Pilots</b> pair onto a unit for an AP/HP boost.
-    <b>Commands</b> fire one-shot effects. <b>Bases</b> are stationary defenders (no attack) that soak hits.<br><br>
-    <b>Keywords used by the engine:</b> <span class="badge">&lt;Blitz&gt;</span> attack the turn deployed ·
-    <span class="badge">&lt;Repair N&gt;</span> heal N HP at end of your turn.<br><br>
-    <b>Combat:</b> tap your active unit, then tap an enemy unit to battle (they trade AP) or tap the enemy
-    shields to strike directly. Tap any card to inspect its full official text.<br><br>
-    <span style="color:#fda4af">Note:</span> the full game has dozens of unique keywords; this digital version
-    models core combat plus Blitz/Repair and a best-effort reading of each Command's effect.
+    <b>How to win (official):</b> you defeat your opponent the moment a Unit deals them battle damage
+    while they have <b>no Shields left</b> — so break all 6 <span class="badge">🛡 Shields</span>, then land one more hit.
+    Running out of cards to draw (<b>deck-out</b>) is also an instant loss.<br><br>
+    <b>Turn phases (official order):</b>
+    <span class="badge">1 Start</span> ready all your rested cards ·
+    <span class="badge">2 Draw</span> draw 1 ·
+    <span class="badge">3 Resource</span> gain 1 resource (max 10) ·
+    <span class="badge">4 Main</span> deploy / pair / play / attack ·
+    <span class="badge">5 End</span>.<br><br>
+    <b>Cards:</b> <b>Units</b> fight with AP (attack) / HP. <b>Pilots</b> pair onto a Unit for an AP/HP boost.
+    <b>Commands</b> are one-shot effects. <b>Bases</b> are defenders with no attack.<br><br>
+    <b>Combat — the key rule:</b> attacking <b>rests</b> your Unit (turns it sideways). An attacker may strike
+    <b>either the enemy player (their Shields) or a <span style="color:#fca5a5">rested</span> enemy Unit</b> — you
+    <i>cannot</i> hit an active (upright) enemy Unit. In a Unit battle both deal AP to each other at once.
+    The defender may redirect a direct attack onto an active <span class="badge">&lt;Blocker&gt;</span> Unit.<br><br>
+    <b>Keywords modeled:</b> <span class="badge">&lt;Blocker&gt;</span> intercept a direct attack ·
+    <span class="badge">&lt;First Strike&gt;</span> deal damage first ·
+    <span class="badge">&lt;High-Maneuver&gt;</span> can't be Blocked ·
+    <span class="badge">&lt;Blitz&gt;</span> attack the turn deployed ·
+    <span class="badge">&lt;Repair N&gt;</span> heal N HP at end of turn.<br><br>
+    <b>Controls:</b> tap a hand card to inspect &amp; play it; tap your active Unit then a rested enemy Unit or the
+    enemy Shields to attack.<br><br>
+    <span style="color:#fda4af">Simplifications:</span> resources come from a counter (not a separate 10-card
+    Resource Deck), Shield <b>Burst</b> effects and the <b>Base/EX</b> tokens aren't modeled, and each Command's
+    effect is a best-effort reading of its text. Everything else follows the official rules.
   </div>
 </div>
 
@@ -298,6 +324,9 @@ function makeCard(def, owner){
     c.rested = false; c.sick = true; c.tempAp = 0; c.pilot = null;
     c.blitz = hasKeyword(def.effect, 'blitz');
     c.repair = repairAmount(def.effect);
+    c.blocker = hasKeyword(def.effect, 'blocker');
+    c.firstStrike = hasKeyword(def.effect, 'first');
+    c.highManeuver = hasKeyword(def.effect, 'high');
   } else if (def.type === 'pilot'){
     c.pAp = def.ap; c.pHp = def.hp;
   } else { // command
@@ -373,7 +402,10 @@ function startGame(){
 }
 
 function draw(side, silent){
-  if (side.deck.length===0){ side.shields=Math.max(0,side.shields-1); if(!silent) log(`${who(side)} is out of cards — fatigue costs a shield!`, side===G.player?'me':'ai'); return null; }
+  if (side.deck.length===0){
+    if (!silent){ log(`${who(side)} cannot draw — deck-out! Defeat.`, side===G.player?'me':'ai'); endGame(side===G.player?G.enemy:G.player); }
+    return null;
+  }
   const c = side.deck.pop();
   if (side.hand.length<HAND_MAX) side.hand.push(c);
   return c;
@@ -385,6 +417,7 @@ function beginTurn(turn){
   for (const u of s.field){ u.rested=false; u.sick=false; u.tempAp=0; u.ap=effAp(u); }
   s.resMax=Math.min(RES_MAX, s.resMax+1); s.resAvail=s.resMax;
   if (G.turnNumber>1 || turn==='enemy') draw(s);
+  if (G.over) return;
   log(`— ${who(s)}'s turn ${G.turnNumber} —`, 'sys');
   render();
   if (turn==='enemy'){ setPrompt('Zeon is deploying...'); setTimeout(aiTurn, 700); }
@@ -484,30 +517,74 @@ function fieldClick(uidv){
       if (u.ap<=0){ flashPrompt(`${u.name} can't attack (no AP).`); inspect(u); return; }
       if (u.sick){ flashPrompt(`${u.name} has summoning sickness this turn.`); return; }
       G.selected=uidv; G.mode='attack-target';
-      setPrompt(`${u.name} attacking — tap an enemy unit, or the enemy shields to strike directly.`); render(); return;
+      setPrompt(`${u.name} attacking — tap a RESTED enemy unit, or the enemy shields to strike directly.`); render(); return;
     }
   }
 
   if (G.mode==='attack-target'){
     const atk=G.player.field.find(c=>c.uid===G.selected); if(!atk){ clearSel(); return; }
     const tgt=G.enemy.field.find(c=>c.uid===uidv);
-    if (tgt){ battle(atk,tgt,G.player,G.enemy); return; }
+    if (tgt){
+      if (!tgt.rested){ flashPrompt('You can only attack a rested (turned) enemy unit. Attack the shields instead, or a rested unit.'); return; }
+      // The defender may redirect to an active Blocker (unless attacker has High-Maneuver)
+      const blockers = G.enemy.field.filter(b=>b.blocker && !b.rested && b.hp>0);
+      if (!atk.highManeuver && blockers.length && aiWantsBlock(atk)){
+        const blk = pickAiBlocker(atk, blockers);
+        blk.rested=true; log(`Zeon's <b>${blk.name}</b> &lt;Blocker&gt; intercepts!`, 'ai');
+        battle(atk, blk, G.player, G.enemy); return;
+      }
+      battle(atk,tgt,G.player,G.enemy); return;
+    }
   }
 }
 
 function attackDirect(){
   if (G.turn!=='player' || G.mode!=='attack-target' || G.over) return;
   const atk=G.player.field.find(c=>c.uid===G.selected); if(!atk) return;
+  // Defender may block a direct attack with an active <Blocker> (unless attacker has High-Maneuver)
+  const blockers = G.enemy.field.filter(b=>b.blocker && !b.rested && b.hp>0);
+  if (!atk.highManeuver && blockers.length && aiWantsBlock(atk)){
+    const blk = pickAiBlocker(atk, blockers);
+    blk.rested=true; log(`Zeon's <b>${blk.name}</b> &lt;Blocker&gt; intercepts your attack!`, 'ai');
+    battle(atk, blk, G.player, G.enemy); return;
+  }
   atk.rested=true;
-  if (G.enemy.shields>0){ G.enemy.shields-=1; log(`<b>${atk.name}</b> breaks a Zeon shield! (${G.enemy.shields} left)`, 'me'); clearSel(); render(); }
-  else { log(`<b>${atk.name}</b> strikes the Zeon core!`, 'me'); endGame(G.player); }
+  if (G.enemy.shields>0){ G.enemy.shields-=1; log(`<b>${atk.name}</b> destroys a Zeon shield! (${G.enemy.shields} left)`, 'me'); clearSel(); render(); }
+  else { log(`<b>${atk.name}</b> strikes the defenseless Zeon — game over!`, 'me'); endGame(G.player); }
 }
 
+// Simultaneous battle, modified by First Strike (striker hits first; if foe dies, no return).
 function battle(atk, def, atkSide, defSide){
   atk.rested=true;
-  log(`<b>${atk.name}</b> (${atk.ap}/${atk.hp}) vs <b>${def.name}</b> (${def.ap}/${def.hp}).`, atkSide===G.player?'me':'ai');
-  const a=atk.ap, d=def.ap; damage(def,a,defSide); damage(atk,d,atkSide);
+  const fs = atk.firstStrike ? 'me' : (def.firstStrike ? 'def' : 'both');
+  log(`<b>${atk.name}</b> (${atk.ap}/${atk.hp}) vs <b>${def.name}</b> (${def.ap}/${def.hp})${fs!=='both'?' — &lt;First Strike&gt;':''}.`, atkSide===G.player?'me':'ai');
+  const a=atk.ap, d=def.ap;
+  if (fs==='me'){ damage(def,a,defSide); if (def.hp>0) damage(atk,d,atkSide); }
+  else if (fs==='def'){ damage(atk,d,atkSide); if (atk.hp>0) damage(def,a,defSide); }
+  else { damage(def,a,defSide); damage(atk,d,atkSide); }
   clearSel(); render(); checkEnd();
+}
+
+// ---- Blocker decision helpers (AI as defender) ----
+function aiWantsBlock(atk){
+  // Block if it saves a shield in danger, or sets up a favourable trade.
+  const blockers = G.enemy.field.filter(b=>b.blocker && !b.rested && b.hp>0);
+  if (!blockers.length) return false;
+  const best = pickAiBlocker(atk, blockers);
+  const kills = best.ap >= atk.hp;          // blocker kills attacker
+  if (G.enemy.shields<=2) return true;      // protect dwindling shields
+  if (kills) return true;                   // good trade
+  if (best.hp > atk.ap && best.ap > 0) return true; // survives and bites back
+  return false;
+}
+function pickAiBlocker(atk, blockers){
+  // Prefer one that survives and ideally kills the attacker.
+  return [...blockers].sort((x,y)=>{
+    const xs=(x.hp>atk.ap?1:0)+(x.ap>=atk.hp?1:0);
+    const ys=(y.hp>atk.ap?1:0)+(y.ap>=atk.hp?1:0);
+    if (ys!==xs) return ys-xs;
+    return y.hp-x.hp;
+  })[0];
 }
 
 function damage(u, dmg, side){
@@ -577,14 +654,50 @@ function aiTurn(){
     if (i>=attackers.length){ setTimeout(()=>{ if(!G.over){ log('Zeon ends its turn.', 'ai'); endTurn(); } }, 450); return; }
     const atk=attackers[i++];
     if (atk.rested || atk.hp<=0){ next(); return; }
-    const killable = pl.field.filter(u=>atk.ap>=u.hp && u.ap<atk.hp).sort((a,b)=>b.ap-a.ap);
-    if (killable.length){ aiBattle(atk, killable[0]); }
-    else { aiDirect(atk); }
-    setTimeout(next, 650);
+    resolveAiAttack(atk, ()=> setTimeout(next, 650));
   })();
 }
-function aiBattle(atk, def){ atk.rested=true; log(`Zeon's <b>${atk.name}</b> attacks your <b>${def.name}</b>.`, 'ai'); const a=atk.ap,d=def.ap; damage(def,a,G.player); damage(atk,d,G.enemy); render(); }
-function aiDirect(atk){ atk.rested=true; if (G.player.shields>0){ G.player.shields-=1; log(`Zeon's <b>${atk.name}</b> breaks your shield! (${G.player.shields} left)`, 'ai'); render(); } else { log(`Zeon's <b>${atk.name}</b> strikes your core!`, 'ai'); endGame(G.enemy); } }
+
+function resolveAiAttack(atk, done){
+  const pl=G.player;
+  // Units may only attack a RESTED enemy unit, or the player directly.
+  const rested = pl.field.filter(u=>u.rested && u.hp>0);
+  const kill = rested.filter(u=> atk.ap>=u.hp && (atk.firstStrike || u.ap<atk.hp)).sort((a,b)=>b.ap-a.ap)[0];
+  if (kill){ battle(atk, kill, G.enemy, G.player); done(); return; }
+  // Attack the player; you may intercept with an active <Blocker> (unless High-Maneuver).
+  const blockers = pl.field.filter(b=>b.blocker && !b.rested && b.hp>0);
+  if (!atk.highManeuver && blockers.length){
+    promptPlayerBlock(atk, blockers, (blk)=>{
+      if (blk){ blk.rested=true; log(`You intercept with <b>${blk.name}</b> &lt;Blocker&gt;.`, 'me'); battle(atk, blk, G.enemy, G.player); }
+      else aiDirectHit(atk);
+      done();
+    });
+    return;
+  }
+  aiDirectHit(atk); done();
+}
+
+function aiDirectHit(atk){
+  atk.rested=true;
+  if (G.player.shields>0){ G.player.shields-=1; log(`Zeon's <b>${atk.name}</b> destroys your shield! (${G.player.shields} left)`, 'ai'); render(); }
+  else { log(`Zeon's <b>${atk.name}</b> strikes you defenseless — defeat!`, 'ai'); endGame(G.enemy); }
+}
+
+function promptPlayerBlock(atk, blockers, cb){
+  el('blockMsg').innerHTML = `Zeon's <b>${atk.name}</b> (AP ${atk.ap}) attacks you directly. Block with a &lt;Blocker&gt;?`;
+  const wrap=el('blockBtns'); wrap.innerHTML='';
+  blockers.forEach(b=>{
+    const btn=document.createElement('button');
+    btn.innerHTML = `🛡 ${b.name} (⚔${b.ap}/❤${b.hp})`;
+    btn.onclick=()=>{ el('blockModal').classList.remove('show'); cb(b); };
+    wrap.appendChild(btn);
+  });
+  const take=document.createElement('button'); take.className='ghost';
+  take.textContent = G.player.shields>0 ? 'Take the hit (lose 1 shield)' : 'Take the hit — you LOSE';
+  take.onclick=()=>{ el('blockModal').classList.remove('show'); cb(null); };
+  wrap.appendChild(take);
+  el('blockModal').classList.add('show');
+}
 
 // ---- rendering ----
 function cardFace(c, ctx){
@@ -599,7 +712,7 @@ function cardFace(c, ctx){
     if (G.mode==='command-target' && (G.pending?.action.kind==='heal'||G.pending?.action.kind==='buff')) cls.push('selectable');
   }
   if (ctx==='field-enemy'){
-    if (G.mode==='attack-target') cls.push('target');
+    if (G.mode==='attack-target'){ if (c.rested) cls.push('target'); else cls.push('dim'); }
     if (G.mode==='command-target' && (G.pending?.action.kind==='damage'||G.pending?.action.kind==='rest')) cls.push('selectable');
   }
   const style = c.img ? `background-image:url('${c.img}')` : '';
