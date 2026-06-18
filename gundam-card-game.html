@@ -103,6 +103,7 @@
   .card .fallback .ft { font-size: 7px; color: var(--muted); margin-top: 4px; overflow: hidden; flex: 1; }
   /* overlays */
   .card .ov-cost { position: absolute; top: 3px; left: 3px; min-width: 18px; height: 18px; padding: 0 3px; border-radius: 9px; background: rgba(6,40,58,.92); color: var(--cyan); font-weight: 800; font-size: 11px; display: flex; align-items: center; justify-content: center; }
+  .card .ov-lv { position: absolute; top: 3px; right: 3px; min-width: 18px; height: 18px; padding: 0 3px; border-radius: 9px; background: rgba(58,40,6,.92); color: var(--gold); font-weight: 800; font-size: 10px; display: flex; align-items: center; justify-content: center; }
   .card .ov-stat { position: absolute; bottom: 3px; padding: 0 4px; height: 17px; border-radius: 4px; font-size: 10px; font-weight: 800; display: flex; align-items: center; background: rgba(0,0,0,.78); }
   .card .ov-ap { left: 3px; color: #fca5a5; }
   .card .ov-hp { right: 3px; color: #86efac; }
@@ -259,8 +260,14 @@
     <span class="badge">5 End</span>.<br>
     The player going second gets an <b>EX Resource</b> (gold) for tempo. Each side also starts with 6
     face-down <b>Shields</b> and an <b>EX Base</b>.<br><br>
+    <b>Playing a card costs two things:</b> its <span class="badge" style="background:rgba(58,40,6,.92);color:var(--gold)">Lv</span>
+    is a requirement — you must have that many <i>total</i> resources in your area — and its
+    <span class="badge">Cost</span> is paid by resting that many active resources. A Lv 6 / Cost 4 Unit can't
+    come down until you have 6 resources, even though you only pay 4. Cards show <b>Cost</b> (top-left) and
+    <b>L</b> level (top-right).<br><br>
     <b>Cards:</b> <b>Units</b> fight with AP / HP. <b>Pilots</b> pair onto a Unit for an AP/HP boost — and if the
-    pilot matches the Unit's <b>Link</b>, that Unit can attack the turn it's paired. <b>Commands</b> are one-shot
+    pilot matches the Unit's <b>Link</b>, that Unit can attack the turn it's paired. (Play a Unit first, then tap
+    the Pilot — it pairs automatically if you have just one Unit.) <b>Commands</b> are one-shot
     effects. <b>Bases</b> guard your Shields: while your Base stands, direct attacks hit it first.<br><br>
     <b>Combat:</b> attacking <b>rests</b> your Unit. An attacker may strike <b>the enemy player or a
     <span style="color:#fca5a5">rested</span> enemy Unit</b> — never an active one. Units trade AP simultaneously.
@@ -510,13 +517,25 @@ function endTurn(){
 }
 
 // ---- playing cards ----
-function canAfford(side,c){ return side.resAvail>=c.cost; }
+// Official rule: a card needs BOTH (1) total resources in your area >= its Lv,
+// and (2) enough active (unrested) resources to pay its Cost.
+function totalRes(side){ return side.resMax + side.ex; }                 // resources in the area
+function levelOk(side,c){ return totalRes(side) >= (c.lv||0); }          // Lv requirement gate
+function costOk(side,c){ return side.resAvail >= c.cost; }               // payable right now
+function canAfford(side,c){ return levelOk(side,c) && costOk(side,c); }
+// Human-readable reason a card can't be played yet (or null if it can).
+function affordIssue(side,c){
+  if (!levelOk(side,c)) return `Needs Lv ${c.lv} — you have ${totalRes(side)} resource${totalRes(side)===1?'':'s'}`;
+  if (!costOk(side,c))  return `Needs ${c.cost} active resource${c.cost===1?'':'s'} to pay its cost`;
+  return null;
+}
 
 function playFromHand(uidv){
   if (G.turn!=='player' || G.over || G.mode!=='idle') return;
   const s=G.player; const idx=s.hand.findIndex(c=>c.uid===uidv); if(idx<0) return;
   const card=s.hand[idx];
-  if (!canAfford(s,card)){ flashPrompt('Not enough resources for '+card.name); return; }
+  const issue=affordIssue(s,card);
+  if (issue){ flashPrompt(`${card.name}: ${issue}.`); return; }
 
   if (card.type==='base'){
     s.hand.splice(idx,1); s.resAvail-=card.cost;
@@ -531,7 +550,13 @@ function playFromHand(uidv){
     log(`You deploy <b>${card.name}</b>${card.blitz?' &lt;Blitz&gt;':''}.`, 'me');
     closeInspect(); clearSel(); render();
   } else if (card.type==='pilot'){
-    if (s.field.filter(u=>u.type==='unit').length===0){ flashPrompt('No unit to pair this pilot with.'); return; }
+    const myUnits = s.field.filter(u=>u.type==='unit');
+    if (myUnits.length===0){ flashPrompt(`Deploy a Unit first — pilot ${card.name} must be paired with one.`); return; }
+    if (myUnits.length===1){ // only one possible target: pair it straight away
+      s.hand.splice(idx,1); s.resAvail-=card.cost; attachPilot(myUnits[0],card);
+      log(`<b>${card.name}</b> pilots <b>${myUnits[0].name}</b>.`, 'me');
+      closeInspect(); clearSel(); render(); return;
+    }
     G.mode='pilot-target'; G.pending=card; setPrompt(`Tap a unit to pair pilot ${card.name} (+${card.pAp} AP / +${card.pHp} HP).`);
     closeInspect(); render();
   } else { // command
@@ -748,7 +773,7 @@ function aiTurn(){
   while (acted && guard++<40){
     acted=false;
     // removal on biggest threat
-    const dmg = ai.hand.find(c=>c.type==='command' && c.action.kind==='damage' && c.cost<=ai.resAvail);
+    const dmg = ai.hand.find(c=>c.type==='command' && c.action.kind==='damage' && canAfford(ai,c));
     if (dmg && pl.field.length){
       const i=ai.hand.indexOf(dmg); ai.hand.splice(i,1); ai.resAvail-=dmg.cost;
       if (dmg.action.scope==='all-enemy'){ log(`Zeon plays <b>${dmg.name}</b> (all units).`, 'ai'); for(const u of [...pl.field]) damage(u,dmg.action.amount,pl); }
@@ -756,21 +781,21 @@ function aiTurn(){
       acted=true; continue;
     }
     // draw if low
-    const drawC = ai.hand.find(c=>c.type==='command' && c.action.kind==='draw' && c.action.amount>=2 && c.cost<=ai.resAvail);
+    const drawC = ai.hand.find(c=>c.type==='command' && c.action.kind==='draw' && c.action.amount>=2 && canAfford(ai,c));
     if (drawC && ai.hand.length<=4){ const i=ai.hand.indexOf(drawC); ai.hand.splice(i,1); ai.resAvail-=drawC.cost; for(let k=0;k<drawC.action.amount;k++) draw(ai); log(`Zeon plays <b>${drawC.name}</b>.`, 'ai'); acted=true; continue; }
     // deploy a base if it improves the guard
-    const baseC = ai.hand.find(c=>c.type==='base' && c.cost<=ai.resAvail && (!ai.base || c.hp>ai.base.hp));
+    const baseC = ai.hand.find(c=>c.type==='base' && canAfford(ai,c) && (!ai.base || c.hp>ai.base.hp));
     if (baseC){ const i=ai.hand.indexOf(baseC); ai.hand.splice(i,1); ai.resAvail-=baseC.cost; baseC.rested=false; baseC.sick=false; ai.base=baseC; log(`Zeon deploys base <b>${baseC.name}</b>.`, 'ai'); acted=true; continue; }
     // deploy best affordable unit
     if (ai.field.length<FIELD_MAX){
-      const dep = ai.hand.filter(c=>c.type==='unit' && c.cost<=ai.resAvail).sort((a,b)=>(b.baseAp+b.baseHp)-(a.baseAp+a.baseHp))[0];
+      const dep = ai.hand.filter(c=>c.type==='unit' && canAfford(ai,c)).sort((a,b)=>(b.baseAp+b.baseHp)-(a.baseAp+a.baseHp))[0];
       if (dep){ const i=ai.hand.indexOf(dep); ai.hand.splice(i,1); ai.resAvail-=dep.cost; dep.rested=false; dep.sick=!dep.blitz; ai.field.push(dep); log(`Zeon deploys <b>${dep.name}</b>.`, 'ai'); acted=true; continue; }
     }
     // pair a pilot
-    const pilot = ai.hand.find(c=>c.type==='pilot' && c.cost<=ai.resAvail);
+    const pilot = ai.hand.find(c=>c.type==='pilot' && canAfford(ai,c));
     if (pilot && ai.field.some(u=>u.type==='unit')){ const best=ai.field.filter(u=>u.type==='unit').sort((a,b)=>b.baseAp-a.baseAp)[0]; const i=ai.hand.indexOf(pilot); ai.hand.splice(i,1); ai.resAvail-=pilot.cost; attachPilot(best,pilot); log(`Zeon pairs <b>${pilot.name}</b> with <b>${best.name}</b>.`, 'ai'); acted=true; continue; }
     // buff before attacks
-    const buff = ai.hand.find(c=>c.type==='command' && c.action.kind==='buff' && c.cost<=ai.resAvail);
+    const buff = ai.hand.find(c=>c.type==='command' && c.action.kind==='buff' && canAfford(ai,c));
     if (buff && ai.field.some(u=>!u.sick&&!u.rested&&u.ap>0)){ const t=ai.field.filter(u=>!u.sick&&!u.rested&&u.ap>0).sort((a,b)=>b.ap-a.ap)[0]; const i=ai.hand.indexOf(buff); ai.hand.splice(i,1); ai.resAvail-=buff.cost; t.tempAp=(t.tempAp||0)+buff.action.amount; t.ap=effAp(t); log(`Zeon empowers <b>${t.name}</b>.`, 'ai'); acted=true; continue; }
   }
   render();
@@ -847,6 +872,7 @@ function cardFace(c, ctx){
   if (isBase) cls.push('isbase');
   const style = c.img ? `background-image:url('${c.img}')` : '';
   let overlays = `<div class="ov-cost">${c.cost}</div>`;
+  if (!c.token && (c.lv||0)>0) overlays += `<div class="ov-lv">L${c.lv}</div>`;
   if (!c.img){
     overlays += `<div class="fallback"><div class="fn">${isBase?'🏰 ':''}${c.name}</div><div class="ft">${plain(c.effect).slice(0,90)}</div></div><div class="ov-cost">${c.cost}</div>`;
   }
@@ -877,7 +903,8 @@ function render(){
   el('enemyField').innerHTML = fieldHTML(G.enemy,'field-enemy','No enemy units');
   el('playerField').innerHTML = fieldHTML(G.player,'field-player','Play a card from your hand');
   el('hand').innerHTML = G.player.hand.length ? G.player.hand.map(c=>{
-    const playable = G.turn==='player' && canAfford(G.player,c) && !G.over && G.mode==='idle';
+    const needsUnit = c.type==='pilot' && !G.player.field.some(u=>u.type==='unit');
+    const playable = G.turn==='player' && canAfford(G.player,c) && !needsUnit && !G.over && G.mode==='idle';
     return cardFace(c,'hand').replace('class="card', `class="card ${playable?'':'dim'}`);
   }).join('') : `<div class="empty-hint">Hand empty</div>`;
 
@@ -912,8 +939,10 @@ function inspect(c){
   const btns=el('insBtns'); btns.innerHTML='';
   const inHand = G.player.hand.some(x=>x.uid===c.uid);
   if (inHand && G.turn==='player' && G.mode==='idle'){
-    const b=document.createElement('button'); b.textContent = canAfford(G.player,c)?`Play (${c.cost})`:`Need ${c.cost} res`;
-    b.disabled=!canAfford(G.player,c); b.onclick=()=>{ closeInspect(); playFromHand(c.uid); }; btns.appendChild(b);
+    const ok=canAfford(G.player,c);
+    const b=document.createElement('button');
+    b.textContent = ok ? `Play (Cost ${c.cost})` : (!levelOk(G.player,c) ? `Need Lv ${c.lv}` : `Need ${c.cost} res`);
+    b.disabled=!ok; b.onclick=()=>{ closeInspect(); playFromHand(c.uid); }; btns.appendChild(b);
   }
   const cl=document.createElement('button'); cl.className='ghost'; cl.textContent='Close'; cl.onclick=closeInspect; btns.appendChild(cl);
   el('inspect').classList.add('show');
