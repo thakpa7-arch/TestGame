@@ -1,0 +1,1142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mobile Suit Clash — A Gundam-style Card Game</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #0a0e1a;
+    --panel: #121a2e;
+    --panel-2: #1a2540;
+    --line: #2a3a5e;
+    --txt: #e8eefb;
+    --muted: #8aa0c8;
+    --blue: #3b82f6;
+    --cyan: #22d3ee;
+    --red: #ef4444;
+    --gold: #fbbf24;
+    --green: #34d399;
+  }
+  html, body {
+    height: 100%;
+    background:
+      radial-gradient(1200px 600px at 50% -10%, #16213f 0%, transparent 60%),
+      var(--bg);
+    color: var(--txt);
+    font-family: "Segoe UI", Roboto, system-ui, sans-serif;
+    overflow: hidden;
+  }
+  #app {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 8px 12px;
+    gap: 6px;
+  }
+
+  /* Header */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 6px;
+  }
+  header h1 {
+    font-size: 18px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    background: linear-gradient(90deg, var(--cyan), var(--blue));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    font-weight: 800;
+  }
+  header .sub { font-size: 11px; color: var(--muted); letter-spacing: 1px; }
+  header .turn-info { font-size: 12px; color: var(--muted); }
+  header .turn-info b { color: var(--gold); }
+
+  /* Field rows */
+  .row {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 0;
+  }
+  .side-stats {
+    width: 168px;
+    flex-shrink: 0;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .side-stats.enemy { border-color: #5a2a3a; }
+  .side-stats.player { border-color: #2a4a5a; }
+  .side-stats .name { font-size: 13px; font-weight: 700; letter-spacing: 1px; }
+  .side-stats .name.enemy { color: #fda4af; }
+  .side-stats .name.player { color: var(--cyan); }
+  .stat-line { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+  .stat-line b { color: var(--txt); }
+
+  .shields {
+    display: flex;
+    gap: 3px;
+    flex-wrap: wrap;
+    margin-top: 2px;
+  }
+  .shield {
+    width: 16px; height: 22px;
+    border-radius: 3px;
+    background: linear-gradient(180deg, var(--gold), #b45309);
+    box-shadow: 0 0 6px rgba(251,191,36,.4);
+  }
+  .shield.gone { background: #2a3142; box-shadow: none; opacity: .4; }
+
+  .resources { display: flex; gap: 3px; flex-wrap: wrap; }
+  .res {
+    width: 13px; height: 18px; border-radius: 2px;
+    background: linear-gradient(180deg, var(--cyan), #0e7490);
+  }
+  .res.used { background: #243; opacity: .35; }
+
+  .battlefield {
+    flex: 1;
+    align-self: stretch;
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 8px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    overflow-x: auto;
+    min-height: 0;
+  }
+  .battlefield.enemy { background: linear-gradient(180deg, #2a1820, var(--panel)); }
+  .battlefield.dropzone.valid { outline: 2px dashed var(--green); outline-offset: -4px; }
+  .empty-hint { color: var(--muted); font-size: 12px; margin: auto; }
+
+  /* Cards */
+  .card {
+    width: 104px;
+    height: 150px;
+    flex-shrink: 0;
+    border-radius: 9px;
+    border: 1px solid var(--line);
+    background: linear-gradient(180deg, #1d2944, #141d33);
+    padding: 6px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    cursor: pointer;
+    transition: transform .12s, box-shadow .12s;
+    user-select: none;
+  }
+  .card:hover { transform: translateY(-4px); box-shadow: 0 6px 18px rgba(0,0,0,.5); z-index: 5; }
+  .card .cost {
+    position: absolute; top: -7px; left: -7px;
+    width: 24px; height: 24px; border-radius: 50%;
+    background: var(--cyan); color: #06283a;
+    font-weight: 800; font-size: 13px;
+    display: flex; align-items: center; justify-content: center;
+    border: 2px solid #06283a;
+  }
+  .card .lv {
+    position: absolute; top: -7px; right: -7px;
+    width: 22px; height: 22px; border-radius: 4px;
+    background: var(--gold); color: #3a2206;
+    font-weight: 800; font-size: 11px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .card .cname { font-size: 11px; font-weight: 700; line-height: 1.1; margin-top: 12px; min-height: 24px; }
+  .card .ctype {
+    font-size: 8px; letter-spacing: 1px; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 2px;
+  }
+  .card .art {
+    flex: 1; border-radius: 5px; margin: 3px 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 30px;
+  }
+  .card .text { font-size: 8.5px; color: var(--muted); line-height: 1.15; min-height: 22px; }
+  .card .stats {
+    display: flex; justify-content: space-between;
+    font-size: 11px; font-weight: 800;
+  }
+  .card .stats .ap { color: var(--red); }
+  .card .stats .hp { color: var(--green); }
+
+  .card.unit { border-color: #3b5a8e; }
+  .card.command { border-color: #8e5a3b; background: linear-gradient(180deg, #3a2418, #1f1410); }
+  .card.pilot { border-color: #6e3b8e; background: linear-gradient(180deg, #2a183a, #170f22); }
+  .card.base { border-color: #8e7a3b; }
+
+  .card.rested { transform: rotate(90deg) scale(.82); opacity: .8; }
+  .card.rested:hover { transform: rotate(90deg) scale(.86); }
+  .card.sick::after {
+    content: "💤"; position: absolute; bottom: 4px; right: 4px; font-size: 12px;
+  }
+  .card.selectable { outline: 2px solid var(--green); cursor: pointer; }
+  .card.selected { outline: 3px solid var(--cyan); box-shadow: 0 0 16px var(--cyan); }
+  .card.target { outline: 2px dashed var(--red); }
+  .card.attacking { box-shadow: 0 0 18px var(--red); }
+  .card.dim { opacity: .45; }
+  .card .pilot-badge {
+    position: absolute; bottom: 2px; left: 2px;
+    background: var(--purple, #a855f7); color: #fff;
+    font-size: 8px; padding: 1px 4px; border-radius: 3px;
+  }
+
+  /* Hand */
+  .hand-row {
+    height: 168px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 6px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow-x: auto;
+  }
+  .hand-row .card:hover { transform: translateY(-10px) scale(1.05); }
+
+  /* Controls */
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    justify-content: center;
+    padding: 4px;
+  }
+  button {
+    background: var(--blue); color: #fff; border: none;
+    padding: 9px 18px; border-radius: 8px; font-size: 13px; font-weight: 700;
+    cursor: pointer; letter-spacing: .5px;
+    transition: filter .15s, transform .1s;
+  }
+  button:hover:not(:disabled) { filter: brightness(1.15); }
+  button:active:not(:disabled) { transform: scale(.97); }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.ghost { background: var(--panel-2); border: 1px solid var(--line); }
+  button.danger { background: var(--red); }
+  button.gold { background: var(--gold); color: #3a2206; }
+
+  /* Log */
+  #log {
+    position: fixed; right: 12px; bottom: 12px;
+    width: 280px; max-height: 180px; overflow-y: auto;
+    background: rgba(10,14,26,.92); border: 1px solid var(--line);
+    border-radius: 8px; padding: 8px; font-size: 11px; color: var(--muted);
+    line-height: 1.4; z-index: 50;
+  }
+  #log .entry { margin-bottom: 3px; }
+  #log .me { color: var(--cyan); }
+  #log .ai { color: #fda4af; }
+  #log .sys { color: var(--gold); }
+
+  .prompt {
+    position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
+    background: var(--panel-2); border: 1px solid var(--cyan);
+    padding: 8px 18px; border-radius: 20px; font-size: 13px; z-index: 60;
+    box-shadow: 0 4px 14px rgba(0,0,0,.5);
+  }
+
+  /* Overlay */
+  #overlay {
+    position: fixed; inset: 0; background: rgba(5,8,16,.92);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    z-index: 100; text-align: center; gap: 16px; padding: 20px;
+  }
+  #overlay h2 {
+    font-size: 34px; letter-spacing: 3px;
+    background: linear-gradient(90deg, var(--cyan), var(--blue));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  #overlay p { color: var(--muted); max-width: 560px; line-height: 1.6; font-size: 14px; }
+  #overlay .rules { text-align: left; max-width: 620px; font-size: 12.5px; color: var(--muted); }
+  #overlay .rules b { color: var(--txt); }
+  #overlay.hidden { display: none; }
+  .badge { display:inline-block; background: var(--panel); border:1px solid var(--line); border-radius:6px; padding:2px 8px; margin:2px; font-size:11px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div>
+      <h1>Mobile Suit Clash</h1>
+      <div class="sub">A GUNDAM-STYLE TACTICAL CARD GAME</div>
+    </div>
+    <div class="turn-info" id="turnInfo"></div>
+  </header>
+
+  <!-- Enemy zone -->
+  <div class="row">
+    <div class="side-stats enemy">
+      <div class="name enemy">ZEON FORCES (AI)</div>
+      <div class="stat-line"><span>Shields</span><b id="enemyShieldCount"></b></div>
+      <div class="shields" id="enemyShields"></div>
+      <div class="stat-line"><span>Resources</span><b id="enemyResText"></b></div>
+      <div class="resources" id="enemyResources"></div>
+      <div class="stat-line"><span>Hand</span><b id="enemyHandCount"></b></div>
+      <div class="stat-line"><span>Deck</span><b id="enemyDeckCount"></b></div>
+    </div>
+    <div class="battlefield enemy" id="enemyField">
+      <div class="empty-hint">No enemy units deployed</div>
+    </div>
+  </div>
+
+  <!-- Player zone -->
+  <div class="row">
+    <div class="side-stats player">
+      <div class="name player">E.F.S.F. (YOU)</div>
+      <div class="stat-line"><span>Shields</span><b id="playerShieldCount"></b></div>
+      <div class="shields" id="playerShields"></div>
+      <div class="stat-line"><span>Resources</span><b id="playerResText"></b></div>
+      <div class="resources" id="playerResources"></div>
+      <div class="stat-line"><span>Deck</span><b id="playerDeckCount"></b></div>
+    </div>
+    <div class="battlefield dropzone player" id="playerField">
+      <div class="empty-hint">Click a card in your hand to play it</div>
+    </div>
+  </div>
+
+  <!-- Hand -->
+  <div class="hand-row" id="hand"></div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <button id="endPhaseBtn">Next Phase</button>
+    <button id="endTurnBtn" class="gold">End Turn</button>
+    <button id="cancelBtn" class="ghost" style="display:none">Cancel</button>
+    <button id="helpBtn" class="ghost">Rules</button>
+  </div>
+</div>
+
+<div class="prompt" id="prompt" style="display:none"></div>
+<div id="log"></div>
+
+<div id="overlay">
+  <h2>MOBILE SUIT CLASH</h2>
+  <p>A two-player tactical card duel inspired by the <b>Gundam Trading Card Game</b>.
+     Command the Earth Federation against the Zeon AI. Spend resources to deploy mobile
+     suits, pair them with pilots, unleash command cards, and break through your
+     opponent's shields.</p>
+  <div class="rules">
+    <b>How to win:</b> Destroy all 6 of your opponent's <span class="badge">🛡 Shields</span>, then land one more attack to win.<br><br>
+    <b>Each turn:</b>
+    <span class="badge">1. Draw</span>
+    <span class="badge">2. Gain +1 Resource (max 10)</span>
+    <span class="badge">3. Deploy / Attack</span>
+    <span class="badge">4. End Turn</span><br><br>
+    <b>Cards:</b><br>
+    🤖 <b>Units</b> — Mobile suits with AP (attack) / HP. They have summoning sickness the turn deployed.<br>
+    🎖 <b>Pilots</b> — Attach to one of your units to boost its AP/HP (Level-up).<br>
+    ⚡ <b>Commands</b> — One-shot effects: draw, damage, buffs, repairs.<br><br>
+    <b>Combat:</b> Tap a unit to <b>rest</b> it and attack. The defender may <b>block</b> with an active
+    unit (units trade AP as damage). Unblocked attacks destroy a shield, or — once shields are gone — win the game.
+  </div>
+  <button id="startBtn">START BATTLE</button>
+</div>
+
+<script>
+"use strict";
+
+/* ============================================================
+   Mobile Suit Clash — a Gundam TCG-inspired card game
+   Single-file, vanilla JS, player vs simple AI.
+   ============================================================ */
+
+const SHIELD_MAX = 6;
+const RES_MAX = 10;
+const HAND_START = 5;
+const HAND_MAX = 10;
+
+// ---- Card definitions (the "card pool") -------------------------------
+// type: unit | pilot | command
+const CARD_POOL = [
+  // ---- Units ----
+  { id:'gm',      name:'GM Mass-Produced', type:'unit', cost:1, lv:1, ap:2, hp:2, art:'🤖', text:'Reliable front-line suit.' },
+  { id:'ball',    name:'Ball Support',     type:'unit', cost:1, lv:1, ap:1, hp:3, art:'⚙️', text:'Cheap, durable artillery.' },
+  { id:'guncannon',name:'Guncannon',       type:'unit', cost:2, lv:2, ap:3, hp:3, art:'🔫', text:'Balanced mid-range unit.' },
+  { id:'guntank', name:'Guntank',          type:'unit', cost:2, lv:2, ap:2, hp:5, art:'🚜', text:'Heavy armor; soaks damage.' },
+  { id:'gmcustom',name:'GM Custom',        type:'unit', cost:3, lv:3, ap:4, hp:3, art:'🦾', text:'Upgraded elite mass-suit.' },
+  { id:'gp01',    name:'Gundam GP01',      type:'unit', cost:4, lv:4, ap:5, hp:4, art:'🛡️', text:'Prototype assault Gundam.' },
+  { id:'nt1',     name:'Gundam NT-1 Alex', type:'unit', cost:4, lv:4, ap:4, hp:5, art:'❄️', text:'Newtype trial unit; tough.' },
+  { id:'rx78',    name:'RX-78-2 Gundam',   type:'unit', cost:5, lv:5, ap:6, hp:6, art:'⭐', text:'The legendary white mobile suit.' },
+  { id:'zaku',    name:'Zaku II (captured)',type:'unit',cost:2, lv:2, ap:3, hp:2, art:'👁️', text:'Salvaged enemy suit.' },
+  { id:'core',    name:'Core Fighter',     type:'unit', cost:1, lv:1, ap:1, hp:1, art:'✈️', text:'Fast escort fighter.' },
+
+  // ---- Pilots ----
+  { id:'amuro',   name:'Amuro Ray',   type:'pilot', cost:2, lv:3, ap:2, hp:2, art:'🎖️', text:'Newtype ace. +2 AP / +2 HP to a unit.' },
+  { id:'kai',     name:'Kai Shiden',  type:'pilot', cost:1, lv:1, ap:1, hp:1, art:'🎖️', text:'Steady pilot. +1 AP / +1 HP.' },
+  { id:'sayla',   name:'Sayla Mass',  type:'pilot', cost:1, lv:2, ap:1, hp:2, art:'🎖️', text:'Calm under fire. +1 AP / +2 HP.' },
+  { id:'sleggar', name:'Sleggar Law', type:'pilot', cost:2, lv:2, ap:3, hp:1, art:'🎖️', text:'Aggressive gunner. +3 AP / +1 HP.' },
+
+  // ---- Commands ----
+  { id:'reload',  name:'Tactical Reload', type:'command', cost:1, art:'📡', text:'Draw 2 cards.', effect:'draw2' },
+  { id:'barrage', name:'Beam Barrage',    type:'command', cost:2, art:'💥', text:'Deal 3 damage to an enemy unit.', effect:'dmg3' },
+  { id:'repair',  name:'Field Repair',    type:'command', cost:1, art:'🔧', text:'Restore a friendly unit to full HP.', effect:'heal' },
+  { id:'overdrive',name:'Combat Overdrive',type:'command',cost:2, art:'🔥', text:'A friendly unit gains +3 AP this turn.', effect:'buff' },
+  { id:'strike',  name:'Orbital Strike',  type:'command', cost:3, art:'☄️', text:'Deal 2 damage to ALL enemy units.', effect:'wrath' },
+  { id:'scramble',name:'Scramble Order',  type:'command', cost:2, art:'🚨', text:'Your units lose summoning sickness now.', effect:'haste' },
+];
+
+function poolById(id){ return CARD_POOL.find(c => c.id === id); }
+
+// Deck recipe (count per card) — balanced 50-ish card deck
+const DECK_RECIPE = [
+  ['gm',4],['ball',3],['core',3],['guncannon',4],['guntank',3],['gmcustom',4],
+  ['gp01',3],['nt1',3],['rx78',2],['zaku',3],
+  ['amuro',1],['kai',3],['sayla',2],['sleggar',2],
+  ['reload',3],['barrage',3],['repair',2],['overdrive',2],['strike',1],['scramble',2],
+];
+
+let uidCounter = 1;
+function makeCard(defId, owner){
+  const def = poolById(defId);
+  const c = {
+    uid: uidCounter++,
+    def: def.id,
+    name: def.name,
+    type: def.type,
+    cost: def.cost,
+    lv: def.lv || 0,
+    art: def.art,
+    text: def.text,
+    effect: def.effect,
+    owner,
+  };
+  if (def.type === 'unit') {
+    c.baseAp = def.ap; c.baseHp = def.hp;
+    c.ap = def.ap; c.hp = def.hp; c.maxHp = def.hp;
+    c.rested = false;
+    c.sick = true;
+    c.tempAp = 0;       // temporary buffs (reset end of turn)
+    c.pilot = null;     // attached pilot card def info
+  }
+  if (def.type === 'pilot') {
+    c.pAp = def.ap; c.pHp = def.hp;
+  }
+  return c;
+}
+
+function buildDeck(owner){
+  const deck = [];
+  for (const [id, n] of DECK_RECIPE){
+    for (let i=0;i<n;i++) deck.push(makeCard(id, owner));
+  }
+  return shuffle(deck);
+}
+
+function shuffle(a){
+  for (let i=a.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [a[i],a[j]] = [a[j],a[i]];
+  }
+  return a;
+}
+
+// ---- Game state -------------------------------------------------------
+const G = {
+  turn: 'player',
+  turnNumber: 1,
+  phase: 'main',     // we keep it simple: start -> main
+  selected: null,    // selected card uid for action
+  mode: 'idle',      // idle | attack-target | command-target | pilot-target
+  pendingCard: null, // a card being resolved that needs a target
+  over: false,
+  player: makeSide('player'),
+  enemy: makeSide('enemy'),
+};
+
+function makeSide(who){
+  return {
+    who,
+    deck: [],
+    hand: [],
+    field: [],
+    shields: SHIELD_MAX,
+    resMax: 0,
+    resAvail: 0,
+  };
+}
+
+function me(){ return G.turn === 'player' ? G.player : G.enemy; }
+function foe(s){ return s === G.player ? G.enemy : G.player; }
+
+// ---- DOM refs ---------------------------------------------------------
+const el = id => document.getElementById(id);
+const refs = {
+  turnInfo: el('turnInfo'),
+  enemyField: el('enemyField'),
+  playerField: el('playerField'),
+  hand: el('hand'),
+  enemyShields: el('enemyShields'),
+  playerShields: el('playerShields'),
+  enemyShieldCount: el('enemyShieldCount'),
+  playerShieldCount: el('playerShieldCount'),
+  enemyResources: el('enemyResources'),
+  playerResources: el('playerResources'),
+  enemyResText: el('enemyResText'),
+  playerResText: el('playerResText'),
+  enemyHandCount: el('enemyHandCount'),
+  enemyDeckCount: el('enemyDeckCount'),
+  playerDeckCount: el('playerDeckCount'),
+  prompt: el('prompt'),
+  log: el('log'),
+  overlay: el('overlay'),
+  endTurnBtn: el('endTurnBtn'),
+  endPhaseBtn: el('endPhaseBtn'),
+  cancelBtn: el('cancelBtn'),
+};
+
+// ---- Logging ----------------------------------------------------------
+function log(msg, cls='sys'){
+  const d = document.createElement('div');
+  d.className = 'entry ' + cls;
+  d.innerHTML = msg;
+  refs.log.prepend(d);
+  while (refs.log.children.length > 40) refs.log.lastChild.remove();
+}
+
+function setPrompt(text){
+  if (!text){ refs.prompt.style.display = 'none'; return; }
+  refs.prompt.style.display = 'block';
+  refs.prompt.textContent = text;
+}
+
+// ---- Setup ------------------------------------------------------------
+function startGame(){
+  uidCounter = 1;
+  Object.assign(G, {
+    turn: 'player', turnNumber: 1, phase: 'main',
+    selected: null, mode: 'idle', pendingCard: null, over: false,
+    player: makeSide('player'), enemy: makeSide('enemy'),
+  });
+  G.player.deck = buildDeck('player');
+  G.enemy.deck = buildDeck('enemy');
+  for (let i=0;i<HAND_START;i++){ drawCard(G.player); drawCard(G.enemy); }
+  refs.overlay.classList.add('hidden');
+  refs.log.innerHTML = '';
+  log('Battle start! You command the Earth Federation.', 'sys');
+  beginTurn('player');
+}
+
+function drawCard(side, silent){
+  if (side.deck.length === 0){
+    // Deck-out: lose a shield instead (fatigue)
+    side.shields = Math.max(0, side.shields - 1);
+    if (!silent) log(`${who(side)} is out of cards — fatigue costs a shield!`, side===G.player?'me':'ai');
+    checkWin();
+    return null;
+  }
+  const c = side.deck.pop();
+  if (side.hand.length < HAND_MAX) side.hand.push(c);
+  return c;
+}
+
+function who(side){ return side === G.player ? 'You' : 'Zeon'; }
+
+// ---- Turn flow --------------------------------------------------------
+function beginTurn(turn){
+  G.turn = turn;
+  G.mode = 'idle';
+  G.selected = null;
+  G.pendingCard = null;
+  const side = me();
+
+  // Start phase: untap (activate) all units, clear sickness, gain resource, draw.
+  for (const u of side.field){
+    u.rested = false;
+    u.sick = false;
+    u.tempAp = 0;
+    u.ap = effectiveAp(u);
+  }
+  side.resMax = Math.min(RES_MAX, side.resMax + 1);
+  side.resAvail = side.resMax;
+
+  if (G.turnNumber > 1 || turn === 'enemy') drawCard(side); // player's very first turn: no draw (already has 5)
+  // Actually give a draw each turn including first to keep tempo; comment kept for clarity.
+
+  log(`— ${who(side)}'s turn ${G.turnNumber} —`, 'sys');
+  render();
+
+  if (turn === 'enemy'){
+    setPrompt('Zeon is thinking...');
+    setTimeout(aiTurn, 700);
+  } else {
+    setPrompt('Your turn — deploy units, attack, then End Turn.');
+  }
+}
+
+function endTurn(){
+  if (G.over) return;
+  const side = me();
+  // reset temp buffs
+  for (const u of side.field){ u.tempAp = 0; u.ap = effectiveAp(u); }
+  if (G.turn === 'player'){
+    beginTurn('enemy');
+  } else {
+    G.turnNumber++;
+    beginTurn('player');
+  }
+}
+
+function effectiveAp(u){
+  let ap = u.baseAp + (u.pilot ? u.pilot.pAp : 0) + (u.tempAp || 0);
+  return Math.max(0, ap);
+}
+function effectiveMaxHp(u){
+  return u.baseHp + (u.pilot ? u.pilot.pHp : 0);
+}
+
+// ---- Playing cards ----------------------------------------------------
+function canAfford(side, card){ return side.resAvail >= card.cost; }
+
+function playCardFromHand(uid){
+  if (G.turn !== 'player' || G.over) return;
+  const side = G.player;
+  const idx = side.hand.findIndex(c => c.uid === uid);
+  if (idx < 0) return;
+  const card = side.hand[idx];
+
+  if (!canAfford(side, card)){
+    flashPrompt('Not enough resources for ' + card.name);
+    return;
+  }
+
+  if (card.type === 'unit'){
+    if (side.field.length >= 6){ flashPrompt('Battlefield is full (max 6 units).'); return; }
+    side.hand.splice(idx,1);
+    side.resAvail -= card.cost;
+    card.sick = true; card.rested = false;
+    side.field.push(card);
+    log(`You deploy <b>${card.name}</b>.`, 'me');
+    clearSelection();
+    render();
+  } else if (card.type === 'pilot'){
+    // need a friendly unit target
+    const targets = side.field;
+    if (targets.length === 0){ flashPrompt('No unit to assign this pilot to.'); return; }
+    G.mode = 'pilot-target';
+    G.pendingCard = card;
+    setPrompt(`Choose a unit for pilot ${card.name} (or Cancel).`);
+    render();
+  } else if (card.type === 'command'){
+    resolveCommand(card, idx);
+  }
+}
+
+function resolveCommand(card, handIdx){
+  const side = G.player;
+  switch(card.effect){
+    case 'draw2':
+      commitCommand(card, handIdx);
+      drawCard(side); drawCard(side);
+      log(`You play <b>${card.name}</b> and draw 2.`, 'me');
+      clearSelection(); render();
+      break;
+    case 'haste':
+      commitCommand(card, handIdx);
+      for (const u of side.field) u.sick = false;
+      log(`You play <b>${card.name}</b> — units can attack now!`, 'me');
+      clearSelection(); render();
+      break;
+    case 'dmg3':
+      if (G.enemy.field.length === 0){ flashPrompt('No enemy unit to target.'); return; }
+      G.mode = 'command-target'; G.pendingCard = card; G.pendingHandIdx = handIdx;
+      setPrompt('Choose an enemy unit to hit for 3 (or Cancel).'); render();
+      break;
+    case 'heal':
+      if (side.field.length === 0){ flashPrompt('No friendly unit to repair.'); return; }
+      G.mode = 'command-target'; G.pendingCard = card; G.pendingHandIdx = handIdx;
+      setPrompt('Choose a friendly unit to fully repair (or Cancel).'); render();
+      break;
+    case 'buff':
+      if (side.field.length === 0){ flashPrompt('No friendly unit to empower.'); return; }
+      G.mode = 'command-target'; G.pendingCard = card; G.pendingHandIdx = handIdx;
+      setPrompt('Choose a friendly unit to gain +3 AP (or Cancel).'); render();
+      break;
+    case 'wrath':
+      commitCommand(card, handIdx);
+      log(`You play <b>${card.name}</b> — orbital strike hits all Zeon units!`, 'me');
+      for (const u of [...G.enemy.field]) damageUnit(u, 2, G.enemy);
+      clearSelection(); render(); checkWin();
+      break;
+  }
+}
+
+function commitCommand(card, handIdx){
+  const side = G.player;
+  side.hand.splice(handIdx,1);
+  side.resAvail -= card.cost;
+}
+
+// ---- Field clicks (player) --------------------------------------------
+function onFieldCardClick(uid){
+  if (G.turn !== 'player' || G.over) return;
+
+  // Pilot assignment
+  if (G.mode === 'pilot-target'){
+    const u = G.player.field.find(c => c.uid === uid);
+    if (!u) return;
+    const card = G.pendingCard;
+    const hIdx = G.player.hand.findIndex(c => c.uid === card.uid);
+    if (hIdx < 0) return;
+    G.player.hand.splice(hIdx,1);
+    G.player.resAvail -= card.cost;
+    attachPilot(u, card);
+    log(`<b>${card.name}</b> boards <b>${u.name}</b> (Level-up!).`, 'me');
+    clearSelection(); render();
+    return;
+  }
+
+  // Command targeting
+  if (G.mode === 'command-target'){
+    const card = G.pendingCard;
+    if (card.effect === 'dmg3'){
+      const t = G.enemy.field.find(c => c.uid === uid);
+      if (!t) { flashPrompt('Pick an enemy unit.'); return; }
+      commitCommand(card, G.pendingHandIdx);
+      log(`<b>${card.name}</b> hits <b>${t.name}</b> for 3.`, 'me');
+      damageUnit(t, 3, G.enemy);
+      clearSelection(); render(); checkWin();
+    } else if (card.effect === 'heal'){
+      const t = G.player.field.find(c => c.uid === uid);
+      if (!t){ flashPrompt('Pick a friendly unit.'); return; }
+      commitCommand(card, G.pendingHandIdx);
+      t.hp = effectiveMaxHp(t); t.maxHp = effectiveMaxHp(t);
+      log(`<b>${t.name}</b> is repaired to full HP.`, 'me');
+      clearSelection(); render();
+    } else if (card.effect === 'buff'){
+      const t = G.player.field.find(c => c.uid === uid);
+      if (!t){ flashPrompt('Pick a friendly unit.'); return; }
+      commitCommand(card, G.pendingHandIdx);
+      t.tempAp = (t.tempAp||0) + 3; t.ap = effectiveAp(t);
+      log(`<b>${t.name}</b> surges with +3 AP this turn.`, 'me');
+      clearSelection(); render();
+    }
+    return;
+  }
+
+  // Attack flow: first click a friendly active unit -> then a target
+  if (G.mode === 'idle' || G.mode === 'attack-source'){
+    const u = G.player.field.find(c => c.uid === uid);
+    if (u){
+      if (u.rested){ flashPrompt(`${u.name} is rested (already acted).`); return; }
+      if (u.sick){ flashPrompt(`${u.name} has summoning sickness this turn.`); return; }
+      if (u.ap <= 0){ flashPrompt(`${u.name} has no attack power.`); return; }
+      G.selected = uid; G.mode = 'attack-target';
+      setPrompt(`${u.name} attacking — click an enemy unit to battle, or click Zeon's shields to strike directly.`);
+      render();
+      return;
+    }
+  }
+
+  // Choose enemy unit as battle target
+  if (G.mode === 'attack-target'){
+    const attacker = G.player.field.find(c => c.uid === G.selected);
+    if (!attacker) { clearSelection(); return; }
+    const target = G.enemy.field.find(c => c.uid === uid);
+    if (target){
+      doBattle(attacker, target, G.player, G.enemy);
+      return;
+    }
+  }
+}
+
+// Player attacks the enemy directly (shields)
+function attackDirect(){
+  if (G.turn !== 'player' || G.mode !== 'attack-target') return;
+  const attacker = G.player.field.find(c => c.uid === G.selected);
+  if (!attacker) return;
+  // Enemy may auto-block if it has a good blocker? Keep simple: direct hit.
+  directHit(attacker, G.player, G.enemy);
+}
+
+function directHit(attacker, atkSide, defSide){
+  attacker.rested = true;
+  if (defSide.shields > 0){
+    defSide.shields -= 1;
+    log(`<b>${attacker.name}</b> breaks a ${who(defSide)} shield! (${defSide.shields} left)`, atkSide===G.player?'me':'ai');
+    // broken shields are not drawn in this simplified version
+  } else {
+    log(`<b>${attacker.name}</b> strikes the defenseless ${who(defSide)} core!`, atkSide===G.player?'me':'ai');
+    endGame(atkSide);
+    return;
+  }
+  clearSelection(); render(); checkWin();
+}
+
+function doBattle(attacker, defender, atkSide, defSide){
+  attacker.rested = true;
+  log(`<b>${attacker.name}</b> (${attacker.ap}/${attacker.hp}) clashes with <b>${defender.name}</b> (${defender.ap}/${defender.hp}).`,
+      atkSide===G.player?'me':'ai');
+  // Simultaneous damage
+  const aAp = attacker.ap, dAp = defender.ap;
+  damageUnit(defender, aAp, defSide);
+  damageUnit(attacker, dAp, atkSide);
+  clearSelection(); render(); checkWin();
+}
+
+function damageUnit(u, dmg, side){
+  if (dmg <= 0) return;
+  u.hp -= dmg;
+  if (u.hp <= 0){
+    const i = side.field.indexOf(u);
+    if (i >= 0) side.field.splice(i,1);
+    log(`<b>${u.name}</b> is destroyed.`, side===G.player?'me':'ai');
+    if (u.pilot) log(`Pilot ${u.pilot.name} is lost with the unit.`, side===G.player?'me':'ai');
+  }
+}
+
+function attachPilot(u, pilotCard){
+  // If unit already has a pilot, the old one is discarded (simplified).
+  u.pilot = { name: pilotCard.name, pAp: pilotCard.pAp, pHp: pilotCard.pHp, lv: pilotCard.lv };
+  u.lv = Math.max(u.lv, pilotCard.lv);
+  // Boost current + max HP
+  const add = pilotCard.pHp;
+  u.maxHp = effectiveMaxHp(u);
+  u.hp += add;
+  u.ap = effectiveAp(u);
+}
+
+// ---- Selection helpers ------------------------------------------------
+function clearSelection(){
+  G.selected = null; G.mode = 'idle'; G.pendingCard = null; G.pendingHandIdx = null;
+  setPrompt(G.turn==='player' ? 'Your turn — deploy units, attack, then End Turn.' : '');
+}
+
+let promptTimer = null;
+function flashPrompt(msg){
+  setPrompt(msg);
+  clearTimeout(promptTimer);
+  promptTimer = setTimeout(()=>{
+    if (!G.over) setPrompt(G.turn==='player' ? 'Your turn — deploy units, attack, then End Turn.' : '');
+  }, 1600);
+}
+
+// ---- Win/lose ---------------------------------------------------------
+function checkWin(){
+  if (G.over) return;
+  // A side loses when shields hit 0 AND takes another hit (handled in directHit).
+  // But also: deck fatigue can reach 0 shields; then any further hit / fatigue ends it.
+  // Immediate loss if shields below 0 already accounted; keep here for safety.
+}
+
+function endGame(winnerSide){
+  G.over = true;
+  const win = winnerSide === G.player;
+  setPrompt('');
+  render();
+  const ov = refs.overlay;
+  ov.classList.remove('hidden');
+  ov.innerHTML = `
+    <h2>${win ? 'VICTORY' : 'DEFEAT'}</h2>
+    <p>${win
+      ? 'The Zeon line has been shattered. The Earth Federation holds the field, commander!'
+      : 'Your forces have been overwhelmed. The Zeon banner flies over the battlefield.'}</p>
+    <button id="againBtn">PLAY AGAIN</button>
+  `;
+  el('againBtn').addEventListener('click', startGame);
+  log(win ? 'You win the battle!' : 'You have been defeated.', 'sys');
+}
+
+// ---- AI ---------------------------------------------------------------
+function aiTurn(){
+  if (G.over) return;
+  const ai = G.enemy, pl = G.player;
+
+  // 1) Play cards: deploy best affordable units, use commands smartly.
+  let acted = true;
+  let guard = 0;
+  while (acted && guard++ < 30){
+    acted = false;
+
+    // Use damage command if a strong player unit exists
+    const dmgCard = ai.hand.find(c => c.effect === 'dmg3' && c.cost <= ai.resAvail);
+    if (dmgCard && pl.field.length){
+      const tgt = [...pl.field].sort((a,b)=> b.ap - a.ap)[0];
+      ai.hand.splice(ai.hand.indexOf(dmgCard),1); ai.resAvail -= dmgCard.cost;
+      log(`Zeon fires <b>${dmgCard.name}</b> at <b>${tgt.name}</b>.`, 'ai');
+      damageUnit(tgt, 3, pl); acted = true; continue;
+    }
+
+    // Orbital strike if player has 2+ units
+    const wrath = ai.hand.find(c => c.effect === 'wrath' && c.cost <= ai.resAvail);
+    if (wrath && pl.field.length >= 2){
+      ai.hand.splice(ai.hand.indexOf(wrath),1); ai.resAvail -= wrath.cost;
+      log(`Zeon launches <b>${wrath.name}</b> on your forces!`, 'ai');
+      for (const u of [...pl.field]) damageUnit(u, 2, pl);
+      acted = true; continue;
+    }
+
+    // Draw card if hand getting low
+    const draw = ai.hand.find(c => c.effect === 'draw2' && c.cost <= ai.resAvail);
+    if (draw && ai.hand.length <= 4){
+      ai.hand.splice(ai.hand.indexOf(draw),1); ai.resAvail -= draw.cost;
+      drawCard(ai); drawCard(ai);
+      log(`Zeon plays <b>${draw.name}</b>.`, 'ai'); acted = true; continue;
+    }
+
+    // Deploy the most expensive affordable unit (and not overcrowd)
+    if (ai.field.length < 6){
+      const units = ai.hand.filter(c => c.type==='unit' && c.cost <= ai.resAvail)
+                           .sort((a,b)=> b.cost - a.cost);
+      if (units.length){
+        const u = units[0];
+        ai.hand.splice(ai.hand.indexOf(u),1); ai.resAvail -= u.cost;
+        u.sick = true; u.rested = false; ai.field.push(u);
+        log(`Zeon deploys <b>${u.name}</b>.`, 'ai'); acted = true; continue;
+      }
+    }
+
+    // Assign a pilot to its best unit
+    const pilot = ai.hand.find(c => c.type==='pilot' && c.cost <= ai.resAvail);
+    if (pilot && ai.field.length){
+      const best = [...ai.field].sort((a,b)=> b.baseAp - a.baseAp)[0];
+      ai.hand.splice(ai.hand.indexOf(pilot),1); ai.resAvail -= pilot.cost;
+      attachPilot(best, pilot);
+      log(`Zeon assigns <b>${pilot.name}</b> to <b>${best.name}</b>.`, 'ai'); acted = true; continue;
+    }
+
+    // Buff before attacking
+    const buff = ai.hand.find(c => c.effect==='buff' && c.cost <= ai.resAvail);
+    if (buff && ai.field.some(u=>!u.sick && !u.rested)){
+      const atkr = ai.field.filter(u=>!u.sick&&!u.rested).sort((a,b)=>b.ap-a.ap)[0];
+      ai.hand.splice(ai.hand.indexOf(buff),1); ai.resAvail -= buff.cost;
+      atkr.tempAp = (atkr.tempAp||0)+3; atkr.ap = effectiveAp(atkr);
+      log(`Zeon empowers <b>${atkr.name}</b> (+3 AP).`, 'ai'); acted = true; continue;
+    }
+  }
+
+  render();
+
+  // 2) Attack phase — staged with small delays for readability
+  const attackers = ai.field.filter(u => !u.sick && !u.rested && u.ap > 0);
+  let i = 0;
+  function nextAttack(){
+    if (G.over) return;
+    if (i >= attackers.length){
+      setTimeout(()=>{ if(!G.over){ log('Zeon ends its turn.', 'ai'); endTurn(); } }, 500);
+      return;
+    }
+    const atkr = attackers[i++];
+    if (atkr.rested || atkr.hp <= 0){ nextAttack(); return; }
+
+    // Decide: attack a player unit it can kill without dying, else hit shields,
+    // else trade if favourable.
+    const pUnits = pl.field.filter(u=>true);
+    let target = null;
+    // Prefer killing a blocker we survive against
+    const killable = pUnits
+      .filter(u => atkr.ap >= u.hp && u.ap < atkr.hp)
+      .sort((a,b)=> b.ap - a.ap);
+    if (killable.length) target = killable[0];
+
+    if (target){
+      doBattleAI(atkr, target);
+    } else {
+      // Attack shields directly if player has no scary blocker, else maybe trade
+      directHitAI(atkr);
+    }
+    setTimeout(nextAttack, 650);
+  }
+  setTimeout(nextAttack, 500);
+}
+
+function doBattleAI(attacker, defender){
+  attacker.rested = true;
+  log(`Zeon's <b>${attacker.name}</b> attacks your <b>${defender.name}</b>.`, 'ai');
+  const aAp = attacker.ap, dAp = defender.ap;
+  damageUnit(defender, aAp, G.player);
+  damageUnit(attacker, dAp, G.enemy);
+  render(); checkWin();
+}
+
+function directHitAI(attacker){
+  attacker.rested = true;
+  if (G.player.shields > 0){
+    G.player.shields -= 1;
+    log(`Zeon's <b>${attacker.name}</b> breaks your shield! (${G.player.shields} left)`, 'ai');
+  } else {
+    log(`Zeon's <b>${attacker.name}</b> strikes your core!`, 'ai');
+    endGame(G.enemy); return;
+  }
+  render(); checkWin();
+}
+
+// ---- Rendering --------------------------------------------------------
+function cardHTML(c, ctx){
+  // ctx: 'hand' | 'field-player' | 'field-enemy'
+  const isUnit = c.type==='unit';
+  const classes = ['card', c.type];
+  if (isUnit && c.rested) classes.push('rested');
+  if (isUnit && c.sick && ctx!=='field-enemy') classes.push('sick');
+  if (isUnit && c.sick && ctx==='field-enemy') classes.push('sick');
+
+  // selection / targeting visuals
+  if (ctx==='field-player'){
+    if (G.selected === c.uid) classes.push('attacking');
+    if (G.mode==='idle' && isUnit && !c.rested && !c.sick && c.ap>0) classes.push('selectable');
+    if (G.mode==='pilot-target') classes.push('selectable');
+    if (G.mode==='command-target' && (G.pendingCard?.effect==='heal'||G.pendingCard?.effect==='buff')) classes.push('selectable');
+  }
+  if (ctx==='field-enemy'){
+    if (G.mode==='attack-target') classes.push('target');
+    if (G.mode==='command-target' && G.pendingCard?.effect==='dmg3') classes.push('selectable');
+  }
+
+  const lv = (c.type!=='command') ? `<div class="lv">Lv${c.lv}</div>` : '';
+  const artBg = {
+    unit:'linear-gradient(135deg,#1e3a5f,#0f2138)',
+    command:'linear-gradient(135deg,#5a3a1e,#2a1810)',
+    pilot:'linear-gradient(135deg,#3a1e5a,#1a0f2a)',
+  }[c.type];
+
+  let statLine = '';
+  if (isUnit){
+    const apStr = c.ap !== c.baseAp ? `${c.ap}` : `${c.ap}`;
+    statLine = `<div class="stats"><span class="ap">⚔ ${c.ap}</span><span class="hp">❤ ${c.hp}</span></div>`;
+  } else if (c.type==='pilot'){
+    statLine = `<div class="stats"><span class="ap">+${c.pAp}AP</span><span class="hp">+${c.pHp}HP</span></div>`;
+  } else {
+    statLine = `<div class="stats" style="justify-content:center;color:var(--cyan)">COMMAND</div>`;
+  }
+
+  const pilotBadge = (isUnit && c.pilot) ? `<div class="pilot-badge">🎖 ${c.pilot.name.split(' ')[0]}</div>` : '';
+
+  return `
+    <div class="${classes.join(' ')}" data-uid="${c.uid}" data-ctx="${ctx}">
+      <div class="cost">${c.cost}</div>
+      ${lv}
+      <div class="ctype">${c.type}</div>
+      <div class="cname">${c.name}</div>
+      <div class="art" style="background:${artBg}">${c.art}</div>
+      <div class="text">${c.text}</div>
+      ${statLine}
+      ${pilotBadge}
+    </div>`;
+}
+
+function render(){
+  // Turn info
+  refs.turnInfo.innerHTML = `Turn <b>${G.turnNumber}</b> &nbsp;•&nbsp; ${G.turn==='player'?'<b>Your</b> move':'<b>Zeon</b> acting'}`;
+
+  // Shields
+  refs.enemyShields.innerHTML = renderShields(G.enemy.shields);
+  refs.playerShields.innerHTML = renderShields(G.player.shields);
+  refs.enemyShieldCount.textContent = G.enemy.shields;
+  refs.playerShieldCount.textContent = G.player.shields;
+
+  // Resources
+  refs.enemyResources.innerHTML = renderRes(G.enemy);
+  refs.playerResources.innerHTML = renderRes(G.player);
+  refs.enemyResText.textContent = `${G.enemy.resAvail}/${G.enemy.resMax}`;
+  refs.playerResText.textContent = `${G.player.resAvail}/${G.player.resMax}`;
+
+  // Counts
+  refs.enemyHandCount.textContent = G.enemy.hand.length;
+  refs.enemyDeckCount.textContent = G.enemy.deck.length;
+  refs.playerDeckCount.textContent = G.player.deck.length;
+
+  // Enemy field
+  if (G.enemy.field.length === 0){
+    refs.enemyField.innerHTML = `<div class="empty-hint">No enemy units deployed</div>`;
+  } else {
+    refs.enemyField.innerHTML = G.enemy.field.map(c => cardHTML(c,'field-enemy')).join('');
+  }
+  // make enemy shields clickable as a direct-attack target
+  refs.enemyField.classList.toggle('dropzone', false);
+
+  // Player field
+  if (G.player.field.length === 0){
+    refs.playerField.innerHTML = `<div class="empty-hint">Click a card in your hand to play it</div>`;
+  } else {
+    refs.playerField.innerHTML = G.player.field.map(c => cardHTML(c,'field-player')).join('');
+  }
+
+  // Hand
+  refs.hand.innerHTML = G.player.hand.map(c => {
+    const playable = G.turn==='player' && canAfford(G.player, c) && !G.over && G.mode==='idle';
+    const h = cardHTML(c,'hand');
+    return h.replace('class="card', `class="card ${playable?'':'dim'}`);
+  }).join('') || `<div class="empty-hint">Your hand is empty</div>`;
+
+  // Buttons
+  refs.endTurnBtn.disabled = G.turn!=='player' || G.over;
+  refs.cancelBtn.style.display = (G.mode!=='idle' && G.turn==='player') ? 'inline-block' : 'none';
+
+  // attach click handlers
+  bindCardEvents();
+}
+
+function renderShields(n){
+  let s = '';
+  for (let i=0;i<SHIELD_MAX;i++) s += `<div class="shield ${i<n?'':'gone'}"></div>`;
+  return s;
+}
+function renderRes(side){
+  let s = '';
+  for (let i=0;i<side.resMax;i++) s += `<div class="res ${i<side.resAvail?'':'used'}"></div>`;
+  return s;
+}
+
+function bindCardEvents(){
+  // hand
+  refs.hand.querySelectorAll('.card').forEach(node=>{
+    node.onclick = ()=> playCardFromHand(+node.dataset.uid);
+  });
+  // player field
+  refs.playerField.querySelectorAll('.card').forEach(node=>{
+    node.onclick = ()=> onFieldCardClick(+node.dataset.uid);
+  });
+  // enemy field
+  refs.enemyField.querySelectorAll('.card').forEach(node=>{
+    node.onclick = ()=> onFieldCardClick(+node.dataset.uid);
+  });
+}
+
+// Click on enemy shield area => direct attack when in attack-target mode
+refs.enemyShields.addEventListener('click', attackDirect);
+refs.enemyField.addEventListener('click', (e)=>{
+  // clicking empty space of enemy field during attack = direct attack
+  if (G.mode==='attack-target' && e.target.classList.contains('battlefield')){
+    attackDirect();
+  }
+});
+// Also allow clicking the enemy stat panel shields
+el('enemyShieldCount').addEventListener('click', attackDirect);
+
+// ---- Buttons ----------------------------------------------------------
+refs.endTurnBtn.addEventListener('click', ()=>{ if (G.turn==='player' && !G.over){ clearSelection(); endTurn(); }});
+refs.endPhaseBtn.addEventListener('click', ()=>{
+  // In this simplified game, "Next Phase" just clears any pending selection.
+  if (G.turn==='player'){ clearSelection(); render(); }
+});
+refs.cancelBtn.addEventListener('click', ()=>{ clearSelection(); render(); });
+el('helpBtn').addEventListener('click', ()=>{ location.reload(); });
+el('startBtn').addEventListener('click', startGame);
+
+// keyboard: Esc cancels, Enter ends turn
+document.addEventListener('keydown', e=>{
+  if (G.over) return;
+  if (e.key === 'Escape'){ clearSelection(); render(); }
+  if (e.key === 'Enter' && G.turn==='player'){ clearSelection(); endTurn(); }
+});
+
+// Auto-start hint already on overlay.
+</script>
+</body>
+</html>
