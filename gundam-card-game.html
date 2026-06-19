@@ -403,6 +403,11 @@ function inferCommand(effect){
     const all = /(all|every|each).{0,24}enemy|enemy.{0,24}(all|every|each)/.test(t);
     return { kind:'damage', amount:+m[1], scope: all?'all-enemy':'enemy' };
   }
+  // draw-then-discard (e.g. "Draw 2. Then, discard 1.") — must be checked before plain draw
+  if (/draw \d/.test(t) && /discard \d/.test(t)){
+    const dm = t.match(/draw (\d+)/), disc = t.match(/discard (\d+)/);
+    return { kind:'drawDiscard', draw:+dm[1], discard:+(disc[1]) };
+  }
   if ((m = t.match(/draw (\d+)/))) return { kind:'draw', amount:+m[1] };
   if (/recover|repair|heal/.test(t)){ m = t.match(/(\d+)\s*hp/); return { kind:'heal', amount: m?+m[1]:99 }; }
   if ((m = t.match(/ap\s*\+\s*(\d+)|\+\s*(\d+)\s*ap|gets ap\+(\d+)/))){
@@ -439,7 +444,10 @@ function parseTrigger(effect, kw){
   const t = m[1].toLowerCase(); let d;
   // self-targeted buff: "This Unit gets AP+N during this turn" (and maybe gains <High-Maneuver>)
   if ((d=t.match(/this unit gets ap\+(\d+)/))) return { kind:'selfbuff', amount:+d[1], hman:/<\s*high-?maneuver/.test(t) };
-  if (/add (1|one)?\s*of your shields to your hand/.test(t)) return { kind:'shieldToHand' };
+  if (/add (1|one)?\s*of your shields to your hand/.test(t)){
+    // "Then, if it is your turn, look at the top N cards of your deck…" — flag the scry
+    const sd = t.match(/look at the top (\d+)/); return { kind:'shieldToHand', scryN: sd?+sd[1]:0 };
+  }
   if ((d=t.match(/place (\d+)?\s*ex resource/))) return { kind:'exResource', amount:+(d[1]||1) };
   if (/return it to .*hand|return that unit to .*hand/.test(t)) return { kind:'bounce', hp:hpLimit(t) };
   if (/\brest it\b|rest that unit/.test(t)) return { kind:'rest', hp:hpLimit(t) };
@@ -460,6 +468,14 @@ function runTrigger(card, side, act, label){
   const name = card.name;
   if (act.kind==='shieldToHand'){
     if (side.shields.length && side.hand.length<HAND_MAX){ side.hand.push(side.shields.pop()); log(`${label}: <b>${name}</b> adds a Shield to ${who(side)} hand.`, cls); }
+    // Conditional scry: "if it is your turn, look at top N cards…" — auto-keep the best, trash the rest
+    if (act.scryN>0 && side.deck.length>=act.scryN && side.who===G.turn){
+      // Sort top scryN cards: keep the highest-value one on top, remove the others (trash)
+      const top = side.deck.splice(side.deck.length-act.scryN, act.scryN);
+      top.sort((a,b)=>cardValue(b)-cardValue(a));
+      side.deck.push(top[0]);  // keep best on top
+      log(`${label}: <b>${name}</b> looks at top ${act.scryN} — keeps 1, ${act.scryN-1} sent to trash.`, cls);
+    }
   } else if (act.kind==='exResource'){
     side.ex+=act.amount; side.resAvail+=act.amount; log(`${label}: <b>${name}</b> places ${act.amount} EX Resource.`, cls);
   } else if (act.kind==='draw'){
@@ -796,6 +812,17 @@ function playFromHand(uidv){
 
 function startCommand(card, handIdx){
   const s=G.player, a=card.action;
+  if (a.kind==='drawDiscard'){
+    commit(card,handIdx);
+    for(let i=0;i<a.draw;i++) draw(s);
+    log(`<b>${card.name}</b>: draw ${a.draw} — now discard ${a.discard}.`, 'me');
+    if (s.hand.length>0){
+      G.mode='discard'; G.pending={discardLeft:a.discard};
+      setPrompt(`Choose ${a.discard} card${a.discard>1?'s':''} from your hand to discard.`);
+      closeInspect(); render(); return;
+    }
+    closeInspect(); clearSel(); render(); checkEnd(); return;
+  }
   const needEnemy = (a.kind==='damage'&&a.scope==='enemy') || a.kind==='rest';
   const needAlly  = (a.kind==='heal'||a.kind==='buff');
   if (needEnemy && G.enemy.field.length===0){ // fallback: just draw
@@ -815,9 +842,24 @@ function startCommand(card, handIdx){
 
 function commit(card, handIdx){ G.player.hand.splice(handIdx,1); G.player.resAvail-=card.cost; }
 
+// Auto-discard the lowest-value card from side's hand (used by AI / no-choice cases).
+function cardValue(c){ if(c.type==='unit') return c.baseAp+c.baseHp; if(c.type==='pilot') return c.pAp+c.pHp; if(c.type==='command'&&c.action) return c.action.kind==='damage'?4:c.action.kind==='draw'?3:1; return 1; }
+function autoDiscard(side, n, label){
+  for(let k=0;k<n;k++){
+    if(!side.hand.length) break;
+    const worst=[...side.hand].sort((a,b)=>cardValue(a)-cardValue(b))[0];
+    side.hand.splice(side.hand.indexOf(worst),1);
+    log(`${label}: discards <b>${worst.name}</b>.`, side===G.player?'me':'ai');
+  }
+}
 function applyCommand(card, side, target){
   const a=card.action, foe = side===G.player?G.enemy:G.player;
-  if (a.kind==='draw'){ for(let i=0;i<a.amount;i++) draw(side); log(`<b>${card.name}</b>: draw ${a.amount}.`, side===G.player?'me':'ai'); }
+  if (a.kind==='drawDiscard'){
+    for(let i=0;i<a.draw;i++) draw(side);
+    log(`<b>${card.name}</b>: draw ${a.draw}.`, side===G.player?'me':'ai');
+    autoDiscard(side, a.discard, card.name);
+  }
+  else if (a.kind==='draw'){ for(let i=0;i<a.amount;i++) draw(side); log(`<b>${card.name}</b>: draw ${a.amount}.`, side===G.player?'me':'ai'); }
   else if (a.kind==='damage'){
     if (a.scope==='all-enemy'){ log(`<b>${card.name}</b> hits all enemy units for ${a.amount}.`, side===G.player?'me':'ai'); for (const u of [...foe.field]) damage(u,a.amount,foe); }
     else if (target){ log(`<b>${card.name}</b> deals ${a.amount} to <b>${target.name}</b>.`, side===G.player?'me':'ai'); damage(target,a.amount,foe); }
@@ -1294,6 +1336,7 @@ function render(){
   el('enemyBase').innerHTML = G.enemy.base ? cardFace(G.enemy.base,'field-enemy') : `<div class="bz-empty">no base</div>`;
   el('playerBase').innerHTML = G.player.base ? cardFace(G.player.base,'field-player') : `<div class="bz-empty">no base</div>`;
   el('hand').innerHTML = G.player.hand.length ? G.player.hand.map(c=>{
+    if(G.mode==='discard') return cardFace(c,'hand').replace('class="card', 'class="card selectable');
     const needsUnit = c.type==='pilot' && !G.player.field.some(u=>u.type==='unit');
     const playable = G.turn==='player' && canAfford(G.player,c) && !needsUnit && !G.over && G.mode==='idle';
     return cardFace(c,'hand').replace('class="card', `class="card ${playable?'':'dim'}`);
@@ -1320,7 +1363,19 @@ function shieldHTML(side){
 function resHTML(side){ let s=''; const total=side.resMax+side.ex; for(let i=0;i<total;i++){ const isEx=i>=side.resMax; s+=`<div class="res ${isEx?'ex':''} ${i<side.resAvail?'':'used'}"></div>`; } return s; }
 
 function bind(){
-  el('hand').querySelectorAll('.card').forEach(n=> n.onclick=()=>{ const c=G.player.hand.find(x=>x.uid===+n.dataset.uid); if(G.mode==='idle') inspect(c); else playFromHand(+n.dataset.uid); });
+  el('hand').querySelectorAll('.card').forEach(n=> n.onclick=()=>{
+    const c=G.player.hand.find(x=>x.uid===+n.dataset.uid);
+    if(G.mode==='discard'){
+      if(!c) return;
+      G.player.hand.splice(G.player.hand.indexOf(c),1);
+      log(`You discard <b>${c.name}</b>.`, 'me');
+      G.pending.discardLeft--;
+      if(G.pending.discardLeft<=0){ clearSel(); render(); checkEnd(); }
+      else{ setPrompt(`Choose ${G.pending.discardLeft} more card${G.pending.discardLeft>1?'s':''} to discard.`); render(); }
+      return;
+    }
+    if(G.mode==='idle') inspect(c); else playFromHand(+n.dataset.uid);
+  });
   el('playerField').querySelectorAll('.card').forEach(n=> n.onclick=()=>{ const id=+n.dataset.uid; fieldClick(id); });
   el('enemyField').querySelectorAll('.card').forEach(n=> n.onclick=()=>{ const id=+n.dataset.uid; fieldClick(id); });
   el('playerBase').querySelectorAll('.card').forEach(n=> n.onclick=()=>{ if(G.player.base) inspect(G.player.base); });
