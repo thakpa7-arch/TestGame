@@ -306,8 +306,10 @@
     <b>Controls:</b> tap a hand card to inspect &amp; play it; tap your active Unit then a rested enemy Unit or the
     enemy Shields to attack. When the AI attacks and you have a Blocker, you'll be asked whether to intercept.<br><br>
     <span style="color:#fda4af">Note:</span> Resource Deck, EX Resource/Base, Shields, Burst, Bases, Blocking,
-    First Strike, High-Maneuver and Link are all modeled. Each Command's and Burst's effect is still a best-effort
-    reading of its printed text rather than a hand-coded version of every unique card ability.
+    First Strike, High-Maneuver, 【Deploy】/【When Paired】 effects and Link are all modeled, and both decks are
+    built around Link pairs with an aggressive curve. Keywords are read as innate only (a card that merely
+    "gains" one conditionally isn't treated as always having it). Each card's effect is still a best-effort
+    reading of its printed text rather than a hand-coded version of every unique ability.
   </div>
 </div>
 
@@ -485,14 +487,15 @@ function genericToken(owner){
 
 function shuffle(a){ for (let i=a.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; [a[i],a[j]]=[a[j],a[i]]; } return a; }
 
-// ---- competitive deck building (curve-tuned, max 4 copies per card name) ----
+// ---- competitive deck building (Link-synergy + curve-tuned, max 4 copies per name) ----
 function unitScore(c){
   let s=(c.ap+c.hp)/Math.max(1,c.cost);
-  if (hasKeyword(c.effect,'blocker')) s+=1.2;
-  if (hasKeyword(c.effect,'first'))   s+=1.4;
-  if (hasKeyword(c.effect,'high'))    s+=1.0;
-  if (hasKeyword(c.effect,'repair'))  s+=0.8;
-  if (hasKeyword(c.effect,'blitz'))   s+=1.0;
+  if (innateKeyword(c.effect,'blocker')) s+=1.0;
+  if (innateKeyword(c.effect,'first'))   s+=1.2;
+  if (innateKeyword(c.effect,'high'))    s+=1.0;
+  if (repairAmount(c.effect))            s+=0.7;
+  if (/breach/i.test(c.effect))          s+=0.8;
+  if (parseLink(c.link).length)          s+=0.6;   // can come online early via its pilot
   return s;
 }
 function cmdScore(c){ const t=plain(c.effect).toLowerCase(); let m;
@@ -516,29 +519,48 @@ function buildDeck(owner){
   const cmds   = byName(GUNDAM_CARDS.filter(c=>inColor(c)&&c.type==='command'),cmdScore);
   const pilots = byName(GUNDAM_CARDS.filter(c=>inColor(c)&&c.type==='pilot'), pilotScore);
   const bases  = byName(GUNDAM_CARDS.filter(c=>inColor(c)&&c.type==='base'),  c=>c.hp/Math.max(1,c.cost));
+  const pilotByName = new Map(pilots.map(p=>[p.name,p]));
 
   const deck=[], copies=new Map();
-  const room = id => 4-(copies.get(id)||0);
-  const add = (def,n) => { n=Math.min(n,room(def.id)); for(let i=0;i<n&&deck.length<50;i++){ deck.push(makeCard(def,owner)); copies.set(def.id,(copies.get(def.id)||0)+1); } };
+  const room  = id => 4-(copies.get(id)||0);
+  const count = id => copies.get(id)||0;
+  const nUnits = () => deck.filter(c=>c.type==='unit').length;
+  const nType = t => deck.filter(c=>c.type===t).length;
+  const add = (def,n) => { if(!def) return 0; n=Math.min(n,room(def.id),50-deck.length); for(let i=0;i<n;i++){ deck.push(makeCard(def,owner)); copies.set(def.id,(copies.get(def.id)||0)+1); } return Math.max(0,n); };
 
-  // signature finishers (by name) up to 4 copies
-  for (const name of (fac.signatures||[])){ const d=units.find(u=>u.name===name); if (d) add(d,4); }
+  // the in-color Pilot a Unit links with, if any
+  const linkPilotFor = u => { const pn=(parseLink(u.link)||[]).find(n=>pilotByName.has(n)); return pn?pilotByName.get(pn):null; };
+  const unitsAtCost = cost => deck.filter(c=>c.type==='unit' && (cost>=6?c.cost>=6:c.cost===cost)).length;
 
-  // mana curve for the unit core
-  const quota={1:6,2:8,3:7,4:5,5:3,6:1};
-  const bucket = n => n>=6 ? units.filter(u=>u.cost>=6) : units.filter(u=>u.cost===n);
+  // 1) Signature finishers (4x) + their link Pilot
+  for (const name of (fac.signatures||[])){ const d=units.find(u=>u.name===name); if(d){ add(d,4); const lp=linkPilotFor(d); if(lp) add(lp,2); } }
+
+  // 2) Unit curve — filled cost-by-cost (each cost capped at its quota so the curve stays
+  //    realistic), preferring units that have a matching Link Pilot and pulling that Pilot in
+  //    alongside them so the Link payoff (attack the turn paired) actually shows up.
+  const quota={1:5,2:8,3:6,4:4,5:3,6:2};   // sums to 28 units
   for (const cost of [1,2,3,4,5,6]){
-    let need=quota[cost], list=bucket(cost), i=0;
-    while (need>0 && i<list.length){ const d=list[i++], a=Math.min(need,room(d.id),cost<=2?4:3); if(a>0){ add(d,a); need-=a; } }
+    const list = units.filter(u => cost>=6 ? u.cost>=6 : u.cost===cost)
+                      .sort((a,b)=>(linkPilotFor(b)?1:0)-(linkPilotFor(a)?1:0));   // link units first
+    let i=0;
+    while (unitsAtCost(cost)<quota[cost] && i<list.length){
+      const u=list[i++]; if(count(u.id)>=4) continue;
+      add(u, Math.min(4, quota[cost]-unitsAtCost(cost)));
+      const lp=linkPilotFor(u); if(lp) add(lp,2);
+    }
   }
-  // removal / draw commands
-  { let need=11,i=0; while(need>0&&i<cmds.length){ const d=cmds[i++], a=Math.min(need,3,room(d.id)); add(d,a); need-=a; } }
-  // pilots
-  { let need=7,i=0; while(need>0&&i<pilots.length){ const d=pilots[i++], a=Math.min(need,3,room(d.id)); add(d,a); need-=a; } }
-  // a couple of bases
-  { let need=2,i=0; while(need>0&&i<bases.length){ add(bases[i++],1); need--; } }
-  // top up to 50 with the best remaining units
-  let i=0; while(deck.length<50 && i<units.length){ add(units[i++],4); }
+
+  // 3) Pilots up to ~12 total (link Pilots already counted)
+  { let i=0; while(nType('pilot')<12 && i<pilots.length){ add(pilots[i++],3); } }
+
+  // 5) Removal / draw / tempo commands (~8)
+  { let i=0; while(nType('command')<8 && i<cmds.length){ add(cmds[i++],3); } }
+
+  // 6) A base or two
+  { let i=0; while(nType('base')<2 && i<bases.length){ add(bases[i++],1); } }
+
+  // 7) Fill to exactly 50 with the best remaining cards
+  for (const list of [units, pilots, cmds]){ let i=0; while(deck.length<50 && i<list.length){ add(list[i++],4); } }
   return shuffle(deck);
 }
 
