@@ -221,6 +221,7 @@
       <div class="resources" id="enemyResources"></div>
       <div class="stat-line"><span>Hand</span><b id="enemyHandCount"></b></div>
       <div class="stat-line"><span>Deck</span><b id="enemyDeckCount"></b></div>
+      <div class="stat-line"><span>Trash</span><b id="enemyTrashCount"></b></div>
     </div>
     <div class="base-zone enemy" id="enemyBaseZone"><div class="bz-label">BASE</div><div class="bz-slot" id="enemyBase"></div></div>
     <div class="battlefield enemy" id="enemyField"></div>
@@ -234,6 +235,7 @@
       <div class="stat-line"><span>Resources</span><b id="playerResText"></b></div>
       <div class="resources" id="playerResources"></div>
       <div class="stat-line"><span>Deck</span><b id="playerDeckCount"></b></div>
+      <div class="stat-line"><span>Trash</span><b id="playerTrashCount" style="cursor:pointer;text-decoration:underline dotted"></b></div>
     </div>
     <div class="base-zone player" id="playerBaseZone"><div class="bz-label">BASE</div><div class="bz-slot" id="playerBase"></div></div>
     <div class="battlefield player" id="playerField"></div>
@@ -395,6 +397,109 @@ function parseActivate(effect){
   return { phase:/action/i.test(m[1])?'action':'main', text:cm[2].replace(/\s*\(.*$/,'').replace(/\.$/,'').trim(), action };
 }
 
+// ---- Trash / Graveyard helpers ----
+function matchTrashTrait(card, trait){
+  if (!trait) return true;
+  const tl = trait.toLowerCase().replace(/[()]/g,'').trim();
+  if (tl === 'command') return card.type === 'command';
+  if (tl === 'unit')    return card.type === 'unit';
+  if (tl === 'pilot')   return card.type === 'pilot';
+  if (tl === 'base')    return card.type === 'base';
+  const cardTrait = (card.trait||'').toLowerCase();
+  return tl.split('/').some(part => cardTrait.includes(part.replace(/[()]/g,'').trim()));
+}
+function trashCount(side, trait){ return (side.trash||[]).filter(c=>matchTrashTrait(c,trait)).length; }
+
+function parseTrashBuff(effect){
+  const t = plain(effect).toLowerCase();
+  const m = t.match(/while (?:there are )?(\d+) or more ([a-z\/() ]*?)\s*cards? in your trash[^,]*,\s*this unit gets ap\+(\d+)(?:\s*and\s*hp\+(\d+))?/i);
+  if (!m) return null;
+  const trait = (m[2]||'').trim().replace(/[()]/g,'').trim()||null;
+  return { minCount:+m[1], trait, apBonus:+m[3], hpBonus:m[4]?+m[4]:0 };
+}
+function parseTrashKeyword(effect){
+  const t = plain(effect).toLowerCase();
+  const m = t.match(/while (?:there are )?(\d+) or more ([a-z\/() ]*?)\s*cards? in your trash[^,]*,\s*this unit gains\s*<([a-z-]+)>/i);
+  if (!m) return null;
+  const trait = (m[2]||'').trim().replace(/[()]/g,'').trim()||null;
+  return { minCount:+m[1], trait, keyword:m[3].toLowerCase() };
+}
+function parseTrashCostReduce(effect){
+  const t = plain(effect).toLowerCase();
+  let m = t.match(/(?:while|if) (?:there are )?(\d+) or more ([a-z\/() ]*?)\s*cards? in your trash[^,]*,\s*this card in your hand gets cost -(\d+)/i);
+  if (m) { const trait=(m[2]||'').trim().replace(/[()]/g,'').trim()||null; return { minCount:+m[1], trait, reduction:+m[3], variable:false }; }
+  m = t.match(/reduce the cost of this card in your hand by an amount equal to the number of ([a-z\/() ]+?)\s*cards? in your trash/i);
+  if (m) { const trait=m[1].trim().replace(/[()]/g,'').trim()||null; return { minCount:0, trait, reduction:0, variable:true }; }
+  return null;
+}
+function parseTrashCantAttack(effect){
+  const t = plain(effect).toLowerCase();
+  const m = t.match(/this unit can'?t attack while (?:there are )?(\d+) or (?:less|fewer) cards? in your trash/i);
+  return m ? { maxCount:+m[1] } : null;
+}
+function effectiveCost(side, c){
+  let cost = c.cost;
+  if (c.trashCostReduce){
+    const tcr = c.trashCostReduce, count = trashCount(side, tcr.trait);
+    if (tcr.variable) cost = Math.max(0, cost - count);
+    else if (count >= tcr.minCount) cost = Math.max(0, cost - tcr.reduction);
+  }
+  return cost;
+}
+
+// Card filter parser for trash retrieval effects.
+function parseFilter(filterStr){
+  if (!filterStr) return {};
+  const f = filterStr.toLowerCase(), r = {};
+  if (/\bunit\b/.test(f)) r.type='unit'; else if (/\bpilot\b/.test(f)) r.type='pilot';
+  else if (/\bcommand\b/.test(f)) r.type='command'; else if (/\bbase\b/.test(f)) r.type='base';
+  const col=f.match(/\b(purple|blue|red|green|yellow|white)\b/); if(col) r.color=col[1];
+  const tms=f.match(/\(([^)]+)\)/g); if(tms) r.traits=tms.map(t=>t.replace(/[()]/g,'').trim().toLowerCase());
+  const lvm=f.match(/lv\.?(\d+) or lower/i); if(lvm) r.maxLv=+lvm[1];
+  return r;
+}
+function matchFilter(card, filterStr){
+  if (!filterStr) return true;
+  const f = parseFilter(filterStr);
+  if (f.type && card.type !== f.type) return false;
+  if (f.color && (card.color||'').toLowerCase() !== f.color) return false;
+  if (f.maxLv != null && (card.lv||0) > f.maxLv) return false;
+  if (f.traits){ const ct=(card.trait||'').toLowerCase(); for(const t of f.traits) if(!ct.includes(t)) return false; }
+  return true;
+}
+
+// Inner effect parser (used by gated and mill-conditional effects).
+function parseTriggerInner(t){
+  const tl=t.toLowerCase(); let d;
+  if (/rest it|rest that|rest 1 enemy unit/i.test(tl)){ const lvm=tl.match(/lv\.?(\d+) or lower/i); return { kind:'rest', hp:99, maxLv:lvm?+lvm[1]:99 }; }
+  if ((d=tl.match(/deal (\d+) damage/i))) return { kind:'damage', amount:+d[1] };
+  if ((d=tl.match(/it gets ap-(\d+)/i))) return { kind:'debuff', amount:+d[1] };
+  if ((d=tl.match(/draw (\d+)/i))){ if(/discard/.test(tl)){ const disc=tl.match(/discard (\d+)/i); return { kind:'drawDiscard', draw:+d[1], discard:+(disc?disc[1]:1) }; } return { kind:'draw', amount:+d[1] }; }
+  return null;
+}
+function parseGatedEffect(t){
+  const gm=t.match(/if there are (\d+) or more ([a-z\/() ]*?)\s*cards? in your trash,?\s*(.+)/i);
+  if (!gm) return null;
+  const minCount=+gm[1], trait=(gm[2]||'').trim().replace(/[()]/g,'').trim()||null, inner=parseTriggerInner(gm[3].trim());
+  return inner ? { kind:'trashGate', minCount, trait, inner } : null;
+}
+
+function trashBlocksAttack(u, side){
+  return !!(u.trashCantAttack && (side.trash||[]).length <= u.trashCantAttack.maxCount);
+}
+function showTrashViewer(side){
+  const modal=document.createElement('div');
+  modal.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.85);z-index:999;display:flex;align-items:center;justify-content:center;';
+  const box=document.createElement('div');
+  box.style.cssText='background:#1a1a2e;border:1px solid #555;border-radius:10px;padding:16px;max-width:440px;width:90%;max-height:82vh;overflow-y:auto;';
+  box.innerHTML=`<h3 style="margin:0 0 10px;color:#aaa">Trash (${side.trash.length})</h3>`+
+    (side.trash.length?[...side.trash].reverse().map(c=>`<div style="padding:4px 0;border-bottom:1px solid #2a2a3e;color:#ccc;font-size:13px"><b>${c.name}</b> <span style="opacity:.55">${c.type} · Cost ${c.cost}</span></div>`).join(''):'<div style="color:#555">Empty</div>')+
+    `<button style="margin-top:12px;padding:8px 20px;background:#333;color:#fff;border:none;border-radius:5px;cursor:pointer" onclick="this.closest('div').parentNode.remove()">Close</button>`;
+  modal.appendChild(box);
+  modal.addEventListener('click',e=>{ if(e.target===modal) modal.remove(); });
+  document.body.appendChild(modal);
+}
+
 // Interpret a Command card's effect into a simple engine action.
 function inferCommand(effect){
   const t = plain(effect).toLowerCase();
@@ -458,6 +563,30 @@ function parseTrigger(effect, kw){
   if ((d=t.match(/ap\s*\+\s*(\d+)/))) return { kind:'buff', amount:+d[1] };
   if (/recover|heal/.test(t)){ d=t.match(/(\d+)\s*hp/); return { kind:'heal', amount:d?+d[1]:99 }; }
   if (/deploy 1 rested \[|deploy 1 \[/.test(t)) return { kind:'token' };
+  // Mill: "place the top N cards of your deck into your trash"
+  if ((d=t.match(/place the top (\d+) cards? of your deck into your trash/i))){
+    const cond=t.match(/if you placed (?:a |an )?([\w\s\(\)\/]+?) card with this effect,?\s*(.+)/i);
+    if (cond){ const inner=parseTriggerInner(cond[2].trim()); if(inner) return { kind:'millCond', amount:+d[1], condTrait:cond[1].trim(), inner }; }
+    return { kind:'mill', amount:+d[1] };
+  }
+  if (/place the top card of your deck into your trash/.test(t)){
+    const cond=t.match(/if you placed (?:a |an )?([\w\s\(\)\/]+?) card with this effect,?\s*(.+)/i);
+    if (cond){ const inner=parseTriggerInner(cond[2].trim()); if(inner) return { kind:'millCond', amount:1, condTrait:cond[1].trim(), inner }; }
+    return { kind:'mill', amount:1 };
+  }
+  // Scry+mill: look at top N, keep 1, mill the rest
+  if (/look at the top 2 cards of your deck and return 1 to the top.*place the remaining card into your trash/.test(t))
+    return { kind:'scryMill', amount:2 };
+  if (/look at the top card of your deck.*(?:return it to|place it into)/.test(t))
+    return { kind:'scryKeep', amount:1 };
+  // Trash retrieval: "Choose 1 X card from your trash. Add it to your hand."
+  if (/from your trash\. add it to your hand/.test(t)){
+    const rm=t.match(/choose 1 ([^.]+?) card[^.]*? from your trash/i);
+    return { kind:'trashRetrieve', filter: rm?rm[1].trim():null };
+  }
+  // Trash-conditional gated effect: "if there are N+ X in trash, [effect]"
+  const gated = parseGatedEffect(t);
+  if (gated) return gated;
   return null;
 }
 // Resolve a triggered action for `side`, auto-targeting sensibly. `label` is 'Deploy' / 'Pair'.
@@ -470,21 +599,25 @@ function runTrigger(card, side, act, label){
     if (side.shields.length && side.hand.length<HAND_MAX){ side.hand.push(side.shields.pop()); log(`${label}: <b>${name}</b> adds a Shield to ${who(side)} hand.`, cls); }
     // Conditional scry: "if it is your turn, look at top N cards…" — auto-keep the best, trash the rest
     if (act.scryN>0 && side.deck.length>=act.scryN && side.who===G.turn){
-      // Sort top scryN cards: keep the highest-value one on top, remove the others (trash)
       const top = side.deck.splice(side.deck.length-act.scryN, act.scryN);
       top.sort((a,b)=>cardValue(b)-cardValue(a));
-      side.deck.push(top[0]);  // keep best on top
-      log(`${label}: <b>${name}</b> looks at top ${act.scryN} — keeps 1, ${act.scryN-1} sent to trash.`, cls);
+      side.deck.push(top[0]);
+      for (let k=1; k<top.length; k++) sendToTrash(top[k], side);
+      log(`${label}: <b>${name}</b> looks at top ${act.scryN} — keeps <b>${top[0].name}</b>, ${act.scryN-1} sent to trash.`, cls);
     }
   } else if (act.kind==='exResource'){
     side.ex+=act.amount; side.resAvail+=act.amount; log(`${label}: <b>${name}</b> places ${act.amount} EX Resource.`, cls);
   } else if (act.kind==='draw'){
     for (let i=0;i<act.amount;i++) draw(side); log(`${label}: <b>${name}</b> — draw ${act.amount}.`, cls);
+  } else if (act.kind==='drawDiscard'){
+    for(let i=0;i<act.draw;i++) draw(side);
+    log(`${label}: <b>${name}</b> — draw ${act.draw}, discard ${act.discard}.`, cls);
+    autoDiscard(side, act.discard, name);
   } else if (act.kind==='damage'){
     const t=[...foe.field].sort((a,b)=>b.ap-a.ap)[0];
     if (t){ log(`${label}: <b>${name}</b> deals ${act.amount} to <b>${t.name}</b>.`, cls); damage(t,act.amount,foe); }
   } else if (act.kind==='rest'){
-    const t=[...foe.field].filter(u=>u.hp<=act.hp && !u.rested).sort((a,b)=>b.ap-a.ap)[0];
+    const t=[...foe.field].filter(u=>u.hp<=act.hp && !u.rested && (act.maxLv==null||u.lv<=act.maxLv)).sort((a,b)=>b.ap-a.ap)[0];
     if (t){ t.rested=true; log(`${label}: <b>${name}</b> rests <b>${t.name}</b>.`, cls); }
   } else if (act.kind==='bounce'){
     const t=[...foe.field].filter(u=>u.hp<=act.hp && !u.token).sort((a,b)=>b.ap-a.ap)[0];
@@ -504,18 +637,63 @@ function runTrigger(card, side, act, label){
     card.tempAp=(card.tempAp||0)+act.amount; card.ap=effAp(card);
     if (act.hman) card.highManeuver=true;
     log(`${label}: <b>${name}</b> gets AP+${act.amount} this turn${act.hman?' and &lt;High-Maneuver&gt;':''}.`, cls);
+  } else if (act.kind==='mill'){
+    const milled=[]; for(let i=0;i<act.amount&&side.deck.length;i++){ const c=side.deck.pop(); sendToTrash(c,side); milled.push(c.name); }
+    if(milled.length) log(`${label}: <b>${name}</b> mills ${milled.length} — ${milled.join(', ')}.`, cls);
+  } else if (act.kind==='millCond'){
+    const milled=[]; const cards=[];
+    for(let i=0;i<act.amount&&side.deck.length;i++){ const c=side.deck.pop(); sendToTrash(c,side); milled.push(c.name); cards.push(c); }
+    if(milled.length) log(`${label}: <b>${name}</b> mills ${milled.length} — ${milled.join(', ')}.`, cls);
+    if(cards.some(c=>matchTrashTrait(c,act.condTrait))&&act.inner) runTrigger(card,side,act.inner,label);
+  } else if (act.kind==='scryMill'){
+    if(side.deck.length>=2){
+      const top=side.deck.splice(side.deck.length-2,2);
+      top.sort((a,b)=>cardValue(b)-cardValue(a));
+      side.deck.push(top[0]); sendToTrash(top[1],side);
+      log(`${label}: <b>${name}</b> looks at top 2 — keeps <b>${top[0].name}</b>, mills <b>${top[1].name}</b>.`, cls);
+    } else if(side.deck.length===1){
+      log(`${label}: <b>${name}</b> looks at top — keeps it (only 1 card).`, cls);
+    }
+  } else if (act.kind==='scryKeep'){
+    if(side.deck.length) log(`${label}: <b>${name}</b> looks at top card — keeps it.`, cls);
+  } else if (act.kind==='trashRetrieve'){
+    const cands=side.trash.filter(c=>matchFilter(c,act.filter)&&!c.token);
+    if(cands.length&&side.hand.length<HAND_MAX){
+      cands.sort((a,b)=>cardValue(b)-cardValue(a));
+      const best=cands[0]; side.trash.splice(side.trash.indexOf(best),1);
+      if(best.type==='unit'||best.type==='base') resetUnit(best);
+      side.hand.push(best);
+      log(`${label}: <b>${name}</b> retrieves <b>${best.name}</b> from trash → hand.`, cls);
+    }
+  } else if (act.kind==='trashGate'){
+    const count=trashCount(side,act.trait);
+    if(count>=act.minCount) runTrigger(card,side,act.inner,label);
   }
+}
+// Strip a unit back to its printed state (used by both returnToHand and trash retrieval).
+function resetUnit(u){
+  if (u.token) return;
+  u.pilot=null; u.pilotCard=null; u.linked=false; u.tempAp=0; u.rested=false; u.sick=true; u.activatedThisTurn=false;
+  u.ap=u.baseAp; u.hp=u.baseHp; u.maxHp=u.baseHp;
+  u.blocker=innateKeyword(u.effect,'blocker'); u.firstStrike=innateKeyword(u.effect,'first'); u.highManeuver=innateKeyword(u.effect,'high');
+  u.breach=breachAmount(u.effect); u.suppression=innateKeyword(u.effect,'suppression'); u.support=supportAmount(u.effect);
 }
 // Return a deployed unit to its owner's hand, stripped back to a fresh card.
 function returnToHand(u, owner){
   if (u.token) return;                       // tokens vanish instead
-  u.pilot=null; u.linked=false; u.tempAp=0; u.rested=false; u.sick=true; u.activatedThisTurn=false;
-  u.ap=u.baseAp; u.hp=u.baseHp; u.maxHp=u.baseHp;
-  // drop any pair-granted keywords back to the printed (innate) state
-  u.blocker=innateKeyword(u.effect,'blocker'); u.firstStrike=innateKeyword(u.effect,'first'); u.highManeuver=innateKeyword(u.effect,'high');
-  u.breach=breachAmount(u.effect); u.suppression=innateKeyword(u.effect,'suppression'); u.support=supportAmount(u.effect);
+  resetUnit(u);
   const hand = owner.hand;
   if (hand.length<HAND_MAX) hand.push(u);
+}
+// Send a card to the trash zone (tokens are simply removed with no trash entry).
+function sendToTrash(card, side){
+  if (!card || card.token) return;
+  side.trash.push(card);
+  // A destroyed unit carries its pilot to trash as well.
+  if (card.pilotCard) side.trash.push(card.pilotCard);
+  // Refresh any trash-conditional unit stats for this side.
+  for (const u of side.field){ if (u.trashBuff || u.trashKeyword) u.ap = effAp(u); }
+  if (side.base && (side.base.trashBuff || side.base.trashKeyword)) side.base.ap = effAp(side.base);
 }
 
 // ---- deck building from the real pool ----
@@ -541,10 +719,17 @@ function makeCard(def, owner){
     const lb = staticSelfBuff(def.effect, 'During Link'); c.linkAp = lb.ap; c.linkHp = lb.hp;
     // player-activated ability (cost：effect); used at most once per turn
     c.activate = parseActivate(def.effect); c.activatedThisTurn = false;
+    // trash-conditional effects
+    c.trashBuff = parseTrashBuff(def.effect);
+    c.trashKeyword = parseTrashKeyword(def.effect);
+    c.trashCantAttack = parseTrashCantAttack(def.effect);
+    c.pilotCard = null; // set when a pilot is attached; cleared on reset
   } else if (def.type === 'pilot'){
     c.pAp = def.ap; c.pHp = def.hp;
+    c.trashCostReduce = parseTrashCostReduce(def.effect);
   } else { // command
     c.action = inferCommand(def.effect);
+    c.trashCostReduce = parseTrashCostReduce(def.effect);
   }
   return c;
 }
@@ -674,7 +859,7 @@ const G = {
   turn:'player', turnNumber:1, selected:null, mode:'idle', pending:null, pendingHandIdx:-1, over:false,
   player:null, enemy:null,
 };
-function makeSide(who){ return { who, deck:[], hand:[], field:[], shields:[], base:null, resourceDeck:RES_MAX, resMax:0, resAvail:0, ex:0 }; }
+function makeSide(who){ return { who, deck:[], hand:[], field:[], shields:[], trash:[], base:null, resourceDeck:RES_MAX, resMax:0, resAvail:0, ex:0 }; }
 function me(){ return G.turn==='player' ? G.player : G.enemy; }
 function who(side){ return side===G.player ? 'You' : (G.enemyDeckName || 'The AI'); }
 
@@ -690,8 +875,22 @@ function flashPrompt(t){ setPrompt(t); clearTimeout(promptTimer); promptTimer=se
 function defaultPrompt(){ setPrompt(G.turn==='player' ? 'Your turn — deploy, attack, then End Turn.' : ''); }
 
 // ---- effective stats ----
-function effAp(u){ return Math.max(0, u.baseAp + (u.pilot?u.pilot.pAp:0) + (u.tempAp||0) + (u.pilot?(u.pairAp||0):0) + (u.linked?(u.linkAp||0):0)); }
-function effMaxHp(u){ return u.baseHp + (u.pilot?u.pilot.pHp:0) + (u.pilot?(u.pairHp||0):0) + (u.linked?(u.linkHp||0):0); }
+function effAp(u){
+  let ap = u.baseAp + (u.pilot?u.pilot.pAp:0) + (u.tempAp||0) + (u.pilot?(u.pairAp||0):0) + (u.linked?(u.linkAp||0):0);
+  if (u.trashBuff && u.trashBuff.apBonus > 0 && G.player){
+    const side = u.owner==='player' ? G.player : G.enemy;
+    if (trashCount(side, u.trashBuff.trait) >= u.trashBuff.minCount) ap += u.trashBuff.apBonus;
+  }
+  return Math.max(0, ap);
+}
+function effMaxHp(u){
+  let hp = u.baseHp + (u.pilot?u.pilot.pHp:0) + (u.pilot?(u.pairHp||0):0) + (u.linked?(u.linkHp||0):0);
+  if (u.trashBuff && u.trashBuff.hpBonus > 0 && G.player){
+    const side = u.owner==='player' ? G.player : G.enemy;
+    if (trashCount(side, u.trashBuff.trait) >= u.trashBuff.minCount) hp += u.trashBuff.hpBonus;
+  }
+  return hp;
+}
 
 // ---- setup / turns ----
 function startGame(){
@@ -763,12 +962,13 @@ function endTurn(){
 // and (2) enough active (unrested) resources to pay its Cost.
 function totalRes(side){ return side.resMax + side.ex; }                 // resources in the area
 function levelOk(side,c){ return totalRes(side) >= (c.lv||0); }          // Lv requirement gate
-function costOk(side,c){ return side.resAvail >= c.cost; }               // payable right now
+function costOk(side,c){ return side.resAvail >= effectiveCost(side,c); } // payable right now
 function canAfford(side,c){ return levelOk(side,c) && costOk(side,c); }
 // Human-readable reason a card can't be played yet (or null if it can).
 function affordIssue(side,c){
   if (!levelOk(side,c)) return `Needs Lv ${c.lv} — you have ${totalRes(side)} resource${totalRes(side)===1?'':'s'}`;
-  if (!costOk(side,c))  return `Needs ${c.cost} active resource${c.cost===1?'':'s'} to pay its cost`;
+  const ec = effectiveCost(side,c);
+  if (side.resAvail < ec) return `Needs ${ec} active resource${ec===1?'':'s'} to pay its cost`;
   return null;
 }
 
@@ -780,7 +980,7 @@ function playFromHand(uidv){
   if (issue){ flashPrompt(`${card.name}: ${issue}.`); return; }
 
   if (card.type==='base'){
-    s.hand.splice(idx,1); s.resAvail-=card.cost;
+    s.hand.splice(idx,1); s.resAvail-=effectiveCost(s,card);
     s.base = card; card.rested=false; card.sick=false;
     sound('deploy');
     log(`You deploy base <b>${card.name}</b> (HP ${card.hp}) — it now guards your shields.`, 'me');
@@ -788,7 +988,7 @@ function playFromHand(uidv){
     closeInspect(); clearSel(); render(); checkEnd();
   } else if (card.type==='unit'){
     if (s.field.length>=FIELD_MAX){ flashPrompt('Battle area full (max '+FIELD_MAX+').'); return; }
-    s.hand.splice(idx,1); s.resAvail-=card.cost;
+    s.hand.splice(idx,1); s.resAvail-=effectiveCost(s,card);
     card.rested=false; card.sick = !card.blitz;
     s.field.push(card);
     sound('deploy');
@@ -799,7 +999,7 @@ function playFromHand(uidv){
     const myUnits = s.field.filter(u=>u.type==='unit');
     if (myUnits.length===0){ flashPrompt(`Deploy a Unit first — pilot ${card.name} must be paired with one.`); return; }
     if (myUnits.length===1){ // only one possible target: pair it straight away
-      s.hand.splice(idx,1); s.resAvail-=card.cost; attachPilot(myUnits[0],card);
+      s.hand.splice(idx,1); s.resAvail-=effectiveCost(s,card); attachPilot(myUnits[0],card);
       log(`<b>${card.name}</b> pilots <b>${myUnits[0].name}</b>.`, 'me');
       closeInspect(); clearSel(); render(); return;
     }
@@ -840,7 +1040,7 @@ function startCommand(card, handIdx){
   commit(card,handIdx); applyCommand(card, G.player, null); closeInspect(); clearSel(); render(); checkEnd();
 }
 
-function commit(card, handIdx){ G.player.hand.splice(handIdx,1); G.player.resAvail-=card.cost; }
+function commit(card, handIdx){ G.player.hand.splice(handIdx,1); G.player.resAvail-=effectiveCost(G.player,card); sendToTrash(card, G.player); }
 
 // Auto-discard the lowest-value card from side's hand (used by AI / no-choice cases).
 function cardValue(c){ if(c.type==='unit') return c.baseAp+c.baseHp; if(c.type==='pilot') return c.pAp+c.pHp; if(c.type==='command'&&c.action) return c.action.kind==='damage'?4:c.action.kind==='draw'?3:1; return 1; }
@@ -849,6 +1049,7 @@ function autoDiscard(side, n, label){
     if(!side.hand.length) break;
     const worst=[...side.hand].sort((a,b)=>cardValue(a)-cardValue(b))[0];
     side.hand.splice(side.hand.indexOf(worst),1);
+    sendToTrash(worst, side);
     log(`${label}: discards <b>${worst.name}</b>.`, side===G.player?'me':'ai');
   }
 }
@@ -929,7 +1130,7 @@ function fieldClick(uidv){
   if (G.mode==='pilot-target'){
     const u=G.player.field.find(c=>c.uid===uidv && c.type==='unit'); if(!u){ flashPrompt('Pick one of your units.'); return; }
     const card=G.pending, h=G.player.hand.findIndex(c=>c.uid===card.uid); if(h<0) return;
-    G.player.hand.splice(h,1); G.player.resAvail-=card.cost; attachPilot(u,card);
+    G.player.hand.splice(h,1); G.player.resAvail-=effectiveCost(G.player,card); attachPilot(u,card);
     log(`<b>${card.name}</b> pilots <b>${u.name}</b>.`, 'me'); clearSel(); render(); return;
   }
 
@@ -957,6 +1158,7 @@ function fieldClick(uidv){
       if (u.rested){ inspect(u); return; }
       if (u.ap<=0){ flashPrompt(`${u.name} can't attack (no AP).`); inspect(u); return; }
       if (u.sick){ flashPrompt(`${u.name} has summoning sickness this turn.`); return; }
+      if (trashBlocksAttack(u, G.player)){ flashPrompt(`${u.name} can't attack until ${u.trashCantAttack.maxCount+1}+ cards are in your trash.`); return; }
       G.selected=uidv; G.mode='attack-target';
       setPrompt(`${u.name} attacking — tap a RESTED enemy unit, or the enemy shields to strike directly.`); render(); return;
     }
@@ -1001,7 +1203,7 @@ function strikePlayer(atk, defSide){
   if (defSide.base){
     const b=defSide.base; b.hp-=atk.ap;
     log(`<b>${atk.name}</b> hits ${who(defSide)}'s <b>${b.name}</b> base for ${atk.ap}.`, side);
-    if (b.hp<=0){ defSide.base=null; fx('die', b.uid); log(`${who(defSide)}'s ${b.name} base is destroyed.`, side); }
+    if (b.hp<=0){ defSide.base=null; fx('die', b.uid); log(`${who(defSide)}'s ${b.name} base is destroyed.`, side); sendToTrash(b, defSide); }
     else fx('hit', b.uid);
     return;
   }
@@ -1112,6 +1314,7 @@ function damage(u, dmg, side){
   if (u.hp<=0){
     const i=side.field.indexOf(u); if(i>=0) side.field.splice(i,1);
     fx('die', u.uid); log(`<b>${u.name}</b> is destroyed.`, side===G.player?'me':'ai');
+    sendToTrash(u, side);
     // 【Destroyed】: fires as the Unit leaves play (its controller resolves it).
     runTrigger(u, side, parseTrigger(u.effect,'Destroyed'), 'Destroyed');
   }
@@ -1120,6 +1323,7 @@ function damage(u, dmg, side){
 
 function attachPilot(u, p){
   u.pilot={ name:p.name, pAp:p.pAp, pHp:p.pHp };
+  u.pilotCard = p;   // saved so both go to trash together when the unit is destroyed
   u.lv=Math.max(u.lv, p.lv);
   const side = u.owner==='player'?G.player:G.enemy;
   // Pilot HP plus any 【During Pair】 "this Unit gets HP+N" both raise current HP now.
@@ -1171,28 +1375,28 @@ function aiTurn(){
     // removal on biggest threat
     const dmg = ai.hand.find(c=>c.type==='command' && c.action.kind==='damage' && canAfford(ai,c));
     if (dmg && pl.field.length){
-      const i=ai.hand.indexOf(dmg); ai.hand.splice(i,1); ai.resAvail-=dmg.cost;
+      const i=ai.hand.indexOf(dmg); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,dmg); sendToTrash(dmg,ai);
       if (dmg.action.scope==='all-enemy'){ log(`${who(G.enemy)} plays <b>${dmg.name}</b> (all units).`, 'ai'); for(const u of [...pl.field]) damage(u,dmg.action.amount,pl); }
       else { const t=[...pl.field].sort((a,b)=>b.ap-a.ap)[0]; log(`${who(G.enemy)} plays <b>${dmg.name}</b> on <b>${t.name}</b>.`, 'ai'); damage(t,dmg.action.amount,pl); }
       acted=true; continue;
     }
     // draw if low
     const drawC = ai.hand.find(c=>c.type==='command' && c.action.kind==='draw' && c.action.amount>=2 && canAfford(ai,c));
-    if (drawC && ai.hand.length<=4){ const i=ai.hand.indexOf(drawC); ai.hand.splice(i,1); ai.resAvail-=drawC.cost; for(let k=0;k<drawC.action.amount;k++) draw(ai); log(`${who(G.enemy)} plays <b>${drawC.name}</b>.`, 'ai'); acted=true; continue; }
+    if (drawC && ai.hand.length<=4){ const i=ai.hand.indexOf(drawC); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,drawC); sendToTrash(drawC,ai); for(let k=0;k<drawC.action.amount;k++) draw(ai); log(`${who(G.enemy)} plays <b>${drawC.name}</b>.`, 'ai'); acted=true; continue; }
     // deploy a base if it improves the guard
     const baseC = ai.hand.find(c=>c.type==='base' && canAfford(ai,c) && (!ai.base || c.hp>ai.base.hp));
-    if (baseC){ const i=ai.hand.indexOf(baseC); ai.hand.splice(i,1); ai.resAvail-=baseC.cost; baseC.rested=false; baseC.sick=false; ai.base=baseC; log(`${who(G.enemy)} deploys base <b>${baseC.name}</b>.`, 'ai'); runTrigger(baseC, ai, parseTrigger(baseC.effect,'Deploy'), 'Deploy'); acted=true; continue; }
+    if (baseC){ const i=ai.hand.indexOf(baseC); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,baseC); baseC.rested=false; baseC.sick=false; ai.base=baseC; log(`${who(G.enemy)} deploys base <b>${baseC.name}</b>.`, 'ai'); runTrigger(baseC, ai, parseTrigger(baseC.effect,'Deploy'), 'Deploy'); acted=true; continue; }
     // deploy best affordable unit
     if (ai.field.length<FIELD_MAX){
       const dep = ai.hand.filter(c=>c.type==='unit' && canAfford(ai,c)).sort((a,b)=>(b.baseAp+b.baseHp)-(a.baseAp+a.baseHp))[0];
-      if (dep){ const i=ai.hand.indexOf(dep); ai.hand.splice(i,1); ai.resAvail-=dep.cost; dep.rested=false; dep.sick=!dep.blitz; ai.field.push(dep); log(`${who(G.enemy)} deploys <b>${dep.name}</b>.`, 'ai'); runTrigger(dep, ai, parseTrigger(dep.effect,'Deploy'), 'Deploy'); acted=true; continue; }
+      if (dep){ const i=ai.hand.indexOf(dep); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,dep); dep.rested=false; dep.sick=!dep.blitz; ai.field.push(dep); log(`${who(G.enemy)} deploys <b>${dep.name}</b>.`, 'ai'); runTrigger(dep, ai, parseTrigger(dep.effect,'Deploy'), 'Deploy'); acted=true; continue; }
     }
     // pair a pilot
     const pilot = ai.hand.find(c=>c.type==='pilot' && canAfford(ai,c));
-    if (pilot && ai.field.some(u=>u.type==='unit')){ const best=ai.field.filter(u=>u.type==='unit').sort((a,b)=>b.baseAp-a.baseAp)[0]; const i=ai.hand.indexOf(pilot); ai.hand.splice(i,1); ai.resAvail-=pilot.cost; attachPilot(best,pilot); log(`${who(G.enemy)} pairs <b>${pilot.name}</b> with <b>${best.name}</b>.`, 'ai'); acted=true; continue; }
+    if (pilot && ai.field.some(u=>u.type==='unit')){ const best=ai.field.filter(u=>u.type==='unit').sort((a,b)=>b.baseAp-a.baseAp)[0]; const i=ai.hand.indexOf(pilot); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,pilot); attachPilot(best,pilot); log(`${who(G.enemy)} pairs <b>${pilot.name}</b> with <b>${best.name}</b>.`, 'ai'); acted=true; continue; }
     // buff before attacks
     const buff = ai.hand.find(c=>c.type==='command' && c.action.kind==='buff' && canAfford(ai,c));
-    if (buff && ai.field.some(u=>!u.sick&&!u.rested&&u.ap>0)){ const t=ai.field.filter(u=>!u.sick&&!u.rested&&u.ap>0).sort((a,b)=>b.ap-a.ap)[0]; const i=ai.hand.indexOf(buff); ai.hand.splice(i,1); ai.resAvail-=buff.cost; t.tempAp=(t.tempAp||0)+buff.action.amount; t.ap=effAp(t); log(`${who(G.enemy)} empowers <b>${t.name}</b>.`, 'ai'); acted=true; continue; }
+    if (buff && ai.field.some(u=>!u.sick&&!u.rested&&u.ap>0)){ const t=ai.field.filter(u=>!u.sick&&!u.rested&&u.ap>0).sort((a,b)=>b.ap-a.ap)[0]; const i=ai.hand.indexOf(buff); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,buff); sendToTrash(buff,ai); t.tempAp=(t.tempAp||0)+buff.action.amount; t.ap=effAp(t); log(`${who(G.enemy)} empowers <b>${t.name}</b>.`, 'ai'); acted=true; continue; }
   }
 
   // Use ready activated abilities before attacks: the base's freely (it can't attack anyway),
@@ -1202,7 +1406,7 @@ function aiTurn(){
   for (const c of [...baseAct, ...unitAct]){ if (activateReady(c)) aiActivate(c); }
   render();
 
-  const attackers = ai.field.filter(u=>!u.sick && !u.rested && u.ap>0);
+  const attackers = ai.field.filter(u=>!u.sick && !u.rested && u.ap>0 && !trashBlocksAttack(u,ai));
   let i=0;
   (function next(){
     if (G.over) return;
@@ -1330,6 +1534,8 @@ function render(){
   el('playerResText').textContent = `${G.player.resAvail}/${G.player.resMax}${G.player.ex?'+EX':''}`;
   el('enemyHandCount').textContent=G.enemy.hand.length; el('enemyDeckCount').textContent=G.enemy.deck.length;
   el('playerDeckCount').textContent=G.player.deck.length;
+  el('enemyTrashCount').textContent=G.enemy.trash.length;
+  el('playerTrashCount').textContent=G.player.trash.length;
 
   el('enemyField').innerHTML = fieldHTML(G.enemy,'field-enemy','No enemy units');
   el('playerField').innerHTML = fieldHTML(G.player,'field-player','Play a card from your hand');
@@ -1368,6 +1574,7 @@ function bind(){
     if(G.mode==='discard'){
       if(!c) return;
       G.player.hand.splice(G.player.hand.indexOf(c),1);
+      sendToTrash(c, G.player);
       log(`You discard <b>${c.name}</b>.`, 'me');
       G.pending.discardLeft--;
       if(G.pending.discardLeft<=0){ clearSel(); render(); checkEnd(); }
@@ -1429,6 +1636,7 @@ el('rulesBtn').addEventListener('click', ()=>{ if(!G.over) location.reload(); })
 el('soundBtn').addEventListener('click', ()=>{ SOUND.on=!SOUND.on; el('soundBtn').textContent=SOUND.on?'🔊':'🔇'; if(SOUND.on){ audioCtx()?.resume?.(); sound('deploy'); } });
 el('startBtn').addEventListener('click', ()=>{ audioCtx()?.resume?.(); startGame(); });
 el('inspect').addEventListener('click', e=>{ if(e.target.id==='inspect') closeInspect(); });
+el('playerTrashCount').addEventListener('click', ()=>{ if(G.player&&G.player.trash.length) showTrashViewer(G.player); });
 el('enemyShields').addEventListener('click', attackDirect);
 el('enemyShieldCount').addEventListener('click', attackDirect);
 el('enemyField').addEventListener('click', e=>{ if(G.mode==='attack-target' && e.target.classList.contains('battlefield')) attackDirect(); });
