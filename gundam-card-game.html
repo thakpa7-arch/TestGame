@@ -331,6 +331,18 @@ function plain(effect){
     .replace(/\s+/g,' ').trim();
 }
 function hasKeyword(effect, kw){ return new RegExp('<\\s*'+kw, 'i').test(plain(effect)); }
+// A keyword is INNATE only when it's printed bare (not "gains <kw>"), so units that
+// merely gain a keyword conditionally aren't treated as having it permanently.
+function innateKeyword(effect, kw){
+  const p = plain(effect); const re = new RegExp('(gains?\\s+)?<\\s*'+kw, 'ig'); let m, innate=false;
+  while ((m=re.exec(p))){ if (!m[1]) innate=true; }
+  return innate;
+}
+// A keyword the Unit gains specifically while a Pilot is paired (the case we can model).
+function pairGrantsKeyword(effect, kw){
+  const p = plain(effect);
+  return /pair/i.test(p) && new RegExp('gains?\\s+<\\s*'+kw, 'i').test(p);
+}
 function repairAmount(effect){ const m = plain(effect).match(/<\s*repair\s*(\d+)/i); return m?+m[1]:0; }
 
 // Interpret a Command card's effect into a simple engine action.
@@ -427,6 +439,8 @@ function returnToHand(u, owner){
   if (u.token) return;                       // tokens vanish instead
   u.pilot=null; u.linked=false; u.tempAp=0; u.rested=false; u.sick=true;
   u.ap=u.baseAp; u.hp=u.baseHp; u.maxHp=u.baseHp;
+  // drop any pair-granted keywords back to the printed (innate) state
+  u.blocker=innateKeyword(u.effect,'blocker'); u.firstStrike=innateKeyword(u.effect,'first'); u.highManeuver=innateKeyword(u.effect,'high');
   const hand = owner.hand;
   if (hand.length<HAND_MAX) hand.push(u);
 }
@@ -443,9 +457,9 @@ function makeCard(def, owner){
     c.link = parseLink(def.link);
     c.blitz = hasKeyword(def.effect, 'blitz');
     c.repair = repairAmount(def.effect);
-    c.blocker = hasKeyword(def.effect, 'blocker');
-    c.firstStrike = hasKeyword(def.effect, 'first');
-    c.highManeuver = hasKeyword(def.effect, 'high');
+    c.blocker = innateKeyword(def.effect, 'blocker');
+    c.firstStrike = innateKeyword(def.effect, 'first');
+    c.highManeuver = innateKeyword(def.effect, 'high');
   } else if (def.type === 'pilot'){
     c.pAp = def.ap; c.pHp = def.hp;
   } else { // command
@@ -802,7 +816,8 @@ function autoTarget(action, side){
 // Simultaneous battle, modified by First Strike (striker hits first; if foe dies, no return).
 function battle(atk, def, atkSide, defSide){
   atk.rested=true;
-  const fs = atk.firstStrike ? 'me' : (def.firstStrike ? 'def' : 'both');
+  // First Strike lets one side hit first; if both have it, the strikes are simultaneous.
+  const fs = (atk.firstStrike && !def.firstStrike) ? 'me' : (def.firstStrike && !atk.firstStrike) ? 'def' : 'both';
   log(`<b>${atk.name}</b> (${atk.ap}/${atk.hp}) vs <b>${def.name}</b> (${def.ap}/${def.hp})${fs!=='both'?' — &lt;First Strike&gt;':''}.`, atkSide===G.player?'me':'ai');
   const a=atk.ap, d=def.ap;
   if (fs==='me'){ damage(def,a,defSide); if (def.hp>0) damage(atk,d,atkSide); }
@@ -817,8 +832,8 @@ function aiWantsBlock(atk){
   const blockers = G.enemy.field.filter(b=>b.blocker && !b.rested && b.hp>0);
   if (!blockers.length) return false;
   const best = pickAiBlocker(atk, blockers);
-  const kills = best.ap >= atk.hp;          // blocker kills attacker
-  if (G.enemy.shields<=2) return true;      // protect dwindling shields
+  const kills = best.ap >= atk.hp;              // blocker kills attacker
+  if (G.enemy.shields.length<=2) return true;   // protect dwindling shields
   if (kills) return true;                   // good trade
   if (best.hp > atk.ap && best.ap > 0) return true; // survives and bites back
   return false;
@@ -845,6 +860,10 @@ function attachPilot(u, p){
   u.lv=Math.max(u.lv, p.lv);
   u.maxHp=effMaxHp(u); u.hp+=p.pHp; u.ap=effAp(u);
   const side = u.owner==='player'?G.player:G.enemy;
+  // Keywords the Unit only gains while paired now switch on.
+  if (pairGrantsKeyword(u.effect,'blocker')) u.blocker=true;
+  if (pairGrantsKeyword(u.effect,'first'))   u.firstStrike=true;
+  if (pairGrantsKeyword(u.effect,'high'))    u.highManeuver=true;
   // Link Unit: if this pilot matches the unit's link requirement, it can attack immediately.
   if (u.link && u.link.includes(p.name)){
     u.linked=true; u.sick=false;
