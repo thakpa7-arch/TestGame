@@ -411,15 +411,19 @@ function clauseGrantsKeyword(effect, kw, clauseKw){
 }
 // Parse the effect half of an activated ability into an engine action.
 function parseActivateEffect(t){
-  t = t.toLowerCase(); let d;
+  const raw = t; t = t.toLowerCase(); let d;
   // Self-targeting ("ping self") activated abilities take priority over enemy-damage rules.
   const ping = parseSelfPing(t);
   if (ping) return Object.assign(ping, { scope: ping.kind==='selfPingBuff' ? 'friendly' : 'self' });
   if (/set this unit as active/.test(t))                    return { kind:'setActive', scope:'self' };
   // "Choose 1 friendly Unit… Set it as active." — re-ready one of your Units (often a Blocker).
   if (/set it as active/.test(t) && /(friendly|of your)[^.]*unit/.test(t)) return { kind:'setActive', scope:'friendly' };
-  // "Deploy 1 […] Unit token…" — put a token onto your field.
-  if (/deploy 1 .*unit token|deploy 1 rested .*token|deploy 1 \[/.test(t)) return { kind:'token', scope:'self' };
+  // "Deploy N […] Unit token(s)" — put parsed token(s) onto your field.
+  if (/deploy \d+ (?:rested )?\[/i.test(t)){
+    const specs=parseTokenSpecs(raw);
+    const cond = /if you have no unit/i.test(raw) && specs.length>=2 ? 'board' : null;
+    return specs.length ? { kind:'token', scope:'self', specs, cond } : { kind:'token', scope:'self' };
+  }
   if ((d=t.match(/gains?\s+<\s*breach\s*(\d+)/)))            return { kind:'grantBreach', amount:+d[1], scope:/this unit/.test(t)?'self':'friendly' };
   if (/gains?\s+<\s*high-?maneuver/.test(t))                 return { kind:'grantHigh', scope:/this unit/.test(t)?'self':'friendly' };
   if (/recover|heal/.test(t)){ d=t.match(/(\d+)\s*hp/);      return { kind:'heal', amount:d?+d[1]:1, scope:'friendly' }; }
@@ -628,8 +632,15 @@ function showTrashViewer(side){ showPileViewer(side.trash, 'Trash'); }
 
 // Interpret a Command card's effect into a simple engine action.
 function inferCommand(effect){
-  const t = plain(effect).toLowerCase();
+  const raw = plain(effect);
+  const t = raw.toLowerCase();
   let m;
+  // Token-creating commands ("Deploy N [Name](…) Unit token(s)").
+  if (/deploy \d+ (?:rested )?\[/i.test(t)){
+    const specs=parseTokenSpecs(raw);
+    const cond = /if you have no unit/i.test(raw) && specs.length>=2 ? 'board' : null;
+    return specs.length ? { kind:'token', specs, cond } : { kind:'token', count:+((t.match(/deploy (\d+)/)||[])[1]||1) };
+  }
   // Self-targeting ("ping self") commands take priority over the generic enemy-damage rule.
   const ping = parseSelfPing(t);
   if (ping) return ping;
@@ -705,7 +716,11 @@ function parseTrigger(effect, kw){
   if (/\bdraw\b/.test(t)) return { kind:'draw', amount:1 };
   if ((d=t.match(/ap\s*\+\s*(\d+)/))) return { kind:'buff', amount:+d[1] };
   if (/recover|heal/.test(t)){ d=t.match(/(\d+)\s*hp/); return { kind:'heal', amount:d?+d[1]:99 }; }
-  if ((d=t.match(/deploy (\d+) (?:rested )?\[/))) return { kind:'token', count:+d[1] };
+  if (/deploy \d+ (?:rested )?\[/i.test(t)){
+    const specs=parseTokenSpecs(m[1]);
+    const cond = /if you have no unit/i.test(m[1]) && specs.length>=2 ? 'board' : null;
+    return specs.length ? { kind:'token', specs, cond } : { kind:'token', count:+((t.match(/deploy (\d+)/)||[])[1]||1) };
+  }
   // Mill: "place the top N cards of your deck into your trash"
   if ((d=t.match(/place the top (\d+) cards? of your deck into your trash/i))){
     const cond=t.match(/if you placed (?:a |an )?([\w\s\(\)\/]+?) card with this effect,?\s*(.+)/i);
@@ -808,8 +823,7 @@ function runTrigger(card, side, act, label){
     const t=[...side.field].sort((a,b)=>(effMaxHp(b)-b.hp)-(effMaxHp(a)-a.hp))[0];
     if (t && t.hp<effMaxHp(t)){ t.hp=Math.min(effMaxHp(t), t.hp+(act.amount>=99?effMaxHp(t):act.amount)); log(`${label}: <b>${name}</b> repairs <b>${t.name}</b>.`, cls); }
   } else if (act.kind==='token'){
-    let made=0; for (let i=0;i<(act.count||1);i++){ if(side.field.length>=FIELD_MAX) break; side.field.push(genericToken(side.who)); made++; }
-    if (made) log(`${label}: <b>${name}</b> deploys ${made} Mobile Suit token${made===1?'':'s'}.`, cls);
+    deployTokens(act, side, name, label, cls);
   } else if (act.kind==='setActiveFriendly'){
     // Re-ready one of your other rested Units (most useful for re-attacking/blocking).
     const t=side.field.filter(u=>u!==card && u.rested && !u.token).sort((a,b)=>b.ap-a.ap)[0];
@@ -956,12 +970,60 @@ function exBaseToken(owner){
            tempAp:0, pilot:null, link:[], linked:false, blitz:false, repair:0, blocker:false, firstStrike:false, highManeuver:false, breach:0, suppression:false, support:0 };
 }
 
-// Generic 1/1 Mobile Suit token (from 【Deploy】 "deploy 1 rested […] token" effects).
+// Generic 1/1 Mobile Suit token (fallback when a token's stats can't be parsed).
 function genericToken(owner){
   return { uid: uid++, owner, name:'Mobile Suit Token', type:'unit', token:true,
            color:'-', cost:0, lv:0, trait:'', effect:'(1 AP / 1 HP token.)', img:'',
            baseAp:1, baseHp:1, ap:1, hp:1, maxHp:1, rested:true, sick:true, tempAp:0,
            pilot:null, link:[], linked:false, blitz:false, repair:0, blocker:false, firstStrike:false, highManeuver:false, breach:0, suppression:false, support:0 };
+}
+// Parse the token descriptors in a clause: "Deploy N [rested] [Name]((Trait)･APx･HPy･<Kw>･restriction) Unit token(s)".
+// Returns one spec per [Name](...) block found (so "deploy 1 [A] and 1 [B]" yields two). Case is preserved.
+function parseTokenSpecs(text){
+  const specs=[];
+  const re=/(\d+)\s+(rested\s+)?\[([^\]]+)\]\s*\(\(([^)]+)\)([^)]*)\)/gi;
+  let m;
+  while ((m=re.exec(text))){
+    const stats=m[5]||'';
+    const ap=(stats.match(/AP\s*(\d+)/i)||[])[1];
+    const hp=(stats.match(/HP\s*(\d+)/i)||[])[1];
+    specs.push({ count:+m[1], rested:!!m[2], name:m[3].trim(), trait:m[4].trim(),
+      ap: ap!=null?+ap:1, hp: hp!=null?+hp:1,
+      blocker:/<\s*blocker/i.test(stats), first:/<\s*first[-\s]?strike/i.test(stats), high:/<\s*high[-\s]?maneuver/i.test(stats),
+      restrict: stats });
+  }
+  return specs;
+}
+// Build a Unit token from a parsed spec (proper name, trait, AP/HP, keywords and restrictions).
+function makeToken(spec, owner){
+  const r=(spec.restrict||'').toLowerCase();
+  const kw=[]; if(spec.blocker)kw.push('<Blocker>'); if(spec.first)kw.push('<First Strike>'); if(spec.high)kw.push('<High-Maneuver>');
+  return { uid:uid++, owner, name:spec.name||'Mobile Suit Token', type:'unit', token:true,
+    color:'-', cost:0, lv:0, trait:spec.trait||'', img:'',
+    effect:`(Token — ${spec.trait?spec.trait+' · ':''}${spec.ap} AP / ${spec.hp} HP${kw.length?' · '+kw.join(' '):''}.)`,
+    baseAp:spec.ap, baseHp:spec.hp, ap:spec.ap, hp:spec.hp, maxHp:spec.hp,
+    rested:!!spec.rested, sick:true, tempAp:0, pilot:null, link:[], linked:false,
+    blitz:false, repair:0, blocker:!!spec.blocker, firstStrike:!!spec.first, highManeuver:!!spec.high,
+    breach:0, suppression:false, support:0,
+    noDirectAttack:/can't choose the enemy player/.test(r),
+    noActive:/can't be set as active/.test(r),
+    noPilot:/can't be paired/.test(r) };
+}
+// Deploy the token(s) described by a token action onto `side`'s field (respecting FIELD_MAX).
+function deployTokens(act, side, name, label, cls){
+  let specs=act.specs, made=0, names=[];
+  if (specs && specs.length>1 && act.cond==='board')   // e.g. White Base: token chosen by how many Units you have
+    specs = [ specs[Math.min(side.field.length, specs.length-1)] ];
+  if (specs && specs.length){
+    for (const sp of specs){
+      for (let k=0;k<(sp.count||1);k++){ if(side.field.length>=FIELD_MAX) break; const tk=makeToken(sp, side.who); side.field.push(tk); made++; if(!names.includes(tk.name)) names.push(tk.name); }
+    }
+  } else {
+    for (let k=0;k<(act.count||1);k++){ if(side.field.length>=FIELD_MAX) break; side.field.push(genericToken(side.who)); made++; }
+    names.push('Mobile Suit');
+  }
+  if (made) log(`${label}: <b>${name}</b> deploys ${made} token${made===1?'':'s'} (${names.join(', ')}).`, cls);
+  return made;
 }
 
 function shuffle(a){ for (let i=a.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; [a[i],a[j]]=[a[j],a[i]]; } return a; }
@@ -1150,7 +1212,7 @@ function beginTurn(turn){
   G.turn=turn; G.mode='idle'; G.phase='start'; G.selected=null; G.pending=null; G.pendingHandIdx=-1;
   const s=me();
   // 1) Start Phase — Active Step: ready all rested cards; refresh per-turn abilities.
-  for (const u of s.field){ u.rested=false; u.sick=false; u.tempAp=0; u.activatedThisTurn=false; u.ap=effAp(u); }
+  for (const u of s.field){ if(!u.noActive) u.rested=false; u.sick=false; u.tempAp=0; u.activatedThisTurn=false; u.ap=effAp(u); }
   if (s.base){ s.base.rested=false; s.base.activatedThisTurn=false; }
   // 2) Draw Phase — draw 1 (the player going first skips their very first draw).
   G.phase='draw';
@@ -1296,8 +1358,8 @@ function applyCommand(card, side, target){
   else if (a.kind==='heal'){ if (target){ target.hp=Math.min(effMaxHp(target), target.hp + (a.amount>=99?effMaxHp(target):a.amount)); log(`<b>${card.name}</b> repairs <b>${target.name}</b>.`, side===G.player?'me':'ai'); } }
   else if (a.kind==='buff'){ if (target){ target.tempAp=(target.tempAp||0)+a.amount; target.ap=effAp(target); log(`<b>${card.name}</b>: <b>${target.name}</b> gets +${a.amount} AP.`, side===G.player?'me':'ai'); } }
   else if (a.kind==='rest'){ if (target){ target.rested=true; log(`<b>${card.name}</b> rests <b>${target.name}</b>.`, side===G.player?'me':'ai'); } }
-  // Self-targeting ("ping self") commands auto-pick a friendly Unit to take the damage.
-  else if (a.kind==='damageBoth' || a.kind==='selfPingBuff' || a.kind==='selfPingDraw'){
+  // Self-targeting ("ping self") and token-creating commands delegate to the trigger resolver.
+  else if (a.kind==='damageBoth' || a.kind==='selfPingBuff' || a.kind==='selfPingDraw' || a.kind==='token'){
     runTrigger(card, side, a, card.name);
   }
 }
@@ -1472,6 +1534,7 @@ function fieldClick(uidv){
 function attackDirect(){
   if (G.turn!=='player' || G.mode!=='attack-target' || G.over) return;
   const atk=G.player.field.find(c=>c.uid===G.selected); if(!atk) return;
+  if (atk.noDirectAttack){ flashPrompt(`${atk.name} can't attack the enemy player directly — pick a rested enemy unit.`); return; }
   // Defender may block a direct attack with an active <Blocker> (unless attacker has High-Maneuver)
   const blockers = G.enemy.field.filter(b=>b.blocker && !b.rested && b.hp>0);
   if (!atk.highManeuver && blockers.length && aiWantsBlock(atk)){
@@ -1688,6 +1751,9 @@ function aiTurn(){
     // buff before attacks
     const buff = ai.hand.find(c=>c.type==='command' && c.action.kind==='buff' && canAfford(ai,c));
     if (buff && ai.field.some(u=>!u.sick&&!u.rested&&u.ap>0)){ const t=ai.field.filter(u=>!u.sick&&!u.rested&&u.ap>0).sort((a,b)=>b.ap-a.ap)[0]; const i=ai.hand.indexOf(buff); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,buff); sendToTrash(buff,ai); t.tempAp=(t.tempAp||0)+buff.action.amount; t.ap=effAp(t); log(`${who(G.enemy)} empowers <b>${t.name}</b>.`, 'ai'); acted=true; continue; }
+    // token-creating command — play it when there's board room
+    const tokCmd = ai.hand.find(c=>c.type==='command' && c.action.kind==='token' && canAfford(ai,c));
+    if (tokCmd && ai.field.length<FIELD_MAX){ const i=ai.hand.indexOf(tokCmd); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,tokCmd); sendToTrash(tokCmd,ai); deployTokens(tokCmd.action, ai, tokCmd.name, tokCmd.name, 'ai'); acted=true; continue; }
   }
 
   // Use ready activated abilities before attacks: the base's freely (it can't attack anyway),
@@ -1719,13 +1785,14 @@ function resolveAiAttack(atk, done){
     promptPlayerBlock(atk, blockers, target, (blk)=>{
       if (blk){ blk.rested=true; log(`You intercept with <b>${blk.name}</b> &lt;Blocker&gt;.`, 'me'); battle(atk, blk, G.enemy, G.player); }
       else if (target){ battle(atk, target, G.enemy, G.player); }
-      else aiDirectHit(atk);
+      else if (!atk.noDirectAttack) aiDirectHit(atk);
       done();
     });
     return;
   }
   if (target){ battle(atk, target, G.enemy, G.player); done(); return; }
-  aiDirectHit(atk); done();
+  if (!atk.noDirectAttack) aiDirectHit(atk);
+  done();
 }
 
 function aiDirectHit(atk){ atk.rested=true; strikePlayer(atk, G.player); render(); }
