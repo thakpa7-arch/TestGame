@@ -343,6 +343,69 @@ function parseBurst(effect){
 // Pilot names a unit can LINK with (from the card's link field).
 function parseLink(link){ return (link||'').split(/[\/,]/).map(s=>s.trim()).filter(Boolean); }
 
+// Parse a triggered clause (【Deploy】 / 【When Paired】 / …) into an engine action.
+// Returns null for text we don't model, so we never fabricate an effect.
+function hpLimit(t){ const m=t.match(/(\d+)\s*or less hp/); return m?+m[1]:99; }
+function parseTrigger(effect, kw){
+  const m = plain(effect).match(new RegExp('【\\s*'+kw+'[^】]*】\\s*([^【]*)','i'));
+  if (!m) return null;
+  const t = m[1].toLowerCase(); let d;
+  if (/add (1|one)?\s*of your shields to your hand/.test(t)) return { kind:'shieldToHand' };
+  if ((d=t.match(/place (\d+)?\s*ex resource/))) return { kind:'exResource', amount:+(d[1]||1) };
+  if (/return it to .*hand|return that unit to .*hand/.test(t)) return { kind:'bounce', hp:hpLimit(t) };
+  if (/\brest it\b|rest that unit/.test(t)) return { kind:'rest', hp:hpLimit(t) };
+  if ((d=t.match(/ap\s*-\s*(\d+)/))) return { kind:'debuff', amount:+d[1] };
+  if ((d=t.match(/deal (\d+) damage/))) return { kind:'damage', amount:+d[1], both:/to them|to each/.test(t) };
+  if ((d=t.match(/draw (\d+)/))) return { kind:'draw', amount:+d[1] };
+  if (/\bdraw\b/.test(t)) return { kind:'draw', amount:1 };
+  if ((d=t.match(/ap\s*\+\s*(\d+)/))) return { kind:'buff', amount:+d[1] };
+  if (/recover|heal/.test(t)){ d=t.match(/(\d+)\s*hp/); return { kind:'heal', amount:d?+d[1]:99 }; }
+  if (/deploy 1 rested \[|deploy 1 \[/.test(t)) return { kind:'token' };
+  return null;
+}
+// Resolve a triggered action for `side`, auto-targeting sensibly. `label` is 'Deploy' / 'Pair'.
+function runTrigger(card, side, act, label){
+  if (!act) return;
+  const cls = side===G.player?'me':'ai';
+  const foe = side===G.player?G.enemy:G.player;
+  const name = card.name;
+  if (act.kind==='shieldToHand'){
+    if (side.shields.length && side.hand.length<HAND_MAX){ side.hand.push(side.shields.pop()); log(`${label}: <b>${name}</b> adds a Shield to ${who(side)} hand.`, cls); }
+  } else if (act.kind==='exResource'){
+    side.ex+=act.amount; side.resAvail+=act.amount; log(`${label}: <b>${name}</b> places ${act.amount} EX Resource.`, cls);
+  } else if (act.kind==='draw'){
+    for (let i=0;i<act.amount;i++) draw(side); log(`${label}: <b>${name}</b> — draw ${act.amount}.`, cls);
+  } else if (act.kind==='damage'){
+    const t=[...foe.field].sort((a,b)=>b.ap-a.ap)[0];
+    if (t){ log(`${label}: <b>${name}</b> deals ${act.amount} to <b>${t.name}</b>.`, cls); damage(t,act.amount,foe); }
+  } else if (act.kind==='rest'){
+    const t=[...foe.field].filter(u=>u.hp<=act.hp && !u.rested).sort((a,b)=>b.ap-a.ap)[0];
+    if (t){ t.rested=true; log(`${label}: <b>${name}</b> rests <b>${t.name}</b>.`, cls); }
+  } else if (act.kind==='bounce'){
+    const t=[...foe.field].filter(u=>u.hp<=act.hp && !u.token).sort((a,b)=>b.ap-a.ap)[0];
+    if (t){ const i=foe.field.indexOf(t); foe.field.splice(i,1); returnToHand(t, foe); log(`${label}: <b>${name}</b> returns <b>${t.name}</b> to hand.`, cls); }
+  } else if (act.kind==='debuff'){
+    const t=[...foe.field].sort((a,b)=>b.ap-a.ap)[0];
+    if (t){ t.tempAp=(t.tempAp||0)-act.amount; t.ap=effAp(t); log(`${label}: <b>${t.name}</b> gets AP-${act.amount} this turn.`, cls); }
+  } else if (act.kind==='buff'){
+    const t=[...side.field].sort((a,b)=>b.baseAp-a.baseAp)[0];
+    if (t){ t.tempAp=(t.tempAp||0)+act.amount; t.ap=effAp(t); log(`${label}: <b>${t.name}</b> gets AP+${act.amount} this turn.`, cls); }
+  } else if (act.kind==='heal'){
+    const t=[...side.field].sort((a,b)=>(effMaxHp(b)-b.hp)-(effMaxHp(a)-a.hp))[0];
+    if (t && t.hp<effMaxHp(t)){ t.hp=Math.min(effMaxHp(t), t.hp+(act.amount>=99?effMaxHp(t):act.amount)); log(`${label}: <b>${name}</b> repairs <b>${t.name}</b>.`, cls); }
+  } else if (act.kind==='token'){
+    if (side.field.length<FIELD_MAX){ side.field.push(genericToken(side.who)); log(`${label}: <b>${name}</b> deploys a Mobile Suit token.`, cls); }
+  }
+}
+// Return a deployed unit to its owner's hand, stripped back to a fresh card.
+function returnToHand(u, owner){
+  if (u.token) return;                       // tokens vanish instead
+  u.pilot=null; u.linked=false; u.tempAp=0; u.rested=false; u.sick=true;
+  u.ap=u.baseAp; u.hp=u.baseHp; u.maxHp=u.baseHp;
+  const hand = owner.hand;
+  if (hand.length<HAND_MAX) hand.push(u);
+}
+
 // ---- deck building from the real pool ----
 let uid = 1;
 function makeCard(def, owner){
@@ -371,6 +434,14 @@ function exBaseToken(owner){
            color:'-', cost:0, lv:0, trait:'', effect:'(EX Base — 0 AP / 3 HP, guards your shields.)',
            img:'', baseAp:0, baseHp:3, ap:0, hp:3, maxHp:3, rested:false, sick:false,
            tempAp:0, pilot:null, link:[], linked:false, blitz:false, repair:0, blocker:false, firstStrike:false, highManeuver:false };
+}
+
+// Generic 1/1 Mobile Suit token (from 【Deploy】 "deploy 1 rested […] token" effects).
+function genericToken(owner){
+  return { uid: uid++, owner, name:'Mobile Suit Token', type:'unit', token:true,
+           color:'-', cost:0, lv:0, trait:'', effect:'(1 AP / 1 HP token.)', img:'',
+           baseAp:1, baseHp:1, ap:1, hp:1, maxHp:1, rested:true, sick:true, tempAp:0,
+           pilot:null, link:[], linked:false, blitz:false, repair:0, blocker:false, firstStrike:false, highManeuver:false };
 }
 
 function shuffle(a){ for (let i=a.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; [a[i],a[j]]=[a[j],a[i]]; } return a; }
@@ -541,14 +612,16 @@ function playFromHand(uidv){
     s.hand.splice(idx,1); s.resAvail-=card.cost;
     s.base = card; card.rested=false; card.sick=false;
     log(`You deploy base <b>${card.name}</b> (HP ${card.hp}) — it now guards your shields.`, 'me');
-    closeInspect(); clearSel(); render();
+    runTrigger(card, s, parseTrigger(card.effect,'Deploy'), 'Deploy');
+    closeInspect(); clearSel(); render(); checkEnd();
   } else if (card.type==='unit'){
     if (s.field.length>=FIELD_MAX){ flashPrompt('Battle area full (max '+FIELD_MAX+').'); return; }
     s.hand.splice(idx,1); s.resAvail-=card.cost;
     card.rested=false; card.sick = !card.blitz;
     s.field.push(card);
     log(`You deploy <b>${card.name}</b>${card.blitz?' &lt;Blitz&gt;':''}.`, 'me');
-    closeInspect(); clearSel(); render();
+    runTrigger(card, s, parseTrigger(card.effect,'Deploy'), 'Deploy');
+    closeInspect(); clearSel(); render(); checkEnd();
   } else if (card.type==='pilot'){
     const myUnits = s.field.filter(u=>u.type==='unit');
     if (myUnits.length===0){ flashPrompt(`Deploy a Unit first — pilot ${card.name} must be paired with one.`); return; }
@@ -683,8 +756,8 @@ function triggerBurst(card, side){
   const sideCls = side===G.player ? 'me' : 'ai';
   if (bz.kind==='tohand'){ if (side.hand.length<HAND_MAX){ side.hand.push(card); log(`Burst! <b>${card.name}</b> is added to ${who(side)} hand.`, sideCls); } }
   else if (bz.kind==='deploy'){
-    if (card.type==='base'){ side.base=card; card.rested=false; card.sick=false; log(`Burst! ${who(side)} deploys base <b>${card.name}</b>.`, sideCls); }
-    else if (side.field.length<FIELD_MAX){ card.rested=false; card.sick=true; side.field.push(card); log(`Burst! ${who(side)} deploys <b>${card.name}</b>.`, sideCls); }
+    if (card.type==='base'){ side.base=card; card.rested=false; card.sick=false; log(`Burst! ${who(side)} deploys base <b>${card.name}</b>.`, sideCls); runTrigger(card, side, parseTrigger(card.effect,'Deploy'), 'Deploy'); }
+    else if (side.field.length<FIELD_MAX){ card.rested=false; card.sick=true; side.field.push(card); log(`Burst! ${who(side)} deploys <b>${card.name}</b>.`, sideCls); runTrigger(card, side, parseTrigger(card.effect,'Deploy'), 'Deploy'); }
   }
   else if (bz.kind==='draw'){ log(`Burst! ${who(side)} draws ${bz.amount}.`, sideCls); for(let i=0;i<bz.amount;i++) draw(side); }
   else if (bz.kind==='damage'){ const foe=side===G.player?G.enemy:G.player; const t=[...foe.field].sort((a,b)=>b.ap-a.ap)[0]; if(t){ log(`Burst! <b>${card.name}</b> deals ${bz.amount} to <b>${t.name}</b>.`, sideCls); damage(t,bz.amount,foe); } }
@@ -742,11 +815,15 @@ function attachPilot(u, p){
   u.pilot={ name:p.name, pAp:p.pAp, pHp:p.pHp };
   u.lv=Math.max(u.lv, p.lv);
   u.maxHp=effMaxHp(u); u.hp+=p.pHp; u.ap=effAp(u);
+  const side = u.owner==='player'?G.player:G.enemy;
   // Link Unit: if this pilot matches the unit's link requirement, it can attack immediately.
   if (u.link && u.link.includes(p.name)){
     u.linked=true; u.sick=false;
     log(`Link established — <b>${u.name}</b> can attack this turn!`, u.owner==='player'?'me':'ai');
   }
+  // 【When Paired】 effects fire now — both the pilot's and the unit's own.
+  runTrigger(p, side, parseTrigger(p.effect,'When Paired'), 'Pair');
+  runTrigger(u, side, parseTrigger(u.effect,'When Paired'), 'Pair');
 }
 
 function clearSel(){ G.selected=null; G.mode='idle'; G.pending=null; G.pendingHandIdx=-1; defaultPrompt(); }
@@ -785,11 +862,11 @@ function aiTurn(){
     if (drawC && ai.hand.length<=4){ const i=ai.hand.indexOf(drawC); ai.hand.splice(i,1); ai.resAvail-=drawC.cost; for(let k=0;k<drawC.action.amount;k++) draw(ai); log(`Zeon plays <b>${drawC.name}</b>.`, 'ai'); acted=true; continue; }
     // deploy a base if it improves the guard
     const baseC = ai.hand.find(c=>c.type==='base' && canAfford(ai,c) && (!ai.base || c.hp>ai.base.hp));
-    if (baseC){ const i=ai.hand.indexOf(baseC); ai.hand.splice(i,1); ai.resAvail-=baseC.cost; baseC.rested=false; baseC.sick=false; ai.base=baseC; log(`Zeon deploys base <b>${baseC.name}</b>.`, 'ai'); acted=true; continue; }
+    if (baseC){ const i=ai.hand.indexOf(baseC); ai.hand.splice(i,1); ai.resAvail-=baseC.cost; baseC.rested=false; baseC.sick=false; ai.base=baseC; log(`Zeon deploys base <b>${baseC.name}</b>.`, 'ai'); runTrigger(baseC, ai, parseTrigger(baseC.effect,'Deploy'), 'Deploy'); acted=true; continue; }
     // deploy best affordable unit
     if (ai.field.length<FIELD_MAX){
       const dep = ai.hand.filter(c=>c.type==='unit' && canAfford(ai,c)).sort((a,b)=>(b.baseAp+b.baseHp)-(a.baseAp+a.baseHp))[0];
-      if (dep){ const i=ai.hand.indexOf(dep); ai.hand.splice(i,1); ai.resAvail-=dep.cost; dep.rested=false; dep.sick=!dep.blitz; ai.field.push(dep); log(`Zeon deploys <b>${dep.name}</b>.`, 'ai'); acted=true; continue; }
+      if (dep){ const i=ai.hand.indexOf(dep); ai.hand.splice(i,1); ai.resAvail-=dep.cost; dep.rested=false; dep.sick=!dep.blitz; ai.field.push(dep); log(`Zeon deploys <b>${dep.name}</b>.`, 'ai'); runTrigger(dep, ai, parseTrigger(dep.effect,'Deploy'), 'Deploy'); acted=true; continue; }
     }
     // pair a pilot
     const pilot = ai.hand.find(c=>c.type==='pilot' && canAfford(ai,c));
