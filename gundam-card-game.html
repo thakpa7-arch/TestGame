@@ -685,6 +685,18 @@ function parseBurst(effect){
 }
 // Pilot names a unit can LINK with (from the card's link field).
 function parseLink(link){ return (link||'').split(/[\/,]/).map(s=>s.trim()).filter(Boolean); }
+// Does pilot `p` satisfy unit `u`'s [Link Condition]? A link entry is either a specific Pilot
+// name ("Amuro Ray") or a trait requirement ("(OZ) Trait" / "(OZ)") matched against the Pilot's traits.
+function linkMatches(u, p){
+  if (!u.link || !u.link.length || !p) return false;
+  const ptrait = (p.trait||'').toLowerCase(), pname = (p.name||'').toLowerCase();
+  return u.link.some(entry=>{
+    const e = entry.trim();
+    const tm = e.match(/\(([^)]+)\)/);                 // "(OZ) Trait" / "(OZ)" → trait requirement
+    if (tm) return ptrait.includes(tm[1].toLowerCase());
+    return e.toLowerCase() === pname;                   // otherwise a specific Pilot name
+  });
+}
 
 // Parse a triggered clause (【Deploy】 / 【When Paired】 / …) into an engine action.
 // Returns null for text we don't model, so we never fabricate an effect.
@@ -1127,11 +1139,20 @@ function parseTokenSpecs(text){
   return specs;
 }
 // Build a Unit token from a parsed spec (proper name, trait, AP/HP, keywords and restrictions).
+// Token art: most tokens share a name with a real card, so borrow that card's image.
+let TOKEN_ART=null;
+function tokenArt(name){
+  if (!TOKEN_ART){
+    TOKEN_ART={};
+    for (const c of GUNDAM_CARDS){ if (c.img && !TOKEN_ART[c.name]) TOKEN_ART[c.name]=c.img; }
+  }
+  return TOKEN_ART[name] || '';
+}
 function makeToken(spec, owner){
   const r=(spec.restrict||'').toLowerCase();
   const kw=[]; if(spec.blocker)kw.push('<Blocker>'); if(spec.first)kw.push('<First Strike>'); if(spec.high)kw.push('<High-Maneuver>');
   return { uid:uid++, owner, name:spec.name||'Mobile Suit Token', type:'unit', token:true,
-    color:'-', cost:0, lv:0, trait:spec.trait||'', img:'',
+    color:'-', cost:0, lv:0, trait:spec.trait||'', img:tokenArt(spec.name),
     effect:`(Token — ${spec.trait?spec.trait+' · ':''}${spec.ap} AP / ${spec.hp} HP${kw.length?' · '+kw.join(' '):''}.)`,
     baseAp:spec.ap, baseHp:spec.hp, ap:spec.ap, hp:spec.hp, maxHp:spec.hp,
     rested:!!spec.rested, sick:true, tempAp:0, pilot:null, link:[], linked:false,
@@ -1832,7 +1853,7 @@ function attachPilot(u, p){
   if (pairGrantsKeyword(u.effect,'high'))    u.highManeuver=true;
   // Link Unit: if this pilot matches the unit's link requirement, it can attack immediately.
   let justLinked=false;
-  if (u.link && u.link.includes(p.name)){
+  if (linkMatches(u, p)){
     u.linked=true; u.sick=false; justLinked=true;
     u.hp += (u.linkHp||0);
     // keywords granted specifically by a 【During Link】 clause
