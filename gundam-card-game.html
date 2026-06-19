@@ -81,6 +81,28 @@
   .res.ex { background: linear-gradient(180deg, var(--gold), #b45309); box-shadow: 0 0 5px rgba(251,191,36,.5); }
   .card.isbase { border-color: var(--gold) !important; box-shadow: inset 0 0 0 1px rgba(251,191,36,.4); }
 
+  /* Base zone — held off to the side, separate from the battlefield */
+  .base-zone { width: 78px; flex-shrink: 0; align-self: stretch; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+    background: rgba(18,26,46,.7); border: 1px dashed rgba(251,191,36,.45); border-radius: 10px; padding: 6px 4px; }
+  .base-zone.enemy { border-color: rgba(244,114,182,.4); }
+  .base-zone .bz-label { font-size: 9px; letter-spacing: 2px; color: var(--gold); font-weight: 800; opacity: .8; }
+  .base-zone.enemy .bz-label { color: #fda4af; }
+  .base-zone .bz-slot { width: 100%; display: flex; justify-content: center; }
+  .base-zone .bz-slot .card { width: 64px; height: 90px; }
+  .base-zone .bz-empty { color: var(--muted); font-size: 9px; text-align: center; opacity: .6; }
+
+  /* Hit / impact effects */
+  @keyframes fxHit { 0%{ filter: brightness(2.4) saturate(.4); transform: translate(0,0); } 20%{ transform: translate(-4px,2px) rotate(-2deg); } 40%{ transform: translate(4px,-2px) rotate(2deg); } 60%{ transform: translate(-3px,1px); } 100%{ filter: none; transform: translate(0,0); } }
+  .card.fx-hit { animation: fxHit .42s ease-out; }
+  .card.fx-hit::after { content:''; position:absolute; inset:0; background: radial-gradient(circle at 50% 45%, rgba(255,90,60,.85), rgba(255,160,40,.25) 45%, transparent 70%); animation: fxFlash .42s ease-out forwards; pointer-events:none; }
+  @keyframes fxFlash { 0%{ opacity:1; transform: scale(.4); } 100%{ opacity:0; transform: scale(1.3); } }
+  .card.fx-die { animation: fxDie .4s ease-in forwards; }
+  @keyframes fxDie { 0%{ filter: brightness(3); } 100%{ opacity:0; transform: scale(.5) rotate(12deg); filter: brightness(0); } }
+  @keyframes shakeScreen { 0%,100%{ transform: translate(0,0);} 15%{ transform: translate(-7px,4px);} 30%{ transform: translate(8px,-5px);} 45%{ transform: translate(-6px,3px);} 60%{ transform: translate(5px,4px);} 75%{ transform: translate(-3px,-2px);} }
+  .shake { animation: shakeScreen .4s ease-in-out; }
+  @keyframes shieldPop { 0%{ transform: scale(1); box-shadow:0 0 6px rgba(251,191,36,.4);} 40%{ transform: scale(1.5); box-shadow:0 0 18px 6px rgba(255,120,60,.9);} 100%{ transform: scale(0); opacity:0; } }
+  .shield.breaking { animation: shieldPop .45s ease-out forwards; }
+
   .battlefield { flex: 1; align-self: stretch; background: linear-gradient(180deg, rgba(26,37,64,.82), rgba(18,26,46,.86)); backdrop-filter: blur(1.5px); border: 1px solid var(--line); border-radius: 10px; padding: 8px; display: flex; gap: 8px; align-items: center; overflow-x: auto; min-height: 0; box-shadow: inset 0 0 40px rgba(0,0,0,.35); }
   .battlefield.enemy { background: linear-gradient(180deg, rgba(42,24,32,.82), rgba(18,26,46,.86)); }
   .empty-hint { color: var(--muted); font-size: 12px; margin: auto; }
@@ -200,6 +222,7 @@
       <div class="stat-line"><span>Hand</span><b id="enemyHandCount"></b></div>
       <div class="stat-line"><span>Deck</span><b id="enemyDeckCount"></b></div>
     </div>
+    <div class="base-zone enemy" id="enemyBaseZone"><div class="bz-label">BASE</div><div class="bz-slot" id="enemyBase"></div></div>
     <div class="battlefield enemy" id="enemyField"></div>
   </div>
 
@@ -212,6 +235,7 @@
       <div class="resources" id="playerResources"></div>
       <div class="stat-line"><span>Deck</span><b id="playerDeckCount"></b></div>
     </div>
+    <div class="base-zone player" id="playerBaseZone"><div class="bz-label">BASE</div><div class="bz-slot" id="playerBase"></div></div>
     <div class="battlefield player" id="playerField"></div>
   </div>
 
@@ -221,6 +245,7 @@
     <button id="endTurnBtn" class="gold">End Turn</button>
     <button id="cancelBtn" class="ghost" style="display:none">Cancel</button>
     <button id="rulesBtn" class="ghost">Rules</button>
+    <button id="soundBtn" class="ghost" title="Toggle sound">🔊</button>
   </div>
 </div>
 
@@ -611,6 +636,7 @@ function playFromHand(uidv){
   if (card.type==='base'){
     s.hand.splice(idx,1); s.resAvail-=card.cost;
     s.base = card; card.rested=false; card.sick=false;
+    sound('deploy');
     log(`You deploy base <b>${card.name}</b> (HP ${card.hp}) — it now guards your shields.`, 'me');
     runTrigger(card, s, parseTrigger(card.effect,'Deploy'), 'Deploy');
     closeInspect(); clearSel(); render(); checkEnd();
@@ -619,6 +645,7 @@ function playFromHand(uidv){
     s.hand.splice(idx,1); s.resAvail-=card.cost;
     card.rested=false; card.sick = !card.blitz;
     s.field.push(card);
+    sound('deploy');
     log(`You deploy <b>${card.name}</b>${card.blitz?' &lt;Blitz&gt;':''}.`, 'me');
     runTrigger(card, s, parseTrigger(card.effect,'Deploy'), 'Deploy');
     closeInspect(); clearSel(); render(); checkEnd();
@@ -738,11 +765,12 @@ function strikePlayer(atk, defSide){
   if (defSide.base){
     const b=defSide.base; b.hp-=atk.ap;
     log(`<b>${atk.name}</b> hits ${who(defSide)}'s <b>${b.name}</b> base for ${atk.ap}.`, side);
-    if (b.hp<=0){ defSide.base=null; log(`${who(defSide)}'s ${b.name} base is destroyed.`, side); }
+    if (b.hp<=0){ defSide.base=null; fx('die', b.uid); log(`${who(defSide)}'s ${b.name} base is destroyed.`, side); }
+    else fx('hit', b.uid);
     return;
   }
   if (defSide.shields.length>0){
-    const sh=defSide.shields.pop();
+    const sh=defSide.shields.pop(); defSide.breakingShield=true; fx('shield');
     log(`<b>${atk.name}</b> destroys a ${who(defSide)} shield! (${defSide.shields.length} left)`, side);
     triggerBurst(sh, defSide);
     return;
@@ -808,7 +836,8 @@ function pickAiBlocker(atk, blockers){
 function damage(u, dmg, side){
   if (dmg<=0) return;
   u.hp-=dmg;
-  if (u.hp<=0){ const i=side.field.indexOf(u); if(i>=0) side.field.splice(i,1); log(`<b>${u.name}</b> is destroyed.`, side===G.player?'me':'ai'); }
+  if (u.hp<=0){ const i=side.field.indexOf(u); if(i>=0) side.field.splice(i,1); fx('die', u.uid); log(`<b>${u.name}</b> is destroyed.`, side===G.player?'me':'ai'); }
+  else fx('hit', u.uid);
 }
 
 function attachPilot(u, p){
@@ -833,6 +862,7 @@ function checkEnd(){ /* direct hits handle the actual win in attackDirect / aiDi
 function endGame(winnerSide){
   G.over=true; setPrompt(''); render();
   const win = winnerSide===G.player;
+  fx('direct'); setTimeout(()=>sound(win?'win':'lose'), 250);
   const ov=el('overlay'); ov.classList.remove('hidden');
   ov.innerHTML = `<h2>${win?'VICTORY':'DEFEAT'}</h2>
     <p>${win?'The Zeon line is shattered — the Earth Federation holds the field, commander!'
@@ -965,11 +995,38 @@ function cardFace(c, ctx){
   return `<div class="${cls.join(' ')}" data-uid="${c.uid}" style="${style}">${overlays}</div>`;
 }
 
+// ---- impact FX + synthesized sound (no external assets) ----
+const SOUND = { on: true };
+let _actx = null;
+function audioCtx(){ if(!_actx){ try{ _actx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } return _actx; }
+function sound(kind){
+  if(!SOUND.on) return; const ac=audioCtx(); if(!ac) return;
+  if(ac.state==='suspended') ac.resume();
+  const t=ac.currentTime;
+  const beep=(freq,dur,type,gain,slideTo)=>{ const o=ac.createOscillator(),g=ac.createGain(); o.type=type||'sine'; o.frequency.setValueAtTime(freq,t); if(slideTo) o.frequency.exponentialRampToValueAtTime(slideTo,t+dur); g.gain.setValueAtTime(gain||.2,t); g.gain.exponentialRampToValueAtTime(.0008,t+dur); o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t+dur+.02); };
+  const noise=(dur,gain,filt)=>{ const n=Math.max(1,Math.floor(ac.sampleRate*dur)); const buf=ac.createBuffer(1,n,ac.sampleRate); const d=buf.getChannelData(0); for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*(1-i/n); const src=ac.createBufferSource(); src.buffer=buf; const g=ac.createGain(); g.gain.value=gain||.25; const f=ac.createBiquadFilter(); f.type='lowpass'; f.frequency.value=filt||1400; src.connect(f); f.connect(g); g.connect(ac.destination); src.start(t); };
+  if(kind==='hit'){ noise(.18,.28,1700); beep(190,.15,'square',.16,90); }
+  else if(kind==='die'){ noise(.32,.34,900); beep(130,.32,'sawtooth',.2,45); }
+  else if(kind==='shield'){ beep(950,.24,'square',.18,220); noise(.22,.3,2600); }
+  else if(kind==='direct'){ noise(.42,.4,520); beep(95,.42,'sawtooth',.28,40); }
+  else if(kind==='deploy'){ beep(320,.13,'triangle',.15,640); }
+  else if(kind==='win'){ [523,659,784,1047].forEach((f,i)=>setTimeout(()=>beep(f,.26,'triangle',.2),i*120)); }
+  else if(kind==='lose'){ [420,300,200].forEach((f,i)=>setTimeout(()=>beep(f,.3,'sawtooth',.2),i*170)); }
+}
+let fxQueue = [];
+function fx(kind, uid){ sound(kind); if(uid!=null) fxQueue.push({kind,uid}); if(kind==='direct'||kind==='shield'||kind==='die') screenShake(); }
+function screenShake(){ const r=el('app'); if(!r) return; r.classList.remove('shake'); void r.offsetWidth; r.classList.add('shake'); setTimeout(()=>r.classList.remove('shake'),420); }
+function applyVisualFx(){
+  for(const f of fxQueue){ const node=document.querySelector(`.card[data-uid="${f.uid}"]`); if(node){ const cls=f.kind==='die'?'fx-die':'fx-hit'; node.classList.remove(cls); void node.offsetWidth; node.classList.add(cls); } }
+  fxQueue=[];
+  G.player.breakingShield=false; G.enemy.breakingShield=false;   // one-shot
+}
+
 function render(){
   el('poolCount').textContent = GUNDAM_CARDS.length;
   el('turnInfo').innerHTML = `Turn <b>${G.turnNumber}</b> · ${G.turn==='player'?'<b>Your</b> move':'<b>Zeon</b> acting'}`;
-  el('enemyShields').innerHTML = shieldHTML(G.enemy.shields.length);
-  el('playerShields').innerHTML = shieldHTML(G.player.shields.length);
+  el('enemyShields').innerHTML = shieldHTML(G.enemy);
+  el('playerShields').innerHTML = shieldHTML(G.player);
   el('enemyShieldCount').textContent=G.enemy.shields.length; el('playerShieldCount').textContent=G.player.shields.length;
   el('enemyResources').innerHTML = resHTML(G.enemy); el('playerResources').innerHTML = resHTML(G.player);
   el('enemyResText').textContent = `${G.enemy.resAvail}/${G.enemy.resMax}${G.enemy.ex?'+EX':''}`;
@@ -979,6 +1036,8 @@ function render(){
 
   el('enemyField').innerHTML = fieldHTML(G.enemy,'field-enemy','No enemy units');
   el('playerField').innerHTML = fieldHTML(G.player,'field-player','Play a card from your hand');
+  el('enemyBase').innerHTML = G.enemy.base ? cardFace(G.enemy.base,'field-enemy') : `<div class="bz-empty">no base</div>`;
+  el('playerBase').innerHTML = G.player.base ? cardFace(G.player.base,'field-player') : `<div class="bz-empty">no base</div>`;
   el('hand').innerHTML = G.player.hand.length ? G.player.hand.map(c=>{
     const needsUnit = c.type==='pilot' && !G.player.field.some(u=>u.type==='unit');
     const playable = G.turn==='player' && canAfford(G.player,c) && !needsUnit && !G.over && G.mode==='idle';
@@ -988,19 +1047,29 @@ function render(){
   el('endTurnBtn').disabled = G.turn!=='player' || G.over;
   el('cancelBtn').style.display = (G.mode!=='idle' && G.turn==='player') ? 'inline-block' : 'none';
   bind();
+  applyVisualFx();
 }
 function fieldHTML(side, ctx, emptyMsg){
-  const cards = side.field.map(c=>cardFace(c,ctx));
-  if (side.base) cards.unshift(cardFace(side.base, ctx));
+  const cards = side.field.map(c=>cardFace(c,ctx));   // base is rendered in its own zone now
   return cards.length ? cards.join('') : `<div class="empty-hint">${emptyMsg}</div>`;
 }
-function shieldHTML(n){ let s=''; for(let i=0;i<SHIELD_MAX;i++) s+=`<div class="shield ${i<n?'':'gone'}"></div>`; return s; }
+function shieldHTML(side){
+  const n=side.shields.length; let s='';
+  for(let i=0;i<SHIELD_MAX;i++){
+    const breaking = side.breakingShield && i===n;     // the slot just lost — pops on screen
+    const gone = i>=n && !breaking;
+    s+=`<div class="shield ${gone?'gone':''} ${breaking?'breaking':''}"></div>`;
+  }
+  return s;
+}
 function resHTML(side){ let s=''; const total=side.resMax+side.ex; for(let i=0;i<total;i++){ const isEx=i>=side.resMax; s+=`<div class="res ${isEx?'ex':''} ${i<side.resAvail?'':'used'}"></div>`; } return s; }
 
 function bind(){
   el('hand').querySelectorAll('.card').forEach(n=> n.onclick=()=>{ const c=G.player.hand.find(x=>x.uid===+n.dataset.uid); if(G.mode==='idle') inspect(c); else playFromHand(+n.dataset.uid); });
-  el('playerField').querySelectorAll('.card').forEach(n=> n.onclick=()=>{ const id=+n.dataset.uid; if(G.player.base&&id===G.player.base.uid){ inspect(G.player.base); return; } fieldClick(id); });
-  el('enemyField').querySelectorAll('.card').forEach(n=> n.onclick=()=>{ const id=+n.dataset.uid; if(G.enemy.base&&id===G.enemy.base.uid){ inspect(G.enemy.base); return; } fieldClick(id); });
+  el('playerField').querySelectorAll('.card').forEach(n=> n.onclick=()=>{ const id=+n.dataset.uid; fieldClick(id); });
+  el('enemyField').querySelectorAll('.card').forEach(n=> n.onclick=()=>{ const id=+n.dataset.uid; fieldClick(id); });
+  el('playerBase').querySelectorAll('.card').forEach(n=> n.onclick=()=>{ if(G.player.base) inspect(G.player.base); });
+  el('enemyBase').querySelectorAll('.card').forEach(n=> n.onclick=()=>{ if(G.enemy.base) inspect(G.enemy.base); });
 }
 
 // ---- inspector ----
@@ -1030,7 +1099,8 @@ function closeInspect(){ el('inspect').classList.remove('show'); }
 el('endTurnBtn').addEventListener('click', ()=>{ if(G.turn==='player'&&!G.over){ clearSel(); endTurn(); } });
 el('cancelBtn').addEventListener('click', ()=>{ clearSel(); render(); });
 el('rulesBtn').addEventListener('click', ()=>{ if(!G.over) location.reload(); });
-el('startBtn').addEventListener('click', startGame);
+el('soundBtn').addEventListener('click', ()=>{ SOUND.on=!SOUND.on; el('soundBtn').textContent=SOUND.on?'🔊':'🔇'; if(SOUND.on){ audioCtx()?.resume?.(); sound('deploy'); } });
+el('startBtn').addEventListener('click', ()=>{ audioCtx()?.resume?.(); startGame(); });
 el('inspect').addEventListener('click', e=>{ if(e.target.id==='inspect') closeInspect(); });
 el('enemyShields').addEventListener('click', attackDirect);
 el('enemyShieldCount').addEventListener('click', attackDirect);
