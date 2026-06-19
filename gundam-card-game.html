@@ -299,7 +299,7 @@
     A direct hit on the player goes to their <b>Base</b> first, then breaks one <b>Shield</b>; a broken shield is
     revealed and its <span class="badge">【Burst】</span> may trigger. With no shields left, the next hit wins.<br><br>
     <b>Keywords modeled:</b> <span class="badge">&lt;Blocker&gt;</span> intercept an attack ·
-    <span class="badge">&lt;First Strike&gt;</span> deal damage first ·
+    <span class="badge">&lt;First Strike&gt;</span> deal damage first when attacking ·
     <span class="badge">&lt;High-Maneuver&gt;</span> can't be blocked ·
     <span class="badge">&lt;Blitz&gt;</span> / Link — attack the turn deployed ·
     <span class="badge">&lt;Repair N&gt;</span> heal N at end of turn · <span class="badge">【Burst】</span> shield triggers.<br><br>
@@ -838,12 +838,13 @@ function autoTarget(action, side){
 // Simultaneous battle, modified by First Strike (striker hits first; if foe dies, no return).
 function battle(atk, def, atkSide, defSide){
   atk.rested=true;
-  // First Strike lets one side hit first; if both have it, the strikes are simultaneous.
-  const fs = (atk.firstStrike && !def.firstStrike) ? 'me' : (def.firstStrike && !atk.firstStrike) ? 'def' : 'both';
+  // First Strike only triggers on this Unit's attack — i.e. on its owner's turn. The
+  // attacker is always the turn player here, so only the attacker's First Strike applies;
+  // a defending First Strike Unit gets no priority.
+  const fs = atk.firstStrike ? 'me' : 'both';
   log(`<b>${atk.name}</b> (${atk.ap}/${atk.hp}) vs <b>${def.name}</b> (${def.ap}/${def.hp})${fs!=='both'?' — &lt;First Strike&gt;':''}.`, atkSide===G.player?'me':'ai');
   const a=atk.ap, d=def.ap;
   if (fs==='me'){ damage(def,a,defSide); if (def.hp>0) damage(atk,d,atkSide); }
-  else if (fs==='def'){ damage(atk,d,atkSide); if (atk.hp>0) damage(def,a,defSide); }
   else { damage(def,a,defSide); damage(atk,d,atkSide); }
   clearSel(); render(); checkEnd();
 }
