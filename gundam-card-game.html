@@ -375,11 +375,19 @@ function clauseGrantsKeyword(effect, kw, clauseKw){
 // Parse the effect half of an activated ability into an engine action.
 function parseActivateEffect(t){
   t = t.toLowerCase(); let d;
+  // Self-targeting ("ping self") activated abilities take priority over enemy-damage rules.
+  const ping = parseSelfPing(t);
+  if (ping) return Object.assign(ping, { scope: ping.kind==='selfPingBuff' ? 'friendly' : 'self' });
   if (/set this unit as active/.test(t))                    return { kind:'setActive', scope:'self' };
+  // "Choose 1 friendly Unit… Set it as active." — re-ready one of your Units (often a Blocker).
+  if (/set it as active/.test(t) && /(friendly|of your)[^.]*unit/.test(t)) return { kind:'setActive', scope:'friendly' };
+  // "Deploy 1 […] Unit token…" — put a token onto your field.
+  if (/deploy 1 .*unit token|deploy 1 rested .*token|deploy 1 \[/.test(t)) return { kind:'token', scope:'self' };
   if ((d=t.match(/gains?\s+<\s*breach\s*(\d+)/)))            return { kind:'grantBreach', amount:+d[1], scope:/this unit/.test(t)?'self':'friendly' };
   if (/gains?\s+<\s*high-?maneuver/.test(t))                 return { kind:'grantHigh', scope:/this unit/.test(t)?'self':'friendly' };
   if (/recover|heal/.test(t)){ d=t.match(/(\d+)\s*hp/);      return { kind:'heal', amount:d?+d[1]:1, scope:'friendly' }; }
   if ((d=t.match(/deal (\d+) damage to all enemy/)))        return { kind:'damage', amount:+d[1], scope:'all-enemy' };
+  if (/\brest it\b|rest that unit|rest 1 enemy unit/.test(t)) return { kind:'rest', scope:'enemy' };
   if ((d=t.match(/ap\s*-\s*(\d+)/)))                         return { kind:'debuff', amount:+d[1], scope:'enemy' };
   if ((d=t.match(/deal (\d+) damage/)) && /enemy/.test(t))   return { kind:'damage', amount:+d[1], scope:'enemy' };
   if ((d=t.match(/ap\s*\+\s*(\d+)/))){
@@ -397,6 +405,9 @@ function parseActivateCost(c){
   // A pure resource cost (just a circled number), e.g. "①" — rest that many active resources.
   if (RES_SYM[raw]) return { type:'resource', amount:RES_SYM[raw] };
   if (/rest this (base|unit)/.test(c)) return { type:'rest' };
+  // "Rest 1 of your (Trait) Unit(s)" — pay by resting a friendly Unit (often from a Base).
+  let rm = c.match(/^rest 1 (?:of your |friendly )([a-z\/() ]*?)\s*units?$/);
+  if (rm){ const trait=(rm[1]||'').trim().replace(/[()]/g,'').trim()||null; return { type:'restUnit', trait }; }
   let m = c.match(/exile (\d+) ([a-z\/() ]*?)\s*cards? from your trash/);
   if (m){ const trait=(m[2]||'').trim().replace(/[()]/g,'').trim()||null; return { type:'exile', count:+m[1], trait }; }
   return null;
@@ -520,6 +531,38 @@ function parseGatedEffect(t){
   return inner ? { kind:'trashGate', minCount, trait, inner } : null;
 }
 
+// Self-targeting ("ping self") effects: damage your own Unit(s) — sometimes as the cost of a
+// buff, sometimes hitting one of yours and one enemy together, sometimes to enable a follow-up.
+// Returns null for anything that isn't a self-ping so callers fall through to enemy-targeting rules.
+function parseSelfPing(t){
+  t = t.toLowerCase(); let m;
+  // friendly + enemy together: "Choose 1 of your Units and 1 enemy Unit. Deal N damage to them."
+  if ((m=t.match(/choose 1 (?:of your|friendly)[^.]*?and 1 enemy unit\.\s*deal (\d+) damage to them/)))
+    return { kind:'damageBoth', amount:+m[1] };
+  // self-damage as a cost, then an AP buff: "Choose 1 of your Units. Deal N damage to it. It gets AP+M…"
+  if ((m=t.match(/(?:choose|may choose) 1 (?:of your|other active friendly|other friendly|friendly)[^.]*?\.\s*deal (\d+) damage to it\.\s*it gets ap\+(\d+)/)))
+    return { kind:'selfPingBuff', self:+m[1], ap:+m[2] };
+  // self-damage, then draw/discard: "Choose 1 of your Units. Deal N damage to it. If you do, draw X. Then, discard Y."
+  if ((m=t.match(/(?:choose|may choose) 1 (?:of your|friendly)[^.]*?\.\s*deal (\d+) damage to it\.\s*if you do,?\s*draw (\d+)/))){
+    const dm=t.match(/discard (\d+)/); return { kind:'selfPingDraw', self:+m[1], draw:+m[2], discard:dm?+dm[1]:0 };
+  }
+  // self-damage that enables a follow-up: "Deal N damage to this Unit. If you do, [enemy effect]."
+  if ((m=t.match(/deal (\d+) damage to this unit\.\s*if you do,?\s*(.+)/)))
+    return { kind:'selfDamageThen', self:+m[1], inner: parseTriggerInner(m[2].trim()) };
+  // pure self-damage drawback: "Deal N damage to this Unit." (never aimed at an enemy)
+  if ((m=t.match(/deal (\d+) damage to this unit/)) && !/enemy/.test(t))
+    return { kind:'selfDamage', self:+m[1] };
+  return null;
+}
+// Pick a friendly Unit to absorb `self` self-damage — one that survives it if possible.
+// `preferAttacker` favours the biggest current attacker (for "ping for a buff" effects).
+function pingFriendly(side, self, preferAttacker){
+  const cands = side.field.filter(u=>!u.token && u.hp>self);
+  if (!cands.length) return null;
+  cands.sort(preferAttacker ? (a,b)=>(b.ap-a.ap)||(b.hp-a.hp) : (a,b)=>b.hp-a.hp);
+  return cands[0];
+}
+
 function trashBlocksAttack(u, side){
   return !!(u.trashCantAttack && (side.trash||[]).length <= u.trashCantAttack.maxCount);
 }
@@ -541,6 +584,9 @@ function showTrashViewer(side){ showPileViewer(side.trash, 'Trash'); }
 function inferCommand(effect){
   const t = plain(effect).toLowerCase();
   let m;
+  // Self-targeting ("ping self") commands take priority over the generic enemy-damage rule.
+  const ping = parseSelfPing(t);
+  if (ping) return ping;
   if ((m = t.match(/deal (\d+) damage/))){
     const all = /(all|every|each).{0,24}enemy|enemy.{0,24}(all|every|each)/.test(t);
     return { kind:'damage', amount:+m[1], scope: all?'all-enemy':'enemy' };
@@ -601,6 +647,10 @@ function parseTrigger(effect, kw){
     const sd = t.match(/look at the top (\d+)/); return { kind:'shieldToHand', scryN: sd?+sd[1]:0 };
   }
   if ((d=t.match(/place (\d+)?\s*ex resource/))) return { kind:'exResource', amount:+(d[1]||1) };
+  // Self-targeting ("ping self") clauses — checked before the generic enemy-damage/rest rules
+  // so "deal N damage to this Unit"/"…to it" hits a friendly, not the foe.
+  const ping = parseSelfPing(t);
+  if (ping) return ping;
   if (/return it to .*hand|return that unit to .*hand|return them to .*hand/.test(t)){ const lv=t.match(/lv\.?(\d+) or lower/); return { kind:'bounce', hp:hpLimit(t), maxLv:lv?+lv[1]:null }; }
   if (/\brest it\b|rest that unit/.test(t)){ const lv=t.match(/lv\.?(\d+) or lower/); return { kind:'rest', hp:hpLimit(t), maxLv:lv?+lv[1]:null }; }
   if ((d=t.match(/ap\s*-\s*(\d+)/))) return { kind:'debuff', amount:+d[1] };
@@ -681,6 +731,23 @@ function runTrigger(card, side, act, label){
     if (t){ log(`${label}: <b>${name}</b> destroys <b>${t.name}</b>.`, cls); const i=foe.field.indexOf(t); if(i>=0) foe.field.splice(i,1); fx('die', t.uid); sendToTrash(t, foe); runTrigger(t, foe, parseTrigger(t.effect,'Destroyed'), 'Destroyed'); }
   } else if (act.kind==='setActive'){
     card.rested=false; log(`${label}: <b>${name}</b> is set active.`, cls);
+  } else if (act.kind==='selfDamage'){
+    log(`${label}: <b>${name}</b> takes ${act.self} damage.`, cls); damage(card, act.self, side);
+  } else if (act.kind==='selfDamageThen'){
+    log(`${label}: <b>${name}</b> takes ${act.self} damage.`, cls); damage(card, act.self, side);
+    if (act.inner) runTrigger(card, side, act.inner, label);
+  } else if (act.kind==='damageBoth'){
+    const ft=pingFriendly(side, act.amount, false), et=[...foe.field].sort((a,b)=>b.ap-a.ap)[0];
+    if (ft){ log(`${label}: <b>${name}</b> deals ${act.amount} to your <b>${ft.name}</b>.`, cls); damage(ft, act.amount, side); }
+    if (et){ log(`${label}: <b>${name}</b> deals ${act.amount} to <b>${et.name}</b>.`, cls); damage(et, act.amount, foe); }
+  } else if (act.kind==='selfPingBuff'){
+    const t=pingFriendly(side, act.self, true);
+    if (t){ log(`${label}: <b>${name}</b> deals ${act.self} to your <b>${t.name}</b>, then it gets AP+${act.ap}.`, cls);
+      damage(t, act.self, side); if (t.hp>0){ t.tempAp=(t.tempAp||0)+act.ap; t.ap=effAp(t); } }
+  } else if (act.kind==='selfPingDraw'){
+    const t=pingFriendly(side, act.self, false);
+    if (t){ log(`${label}: <b>${name}</b> deals ${act.self} to your <b>${t.name}</b> — draw ${act.draw}.`, cls);
+      damage(t, act.self, side); for (let i=0;i<act.draw;i++) draw(side); if (act.discard) autoDiscard(side, act.discard, name); }
   } else if (act.kind==='debuff'){
     const t=[...foe.field].sort((a,b)=>b.ap-a.ap)[0];
     if (t){ t.tempAp=(t.tempAp||0)-act.amount; t.ap=effAp(t); log(`${label}: <b>${t.name}</b> gets AP-${act.amount} this turn.`, cls); }
@@ -1120,10 +1187,12 @@ function startCommand(card, handIdx){
   }
   const needEnemy = (a.kind==='damage'&&a.scope==='enemy') || a.kind==='rest';
   const needAlly  = (a.kind==='heal'||a.kind==='buff');
+  // Self-ping commands need one of your own Units to take the damage; auto-resolved (no tap).
+  const selfPing  = a.kind==='damageBoth' || a.kind==='selfPingBuff' || a.kind==='selfPingDraw';
   if (needEnemy && G.enemy.field.length===0){ // fallback: just draw
     commit(card,handIdx); draw(s); log(`<b>${card.name}</b> finds no target — you draw 1 instead.`, 'me'); clearSel(); render(); return;
   }
-  if (needAlly && G.player.field.length===0){
+  if ((needAlly || selfPing) && G.player.field.length===0){
     commit(card,handIdx); draw(s); log(`<b>${card.name}</b> finds no target — you draw 1 instead.`, 'me'); clearSel(); render(); return;
   }
   if (needEnemy || needAlly){
@@ -1163,12 +1232,17 @@ function applyCommand(card, side, target){
   else if (a.kind==='heal'){ if (target){ target.hp=Math.min(effMaxHp(target), target.hp + (a.amount>=99?effMaxHp(target):a.amount)); log(`<b>${card.name}</b> repairs <b>${target.name}</b>.`, side===G.player?'me':'ai'); } }
   else if (a.kind==='buff'){ if (target){ target.tempAp=(target.tempAp||0)+a.amount; target.ap=effAp(target); log(`<b>${card.name}</b>: <b>${target.name}</b> gets +${a.amount} AP.`, side===G.player?'me':'ai'); } }
   else if (a.kind==='rest'){ if (target){ target.rested=true; log(`<b>${card.name}</b> rests <b>${target.name}</b>.`, side===G.player?'me':'ai'); } }
+  // Self-targeting ("ping self") commands auto-pick a friendly Unit to take the damage.
+  else if (a.kind==='damageBoth' || a.kind==='selfPingBuff' || a.kind==='selfPingDraw'){
+    runTrigger(card, side, a, card.name);
+  }
 }
 
 // ---- player-activated abilities (【Activate･Main】 with a rest-self OR exile-from-trash cost) ----
 function activateCostPayable(u, side){
   const c=u.activate.cost;
   if (c.type==='rest') return !u.rested;                  // a rest cost needs an active card
+  if (c.type==='restUnit') return side.field.some(x=>!x.rested && !x.token && matchTrashTrait(x, c.trait)); // a friendly Unit to rest
   if (c.type==='exile') return trashCount(side, c.trait) >= c.count;
   if (c.type==='resource') return side.resAvail >= c.amount;
   return false;
@@ -1215,6 +1289,10 @@ function applyActivateEffect(u, target, side){
   const a=u.activate.action, cost=u.activate.cost, foe = side===G.player?G.enemy:G.player, cls = side===G.player?'me':'ai';
   // Pay the ability's cost.
   if (cost.type==='rest'){ u.rested=true; }
+  else if (cost.type==='restUnit'){
+    const v=side.field.filter(x=>!x.rested && !x.token && matchTrashTrait(x, cost.trait)).sort((x,y)=>x.ap-y.ap)[0];
+    if (v){ v.rested=true; log(`<b>${u.name}</b> rests <b>${v.name}</b> as a cost.`, cls); }
+  }
   else if (cost.type==='resource'){ side.resAvail=Math.max(0, side.resAvail-cost.amount); log(`<b>${u.name}</b> pays ${cost.amount} resource${cost.amount===1?'':'s'}.`, cls); }
   else if (cost.type==='exile'){
     const n=exileFromTrash(side, cost.count, cost.trait);
@@ -1222,7 +1300,14 @@ function applyActivateEffect(u, target, side){
   }
   u.activatedThisTurn=true; sound('deploy');
   if (a.kind==='setActive'){
-    u.rested=false; log(`<b>${u.name}</b> is set active and can attack again.`, cls);
+    const t = (a.scope==='friendly' && target) ? target : u;
+    t.rested=false; log(`<b>${u.name}</b>: <b>${t.name}</b> is set active.`, cls);
+  } else if (a.kind==='selfPingBuff'){
+    const t = target || pingFriendly(side, a.self, true);
+    if (t){ log(`<b>${u.name}</b> deals ${a.self} to your <b>${t.name}</b>, then it gets AP+${a.ap}.`, cls);
+      damage(t, a.self, side); if (t.hp>0){ t.tempAp=(t.tempAp||0)+a.ap; t.ap=effAp(t); } }
+  } else if (['selfDamage','selfDamageThen','damageBoth','selfPingDraw','token'].includes(a.kind)){
+    runTrigger(u, side, a, u.name);
   } else if (a.kind==='buff' && a.scope==='all-friendly'){
     for (const t of side.field){ t.tempAp=(t.tempAp||0)+a.amount; t.ap=effAp(t); }
     log(`<b>${u.name}</b>: all friendly Units get AP+${a.amount} this turn.`, cls);
@@ -1236,6 +1321,8 @@ function applyActivateEffect(u, target, side){
     log(`<b>${u.name}</b> deals ${a.amount} to all enemy Units.`, cls); for (const t of [...foe.field]) damage(t, a.amount, foe);
   } else if (a.kind==='damage'){
     if (target){ log(`<b>${u.name}</b> deals ${a.amount} to <b>${target.name}</b>.`, cls); damage(target, a.amount, foe); }
+  } else if (a.kind==='rest'){
+    if (target){ target.rested=true; log(`<b>${u.name}</b> rests <b>${target.name}</b>.`, cls); }
   } else if (a.kind==='grantBreach'){
     const t=target||u; t.breach=Math.max(t.breach||0, a.amount); log(`<b>${u.name}</b>: <b>${t.name}</b> gains &lt;Breach ${a.amount}&gt;.`, cls);
   } else if (a.kind==='grantHigh'){
@@ -1252,6 +1339,8 @@ function aiActivate(u){
   else if (a.scope==='enemy'){ if(!pl.field.length) return false; target=[...pl.field].sort((x,y)=>y.ap-x.ap)[0]; }
   else { // friendly single target
     if (a.kind==='heal'){ target=[...ai.field].filter(t=>t.hp<effMaxHp(t)).sort((x,y)=>(effMaxHp(y)-y.hp)-(effMaxHp(x)-x.hp))[0]; if(!target) return false; }
+    else if (a.kind==='selfPingBuff'){ target=pingFriendly(ai, a.self, true); if(!target) return false; }
+    else if (a.kind==='setActive'){ target=[...ai.field].filter(t=>t.rested && !t.sick && t.ap>0).sort((x,y)=>y.ap-x.ap)[0]; if(!target) return false; }
     else { target=[...ai.field].filter(t=>!t.rested && !t.sick && t.ap>0).sort((x,y)=>y.ap-x.ap)[0]; if(!target) return false; }
   }
   applyActivateEffect(u, target, ai);
@@ -1607,10 +1696,12 @@ function cardFace(c, ctx){
     if (G.mode==='idle' && isUnit && !c.rested && !c.sick && c.ap>0) cls.push('selectable');
     if (G.mode==='pilot-target' && c.type==='unit') cls.push('selectable');
     if (G.mode==='command-target' && (G.pending?.action.kind==='heal'||G.pending?.action.kind==='buff')) cls.push('selectable');
+    if (G.mode==='activate-target' && G.pending?.activate?.action.scope==='friendly') cls.push('selectable');
   }
   if (ctx==='field-enemy'){
     if (G.mode==='attack-target'){ if (c.rested) cls.push('target'); else cls.push('dim'); }
     if (G.mode==='command-target' && (G.pending?.action.kind==='damage'||G.pending?.action.kind==='rest')) cls.push('selectable');
+    if (G.mode==='activate-target' && G.pending?.activate?.action.scope==='enemy') cls.push('selectable');
   }
   const isBase = c.type==='base';
   if (isBase) cls.push('isbase');
