@@ -412,6 +412,12 @@ function clauseGrantsKeyword(effect, kw, clauseKw){
 // Parse the effect half of an activated ability into an engine action.
 function parseActivateEffect(t){
   const raw = t; t = t.toLowerCase(); let d;
+  // Conditional activated effect: "If <cond>, <effect>" — gate it on a board/turn/trash state.
+  const condM = t.match(/^if (.+?),\s*(.+)$/);
+  if (condM){
+    const cond = parseCondition(condM[1]);
+    if (cond){ const inner = parseActivateEffect(condM[2]); return inner ? { kind:'cond', cond, inner, scope: inner.scope||'self', other:/\banother\b/.test(condM[1]) } : null; }
+  }
   // Self-targeting ("ping self") activated abilities take priority over enemy-damage rules.
   const ping = parseSelfPing(t);
   if (ping) return Object.assign(ping, { scope: ping.kind==='selfPingBuff' ? 'friendly' : 'self' });
@@ -685,8 +691,20 @@ function parseLink(link){ return (link||'').split(/[\/,]/).map(s=>s.trim()).filt
 function hpLimit(t){ const m=t.match(/(\d+)\s*or less hp/); return m?+m[1]:99; }
 function parseTrigger(effect, kw){
   const m = plain(effect).match(new RegExp('【\\s*'+kw+'[^】]*】\\s*([^【]*)','i'));
-  if (!m) return null;
-  const t = m[1].toLowerCase(); let d;
+  return m ? parseClause(m[1]) : null;
+}
+// Parse one effect clause (original-case `raw`) into an engine action.
+function parseClause(raw){
+  const t = raw.toLowerCase(); let d;
+  // Leading condition: "If <cond>, <effect>" — gate the inner effect on a board/turn/trash state.
+  const cm = t.match(/^if (.+?),\s*(.+)$/);
+  if (cm && !/you placed|you place /.test(cm[1])){
+    const cond = parseCondition(cm[1]);
+    const innerRaw = raw.replace(/^[^,]*,\s*/,'');     // keep original case for the inner effect
+    const inner = parseClause(innerRaw);
+    if (cond) return inner ? { kind:'cond', cond, inner, other:/\banother\b/.test(cm[1]) } : null;
+    if (inner) return inner;                            // unknown condition → resolve ungated (legacy behaviour)
+  }
   // Trash-interacting clauses must be checked FIRST — their inner text (e.g. "Rest it.")
   // would otherwise match a generic rule below and skip the trash cost/retrieval.
   if (/from your trash/.test(t)){
@@ -700,25 +718,28 @@ function parseTrigger(effect, kw){
   // self-targeted buff: "This Unit gets AP+N during this turn" (and maybe gains <High-Maneuver>)
   if ((d=t.match(/this unit gets ap\+(\d+)/))) return { kind:'selfbuff', amount:+d[1], hman:/<\s*high-?maneuver/.test(t) };
   if (/add (1|one)?\s*of your shields to your hand/.test(t)){
-    // "Then, if it is your turn, look at the top N cards of your deck…" — flag the scry
-    const sd = t.match(/look at the top (\d+)/); return { kind:'shieldToHand', scryN: sd?+sd[1]:0 };
+    const sd = t.match(/look at the top (\d+)/);
+    // A trailing "Then, <effect>" (often conditional) resolves after the shield is taken.
+    let then=null; const tm=t.match(/\bthen,?\s*(.+)$/);
+    if (tm && !/look at the top/.test(tm[1])) then = parseClause(raw.slice(raw.toLowerCase().indexOf('then')+4).replace(/^,?\s*/,''));
+    return { kind:'shieldToHand', scryN: sd?+sd[1]:0, then };
   }
   if ((d=t.match(/place (\d+)?\s*ex resource/))) return { kind:'exResource', amount:+(d[1]||1) };
   // Self-targeting ("ping self") clauses — checked before the generic enemy-damage/rest rules
   // so "deal N damage to this Unit"/"…to it" hits a friendly, not the foe.
   const ping = parseSelfPing(t);
   if (ping) return ping;
-  if (/return it to .*hand|return that unit to .*hand|return them to .*hand/.test(t)){ const lv=t.match(/lv\.?(\d+) or lower/); return { kind:'bounce', hp:hpLimit(t), maxLv:lv?+lv[1]:null }; }
-  if (/\brest it\b|rest that unit/.test(t)){ const lv=t.match(/lv\.?(\d+) or lower/); return { kind:'rest', hp:hpLimit(t), maxLv:lv?+lv[1]:null }; }
-  if ((d=t.match(/ap\s*-\s*(\d+)/))) return { kind:'debuff', amount:+d[1] };
-  if ((d=t.match(/deal (\d+) damage/))) return { kind:'damage', amount:+d[1], scope:/all (enemy )?units|to all/.test(t)?'all-enemy':'enemy', both:/to them|to each/.test(t) };
+  if (/return it to .*hand|return that unit to .*hand|return them to .*hand/.test(t)){ return { kind:'bounce', filter:targetFilter(t) }; }
+  if (/\brest it\b|rest that unit/.test(t)){ return { kind:'rest', filter:targetFilter(t) }; }
+  if ((d=t.match(/ap\s*-\s*(\d+)/))) return { kind:'debuff', amount:+d[1], filter:targetFilter(t) };
+  if ((d=t.match(/deal (\d+) damage/))) return { kind:'damage', amount:+d[1], scope:/all (enemy )?units|to all/.test(t)?'all-enemy':'enemy', both:/to them|to each/.test(t), filter:targetFilter(t) };
   if ((d=t.match(/draw (\d+)/))) return { kind:'draw', amount:+d[1] };
   if (/\bdraw\b/.test(t)) return { kind:'draw', amount:1 };
-  if ((d=t.match(/ap\s*\+\s*(\d+)/))) return { kind:'buff', amount:+d[1] };
+  if ((d=t.match(/ap\s*\+\s*(\d+)/))) return { kind:'buff', amount:+d[1], filter:targetFilter(t) };
   if (/recover|heal/.test(t)){ d=t.match(/(\d+)\s*hp/); return { kind:'heal', amount:d?+d[1]:99 }; }
   if (/deploy \d+ (?:rested )?\[/i.test(t)){
-    const specs=parseTokenSpecs(m[1]);
-    const cond = /if you have no unit/i.test(m[1]) && specs.length>=2 ? 'board' : null;
+    const specs=parseTokenSpecs(raw);
+    const cond = /if you have no unit/i.test(raw) && specs.length>=2 ? 'board' : null;
     return specs.length ? { kind:'token', specs, cond } : { kind:'token', count:+((t.match(/deploy (\d+)/)||[])[1]||1) };
   }
   // Mill: "place the top N cards of your deck into your trash"
@@ -754,22 +775,121 @@ function parseTrigger(effect, kw){
   if (inner) return inner;
   return null;
 }
+// ---- conditional effects + single-target selection ----
+// Extract single-target restrictions from an effect clause (Lv./AP/HP caps, lowest HP, rested/active).
+function targetFilter(t){
+  const f={}; let m;
+  if ((m=t.match(/lv\.?\s*(\d+) or lower/i))) f.maxLv=+m[1];
+  if ((m=t.match(/(\d+) or less ap/i)) || (m=t.match(/with (\d+) or less ap/i))) f.maxAp=+m[1];
+  if ((m=t.match(/(\d+) or less hp/i))) f.maxHp=+m[1];
+  if (/lowest hp/i.test(t)) f.lowestHp=true;
+  if (/rested enemy/i.test(t)) f.rested=true;
+  if (/active enemy/i.test(t)) f.active=true;
+  return Object.keys(f).length?f:null;
+}
+// Valid enemy targets for a single-target removal/debuff action (respects act.filter).
+function enemyTargets(foe, act){
+  const f=act.filter||{};
+  let list=foe.field.filter(u=>u.hp>0
+    && (f.maxLv==null || (u.lv||0)<=f.maxLv)
+    && (act.maxLv==null || (u.lv||0)<=act.maxLv)               // legacy field from parseTriggerInner
+    && (f.maxAp==null || effAp(u)<=f.maxAp)
+    && (f.maxHp==null || u.hp<=f.maxHp)
+    && (act.hp==null || act.hp>=99 || u.hp<=act.hp)            // legacy "N or less HP" field
+    && (!f.rested || u.rested) && (!f.active || !u.rested));
+  if (act.kind==='bounce'||act.kind==='destroy') list=list.filter(u=>!u.token);
+  if (act.kind==='rest') list=list.filter(u=>!u.rested);
+  return list;
+}
+function friendlyTargets(side, act){
+  const f=act.filter||{};
+  let list=side.field.filter(u=>u.hp>0 && (f.maxLv==null||(u.lv||0)<=f.maxLv));
+  if (act.kind==='heal') list=list.filter(u=>u.hp<effMaxHp(u));
+  return list;
+}
+// Pick the most sensible auto-target from a candidate list.
+function rankTarget(cands, act){
+  if (!cands.length) return null;
+  const arr=[...cands];
+  if (act.filter && act.filter.lowestHp) return arr.sort((a,b)=>a.hp-b.hp)[0];
+  if (act.kind==='destroy') return arr.sort((a,b)=>(b.baseAp+b.baseHp)-(a.baseAp+a.baseHp))[0];
+  if (act.kind==='heal')   return arr.sort((a,b)=>(effMaxHp(b)-b.hp)-(effMaxHp(a)-a.hp))[0];
+  return arr.sort((a,b)=>effAp(b)-effAp(a))[0];   // damage / rest / bounce / debuff / buff
+}
+// Apply a single-target action to a specific chosen target.
+function applyToTarget(card, side, act, target, label){
+  if (!target) return;
+  const cls=side===G.player?'me':'ai', foe=side===G.player?G.enemy:G.player, name=card.name;
+  if (act.kind==='damage'){ log(`${label}: <b>${name}</b> deals ${act.amount} to <b>${target.name}</b>.`,cls); damage(target,act.amount,foe); }
+  else if (act.kind==='rest'){ target.rested=true; log(`${label}: <b>${name}</b> rests <b>${target.name}</b>.`,cls); }
+  else if (act.kind==='bounce'){ const i=foe.field.indexOf(target); if(i>=0)foe.field.splice(i,1); returnToHand(target,foe); log(`${label}: <b>${name}</b> returns <b>${target.name}</b> to hand.`,cls); }
+  else if (act.kind==='destroy'){ log(`${label}: <b>${name}</b> destroys <b>${target.name}</b>.`,cls); const i=foe.field.indexOf(target); if(i>=0)foe.field.splice(i,1); fx('die',target.uid); sendToTrash(target,foe); runTrigger(target,foe,parseTrigger(target.effect,'Destroyed'),'Destroyed'); }
+  else if (act.kind==='debuff'){ target.tempAp=(target.tempAp||0)-act.amount; target.ap=effAp(target); log(`${label}: <b>${target.name}</b> gets AP-${act.amount} this turn.`,cls); }
+  else if (act.kind==='buff'){ target.tempAp=(target.tempAp||0)+act.amount; target.ap=effAp(target); log(`${label}: <b>${target.name}</b> gets AP+${act.amount} this turn.`,cls); }
+  else if (act.kind==='heal'){ target.hp=Math.min(effMaxHp(target), target.hp+(act.amount>=99?effMaxHp(target):act.amount)); log(`${label}: <b>${name}</b> repairs <b>${target.name}</b>.`,cls); }
+}
+// Do the Shield-to-hand portion of a base/unit effect (shield + optional scry), without the trailing "Then,…".
+function doShieldToHand(card, side, act, label){
+  const cls=side===G.player?'me':'ai';
+  if (side.shields.length && side.hand.length<HAND_MAX){ side.hand.push(side.shields.pop()); log(`${label}: <b>${card.name}</b> adds a Shield to ${who(side)} hand.`, cls); }
+  if (act.scryN>0 && side.deck.length>=act.scryN && side.who===G.turn){
+    const top = side.deck.splice(side.deck.length-act.scryN, act.scryN);
+    top.sort((a,b)=>cardValue(b)-cardValue(a));
+    side.deck.push(top[0]);
+    for (let k=1;k<top.length;k++) sendToTrash(top[k], side);
+    log(`${label}: <b>${card.name}</b> looks at top ${act.scryN} — keeps <b>${top[0].name}</b>, ${act.scryN-1} sent to trash.`, cls);
+  }
+}
+// Parse a leading board/turn/trash condition ("If <cond>, …") into a predicate descriptor.
+function parseCondition(t){
+  t=t.toLowerCase().trim(); let m;
+  if (/it is your turn/.test(t)) return { type:'yourTurn' };
+  if (/it is your opponent's turn|it is the opponent's turn/.test(t)) return { type:'oppTurn' };
+  if ((m=t.match(/you are lv\.?\s*(\d+) or higher/))) return { type:'level', min:+m[1] };
+  if ((m=t.match(/(\d+) or more enemy units/))) return { type:'enemyUnits', min:+m[1] };
+  if ((m=t.match(/(\d+) or less enemy units/))) return { type:'enemyUnitsMax', max:+m[1] };
+  if ((m=t.match(/(\d+) or (?:less|fewer) enemy shields/))) return { type:'enemyShieldsMax', max:+m[1] };
+  if ((m=t.match(/(\d+) or more enemy shields/))) return { type:'enemyShields', min:+m[1] };
+  if ((m=t.match(/there are (\d+) or more ([a-z\/() ]*?)\s*cards? in your trash/))) return { type:'trash', min:+m[1], trait:(m[2]||'').replace(/[()]/g,'').trim()||null };
+  if (/friendly\s+[a-z\/() ]*?link unit (?:is|are) in play/.test(t)){ const tm=t.match(/friendly\s+([a-z\/() ]*?)\s*link unit/); return { type:'linkUnit', trait:tm?((tm[1]||'').replace(/[()]/g,'').trim()||null):null }; }
+  if ((m=t.match(/(?:a|an|another)\s+friendly\s+([a-z\/() ]*?)\s*unit (?:is|are) in play/))) return { type:'friendlyUnit', min:1, trait:(m[1]||'').replace(/[()]/g,'').trim()||null };
+  if ((m=t.match(/(\d+) or more (?:friendly )?([a-z\/() ]*?)\s*units?(?: are)? in play/))) return { type:'friendlyUnit', min:+m[1], trait:(m[2]||'').replace(/[()]/g,'').trim()||null };
+  if ((m=t.match(/you have (\d+) or more ([a-z\/() ]*?)\s*units?/))) return { type:'friendlyUnit', min:+m[1], trait:(m[2]||'').replace(/[()]/g,'').trim()||null };
+  return null;
+}
+function traitMatchUnit(u, trait){ if(!trait) return true; const ct=(u.trait||'').toLowerCase(); return trait.split('/').some(p=>ct.includes(p.trim())); }
+// Evaluate a parsed condition for `side` (source card excluded when the text says "another").
+function condMet(cond, side, source, other){
+  if (!cond) return true;
+  const foe = side===G.player?G.enemy:G.player;
+  switch(cond.type){
+    case 'yourTurn':       return G.turn===side.who;
+    case 'oppTurn':        return G.turn!==side.who;
+    case 'level':          return (side.resMax||0) >= cond.min;
+    case 'enemyUnits':     return foe.field.length >= cond.min;
+    case 'enemyUnitsMax':  return foe.field.length <= cond.max;
+    case 'enemyShields':   return foe.shields.length >= cond.min;
+    case 'enemyShieldsMax': return foe.shields.length <= cond.max;
+    case 'trash':          return trashCount(side, cond.trait) >= cond.min;
+    case 'linkUnit':       return side.field.some(u=>u.linked && traitMatchUnit(u,cond.trait));
+    case 'friendlyUnit': {
+      const n = side.field.filter(u=>traitMatchUnit(u,cond.trait) && (!other || u!==source)).length;
+      return n >= cond.min;
+    }
+    default: return true;
+  }
+}
 // Resolve a triggered action for `side`, auto-targeting sensibly. `label` is 'Deploy' / 'Pair'.
 function runTrigger(card, side, act, label){
   if (!act) return;
+  // Conditional effect: only resolve the inner effect when the board condition holds.
+  if (act.kind==='cond'){ if (condMet(act.cond, side, card, act.other)) runTrigger(card, side, act.inner, label); return; }
   const cls = side===G.player?'me':'ai';
   const foe = side===G.player?G.enemy:G.player;
   const name = card.name;
   if (act.kind==='shieldToHand'){
-    if (side.shields.length && side.hand.length<HAND_MAX){ side.hand.push(side.shields.pop()); log(`${label}: <b>${name}</b> adds a Shield to ${who(side)} hand.`, cls); }
-    // Conditional scry: "if it is your turn, look at top N cards…" — auto-keep the best, trash the rest
-    if (act.scryN>0 && side.deck.length>=act.scryN && side.who===G.turn){
-      const top = side.deck.splice(side.deck.length-act.scryN, act.scryN);
-      top.sort((a,b)=>cardValue(b)-cardValue(a));
-      side.deck.push(top[0]);
-      for (let k=1; k<top.length; k++) sendToTrash(top[k], side);
-      log(`${label}: <b>${name}</b> looks at top ${act.scryN} — keeps <b>${top[0].name}</b>, ${act.scryN-1} sent to trash.`, cls);
-    }
+    doShieldToHand(card, side, act, label);
+    if (act.then) runTrigger(card, side, act.then, label);   // trailing "Then, <effect>"
   } else if (act.kind==='exResource'){
     side.ex+=act.amount; side.resAvail+=act.amount; log(`${label}: <b>${name}</b> places ${act.amount} EX Resource.`, cls);
   } else if (act.kind==='draw'){
@@ -778,22 +898,12 @@ function runTrigger(card, side, act, label){
     for(let i=0;i<act.draw;i++) draw(side);
     log(`${label}: <b>${name}</b> — draw ${act.draw}, discard ${act.discard}.`, cls);
     autoDiscard(side, act.discard, name);
-  } else if (act.kind==='damage'){
-    if (act.scope==='all-enemy'){
-      if (foe.field.length){ log(`${label}: <b>${name}</b> deals ${act.amount} to all enemy Units.`, cls); for(const t of [...foe.field]) damage(t,act.amount,foe); }
-    } else {
-      const t=[...foe.field].sort((a,b)=>b.ap-a.ap)[0];
-      if (t){ log(`${label}: <b>${name}</b> deals ${act.amount} to <b>${t.name}</b>.`, cls); damage(t,act.amount,foe); }
-    }
-  } else if (act.kind==='rest'){
-    const t=[...foe.field].filter(u=>u.hp<=(act.hp||99) && !u.rested && (act.maxLv==null||u.lv<=act.maxLv)).sort((a,b)=>b.ap-a.ap)[0];
-    if (t){ t.rested=true; log(`${label}: <b>${name}</b> rests <b>${t.name}</b>.`, cls); }
-  } else if (act.kind==='bounce'){
-    const t=[...foe.field].filter(u=>u.hp<=(act.hp||99) && !u.token && (act.maxLv==null||u.lv<=act.maxLv)).sort((a,b)=>b.ap-a.ap)[0];
-    if (t){ const i=foe.field.indexOf(t); foe.field.splice(i,1); returnToHand(t, foe); log(`${label}: <b>${name}</b> returns <b>${t.name}</b> to hand.`, cls); }
-  } else if (act.kind==='destroy'){
-    const t=[...foe.field].filter(u=>!u.token && (act.maxLv==null||u.lv<=act.maxLv)).sort((a,b)=>(b.baseAp+b.baseHp)-(a.baseAp+a.baseHp))[0];
-    if (t){ log(`${label}: <b>${name}</b> destroys <b>${t.name}</b>.`, cls); const i=foe.field.indexOf(t); if(i>=0) foe.field.splice(i,1); fx('die', t.uid); sendToTrash(t, foe); runTrigger(t, foe, parseTrigger(t.effect,'Destroyed'), 'Destroyed'); }
+  } else if (act.kind==='damage' && act.scope==='all-enemy'){
+    if (foe.field.length){ log(`${label}: <b>${name}</b> deals ${act.amount} to all enemy Units.`, cls); for(const t of [...foe.field]) damage(t,act.amount,foe); }
+  } else if (act.kind==='damage' || act.kind==='rest' || act.kind==='bounce' || act.kind==='destroy' || act.kind==='debuff'){
+    applyToTarget(card, side, act, rankTarget(enemyTargets(foe, act), act), label);
+  } else if (act.kind==='buff' || act.kind==='heal'){
+    applyToTarget(card, side, act, rankTarget(friendlyTargets(side, act), act), label);
   } else if (act.kind==='setActive'){
     card.rested=false; log(`${label}: <b>${name}</b> is set active.`, cls);
   } else if (act.kind==='selfDamage'){
@@ -813,15 +923,6 @@ function runTrigger(card, side, act, label){
     const t=pingFriendly(side, act.self, false);
     if (t){ log(`${label}: <b>${name}</b> deals ${act.self} to your <b>${t.name}</b> — draw ${act.draw}.`, cls);
       damage(t, act.self, side); for (let i=0;i<act.draw;i++) draw(side); if (act.discard) autoDiscard(side, act.discard, name); }
-  } else if (act.kind==='debuff'){
-    const t=[...foe.field].sort((a,b)=>b.ap-a.ap)[0];
-    if (t){ t.tempAp=(t.tempAp||0)-act.amount; t.ap=effAp(t); log(`${label}: <b>${t.name}</b> gets AP-${act.amount} this turn.`, cls); }
-  } else if (act.kind==='buff'){
-    const t=[...side.field].sort((a,b)=>b.baseAp-a.baseAp)[0];
-    if (t){ t.tempAp=(t.tempAp||0)+act.amount; t.ap=effAp(t); log(`${label}: <b>${t.name}</b> gets AP+${act.amount} this turn.`, cls); }
-  } else if (act.kind==='heal'){
-    const t=[...side.field].sort((a,b)=>(effMaxHp(b)-b.hp)-(effMaxHp(a)-a.hp))[0];
-    if (t && t.hp<effMaxHp(t)){ t.hp=Math.min(effMaxHp(t), t.hp+(act.amount>=99?effMaxHp(t):act.amount)); log(`${label}: <b>${name}</b> repairs <b>${t.name}</b>.`, cls); }
   } else if (act.kind==='token'){
     deployTokens(act, side, name, label, cls);
   } else if (act.kind==='setActiveFriendly'){
@@ -881,6 +982,37 @@ function runTrigger(card, side, act, label){
       }
     }
   }
+}
+// Resolve a PLAYER-side trigger, letting the player choose the target when a single-target
+// ping/buff has more than one legal candidate. Falls back to runTrigger (auto) otherwise.
+// `after` runs once the whole effect (including any chained "Then,…") is fully resolved.
+function resolvePlayerTrigger(card, side, act, label, after){
+  const fin = ()=>{ if (after) after(); };
+  if (!act){ fin(); return; }
+  if (act.kind==='cond'){                       // gate, then resolve the inner interactively
+    if (!condMet(act.cond, side, card, act.other)){ fin(); return; }
+    return resolvePlayerTrigger(card, side, act.inner, label, after);
+  }
+  if (act.kind==='shieldToHand'){               // take the shield, then chain the "Then,…" part
+    doShieldToHand(card, side, act, label);
+    if (act.then) return resolvePlayerTrigger(card, side, act.then, label, after);
+    fin(); return;
+  }
+  const enemyKinds = (act.kind==='damage' && act.scope!=='all-enemy') || ['rest','bounce','destroy','debuff'].includes(act.kind);
+  const allyKinds  = act.kind==='buff' || act.kind==='heal';
+  if (enemyKinds || allyKinds){
+    const cands = enemyKinds ? enemyTargets(G.enemy, act) : friendlyTargets(G.player, act);
+    if (cands.length>=2){                        // genuine choice → ask the player
+      G.mode='trigger-target';
+      G.pending={ card, side, act, label, after, scope: enemyKinds?'enemy':'friendly', cands: cands.map(c=>c.uid) };
+      setPrompt(`${card.name}: tap ${enemyKinds?'an enemy':'a friendly'} unit to target.`);
+      render(); return;
+    }
+    applyToTarget(card, side, act, rankTarget(cands, act), label);  // 0–1 candidate → auto
+    fin(); return;
+  }
+  runTrigger(card, side, act, label);            // non-targeted (draw, tokens, self, mill, …)
+  fin();
 }
 // Strip a unit back to its printed state (used by both returnToHand and trash retrieval).
 function resetUnit(u){
@@ -1272,8 +1404,8 @@ function playFromHand(uidv){
     s.base = card; card.rested=false; card.sick=false;
     sound('deploy');
     log(`You deploy base <b>${card.name}</b> (HP ${card.hp}) — it now guards your shields.`, 'me');
-    runTrigger(card, s, parseTrigger(card.effect,'Deploy'), 'Deploy');
-    closeInspect(); clearSel(); render(); checkEnd();
+    closeInspect();
+    resolvePlayerTrigger(card, s, parseTrigger(card.effect,'Deploy'), 'Deploy', ()=>{ clearSel(); render(); checkEnd(); });
   } else if (card.type==='unit'){
     if (s.field.length>=FIELD_MAX){ flashPrompt('Battle area full (max '+FIELD_MAX+').'); return; }
     s.hand.splice(idx,1); s.resAvail-=effectiveCost(s,card);
@@ -1281,8 +1413,8 @@ function playFromHand(uidv){
     s.field.push(card);
     sound('deploy');
     log(`You deploy <b>${card.name}</b>${card.blitz?' &lt;Blitz&gt;':''}.`, 'me');
-    runTrigger(card, s, parseTrigger(card.effect,'Deploy'), 'Deploy');
-    closeInspect(); clearSel(); render(); checkEnd();
+    closeInspect();
+    resolvePlayerTrigger(card, s, parseTrigger(card.effect,'Deploy'), 'Deploy', ()=>{ clearSel(); render(); checkEnd(); });
   } else if (card.type==='pilot'){
     const myUnits = s.field.filter(u=>u.type==='unit');
     if (myUnits.length===0){ flashPrompt(`Deploy a Unit first — pilot ${card.name} must be paired with one.`); return; }
@@ -1412,7 +1544,7 @@ function resolveActivate(u, target){      // player path
   clearSel(); render(); checkEnd();
 }
 function applyActivateEffect(u, target, side){
-  const a=u.activate.action, cost=u.activate.cost, foe = side===G.player?G.enemy:G.player, cls = side===G.player?'me':'ai';
+  let a=u.activate.action; const cost=u.activate.cost, foe = side===G.player?G.enemy:G.player, cls = side===G.player?'me':'ai';
   // Pay the ability's cost.
   if (cost.type==='rest'){ u.rested=true; }
   else if (cost.type==='restUnit'){
@@ -1425,6 +1557,8 @@ function applyActivateEffect(u, target, side){
     log(`<b>${u.name}</b> exiles ${n} ${cost.trait?cost.trait+' ':''}card${n===1?'':'s'} from trash.`, cls);
   }
   u.activatedThisTurn=true; sound('deploy');
+  // Conditional ability: cost is paid, but the effect only happens if the condition holds.
+  if (a.kind==='cond'){ if (!condMet(a.cond, side, u, a.other)){ log(`<b>${u.name}</b>: condition not met.`, cls); return; } a=a.inner; }
   if (a.kind==='setActive'){
     const t = (a.scope==='friendly' && target) ? target : u;
     t.rested=false; log(`<b>${u.name}</b>: <b>${t.name}</b> is set active.`, cls);
@@ -1457,7 +1591,9 @@ function applyActivateEffect(u, target, side){
 }
 // AI: pick a sensible target for a ready activated ability and use it (before attacking).
 function aiActivate(u){
-  const a=u.activate.action, ai=G.enemy, pl=G.player;
+  let a=u.activate.action; const ai=G.enemy, pl=G.player;
+  // Conditional ability: don't waste it when the condition is currently false.
+  if (a.kind==='cond'){ if(!condMet(a.cond, ai, u, a.other)) return false; a=a.inner; }
   let target=null;
   if (a.scope==='self'){ /* setActive / self keyword grant — no target */ }
   else if (a.scope==='all-friendly'){ if(!ai.field.length) return false; }
@@ -1497,6 +1633,17 @@ function fieldClick(uidv){
     const t=(scope==='enemy'?G.enemy:G.player).field.find(c=>c.uid===uidv);
     if(!t){ flashPrompt(scope==='enemy'?'Pick an enemy unit.':'Pick a friendly unit.'); return; }
     resolveActivate(u, t); return;
+  }
+
+  if (G.mode==='trigger-target'){
+    const p=G.pending;
+    if (!p.cands.includes(uidv)){ flashPrompt(`Pick a highlighted ${p.scope==='enemy'?'enemy':'friendly'} unit.`); return; }
+    const pool = p.scope==='enemy'?G.enemy:G.player;
+    const t = pool.field.find(c=>c.uid===uidv); if(!t) return;
+    G.mode='idle'; G.pending=null;
+    applyToTarget(p.card, p.side, p.act, t, p.label);
+    if (p.after) p.after(); else { clearSel(); render(); checkEnd(); }
+    return;
   }
 
   if (G.mode==='idle'){
@@ -1828,11 +1975,13 @@ function cardFace(c, ctx){
     if (G.mode==='pilot-target' && c.type==='unit') cls.push('selectable');
     if (G.mode==='command-target' && (G.pending?.action.kind==='heal'||G.pending?.action.kind==='buff')) cls.push('selectable');
     if (G.mode==='activate-target' && G.pending?.activate?.action.scope==='friendly') cls.push('selectable');
+    if (G.mode==='trigger-target' && G.pending?.scope==='friendly' && G.pending.cands.includes(c.uid)) cls.push('selectable');
   }
   if (ctx==='field-enemy'){
     if (G.mode==='attack-target'){ if (c.rested) cls.push('target'); else cls.push('dim'); }
     if (G.mode==='command-target' && (G.pending?.action.kind==='damage'||G.pending?.action.kind==='rest')) cls.push('selectable');
     if (G.mode==='activate-target' && G.pending?.activate?.action.scope==='enemy') cls.push('selectable');
+    if (G.mode==='trigger-target' && G.pending?.scope==='enemy' && G.pending.cands.includes(c.uid)) cls.push('selectable');
   }
   const isBase = c.type==='base';
   if (isBase) cls.push('isbase');
