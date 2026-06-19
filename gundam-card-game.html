@@ -222,6 +222,7 @@
       <div class="stat-line"><span>Hand</span><b id="enemyHandCount"></b></div>
       <div class="stat-line"><span>Deck</span><b id="enemyDeckCount"></b></div>
       <div class="stat-line"><span>Trash</span><b id="enemyTrashCount"></b></div>
+      <div class="stat-line"><span>Exile</span><b id="enemyExileCount"></b></div>
     </div>
     <div class="base-zone enemy" id="enemyBaseZone"><div class="bz-label">BASE</div><div class="bz-slot" id="enemyBase"></div></div>
     <div class="battlefield enemy" id="enemyField"></div>
@@ -236,6 +237,7 @@
       <div class="resources" id="playerResources"></div>
       <div class="stat-line"><span>Deck</span><b id="playerDeckCount"></b></div>
       <div class="stat-line"><span>Trash</span><b id="playerTrashCount" style="cursor:pointer;text-decoration:underline dotted"></b></div>
+      <div class="stat-line"><span>Exile</span><b id="playerExileCount" style="cursor:pointer;text-decoration:underline dotted"></b></div>
     </div>
     <div class="base-zone player" id="playerBaseZone"><div class="bz-label">BASE</div><div class="bz-slot" id="playerBase"></div></div>
     <div class="battlefield player" id="playerField"></div>
@@ -373,9 +375,11 @@ function clauseGrantsKeyword(effect, kw, clauseKw){
 // Parse the effect half of an activated ability into an engine action.
 function parseActivateEffect(t){
   t = t.toLowerCase(); let d;
-  if ((d=t.match(/gains?\s+<\s*breach\s*(\d+)/)))            return { kind:'grantBreach', amount:+d[1], scope:'friendly' };
-  if (/gains?\s+<\s*high-?maneuver/.test(t))                 return { kind:'grantHigh', scope:'friendly' };
+  if (/set this unit as active/.test(t))                    return { kind:'setActive', scope:'self' };
+  if ((d=t.match(/gains?\s+<\s*breach\s*(\d+)/)))            return { kind:'grantBreach', amount:+d[1], scope:/this unit/.test(t)?'self':'friendly' };
+  if (/gains?\s+<\s*high-?maneuver/.test(t))                 return { kind:'grantHigh', scope:/this unit/.test(t)?'self':'friendly' };
   if (/recover|heal/.test(t)){ d=t.match(/(\d+)\s*hp/);      return { kind:'heal', amount:d?+d[1]:1, scope:'friendly' }; }
+  if ((d=t.match(/deal (\d+) damage to all enemy/)))        return { kind:'damage', amount:+d[1], scope:'all-enemy' };
   if ((d=t.match(/ap\s*-\s*(\d+)/)))                         return { kind:'debuff', amount:+d[1], scope:'enemy' };
   if ((d=t.match(/deal (\d+) damage/)) && /enemy/.test(t))   return { kind:'damage', amount:+d[1], scope:'enemy' };
   if ((d=t.match(/ap\s*\+\s*(\d+)/))){
@@ -384,17 +388,38 @@ function parseActivateEffect(t){
   }
   return null;
 }
-// Parse a full 【Activate･Main/Action】 ability ("cost：effect"). Only the self-rest cost is
-// modeled — exotic costs (discard / destroy / exile / resource) are skipped, returning null.
+// Circled-digit resource symbols (① = pay/rest 1 resource).
+const RES_SYM = { '①':1,'②':2,'③':3,'④':4,'⑤':5,'⑥':6 };
+// Parse an activated ability's cost half into a cost descriptor (null if unmodeled).
+function parseActivateCost(c){
+  const raw = c.trim();
+  c = c.toLowerCase();
+  // A pure resource cost (just a circled number), e.g. "①" — rest that many active resources.
+  if (RES_SYM[raw]) return { type:'resource', amount:RES_SYM[raw] };
+  if (/rest this (base|unit)/.test(c)) return { type:'rest' };
+  let m = c.match(/exile (\d+) ([a-z\/() ]*?)\s*cards? from your trash/);
+  if (m){ const trait=(m[2]||'').trim().replace(/[()]/g,'').trim()||null; return { type:'exile', count:+m[1], trait }; }
+  return null;
+}
+// Parse a full 【Activate･Main/Action】 ability ("cost：effect"). A self-rest OR an
+// "exile N cards from trash" cost is modeled; other exotic costs return null.
 function parseActivate(effect){
-  const m = plain(effect).match(/【\s*Activate[･·・\s]*(Main|Action)\s*】\s*([^【]*)/i);
+  const pl = plain(effect);
+  // Allow a 【Once per Turn】 (or other timing) modifier to sit between the marker and the cost text.
+  const m = pl.match(/【\s*Activate[･·・\s]*(Main|Action)\s*】\s*(?:【\s*Once per Turn\s*】\s*)?([^【]*)/i);
   if (!m) return null;
   const cm = m[2].trim().match(/^(.*?)[：:]\s*(.+)$/);
   if (!cm) return null;                                  // bare reminder text (e.g. <Support N>)
-  if (!/rest this (base|unit)/i.test(cm[1])) return null;
+  const cost = parseActivateCost(cm[1]);
+  if (!cost) return null;
   const action = parseActivateEffect(cm[2]);
   if (!action) return null;
-  return { phase:/action/i.test(m[1])?'action':'main', text:cm[2].replace(/\s*\(.*$/,'').replace(/\.$/,'').trim(), action };
+  // Gate on a "【During Link】/【During Pair】" prefix that precedes this clause, if any.
+  const before = pl.slice(0, m.index);
+  const requireLink = /【\s*During Link\s*】\s*$/i.test(before.replace(/\s*$/,'')) || /【\s*During Link\s*】[^【]*$/i.test(before);
+  const requirePair = !requireLink && /【\s*During Pair[^】]*】[^【]*$/i.test(before);
+  return { phase:/action/i.test(m[1])?'action':'main', cost,
+           text:cm[2].replace(/\s*\(.*$/,'').replace(/\.$/,'').trim(), action, requireLink, requirePair };
 }
 
 // ---- Trash / Graveyard helpers ----
@@ -468,14 +493,25 @@ function matchFilter(card, filterStr){
   return true;
 }
 
-// Inner effect parser (used by gated and mill-conditional effects).
+// Inner effect parser (used by gated, mill-conditional, and trash-exile effects).
 function parseTriggerInner(t){
   const tl=t.toLowerCase(); let d;
+  if (/destroy it|destroy that/i.test(tl)){ const lvm=tl.match(/lv\.?(\d+) or lower/i); return { kind:'destroy', maxLv:lvm?+lvm[1]:99 }; }
+  if (/return it to .*hand|return that unit to .*hand/i.test(tl)){ const lvm=tl.match(/lv\.?(\d+) or lower/i); return { kind:'bounce', hp:99, maxLv:lvm?+lvm[1]:99 }; }
   if (/rest it|rest that|rest 1 enemy unit/i.test(tl)){ const lvm=tl.match(/lv\.?(\d+) or lower/i); return { kind:'rest', hp:99, maxLv:lvm?+lvm[1]:99 }; }
   if ((d=tl.match(/deal (\d+) damage/i))) return { kind:'damage', amount:+d[1] };
-  if ((d=tl.match(/it gets ap-(\d+)/i))) return { kind:'debuff', amount:+d[1] };
+  if ((d=tl.match(/(?:it|this unit) gets ap\+(\d+)/i))){ return { kind:/this unit/.test(tl)?'selfbuff':'buff', amount:+d[1] }; }
+  if ((d=tl.match(/(?:it|enemy unit) gets ap-(\d+)/i))) return { kind:'debuff', amount:+d[1] };
+  if (/set this unit as active/i.test(tl)) return { kind:'setActive' };
   if ((d=tl.match(/draw (\d+)/i))){ if(/discard/.test(tl)){ const disc=tl.match(/discard (\d+)/i); return { kind:'drawDiscard', draw:+d[1], discard:+(disc?disc[1]:1) }; } return { kind:'draw', amount:+d[1] }; }
   return null;
+}
+// "Choose N [trait] cards from your trash. Exile them. If you do, [effect]."
+function parseTrashExile(t){
+  const m = t.match(/(?:you may )?choose (\d+) ([a-z\/() ]*?)\s*cards? from your trash\.?\s*exile (?:it|them) from the game\.?\s*if you do,?\s*(.+)/i);
+  if (!m) return null;
+  const inner = parseTriggerInner(m[3].trim());
+  return inner ? { kind:'trashExile', count:+m[1], trait:(m[2]||'').trim().replace(/[()]/g,'').trim()||null, inner } : null;
 }
 function parseGatedEffect(t){
   const gm=t.match(/if there are (\d+) or more ([a-z\/() ]*?)\s*cards? in your trash,?\s*(.+)/i);
@@ -487,18 +523,19 @@ function parseGatedEffect(t){
 function trashBlocksAttack(u, side){
   return !!(u.trashCantAttack && (side.trash||[]).length <= u.trashCantAttack.maxCount);
 }
-function showTrashViewer(side){
+function showPileViewer(pile, title){
   const modal=document.createElement('div');
   modal.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.85);z-index:999;display:flex;align-items:center;justify-content:center;';
   const box=document.createElement('div');
   box.style.cssText='background:#1a1a2e;border:1px solid #555;border-radius:10px;padding:16px;max-width:440px;width:90%;max-height:82vh;overflow-y:auto;';
-  box.innerHTML=`<h3 style="margin:0 0 10px;color:#aaa">Trash (${side.trash.length})</h3>`+
-    (side.trash.length?[...side.trash].reverse().map(c=>`<div style="padding:4px 0;border-bottom:1px solid #2a2a3e;color:#ccc;font-size:13px"><b>${c.name}</b> <span style="opacity:.55">${c.type} · Cost ${c.cost}</span></div>`).join(''):'<div style="color:#555">Empty</div>')+
+  box.innerHTML=`<h3 style="margin:0 0 10px;color:#aaa">${title} (${pile.length})</h3>`+
+    (pile.length?[...pile].reverse().map(c=>`<div style="padding:4px 0;border-bottom:1px solid #2a2a3e;color:#ccc;font-size:13px"><b>${c.name}</b> <span style="opacity:.55">${c.type} · Cost ${c.cost}</span></div>`).join(''):'<div style="color:#555">Empty</div>')+
     `<button style="margin-top:12px;padding:8px 20px;background:#333;color:#fff;border:none;border-radius:5px;cursor:pointer" onclick="this.closest('div').parentNode.remove()">Close</button>`;
   modal.appendChild(box);
   modal.addEventListener('click',e=>{ if(e.target===modal) modal.remove(); });
   document.body.appendChild(modal);
 }
+function showTrashViewer(side){ showPileViewer(side.trash, 'Trash'); }
 
 // Interpret a Command card's effect into a simple engine action.
 function inferCommand(effect){
@@ -547,6 +584,16 @@ function parseTrigger(effect, kw){
   const m = plain(effect).match(new RegExp('【\\s*'+kw+'[^】]*】\\s*([^【]*)','i'));
   if (!m) return null;
   const t = m[1].toLowerCase(); let d;
+  // Trash-interacting clauses must be checked FIRST — their inner text (e.g. "Rest it.")
+  // would otherwise match a generic rule below and skip the trash cost/retrieval.
+  if (/from your trash/.test(t)){
+    const texileEarly = parseTrashExile(t);
+    if (texileEarly) return texileEarly;
+    if (/add it to your hand/.test(t)){
+      const rm=t.match(/choose 1 ([^.]+?) card[^.]*? from your trash/i);
+      return { kind:'trashRetrieve', filter: rm?rm[1].trim():null };
+    }
+  }
   // self-targeted buff: "This Unit gets AP+N during this turn" (and maybe gains <High-Maneuver>)
   if ((d=t.match(/this unit gets ap\+(\d+)/))) return { kind:'selfbuff', amount:+d[1], hman:/<\s*high-?maneuver/.test(t) };
   if (/add (1|one)?\s*of your shields to your hand/.test(t)){
@@ -554,10 +601,10 @@ function parseTrigger(effect, kw){
     const sd = t.match(/look at the top (\d+)/); return { kind:'shieldToHand', scryN: sd?+sd[1]:0 };
   }
   if ((d=t.match(/place (\d+)?\s*ex resource/))) return { kind:'exResource', amount:+(d[1]||1) };
-  if (/return it to .*hand|return that unit to .*hand/.test(t)) return { kind:'bounce', hp:hpLimit(t) };
-  if (/\brest it\b|rest that unit/.test(t)) return { kind:'rest', hp:hpLimit(t) };
+  if (/return it to .*hand|return that unit to .*hand|return them to .*hand/.test(t)){ const lv=t.match(/lv\.?(\d+) or lower/); return { kind:'bounce', hp:hpLimit(t), maxLv:lv?+lv[1]:null }; }
+  if (/\brest it\b|rest that unit/.test(t)){ const lv=t.match(/lv\.?(\d+) or lower/); return { kind:'rest', hp:hpLimit(t), maxLv:lv?+lv[1]:null }; }
   if ((d=t.match(/ap\s*-\s*(\d+)/))) return { kind:'debuff', amount:+d[1] };
-  if ((d=t.match(/deal (\d+) damage/))) return { kind:'damage', amount:+d[1], both:/to them|to each/.test(t) };
+  if ((d=t.match(/deal (\d+) damage/))) return { kind:'damage', amount:+d[1], scope:/all (enemy )?units|to all/.test(t)?'all-enemy':'enemy', both:/to them|to each/.test(t) };
   if ((d=t.match(/draw (\d+)/))) return { kind:'draw', amount:+d[1] };
   if (/\bdraw\b/.test(t)) return { kind:'draw', amount:1 };
   if ((d=t.match(/ap\s*\+\s*(\d+)/))) return { kind:'buff', amount:+d[1] };
@@ -584,6 +631,9 @@ function parseTrigger(effect, kw){
     const rm=t.match(/choose 1 ([^.]+?) card[^.]*? from your trash/i);
     return { kind:'trashRetrieve', filter: rm?rm[1].trim():null };
   }
+  // Trash-payment exile: "Choose N X cards from your trash. Exile them. If you do, [effect]"
+  const texile = parseTrashExile(t);
+  if (texile) return texile;
   // Trash-conditional gated effect: "if there are N+ X in trash, [effect]"
   const gated = parseGatedEffect(t);
   if (gated) return gated;
@@ -614,14 +664,23 @@ function runTrigger(card, side, act, label){
     log(`${label}: <b>${name}</b> — draw ${act.draw}, discard ${act.discard}.`, cls);
     autoDiscard(side, act.discard, name);
   } else if (act.kind==='damage'){
-    const t=[...foe.field].sort((a,b)=>b.ap-a.ap)[0];
-    if (t){ log(`${label}: <b>${name}</b> deals ${act.amount} to <b>${t.name}</b>.`, cls); damage(t,act.amount,foe); }
+    if (act.scope==='all-enemy'){
+      if (foe.field.length){ log(`${label}: <b>${name}</b> deals ${act.amount} to all enemy Units.`, cls); for(const t of [...foe.field]) damage(t,act.amount,foe); }
+    } else {
+      const t=[...foe.field].sort((a,b)=>b.ap-a.ap)[0];
+      if (t){ log(`${label}: <b>${name}</b> deals ${act.amount} to <b>${t.name}</b>.`, cls); damage(t,act.amount,foe); }
+    }
   } else if (act.kind==='rest'){
-    const t=[...foe.field].filter(u=>u.hp<=act.hp && !u.rested && (act.maxLv==null||u.lv<=act.maxLv)).sort((a,b)=>b.ap-a.ap)[0];
+    const t=[...foe.field].filter(u=>u.hp<=(act.hp||99) && !u.rested && (act.maxLv==null||u.lv<=act.maxLv)).sort((a,b)=>b.ap-a.ap)[0];
     if (t){ t.rested=true; log(`${label}: <b>${name}</b> rests <b>${t.name}</b>.`, cls); }
   } else if (act.kind==='bounce'){
-    const t=[...foe.field].filter(u=>u.hp<=act.hp && !u.token).sort((a,b)=>b.ap-a.ap)[0];
+    const t=[...foe.field].filter(u=>u.hp<=(act.hp||99) && !u.token && (act.maxLv==null||u.lv<=act.maxLv)).sort((a,b)=>b.ap-a.ap)[0];
     if (t){ const i=foe.field.indexOf(t); foe.field.splice(i,1); returnToHand(t, foe); log(`${label}: <b>${name}</b> returns <b>${t.name}</b> to hand.`, cls); }
+  } else if (act.kind==='destroy'){
+    const t=[...foe.field].filter(u=>!u.token && (act.maxLv==null||u.lv<=act.maxLv)).sort((a,b)=>(b.baseAp+b.baseHp)-(a.baseAp+a.baseHp))[0];
+    if (t){ log(`${label}: <b>${name}</b> destroys <b>${t.name}</b>.`, cls); const i=foe.field.indexOf(t); if(i>=0) foe.field.splice(i,1); fx('die', t.uid); sendToTrash(t, foe); runTrigger(t, foe, parseTrigger(t.effect,'Destroyed'), 'Destroyed'); }
+  } else if (act.kind==='setActive'){
+    card.rested=false; log(`${label}: <b>${name}</b> is set active.`, cls);
   } else if (act.kind==='debuff'){
     const t=[...foe.field].sort((a,b)=>b.ap-a.ap)[0];
     if (t){ t.tempAp=(t.tempAp||0)-act.amount; t.ap=effAp(t); log(`${label}: <b>${t.name}</b> gets AP-${act.amount} this turn.`, cls); }
@@ -668,6 +727,16 @@ function runTrigger(card, side, act, label){
   } else if (act.kind==='trashGate'){
     const count=trashCount(side,act.trait);
     if(count>=act.minCount) runTrigger(card,side,act.inner,label);
+  } else if (act.kind==='trashExile'){
+    // Pay the cost only when it's worth it: enough cards to exile AND the inner effect has a target.
+    if (trashCount(side, act.trait) >= act.count){
+      const needsEnemy = ['destroy','rest','damage','debuff','bounce'].includes(act.inner.kind);
+      if (!needsEnemy || foe.field.some(u=>!u.token)){
+        const n=exileFromTrash(side, act.count, act.trait);
+        log(`${label}: <b>${name}</b> exiles ${n} ${act.trait?act.trait+' ':''}card${n===1?'':'s'} from trash.`, cls);
+        runTrigger(card, side, act.inner, label);
+      }
+    }
   }
 }
 // Strip a unit back to its printed state (used by both returnToHand and trash retrieval).
@@ -685,15 +754,29 @@ function returnToHand(u, owner){
   const hand = owner.hand;
   if (hand.length<HAND_MAX) hand.push(u);
 }
+// Refresh trash-conditional stats for a side (after any trash-size change).
+function refreshTrashStats(side){
+  for (const u of side.field){ if (u.trashBuff || u.trashKeyword) u.ap = effAp(u); }
+  if (side.base && (side.base.trashBuff || side.base.trashKeyword)) side.base.ap = effAp(side.base);
+}
 // Send a card to the trash zone (tokens are simply removed with no trash entry).
 function sendToTrash(card, side){
   if (!card || card.token) return;
   side.trash.push(card);
   // A destroyed unit carries its pilot to trash as well.
   if (card.pilotCard) side.trash.push(card.pilotCard);
-  // Refresh any trash-conditional unit stats for this side.
-  for (const u of side.field){ if (u.trashBuff || u.trashKeyword) u.ap = effAp(u); }
-  if (side.base && (side.base.trashBuff || side.base.trashKeyword)) side.base.ap = effAp(side.base);
+  refreshTrashStats(side);
+}
+// Exile (remove from the game) N cards matching a trait from the trash. Returns how many were exiled.
+function exileFromTrash(side, count, trait){
+  let exiled=0;
+  for (let k=0; k<count; k++){
+    const i = side.trash.findIndex(c=>matchTrashTrait(c,trait));
+    if (i<0) break;
+    side.exile.push(side.trash.splice(i,1)[0]); exiled++;
+  }
+  if (exiled) refreshTrashStats(side);
+  return exiled;
 }
 
 // ---- deck building from the real pool ----
@@ -723,6 +806,7 @@ function makeCard(def, owner){
     c.trashBuff = parseTrashBuff(def.effect);
     c.trashKeyword = parseTrashKeyword(def.effect);
     c.trashCantAttack = parseTrashCantAttack(def.effect);
+    c.trashCostReduce = parseTrashCostReduce(def.effect);   // units can carry hand cost-reduction too
     c.pilotCard = null; // set when a pilot is attached; cleared on reset
   } else if (def.type === 'pilot'){
     c.pAp = def.ap; c.pHp = def.hp;
@@ -856,10 +940,10 @@ function buildPresetDeck(owner, preset){
 
 // ---- game state ----
 const G = {
-  turn:'player', turnNumber:1, selected:null, mode:'idle', pending:null, pendingHandIdx:-1, over:false,
+  turn:'player', turnNumber:1, phase:'main', selected:null, mode:'idle', pending:null, pendingHandIdx:-1, over:false,
   player:null, enemy:null,
 };
-function makeSide(who){ return { who, deck:[], hand:[], field:[], shields:[], trash:[], base:null, resourceDeck:RES_MAX, resMax:0, resAvail:0, ex:0 }; }
+function makeSide(who){ return { who, deck:[], hand:[], field:[], shields:[], trash:[], exile:[], base:null, resourceDeck:RES_MAX, resMax:0, resAvail:0, ex:0 }; }
 function me(){ return G.turn==='player' ? G.player : G.enemy; }
 function who(side){ return side===G.player ? 'You' : (G.enemyDeckName || 'The AI'); }
 
@@ -895,7 +979,7 @@ function effMaxHp(u){
 // ---- setup / turns ----
 function startGame(){
   uid = 1;
-  Object.assign(G, { turn:'player', turnNumber:1, selected:null, mode:'idle', pending:null, pendingHandIdx:-1, over:false,
+  Object.assign(G, { turn:'player', turnNumber:1, phase:'main', selected:null, mode:'idle', pending:null, pendingHandIdx:-1, over:false,
                      player:makeSide('player'), enemy:makeSide('enemy') });
   // Randomly assign two distinct competitive decklists to the player and the AI.
   const pool = shuffle([...PRESET_DECKS]);
@@ -930,18 +1014,23 @@ function draw(side, silent){
   return c;
 }
 
+// Official turn structure: Start Phase → Draw Phase → Resource Phase → Main Phase → End Phase.
 function beginTurn(turn){
-  G.turn=turn; G.mode='idle'; G.selected=null; G.pending=null; G.pendingHandIdx=-1;
+  G.turn=turn; G.mode='idle'; G.phase='start'; G.selected=null; G.pending=null; G.pendingHandIdx=-1;
   const s=me();
-  // Start phase: ready all rested cards (units and the base) and refresh per-turn abilities.
+  // 1) Start Phase — Active Step: ready all rested cards; refresh per-turn abilities.
   for (const u of s.field){ u.rested=false; u.sick=false; u.tempAp=0; u.activatedThisTurn=false; u.ap=effAp(u); }
   if (s.base){ s.base.rested=false; s.base.activatedThisTurn=false; }
-  // Resource phase: place the top card of the 10-card Resource Deck (active). EX Resource adds +1.
-  if (s.resourceDeck>0){ s.resourceDeck--; s.resMax=Math.min(RES_MAX, s.resMax+1); }
-  s.resAvail = s.resMax + s.ex;
-  // Draw phase (the player going first skips their very first draw).
+  // 2) Draw Phase — draw 1 (the player going first skips their very first draw).
+  G.phase='draw';
   if (G.turnNumber>1 || turn==='enemy') draw(s);
   if (G.over) return;
+  // 3) Resource Phase — place the top card of the 10-card Resource Deck (active). EX Resource adds +1.
+  G.phase='resource';
+  if (s.resourceDeck>0){ s.resourceDeck--; s.resMax=Math.min(RES_MAX, s.resMax+1); }
+  s.resAvail = s.resMax + s.ex;
+  // 4) Main Phase — deploy, pair, activate, play commands, attack.
+  G.phase='main';
   log(`— ${who(s)}'s turn ${G.turnNumber} —`, 'sys');
   render();
   if (turn==='enemy'){ setPrompt(`${who(G.enemy)} is deploying...`); setTimeout(aiTurn, 700); }
@@ -951,8 +1040,14 @@ function beginTurn(turn){
 function endTurn(){
   if (G.over) return;
   const s=me();
-  // end-of-turn Repair
+  // 5) End Phase — Repair Step (regen), then Hand Step (discard down to the hand limit).
+  G.phase='end';
   for (const u of s.field){ if (u.repair>0 && u.hp>0 && u.hp<effMaxHp(u)){ u.hp=Math.min(effMaxHp(u), u.hp+u.repair); } u.tempAp=0; u.ap=effAp(u); }
+  while (s.hand.length>HAND_MAX){
+    const worst=[...s.hand].sort((a,b)=>cardValue(a)-cardValue(b))[0];
+    s.hand.splice(s.hand.indexOf(worst),1); sendToTrash(worst, s);
+    log(`${who(s)} discards <b>${worst.name}</b> down to the hand limit.`, s===G.player?'me':'ai');
+  }
   if (G.turn==='player') beginTurn('enemy');
   else { G.turnNumber++; beginTurn('player'); }
 }
@@ -1070,8 +1165,35 @@ function applyCommand(card, side, target){
   else if (a.kind==='rest'){ if (target){ target.rested=true; log(`<b>${card.name}</b> rests <b>${target.name}</b>.`, side===G.player?'me':'ai'); } }
 }
 
-// ---- player-activated abilities (【Activate･Main】 with a "Rest this Base/Unit" cost) ----
-function activateReady(u){ return !!(u && u.activate && !u.activatedThisTurn && !u.rested && u.hp>0); }
+// ---- player-activated abilities (【Activate･Main】 with a rest-self OR exile-from-trash cost) ----
+function activateCostPayable(u, side){
+  const c=u.activate.cost;
+  if (c.type==='rest') return !u.rested;                  // a rest cost needs an active card
+  if (c.type==='exile') return trashCount(side, c.trait) >= c.count;
+  if (c.type==='resource') return side.resAvail >= c.amount;
+  return false;
+}
+// Phase/timing gate: 【Activate･Main】 abilities may only be used by the turn player during
+// their own Main Phase. 【Activate･Action】 abilities may be used during an Action Step — i.e.
+// the Main Phase or while a battle/attack is being declared — on either player's turn.
+function activatePhaseOk(u){
+  const phase = u.activate.phase;
+  if (phase==='action'){
+    // Action timing: the turn player's main phase, or an attack/battle window on either turn.
+    return (G.turn===u.owner && (G.mode==='idle' || G.mode==='attack-target'))
+        || (G.turn!==u.owner && G.mode==='attack-target');
+  }
+  // Main timing: strictly the controller's own Main Phase (idle, not mid-battle).
+  return G.turn===u.owner && G.mode==='idle';
+}
+function activateReady(u){
+  if (!(u && u.activate && !u.activatedThisTurn && u.hp>0)) return false;
+  if (!activatePhaseOk(u)) return false;
+  const side = u.owner==='player' ? G.player : G.enemy;
+  if (u.activate.requireLink && !u.linked) return false;
+  if (u.activate.requirePair && !u.pilot)  return false;
+  return activateCostPayable(u, side);
+}
 // Begin activation: pay nothing yet if a target is needed, else resolve immediately.
 function startActivate(u){
   if (!activateReady(u)){ flashPrompt(`${u.name}'s ability isn't available.`); return; }
@@ -1090,9 +1212,18 @@ function resolveActivate(u, target){      // player path
   clearSel(); render(); checkEnd();
 }
 function applyActivateEffect(u, target, side){
-  const a=u.activate.action, foe = side===G.player?G.enemy:G.player, cls = side===G.player?'me':'ai';
-  u.rested=true; u.activatedThisTurn=true; sound('deploy');
-  if (a.kind==='buff' && a.scope==='all-friendly'){
+  const a=u.activate.action, cost=u.activate.cost, foe = side===G.player?G.enemy:G.player, cls = side===G.player?'me':'ai';
+  // Pay the ability's cost.
+  if (cost.type==='rest'){ u.rested=true; }
+  else if (cost.type==='resource'){ side.resAvail=Math.max(0, side.resAvail-cost.amount); log(`<b>${u.name}</b> pays ${cost.amount} resource${cost.amount===1?'':'s'}.`, cls); }
+  else if (cost.type==='exile'){
+    const n=exileFromTrash(side, cost.count, cost.trait);
+    log(`<b>${u.name}</b> exiles ${n} ${cost.trait?cost.trait+' ':''}card${n===1?'':'s'} from trash.`, cls);
+  }
+  u.activatedThisTurn=true; sound('deploy');
+  if (a.kind==='setActive'){
+    u.rested=false; log(`<b>${u.name}</b> is set active and can attack again.`, cls);
+  } else if (a.kind==='buff' && a.scope==='all-friendly'){
     for (const t of side.field){ t.tempAp=(t.tempAp||0)+a.amount; t.ap=effAp(t); }
     log(`<b>${u.name}</b>: all friendly Units get AP+${a.amount} this turn.`, cls);
   } else if (a.kind==='buff'){
@@ -1101,19 +1232,23 @@ function applyActivateEffect(u, target, side){
     if (target){ target.tempAp=(target.tempAp||0)-a.amount; target.ap=effAp(target); log(`<b>${u.name}</b>: <b>${target.name}</b> gets AP-${a.amount} this turn.`, cls); }
   } else if (a.kind==='heal'){
     if (target){ target.hp=Math.min(effMaxHp(target), target.hp+a.amount); log(`<b>${u.name}</b> repairs <b>${target.name}</b> (+${a.amount} HP).`, cls); }
+  } else if (a.kind==='damage' && a.scope==='all-enemy'){
+    log(`<b>${u.name}</b> deals ${a.amount} to all enemy Units.`, cls); for (const t of [...foe.field]) damage(t, a.amount, foe);
   } else if (a.kind==='damage'){
     if (target){ log(`<b>${u.name}</b> deals ${a.amount} to <b>${target.name}</b>.`, cls); damage(target, a.amount, foe); }
   } else if (a.kind==='grantBreach'){
-    if (target){ target.breach=Math.max(target.breach||0, a.amount); log(`<b>${u.name}</b>: <b>${target.name}</b> gains &lt;Breach ${a.amount}&gt;.`, cls); }
+    const t=target||u; t.breach=Math.max(t.breach||0, a.amount); log(`<b>${u.name}</b>: <b>${t.name}</b> gains &lt;Breach ${a.amount}&gt;.`, cls);
   } else if (a.kind==='grantHigh'){
-    if (target){ target.highManeuver=true; log(`<b>${u.name}</b>: <b>${target.name}</b> gains &lt;High-Maneuver&gt;.`, cls); }
+    const t=target||u; t.highManeuver=true; log(`<b>${u.name}</b>: <b>${t.name}</b> gains &lt;High-Maneuver&gt;.`, cls);
   }
 }
 // AI: pick a sensible target for a ready activated ability and use it (before attacking).
 function aiActivate(u){
   const a=u.activate.action, ai=G.enemy, pl=G.player;
   let target=null;
-  if (a.scope==='all-friendly'){ if(!ai.field.length) return false; }
+  if (a.scope==='self'){ /* setActive / self keyword grant — no target */ }
+  else if (a.scope==='all-friendly'){ if(!ai.field.length) return false; }
+  else if (a.scope==='all-enemy'){ if(!pl.field.length) return false; }
   else if (a.scope==='enemy'){ if(!pl.field.length) return false; target=[...pl.field].sort((x,y)=>y.ap-x.ap)[0]; }
   else { // friendly single target
     if (a.kind==='heal'){ target=[...ai.field].filter(t=>t.hp<effMaxHp(t)).sort((x,y)=>(effMaxHp(y)-y.hp)-(effMaxHp(x)-x.hp))[0]; if(!target) return false; }
@@ -1333,8 +1468,9 @@ function attachPilot(u, p){
   if (pairGrantsKeyword(u.effect,'first'))   u.firstStrike=true;
   if (pairGrantsKeyword(u.effect,'high'))    u.highManeuver=true;
   // Link Unit: if this pilot matches the unit's link requirement, it can attack immediately.
+  let justLinked=false;
   if (u.link && u.link.includes(p.name)){
-    u.linked=true; u.sick=false;
+    u.linked=true; u.sick=false; justLinked=true;
     u.hp += (u.linkHp||0);
     // keywords granted specifically by a 【During Link】 clause
     if (clauseGrantsKeyword(u.effect,'blocker','During Link')) u.blocker=true;
@@ -1346,6 +1482,8 @@ function attachPilot(u, p){
   // 【When Paired】 effects fire now — both the pilot's and the unit's own.
   runTrigger(p, side, parseTrigger(p.effect,'When Paired'), 'Pair');
   runTrigger(u, side, parseTrigger(u.effect,'When Paired'), 'Pair');
+  // 【When Linked】 fires once, the moment the link is first established.
+  if (justLinked) runTrigger(u, side, parseTrigger(u.effect,'When Linked'), 'Link');
 }
 
 function clearSel(){ G.selected=null; G.mode='idle'; G.pending=null; G.pendingHandIdx=-1; defaultPrompt(); }
@@ -1536,6 +1674,8 @@ function render(){
   el('playerDeckCount').textContent=G.player.deck.length;
   el('enemyTrashCount').textContent=G.enemy.trash.length;
   el('playerTrashCount').textContent=G.player.trash.length;
+  if (el('enemyExileCount')) el('enemyExileCount').textContent=G.enemy.exile.length;
+  if (el('playerExileCount')) el('playerExileCount').textContent=G.player.exile.length;
 
   el('enemyField').innerHTML = fieldHTML(G.enemy,'field-enemy','No enemy units');
   el('playerField').innerHTML = fieldHTML(G.player,'field-player','Play a card from your hand');
@@ -1637,6 +1777,7 @@ el('soundBtn').addEventListener('click', ()=>{ SOUND.on=!SOUND.on; el('soundBtn'
 el('startBtn').addEventListener('click', ()=>{ audioCtx()?.resume?.(); startGame(); });
 el('inspect').addEventListener('click', e=>{ if(e.target.id==='inspect') closeInspect(); });
 el('playerTrashCount').addEventListener('click', ()=>{ if(G.player&&G.player.trash.length) showTrashViewer(G.player); });
+el('playerExileCount').addEventListener('click', ()=>{ if(G.player&&G.player.exile.length) showPileViewer(G.player.exile, 'Exile'); });
 el('enemyShields').addEventListener('click', attackDirect);
 el('enemyShieldCount').addEventListener('click', attackDirect);
 el('enemyField').addEventListener('click', e=>{ if(G.mode==='attack-target' && e.target.classList.contains('battlefield')) attackDirect(); });
