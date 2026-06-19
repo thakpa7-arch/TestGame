@@ -352,6 +352,22 @@ function pairGrantsKeyword(effect, kw){
 function repairAmount(effect){ const m = plain(effect).match(/<\s*repair\s*(\d+)/i); return m?+m[1]:0; }
 function breachAmount(effect){ const m = plain(effect).match(/<\s*breach\s*(\d+)/i); return m?+m[1]:0; }
 function supportAmount(effect){ const m = plain(effect).match(/<\s*support\s*(\d+)/i); return m?+m[1]:0; }
+// A continuous, unconditional "This Unit gets AP+N (and HP+N)" printed under a timing
+// keyword like 【During Pair】 / 【During Link】. Returns the self AP/HP bonus only — team
+// auras and conditional buffs are deliberately left out.
+function staticSelfBuff(effect, kw){
+  const m = plain(effect).match(new RegExp('【\\s*'+kw+'[^】]*】\\s*([^【]*)','i'));
+  if (!m) return { ap:0, hp:0 };
+  const t = m[1].toLowerCase();
+  if (!/this unit gets/.test(t)) return { ap:0, hp:0 };   // skip "all your Units…" auras
+  const ap=(t.match(/ap\+(\d+)/)||[])[1], hp=(t.match(/hp\+(\d+)/)||[])[1];
+  return { ap:+(ap||0), hp:+(hp||0) };
+}
+// Keywords a Unit gains under a 【During …】 clause (e.g. "gains <High-Maneuver>").
+function clauseGrantsKeyword(effect, kw, clauseKw){
+  const m = plain(effect).match(new RegExp('【\\s*'+clauseKw+'[^】]*】\\s*([^【]*)','i'));
+  return !!m && new RegExp('gains?\\s+<\\s*'+kw, 'i').test(m[1]);
+}
 
 // Interpret a Command card's effect into a simple engine action.
 function inferCommand(effect){
@@ -395,6 +411,8 @@ function parseTrigger(effect, kw){
   const m = plain(effect).match(new RegExp('【\\s*'+kw+'[^】]*】\\s*([^【]*)','i'));
   if (!m) return null;
   const t = m[1].toLowerCase(); let d;
+  // self-targeted buff: "This Unit gets AP+N during this turn" (and maybe gains <High-Maneuver>)
+  if ((d=t.match(/this unit gets ap\+(\d+)/))) return { kind:'selfbuff', amount:+d[1], hman:/<\s*high-?maneuver/.test(t) };
   if (/add (1|one)?\s*of your shields to your hand/.test(t)) return { kind:'shieldToHand' };
   if ((d=t.match(/place (\d+)?\s*ex resource/))) return { kind:'exResource', amount:+(d[1]||1) };
   if (/return it to .*hand|return that unit to .*hand/.test(t)) return { kind:'bounce', hp:hpLimit(t) };
@@ -440,6 +458,10 @@ function runTrigger(card, side, act, label){
     if (t && t.hp<effMaxHp(t)){ t.hp=Math.min(effMaxHp(t), t.hp+(act.amount>=99?effMaxHp(t):act.amount)); log(`${label}: <b>${name}</b> repairs <b>${t.name}</b>.`, cls); }
   } else if (act.kind==='token'){
     if (side.field.length<FIELD_MAX){ side.field.push(genericToken(side.who)); log(`${label}: <b>${name}</b> deploys a Mobile Suit token.`, cls); }
+  } else if (act.kind==='selfbuff'){
+    card.tempAp=(card.tempAp||0)+act.amount; card.ap=effAp(card);
+    if (act.hman) card.highManeuver=true;
+    log(`${label}: <b>${name}</b> gets AP+${act.amount} this turn${act.hman?' and &lt;High-Maneuver&gt;':''}.`, cls);
   }
 }
 // Return a deployed unit to its owner's hand, stripped back to a fresh card.
@@ -472,6 +494,9 @@ function makeCard(def, owner){
     c.breach = breachAmount(def.effect);
     c.suppression = innateKeyword(def.effect, 'suppression');
     c.support = supportAmount(def.effect);
+    // continuous self AP/HP buffs that switch on while paired / linked
+    const pb = staticSelfBuff(def.effect, 'During Pair'); c.pairAp = pb.ap; c.pairHp = pb.hp;
+    const lb = staticSelfBuff(def.effect, 'During Link'); c.linkAp = lb.ap; c.linkHp = lb.hp;
   } else if (def.type === 'pilot'){
     c.pAp = def.ap; c.pHp = def.hp;
   } else { // command
@@ -621,8 +646,8 @@ function flashPrompt(t){ setPrompt(t); clearTimeout(promptTimer); promptTimer=se
 function defaultPrompt(){ setPrompt(G.turn==='player' ? 'Your turn — deploy, attack, then End Turn.' : ''); }
 
 // ---- effective stats ----
-function effAp(u){ return Math.max(0, u.baseAp + (u.pilot?u.pilot.pAp:0) + (u.tempAp||0)); }
-function effMaxHp(u){ return u.baseHp + (u.pilot?u.pilot.pHp:0); }
+function effAp(u){ return Math.max(0, u.baseAp + (u.pilot?u.pilot.pAp:0) + (u.tempAp||0) + (u.pilot?(u.pairAp||0):0) + (u.linked?(u.linkAp||0):0)); }
+function effMaxHp(u){ return u.baseHp + (u.pilot?u.pilot.pHp:0) + (u.pilot?(u.pairHp||0):0) + (u.linked?(u.linkHp||0):0); }
 
 // ---- setup / turns ----
 function startGame(){
@@ -838,6 +863,7 @@ function attackDirect(){
 // Resolve an attack aimed at a player: Base soaks first, else a Shield breaks (Burst), else defeat.
 function strikePlayer(atk, defSide){
   const side = defSide===G.player ? 'ai' : 'me';
+  onAttack(atk, defSide===G.player ? G.enemy : G.player);
   if (defSide.base){
     const b=defSide.base; b.hp-=atk.ap;
     log(`<b>${atk.name}</b> hits ${who(defSide)}'s <b>${b.name}</b> base for ${atk.ap}.`, side);
@@ -879,9 +905,14 @@ function autoTarget(action, side){
   return null;
 }
 
+// 【Attack】: fires once when this Unit declares an attack (its own turn only).
+function onAttack(atk, atkSide){
+  runTrigger(atk, atkSide, parseTrigger(atk.effect,'Attack'), 'Attack');
+}
 // Simultaneous battle, modified by First Strike (striker hits first; if foe dies, no return).
 function battle(atk, def, atkSide, defSide){
   atk.rested=true;
+  onAttack(atk, atkSide);
   // <Support N>: an active friendly Unit may rest to give the attacker +N AP this turn.
   applySupport(atk, atkSide, def);
   // First Strike only triggers on this Unit's attack — i.e. on its owner's turn. The
@@ -942,17 +973,23 @@ function pickAiBlocker(atk, blockers){
 }
 
 function damage(u, dmg, side){
-  if (dmg<=0) return;
+  if (dmg<=0 || u.hp<=0) return;   // ignore hits on an already-destroyed Unit
   u.hp-=dmg;
-  if (u.hp<=0){ const i=side.field.indexOf(u); if(i>=0) side.field.splice(i,1); fx('die', u.uid); log(`<b>${u.name}</b> is destroyed.`, side===G.player?'me':'ai'); }
+  if (u.hp<=0){
+    const i=side.field.indexOf(u); if(i>=0) side.field.splice(i,1);
+    fx('die', u.uid); log(`<b>${u.name}</b> is destroyed.`, side===G.player?'me':'ai');
+    // 【Destroyed】: fires as the Unit leaves play (its controller resolves it).
+    runTrigger(u, side, parseTrigger(u.effect,'Destroyed'), 'Destroyed');
+  }
   else fx('hit', u.uid);
 }
 
 function attachPilot(u, p){
   u.pilot={ name:p.name, pAp:p.pAp, pHp:p.pHp };
   u.lv=Math.max(u.lv, p.lv);
-  u.maxHp=effMaxHp(u); u.hp+=p.pHp; u.ap=effAp(u);
   const side = u.owner==='player'?G.player:G.enemy;
+  // Pilot HP plus any 【During Pair】 "this Unit gets HP+N" both raise current HP now.
+  u.hp += p.pHp + (u.pairHp||0);
   // Keywords the Unit only gains while paired now switch on.
   if (pairGrantsKeyword(u.effect,'blocker')) u.blocker=true;
   if (pairGrantsKeyword(u.effect,'first'))   u.firstStrike=true;
@@ -960,8 +997,14 @@ function attachPilot(u, p){
   // Link Unit: if this pilot matches the unit's link requirement, it can attack immediately.
   if (u.link && u.link.includes(p.name)){
     u.linked=true; u.sick=false;
+    u.hp += (u.linkHp||0);
+    // keywords granted specifically by a 【During Link】 clause
+    if (clauseGrantsKeyword(u.effect,'blocker','During Link')) u.blocker=true;
+    if (clauseGrantsKeyword(u.effect,'first','During Link'))   u.firstStrike=true;
+    if (clauseGrantsKeyword(u.effect,'high','During Link'))    u.highManeuver=true;
     log(`Link established — <b>${u.name}</b> can attack this turn!`, u.owner==='player'?'me':'ai');
   }
+  u.maxHp=effMaxHp(u); u.ap=effAp(u);
   // 【When Paired】 effects fire now — both the pilot's and the unit's own.
   runTrigger(p, side, parseTrigger(p.effect,'When Paired'), 'Pair');
   runTrigger(u, side, parseTrigger(u.effect,'When Paired'), 'Pair');
