@@ -368,6 +368,32 @@ function clauseGrantsKeyword(effect, kw, clauseKw){
   const m = plain(effect).match(new RegExp('【\\s*'+clauseKw+'[^】]*】\\s*([^【]*)','i'));
   return !!m && new RegExp('gains?\\s+<\\s*'+kw, 'i').test(m[1]);
 }
+// Parse the effect half of an activated ability into an engine action.
+function parseActivateEffect(t){
+  t = t.toLowerCase(); let d;
+  if ((d=t.match(/gains?\s+<\s*breach\s*(\d+)/)))            return { kind:'grantBreach', amount:+d[1], scope:'friendly' };
+  if (/gains?\s+<\s*high-?maneuver/.test(t))                 return { kind:'grantHigh', scope:'friendly' };
+  if (/recover|heal/.test(t)){ d=t.match(/(\d+)\s*hp/);      return { kind:'heal', amount:d?+d[1]:1, scope:'friendly' }; }
+  if ((d=t.match(/ap\s*-\s*(\d+)/)))                         return { kind:'debuff', amount:+d[1], scope:'enemy' };
+  if ((d=t.match(/deal (\d+) damage/)) && /enemy/.test(t))   return { kind:'damage', amount:+d[1], scope:'enemy' };
+  if ((d=t.match(/ap\s*\+\s*(\d+)/))){
+    const all = /all (your |friendly )|all of your|1 to \d+ friendly/.test(t);
+    return { kind:'buff', amount:+d[1], scope: all?'all-friendly':'friendly' };
+  }
+  return null;
+}
+// Parse a full 【Activate･Main/Action】 ability ("cost：effect"). Only the self-rest cost is
+// modeled — exotic costs (discard / destroy / exile / resource) are skipped, returning null.
+function parseActivate(effect){
+  const m = plain(effect).match(/【\s*Activate[･·・\s]*(Main|Action)\s*】\s*([^【]*)/i);
+  if (!m) return null;
+  const cm = m[2].trim().match(/^(.*?)[：:]\s*(.+)$/);
+  if (!cm) return null;                                  // bare reminder text (e.g. <Support N>)
+  if (!/rest this (base|unit)/i.test(cm[1])) return null;
+  const action = parseActivateEffect(cm[2]);
+  if (!action) return null;
+  return { phase:/action/i.test(m[1])?'action':'main', text:cm[2].replace(/\s*\(.*$/,'').replace(/\.$/,'').trim(), action };
+}
 
 // Interpret a Command card's effect into a simple engine action.
 function inferCommand(effect){
@@ -467,7 +493,7 @@ function runTrigger(card, side, act, label){
 // Return a deployed unit to its owner's hand, stripped back to a fresh card.
 function returnToHand(u, owner){
   if (u.token) return;                       // tokens vanish instead
-  u.pilot=null; u.linked=false; u.tempAp=0; u.rested=false; u.sick=true;
+  u.pilot=null; u.linked=false; u.tempAp=0; u.rested=false; u.sick=true; u.activatedThisTurn=false;
   u.ap=u.baseAp; u.hp=u.baseHp; u.maxHp=u.baseHp;
   // drop any pair-granted keywords back to the printed (innate) state
   u.blocker=innateKeyword(u.effect,'blocker'); u.firstStrike=innateKeyword(u.effect,'first'); u.highManeuver=innateKeyword(u.effect,'high');
@@ -497,6 +523,8 @@ function makeCard(def, owner){
     // continuous self AP/HP buffs that switch on while paired / linked
     const pb = staticSelfBuff(def.effect, 'During Pair'); c.pairAp = pb.ap; c.pairHp = pb.hp;
     const lb = staticSelfBuff(def.effect, 'During Link'); c.linkAp = lb.ap; c.linkHp = lb.hp;
+    // player-activated ability (cost：effect); used at most once per turn
+    c.activate = parseActivate(def.effect); c.activatedThisTurn = false;
   } else if (def.type === 'pilot'){
     c.pAp = def.ap; c.pHp = def.hp;
   } else { // command
@@ -690,8 +718,9 @@ function draw(side, silent){
 function beginTurn(turn){
   G.turn=turn; G.mode='idle'; G.selected=null; G.pending=null; G.pendingHandIdx=-1;
   const s=me();
-  // Start phase: ready all rested cards.
-  for (const u of s.field){ u.rested=false; u.sick=false; u.tempAp=0; u.ap=effAp(u); }
+  // Start phase: ready all rested cards (units and the base) and refresh per-turn abilities.
+  for (const u of s.field){ u.rested=false; u.sick=false; u.tempAp=0; u.activatedThisTurn=false; u.ap=effAp(u); }
+  if (s.base){ s.base.rested=false; s.base.activatedThisTurn=false; }
   // Resource phase: place the top card of the 10-card Resource Deck (active). EX Resource adds +1.
   if (s.resourceDeck>0){ s.resourceDeck--; s.resMax=Math.min(RES_MAX, s.resMax+1); }
   s.resAvail = s.resMax + s.ex;
@@ -798,6 +827,59 @@ function applyCommand(card, side, target){
   else if (a.kind==='rest'){ if (target){ target.rested=true; log(`<b>${card.name}</b> rests <b>${target.name}</b>.`, side===G.player?'me':'ai'); } }
 }
 
+// ---- player-activated abilities (【Activate･Main】 with a "Rest this Base/Unit" cost) ----
+function activateReady(u){ return !!(u && u.activate && !u.activatedThisTurn && !u.rested && u.hp>0); }
+// Begin activation: pay nothing yet if a target is needed, else resolve immediately.
+function startActivate(u){
+  if (!activateReady(u)){ flashPrompt(`${u.name}'s ability isn't available.`); return; }
+  const act=u.activate.action;
+  if (act.scope==='friendly' || act.scope==='enemy'){
+    const side = act.scope==='enemy' ? G.enemy : G.player;
+    if (!side.field.length){ flashPrompt('No valid target for that ability.'); return; }
+    G.mode='activate-target'; G.pending=u;
+    setPrompt(`${u.name}: tap ${act.scope==='enemy'?'an enemy':'a friendly'} unit to target.`);
+    closeInspect(); render(); return;
+  }
+  resolveActivate(u, null);          // all-friendly / untargeted
+}
+function resolveActivate(u, target){      // player path
+  applyActivateEffect(u, target, G.player);
+  clearSel(); render(); checkEnd();
+}
+function applyActivateEffect(u, target, side){
+  const a=u.activate.action, foe = side===G.player?G.enemy:G.player, cls = side===G.player?'me':'ai';
+  u.rested=true; u.activatedThisTurn=true; sound('deploy');
+  if (a.kind==='buff' && a.scope==='all-friendly'){
+    for (const t of side.field){ t.tempAp=(t.tempAp||0)+a.amount; t.ap=effAp(t); }
+    log(`<b>${u.name}</b>: all friendly Units get AP+${a.amount} this turn.`, cls);
+  } else if (a.kind==='buff'){
+    if (target){ target.tempAp=(target.tempAp||0)+a.amount; target.ap=effAp(target); log(`<b>${u.name}</b>: <b>${target.name}</b> gets AP+${a.amount} this turn.`, cls); }
+  } else if (a.kind==='debuff'){
+    if (target){ target.tempAp=(target.tempAp||0)-a.amount; target.ap=effAp(target); log(`<b>${u.name}</b>: <b>${target.name}</b> gets AP-${a.amount} this turn.`, cls); }
+  } else if (a.kind==='heal'){
+    if (target){ target.hp=Math.min(effMaxHp(target), target.hp+a.amount); log(`<b>${u.name}</b> repairs <b>${target.name}</b> (+${a.amount} HP).`, cls); }
+  } else if (a.kind==='damage'){
+    if (target){ log(`<b>${u.name}</b> deals ${a.amount} to <b>${target.name}</b>.`, cls); damage(target, a.amount, foe); }
+  } else if (a.kind==='grantBreach'){
+    if (target){ target.breach=Math.max(target.breach||0, a.amount); log(`<b>${u.name}</b>: <b>${target.name}</b> gains &lt;Breach ${a.amount}&gt;.`, cls); }
+  } else if (a.kind==='grantHigh'){
+    if (target){ target.highManeuver=true; log(`<b>${u.name}</b>: <b>${target.name}</b> gains &lt;High-Maneuver&gt;.`, cls); }
+  }
+}
+// AI: pick a sensible target for a ready activated ability and use it (before attacking).
+function aiActivate(u){
+  const a=u.activate.action, ai=G.enemy, pl=G.player;
+  let target=null;
+  if (a.scope==='all-friendly'){ if(!ai.field.length) return false; }
+  else if (a.scope==='enemy'){ if(!pl.field.length) return false; target=[...pl.field].sort((x,y)=>y.ap-x.ap)[0]; }
+  else { // friendly single target
+    if (a.kind==='heal'){ target=[...ai.field].filter(t=>t.hp<effMaxHp(t)).sort((x,y)=>(effMaxHp(y)-y.hp)-(effMaxHp(x)-x.hp))[0]; if(!target) return false; }
+    else { target=[...ai.field].filter(t=>!t.rested && !t.sick && t.ap>0).sort((x,y)=>y.ap-x.ap)[0]; if(!target) return false; }
+  }
+  applyActivateEffect(u, target, ai);
+  return true;
+}
+
 // ---- field interaction (player) ----
 function fieldClick(uidv){
   if (G.turn!=='player' || G.over) return;
@@ -817,9 +899,19 @@ function fieldClick(uidv){
     commit(card,G.pendingHandIdx); applyCommand(card,G.player,t); clearSel(); render(); checkEnd(); return;
   }
 
+  if (G.mode==='activate-target'){
+    const u=G.pending, scope=u.activate.action.scope;
+    const t=(scope==='enemy'?G.enemy:G.player).field.find(c=>c.uid===uidv);
+    if(!t){ flashPrompt(scope==='enemy'?'Pick an enemy unit.':'Pick a friendly unit.'); return; }
+    resolveActivate(u, t); return;
+  }
+
   if (G.mode==='idle'){
     const u=G.player.field.find(c=>c.uid===uidv);
     if(u){
+      const canAttack = !u.rested && !u.sick && u.ap>0;
+      // A Unit that can BOTH attack and activate opens the inspector so the player chooses.
+      if (activateReady(u) && (canAttack || u.sick || u.ap<=0)){ inspect(u); return; }
       if (u.rested){ inspect(u); return; }
       if (u.ap<=0){ flashPrompt(`${u.name} can't attack (no AP).`); inspect(u); return; }
       if (u.sick){ flashPrompt(`${u.name} has summoning sickness this turn.`); return; }
@@ -1060,6 +1152,12 @@ function aiTurn(){
     const buff = ai.hand.find(c=>c.type==='command' && c.action.kind==='buff' && canAfford(ai,c));
     if (buff && ai.field.some(u=>!u.sick&&!u.rested&&u.ap>0)){ const t=ai.field.filter(u=>!u.sick&&!u.rested&&u.ap>0).sort((a,b)=>b.ap-a.ap)[0]; const i=ai.hand.indexOf(buff); ai.hand.splice(i,1); ai.resAvail-=buff.cost; t.tempAp=(t.tempAp||0)+buff.action.amount; t.ap=effAp(t); log(`${who(G.enemy)} empowers <b>${t.name}</b>.`, 'ai'); acted=true; continue; }
   }
+
+  // Use ready activated abilities before attacks: the base's freely (it can't attack anyway),
+  // and a unit's only when it's enemy removal or the unit couldn't attack this turn regardless.
+  const baseAct = activateReady(ai.base) ? [ai.base] : [];
+  const unitAct = ai.field.filter(u=>activateReady(u) && (u.sick || ['damage','debuff'].includes(u.activate.action.kind)));
+  for (const c of [...baseAct, ...unitAct]){ if (activateReady(c)) aiActivate(c); }
   render();
 
   const attackers = ai.field.filter(u=>!u.sick && !u.rested && u.ap>0);
@@ -1139,6 +1237,8 @@ function cardFace(c, ctx){
     overlays += `<div class="fallback"><div class="fn">${isBase?'🏰 ':''}${c.name}</div><div class="ft">${plain(c.effect).slice(0,90)}</div></div><div class="ov-cost">${c.cost}</div>`;
   }
   overlays += `<div class="ov-name">${isBase?'🏰 ':''}${c.name}</div>`;
+  if (ctx==='field-player' && G.turn==='player' && G.mode==='idle' && activateReady(c))
+    overlays += `<div title="Activated ability ready" style="position:absolute;top:3px;left:50%;transform:translateX(-50%);font-size:15px;line-height:1;filter:drop-shadow(0 0 3px #000);pointer-events:none">⚡</div>`;
   if (isBase){
     overlays += `<div class="ov-stat ov-hp">❤${c.hp}${c.hp<c.maxHp?'/'+c.maxHp:''}</div>`;
   } else if (isUnit){
@@ -1244,6 +1344,23 @@ function inspect(c){
     const b=document.createElement('button');
     b.textContent = ok ? `Play (Cost ${c.cost})` : (!levelOk(G.player,c) ? `Need Lv ${c.lv}` : `Need ${c.cost} res`);
     b.disabled=!ok; b.onclick=()=>{ closeInspect(); playFromHand(c.uid); }; btns.appendChild(b);
+  }
+  // Field actions: a friendly Unit can attack, and a Unit/Base with a ready activated ability can use it.
+  const onField = G.player.field.some(x=>x.uid===c.uid);
+  const isMyBase = G.player.base && G.player.base.uid===c.uid;
+  if ((onField||isMyBase) && G.turn==='player' && G.mode==='idle'){
+    if (onField && !c.rested && !c.sick && c.ap>0){
+      const ab=document.createElement('button');
+      ab.innerHTML=`⚔ Attack with ${c.name}`;
+      ab.onclick=()=>{ closeInspect(); G.selected=c.uid; G.mode='attack-target'; setPrompt(`${c.name} attacking — tap a RESTED enemy unit, or the enemy shields to strike directly.`); render(); };
+      btns.appendChild(ab);
+    }
+    if (activateReady(c)){
+      const ac=document.createElement('button');
+      const t=c.activate.text; ac.innerHTML=`⚡ ${t.length>42?t.slice(0,40)+'…':t}`;
+      ac.onclick=()=>{ closeInspect(); startActivate(c); };
+      btns.appendChild(ac);
+    }
   }
   const cl=document.createElement('button'); cl.className='ghost'; cl.textContent='Close'; cl.onclick=closeInspect; btns.appendChild(cl);
   el('inspect').classList.add('show');
