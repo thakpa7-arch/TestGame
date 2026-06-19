@@ -53,7 +53,43 @@
   #starfx i:nth-child(2){ top: 58%; left: -25%; animation-delay: 2.4s; background: linear-gradient(90deg, transparent, rgba(168,85,247,.7), #fff); filter: drop-shadow(0 0 6px rgba(168,85,247,.7)); }
   #starfx i:nth-child(3){ top: 80%; left: -20%; animation-delay: 4.6s; background: linear-gradient(90deg, transparent, rgba(239,68,68,.7), #fff); filter: drop-shadow(0 0 6px rgba(239,68,68,.6)); }
   @keyframes beam { 0% { opacity: 0; transform: translate(0,0) rotate(-22deg); } 6% { opacity: .9; } 40% { opacity: .9; } 60%,100% { opacity: 0; transform: translate(135vw, -54vh) rotate(-22deg); } }
-  @media (prefers-reduced-motion: reduce) { body::after, #starfx i { animation: none; } }
+  /* ---- Gundam HUD / mobile-suit cockpit backdrop ---- */
+  #gundam-bg { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
+  /* Earth limb glowing along the bottom horizon */
+  #gundam-bg .earth { position: absolute; bottom: -52vh; left: 50%; transform: translateX(-50%);
+    width: 160vw; height: 88vh; border-radius: 50%;
+    background: radial-gradient(62% 60% at 50% 28%, rgba(56,128,232,.34), rgba(30,72,150,.18) 46%, transparent 72%);
+    box-shadow: 0 -26px 130px rgba(56,128,232,.22); }
+  #gundam-bg .earth::before { content: ""; position: absolute; inset: 0; border-radius: 50%;
+    border-top: 2px solid rgba(135,196,255,.45); filter: blur(1px); }
+  #gundam-bg .earth::after { content: ""; position: absolute; top: -1px; left: 0; right: 0; height: 22vh; border-radius: 50%;
+    background: radial-gradient(60% 100% at 50% 0%, rgba(180,224,255,.30), transparent 70%); filter: blur(6px); }
+  /* Rotating radar/scanner sweep (upper-right, like a sensor display) */
+  #gundam-bg .radar { position: absolute; top: -34vmax; right: -34vmax; width: 86vmax; height: 86vmax; border-radius: 50%;
+    background: conic-gradient(from 0deg, rgba(52,211,153,.12), rgba(52,211,153,.02) 18%, transparent 30%);
+    animation: radar 20s linear infinite; opacity: .55; }
+  @keyframes radar { to { transform: rotate(360deg); } }
+  /* Triangular tech mesh evoking a HUD wireframe */
+  #gundam-bg .grid { position: absolute; inset: -20%; opacity: .085;
+    background-image:
+      repeating-linear-gradient(60deg,  rgba(120,180,255,.9) 0 1px, transparent 1px 46px),
+      repeating-linear-gradient(-60deg, rgba(120,180,255,.9) 0 1px, transparent 1px 46px),
+      repeating-linear-gradient(0deg,   rgba(120,180,255,.9) 0 1px, transparent 1px 46px);
+    mask-image: radial-gradient(120% 90% at 50% 40%, #000 30%, transparent 80%);
+    -webkit-mask-image: radial-gradient(120% 90% at 50% 40%, #000 30%, transparent 80%); }
+  /* Slow horizontal scanline sweep */
+  #gundam-bg .scan { position: absolute; inset: 0;
+    background: linear-gradient(180deg, transparent, rgba(34,211,238,.06) 50%, transparent);
+    height: 38vh; animation: scan 11s ease-in-out infinite; }
+  @keyframes scan { 0% { transform: translateY(-40vh); opacity: 0; } 12%,78% { opacity: 1; } 100% { transform: translateY(120vh); opacity: 0; } }
+  /* Cockpit targeting-frame corner brackets */
+  #gundam-bg .frame { position: absolute; inset: 14px; }
+  #gundam-bg .frame span { position: absolute; width: 34px; height: 34px; border: 2px solid rgba(251,191,36,.30); }
+  #gundam-bg .frame span:nth-child(1){ top: 0; left: 0; border-right: 0; border-bottom: 0; }
+  #gundam-bg .frame span:nth-child(2){ top: 0; right: 0; border-left: 0; border-bottom: 0; }
+  #gundam-bg .frame span:nth-child(3){ bottom: 0; left: 0; border-right: 0; border-top: 0; }
+  #gundam-bg .frame span:nth-child(4){ bottom: 0; right: 0; border-left: 0; border-top: 0; }
+  @media (prefers-reduced-motion: reduce) { body::after, #starfx i, #gundam-bg .radar, #gundam-bg .scan { animation: none; } }
   #app { height: 100vh; display: flex; flex-direction: column; max-width: 1320px; margin: 0 auto; padding: 8px 12px; gap: 6px; }
 
   header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
@@ -202,6 +238,7 @@
 </style>
 </head>
 <body>
+<div id="gundam-bg"><div class="grid"></div><div class="radar"></div><div class="scan"></div><div class="earth"></div><div class="frame"><span></span><span></span><span></span><span></span></div></div>
 <div id="starfx"><i></i><i></i><i></i></div>
 <div id="app">
   <header>
@@ -514,6 +551,15 @@ function parseTriggerInner(t){
   if ((d=tl.match(/(?:it|this unit) gets ap\+(\d+)/i))){ return { kind:/this unit/.test(tl)?'selfbuff':'buff', amount:+d[1] }; }
   if ((d=tl.match(/(?:it|enemy unit) gets ap-(\d+)/i))) return { kind:'debuff', amount:+d[1] };
   if (/set this unit as active/i.test(tl)) return { kind:'setActive' };
+  // "Choose 1 of your … Units. Set it as active." — re-ready a friendly Unit.
+  if (/set it as active|sets? it active/i.test(tl) && !/this unit/i.test(tl)) return { kind:'setActiveFriendly' };
+  // self keyword grants this turn: "This (Unit) gains <First Strike>/<Suppression>/<High-Maneuver>…"
+  if (/this (?:unit )?gains/i.test(tl)){
+    if (/<\s*first[-\s]?strike/i.test(tl)) return { kind:'selfKeyword', kw:'first' };
+    if (/<\s*high[-\s]?maneuver/i.test(tl)) return { kind:'selfKeyword', kw:'high' };
+    if (/<\s*suppression/i.test(tl)) return { kind:'selfKeyword', kw:'suppression' };
+    if (/<\s*blocker/i.test(tl)) return { kind:'selfKeyword', kw:'blocker' };
+  }
   if ((d=tl.match(/draw (\d+)/i))){ if(/discard/.test(tl)){ const disc=tl.match(/discard (\d+)/i); return { kind:'drawDiscard', draw:+d[1], discard:+(disc?disc[1]:1) }; } return { kind:'draw', amount:+d[1] }; }
   return null;
 }
@@ -659,7 +705,7 @@ function parseTrigger(effect, kw){
   if (/\bdraw\b/.test(t)) return { kind:'draw', amount:1 };
   if ((d=t.match(/ap\s*\+\s*(\d+)/))) return { kind:'buff', amount:+d[1] };
   if (/recover|heal/.test(t)){ d=t.match(/(\d+)\s*hp/); return { kind:'heal', amount:d?+d[1]:99 }; }
-  if (/deploy 1 rested \[|deploy 1 \[/.test(t)) return { kind:'token' };
+  if ((d=t.match(/deploy (\d+) (?:rested )?\[/))) return { kind:'token', count:+d[1] };
   // Mill: "place the top N cards of your deck into your trash"
   if ((d=t.match(/place the top (\d+) cards? of your deck into your trash/i))){
     const cond=t.match(/if you placed (?:a |an )?([\w\s\(\)\/]+?) card with this effect,?\s*(.+)/i);
@@ -687,6 +733,10 @@ function parseTrigger(effect, kw){
   // Trash-conditional gated effect: "if there are N+ X in trash, [effect]"
   const gated = parseGatedEffect(t);
   if (gated) return gated;
+  // Fallback to the simple inner parser — catches "Destroy it.", "Set it as active.",
+  // and self keyword grants that the explicit rules above don't cover.
+  const inner = parseTriggerInner(t);
+  if (inner) return inner;
   return null;
 }
 // Resolve a triggered action for `side`, auto-targeting sensibly. `label` is 'Deploy' / 'Pair'.
@@ -758,7 +808,19 @@ function runTrigger(card, side, act, label){
     const t=[...side.field].sort((a,b)=>(effMaxHp(b)-b.hp)-(effMaxHp(a)-a.hp))[0];
     if (t && t.hp<effMaxHp(t)){ t.hp=Math.min(effMaxHp(t), t.hp+(act.amount>=99?effMaxHp(t):act.amount)); log(`${label}: <b>${name}</b> repairs <b>${t.name}</b>.`, cls); }
   } else if (act.kind==='token'){
-    if (side.field.length<FIELD_MAX){ side.field.push(genericToken(side.who)); log(`${label}: <b>${name}</b> deploys a Mobile Suit token.`, cls); }
+    let made=0; for (let i=0;i<(act.count||1);i++){ if(side.field.length>=FIELD_MAX) break; side.field.push(genericToken(side.who)); made++; }
+    if (made) log(`${label}: <b>${name}</b> deploys ${made} Mobile Suit token${made===1?'':'s'}.`, cls);
+  } else if (act.kind==='setActiveFriendly'){
+    // Re-ready one of your other rested Units (most useful for re-attacking/blocking).
+    const t=side.field.filter(u=>u!==card && u.rested && !u.token).sort((a,b)=>b.ap-a.ap)[0];
+    if (t){ t.rested=false; log(`${label}: <b>${name}</b> sets <b>${t.name}</b> active.`, cls); }
+  } else if (act.kind==='selfKeyword'){
+    if (act.kw==='first') card.firstStrike=true;
+    else if (act.kw==='high') card.highManeuver=true;
+    else if (act.kw==='suppression') card.suppression=true;
+    else if (act.kw==='blocker') card.blocker=true;
+    const lbl={first:'First Strike',high:'High-Maneuver',suppression:'Suppression',blocker:'Blocker'}[act.kw];
+    log(`${label}: <b>${name}</b> gains &lt;${lbl}&gt; this turn.`, cls);
   } else if (act.kind==='selfbuff'){
     card.tempAp=(card.tempAp||0)+act.amount; card.ap=effAp(card);
     if (act.hman) card.highManeuver=true;
@@ -815,8 +877,10 @@ function resetUnit(u){
   u.breach=breachAmount(u.effect); u.suppression=innateKeyword(u.effect,'suppression'); u.support=supportAmount(u.effect);
 }
 // Return a deployed unit to its owner's hand, stripped back to a fresh card.
+// A paired Pilot can't return with the Unit — it is placed in the owner's trash.
 function returnToHand(u, owner){
   if (u.token) return;                       // tokens vanish instead
+  if (u.pilotCard){ sendToTrash(u.pilotCard, owner); log(`<b>${u.pilotCard.name}</b> is sent to trash as <b>${u.name}</b> returns to hand.`, owner===G.player?'me':'ai'); }
   resetUnit(u);
   const hand = owner.hand;
   if (hand.length<HAND_MAX) hand.push(u);
