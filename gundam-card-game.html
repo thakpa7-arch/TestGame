@@ -852,6 +852,29 @@ function parseClause(raw){
   }
   if (/look at the top card of your deck.*(?:return it to|place it into)/.test(t))
     return { kind:'scryKeep', amount:1 };
+  // "Choose 1 … Unit. During this turn, it may choose an active enemy Unit … as its attack target."
+  if (/may choose an active enemy unit/.test(t) && /attack target/.test(t)){
+    const self = /this unit may choose|it may choose an active enemy unit (?:that is|whose|with)/.test(t) && !/choose 1 of your|choose 1 (?:to \d+ )?(?:other )?(?:active )?(?:friendly )?(?:\([^)]*\) )?units?\b/.test(t.split('may choose an active')[0]||'');
+    return { kind:'grantAttackActive', scope:/this unit may choose/.test(t)?'self':'friendly', filter:friendlyFilter(t) };
+  }
+  // "Choose 1 of your … Unit(s). It gains <Keyword> during this turn." → grant keyword to a chosen friendly.
+  if (/(choose|may choose) 1[^.]*?\b(of your|friendly)\b[^.]*?units?\b/.test(t) && /it gains\s*</.test(t)){
+    let kw=null, amt=0; const bm=t.match(/<\s*breach\s*(\d+)/);
+    if (/<\s*first[-\s]?strike/.test(t)) kw='first';
+    else if (/<\s*high[-\s]?maneuver/.test(t)) kw='high';
+    else if (bm){ kw='breach'; amt=+bm[1]; }
+    else if (/<\s*blocker/.test(t)) kw='blocker';
+    else if (/<\s*suppression/.test(t)) kw='suppression';
+    if (kw) return { kind:'grantKw', kw, amount:amt, scope:'friendly', filter:friendlyFilter(t) };
+  }
+  // "Choose 1 of your … Unit. It gets AP+N during this turn." (chosen friendly buff)
+  if (/(choose|may choose) 1[^.]*?\b(of your|friendly)\b[^.]*?units?\b/.test(t) && (d=t.match(/it gets ap\+(\d+)/))){
+    return { kind:'buff', amount:+d[1], filter:friendlyFilter(t) };
+  }
+  // "Choose 1 to N enemy Units. Rest them." → rest several enemies.
+  if (/rest them/.test(t) && /enemy unit/.test(t)){
+    const cm=t.match(/1 to (\d+)/); return { kind:'restMulti', count:cm?+cm[1]:2, filter:targetFilter(t) };
+  }
   // Destroy an enemy Unit ("Destroy it." / "Destroy that Unit").
   if (/\bdestroy it\b|destroy that unit/.test(t)) return { kind:'destroy', filter:targetFilter(t) };
   if (/return it to .*hand|return that unit to .*hand|return them to .*hand/.test(t)){ return { kind:'bounce', filter:targetFilter(t) }; }
@@ -886,6 +909,30 @@ function parseClause(raw){
   return null;
 }
 // ---- conditional effects + single-target selection ----
+// Extract the trait/color/Lv restriction on a CHOSEN FRIENDLY target ("1 of your (ZAFT) Units…").
+function friendlyFilter(t){
+  const f={};
+  const m = t.match(/(?:of your|friendly)\s+((?:other |active |rested |damaged )*)([a-z0-9\s\(\)\/\-]*?)\s*units?/);
+  if (m){
+    const seg=m[2]||'';
+    const traits=seg.match(/\(([^)]+)\)/g); if(traits) f.traits=traits.map(x=>x.replace(/[()]/g,'').trim().toLowerCase());
+    const col=seg.match(/\b(blue|red|green|white|purple)\b/); if(col) f.color=col[1];
+    if (/\bother\b/.test(m[1])) f.other=true;
+    if (/\bdamaged\b/.test(m[1])) f.damaged=true;
+  }
+  const lv=t.match(/lv\.?(\d+) or lower/i); if(lv) f.maxLv=+lv[1];
+  const ap=t.match(/(\d+) or more ap/i); if(ap) f.minAp=+ap[1];
+  return Object.keys(f).length?f:null;
+}
+// Grant a keyword to a Unit for this turn.
+function grantKeyword(u, kw, amount){
+  if (kw==='first') u.firstStrike=true;
+  else if (kw==='high') u.highManeuver=true;
+  else if (kw==='blocker') u.blocker=true;
+  else if (kw==='suppression') u.suppression=true;
+  else if (kw==='breach') u.breach=Math.max(u.breach||0, amount||1);
+}
+function kwLabel(kw){ return {first:'First Strike',high:'High-Maneuver',blocker:'Blocker',suppression:'Suppression',breach:'Breach'}[kw]||kw; }
 // Extract single-target restrictions from an effect clause (Lv./AP/HP caps, lowest HP, rested/active).
 function targetFilter(t){
   const f={}; let m;
@@ -913,7 +960,13 @@ function enemyTargets(foe, act){
 }
 function friendlyTargets(side, act){
   const f=act.filter||{};
-  let list=side.field.filter(u=>u.hp>0 && (f.maxLv==null||(u.lv||0)<=f.maxLv));
+  let list=side.field.filter(u=>u.hp>0
+    && (f.maxLv==null || (u.lv||0)<=f.maxLv)
+    && (f.minAp==null || effAp(u)>=f.minAp)
+    && (!f.color || (u.color||'').toLowerCase()===f.color)
+    && (!f.damaged || u.hp<effMaxHp(u))
+    && (!f.traits || f.traits.some(tr=>(u.trait||'').toLowerCase().includes(tr)))
+    && (!f.other || u!==act.source));
   if (act.kind==='heal') list=list.filter(u=>u.hp<effMaxHp(u));
   return list;
 }
@@ -937,6 +990,8 @@ function applyToTarget(card, side, act, target, label){
   else if (act.kind==='debuff'){ target.tempAp=(target.tempAp||0)-act.amount; target.ap=effAp(target); log(`${label}: <b>${target.name}</b> gets AP-${act.amount} this turn.`,cls); }
   else if (act.kind==='buff'){ target.tempAp=(target.tempAp||0)+act.amount; target.ap=effAp(target); log(`${label}: <b>${target.name}</b> gets AP+${act.amount} this turn.`,cls); }
   else if (act.kind==='heal'){ target.hp=Math.min(effMaxHp(target), target.hp+(act.amount>=99?effMaxHp(target):act.amount)); log(`${label}: <b>${name}</b> repairs <b>${target.name}</b>.`,cls); }
+  else if (act.kind==='grantKw'){ grantKeyword(target, act.kw, act.amount); target.ap=effAp(target); log(`${label}: <b>${target.name}</b> gains &lt;${kwLabel(act.kw)}${act.kw==='breach'?' '+act.amount:''}&gt; this turn.`,cls); }
+  else if (act.kind==='grantAttackActive'){ target.canAttackActive=true; log(`${label}: <b>${target.name}</b> may attack active enemy Units this turn.`,cls); }
 }
 // Do the Shield-to-hand portion of a base/unit effect (shield + optional scry), without the trailing "Then,…".
 function doShieldToHand(card, side, act, label, skipScry){
@@ -992,12 +1047,23 @@ function condMet(cond, side, source, other){
 // Resolve a triggered action for `side`, auto-targeting sensibly. `label` is 'Deploy' / 'Pair'.
 function runTrigger(card, side, act, label){
   if (!act) return;
+  act.source = card;
   // Conditional effect: only resolve the inner effect when the board condition holds.
   if (act.kind==='cond'){ if (condMet(act.cond, side, card, act.other)) runTrigger(card, side, act.inner, label); return; }
   const cls = side===G.player?'me':'ai';
   const foe = side===G.player?G.enemy:G.player;
   const name = card.name;
-  if (act.kind==='shieldToHand'){
+  if (act.kind==='grantKw'){
+    const t = rankTarget(friendlyTargets(side,act),act) || side.field.filter(u=>!u.token && (act.scope!=='friendly'||u!==card))[0] || card;
+    if (t){ grantKeyword(t, act.kw, act.amount); t.ap=effAp(t); log(`${label}: <b>${t.name}</b> gains &lt;${kwLabel(act.kw)}${act.kw==='breach'?' '+act.amount:''}&gt; this turn.`, cls); }
+  } else if (act.kind==='grantAttackActive'){
+    const t = act.scope==='self' ? card : (rankTarget(friendlyTargets(side,act),act) || card);
+    if (t){ t.canAttackActive=true; log(`${label}: <b>${t.name}</b> may attack active enemy Units this turn.`, cls); }
+  } else if (act.kind==='restMulti'){
+    const cands=enemyTargets(foe,act).sort((a,b)=>effAp(b)-effAp(a)).slice(0,act.count);
+    for (const t of cands) t.rested=true;
+    if (cands.length) log(`${label}: <b>${name}</b> rests ${cands.length} enemy Unit${cands.length>1?'s':''}.`, cls);
+  } else if (act.kind==='shieldToHand'){
     doShieldToHand(card, side, act, label);
     if (act.then) runTrigger(card, side, act.then, label);   // trailing "Then, <effect>"
   } else if (act.kind==='exResource'){
@@ -1109,6 +1175,7 @@ function runTrigger(card, side, act, label){
 function resolvePlayerTrigger(card, side, act, label, after){
   const fin = ()=>{ if (after) after(); };
   if (!act){ fin(); return; }
+  act.source = card;
   if (act.kind==='cond'){                       // gate, then resolve the inner interactively
     if (!condMet(act.cond, side, card, act.other)){ fin(); return; }
     return resolvePlayerTrigger(card, side, act.inner, label, after);
@@ -1125,7 +1192,7 @@ function resolvePlayerTrigger(card, side, act, label, after){
   if (act.kind==='dig'){ playerDig(card, G.player, act, fin); return; }
   if (act.kind==='scryMill'){ playerScryMill(card, G.player, fin); return; }
   const enemyKinds = (act.kind==='damage' && act.scope!=='all-enemy') || ['rest','bounce','destroy','debuff'].includes(act.kind);
-  const allyKinds  = act.kind==='buff' || act.kind==='heal';
+  const allyKinds  = act.kind==='buff' || act.kind==='heal' || act.kind==='grantKw' || (act.kind==='grantAttackActive' && act.scope==='friendly');
   if (enemyKinds || allyKinds){
     const cands = enemyKinds ? enemyTargets(G.enemy, act) : friendlyTargets(G.player, act);
     if (cands.length>=2){                        // genuine choice → ask the player
@@ -1534,7 +1601,7 @@ function beginTurn(turn){
   G.turn=turn; G.mode='idle'; G.phase='start'; G.selected=null; G.pending=null; G.pendingHandIdx=-1;
   const s=me();
   // 1) Start Phase — Active Step: ready all rested cards; refresh per-turn abilities.
-  for (const u of s.field){ if(!u.noActive) u.rested=false; u.sick=false; u.tempAp=0; u.activatedThisTurn=false; u.ap=effAp(u); }
+  for (const u of s.field){ if(!u.noActive) u.rested=false; u.sick=false; u.tempAp=0; u.activatedThisTurn=false; u.canAttackActive=false; u.ap=effAp(u); }
   if (s.base){ s.base.rested=false; s.base.activatedThisTurn=false; }
   // 2) Draw Phase — draw 1 (the player going first skips their very first draw).
   G.phase='draw';
@@ -1557,7 +1624,7 @@ function endTurn(){
   const s=me();
   // 5) End Phase — Repair Step (regen), then Hand Step (discard down to the hand limit).
   G.phase='end';
-  for (const u of s.field){ if (u.repair>0 && u.hp>0 && u.hp<effMaxHp(u)){ u.hp=Math.min(effMaxHp(u), u.hp+u.repair); } u.tempAp=0; u.ap=effAp(u); }
+  for (const u of s.field){ if (u.repair>0 && u.hp>0 && u.hp<effMaxHp(u)){ u.hp=Math.min(effMaxHp(u), u.hp+u.repair); } u.tempAp=0; u.canAttackActive=false; u.ap=effAp(u); }
   while (s.hand.length>HAND_MAX){
     const worst=[...s.hand].sort((a,b)=>cardValue(a)-cardValue(b))[0];
     s.hand.splice(s.hand.indexOf(worst),1); sendToTrash(worst, s);
@@ -1888,7 +1955,7 @@ function fieldClick(uidv){
     const atk=G.player.field.find(c=>c.uid===G.selected); if(!atk){ clearSel(); return; }
     const tgt=G.enemy.field.find(c=>c.uid===uidv);
     if (tgt){
-      if (!tgt.rested){ flashPrompt('You can only attack a rested (turned) enemy unit. Attack the shields instead, or a rested unit.'); return; }
+      if (!tgt.rested && !atk.canAttackActive){ flashPrompt('You can only attack a rested (turned) enemy unit. Attack the shields instead, or a rested unit.'); return; }
       // The defender may redirect to an active Blocker (unless attacker has High-Maneuver)
       const blockers = G.enemy.field.filter(b=>b.blocker && !b.rested && b.hp>0);
       if (!atk.highManeuver && blockers.length && aiWantsBlock(atk)){
@@ -2224,9 +2291,9 @@ function resolveAiAttackInner(atk, done){
   // The player's Action step may have rested/destroyed the attacker — if so, the attack fizzles.
   if (atk.hp<=0 || atk.rested){ render(); done(); return; }
   const pl=G.player;
-  // Units may only attack a RESTED enemy unit, or the player directly.
-  const rested = pl.field.filter(u=>u.rested && u.hp>0);
-  const target = rested.filter(u=> atk.ap>=u.hp && (atk.firstStrike || u.ap<atk.hp)).sort((a,b)=>b.ap-a.ap)[0] || null;
+  // Units may only attack a RESTED enemy unit (or any unit if granted <attack active>), or the player directly.
+  const attackable = atk.canAttackActive ? pl.field.filter(u=>u.hp>0) : pl.field.filter(u=>u.rested && u.hp>0);
+  const target = attackable.filter(u=> atk.ap>=u.hp && (atk.firstStrike || u.ap<atk.hp)).sort((a,b)=>b.ap-a.ap)[0] || null;
   // You may intercept with an active <Blocker> (unless High-Maneuver). To avoid nagging, only
   // prompt when blocking is meaningful: the attack reaches YOU (no rested unit soaks it), or a
   // blocker would clearly win the trade. A swing at a rested unit you don't care about won't ask.
@@ -2295,7 +2362,7 @@ function cardFace(c, ctx){
     if (G.mode==='trigger-target' && (G.pending?.scope==='friendly'||G.pending?.scope==='self-ping') && G.pending.cands.includes(c.uid)) cls.push('selectable');
   }
   if (ctx==='field-enemy'){
-    if (G.mode==='attack-target'){ if (c.rested) cls.push('target'); else cls.push('dim'); }
+    if (G.mode==='attack-target'){ const atkU=G.player.field.find(x=>x.uid===G.selected); if (c.rested || (atkU&&atkU.canAttackActive)) cls.push('target'); else cls.push('dim'); }
     if (G.mode==='command-target' && ['damage','rest','destroy','bounce','debuff'].includes(G.pending?.action.kind) && enemyTargets(G.enemy,G.pending.action).includes(c)) cls.push('selectable');
     if (G.mode==='activate-target' && G.pending?.activate?.action.scope==='enemy') cls.push('selectable');
     if (G.mode==='trigger-target' && (G.pending?.scope==='enemy'||G.pending?.scope==='self-ping-enemy') && G.pending.cands.includes(c.uid)) cls.push('selectable');
