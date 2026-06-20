@@ -107,6 +107,10 @@
   .side-stats .name.enemy { color: #fda4af; }
   .side-stats .name.player { color: var(--cyan); }
   .stat-line { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+  .stat-line.pile-link { cursor: pointer; border-radius: 5px; padding: 1px 4px; margin: 1px -4px; border: 1px solid transparent; transition: background .12s, border-color .12s; }
+  .stat-line.pile-link:hover, .stat-line.pile-link:active { background: rgba(251,191,36,.12); border-color: rgba(251,191,36,.4); color: var(--txt); }
+  .stat-line.pile-link em { font-style: normal; font-size: 9px; letter-spacing: 1px; color: var(--gold); opacity: .8; margin-left: 3px; }
+  .stat-line.pile-link b { color: var(--txt); }
   .stat-line b { color: var(--txt); }
   .shields { display: flex; gap: 3px; flex-wrap: wrap; margin-top: 2px; cursor: pointer; }
   .shield { width: 15px; height: 21px; border-radius: 3px; background: linear-gradient(180deg, var(--gold), #b45309); box-shadow: 0 0 6px rgba(251,191,36,.4); }
@@ -174,6 +178,14 @@
   .card .hp-bar > i.crit { background: #ef4444; }
   /* Combat preview badge shown on attackable enemy units while you're choosing a target. */
   .card .cbt-prev { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 26px; line-height: 1; filter: drop-shadow(0 1px 3px #000); pointer-events: none; z-index: 3; }
+  /* Brief reveal of a played Command / Burst card so it isn't missed. */
+  #cardFlash { position: fixed; inset: 0; z-index: 120; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+  #cardFlash .cf-card { width: 168px; background: var(--panel); border: 2px solid var(--gold); border-radius: 12px; padding: 10px; text-align: center; box-shadow: 0 0 28px rgba(0,0,0,.7), 0 0 18px rgba(251,191,36,.35); transform: scale(.6); opacity: 0; transition: transform .22s cubic-bezier(.2,1.4,.5,1), opacity .22s; }
+  #cardFlash.show .cf-card { transform: scale(1); opacity: 1; }
+  #cardFlash .cf-img { width: 100%; height: 196px; border-radius: 8px; background-size: cover; background-position: center; background-color: #0c1426; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 13px; color: var(--txt); padding: 6px; }
+  #cardFlash .cf-tag { font-size: 9px; letter-spacing: 2px; color: var(--gold); font-weight: 800; margin-bottom: 4px; }
+  #cardFlash .cf-name { font-size: 13px; font-weight: 800; margin-top: 6px; }
+  #cardFlash .cf-eff { font-size: 9px; color: var(--muted); margin-top: 4px; line-height: 1.25; max-height: 44px; overflow: hidden; }
   .card .ov-name { position: absolute; left: 0; right: 0; bottom: 21px; font-size: 8px; text-align: center; background: rgba(0,0,0,.6); padding: 1px 2px; line-height: 1.05; }
   .card.rested { transform: rotate(90deg) scale(.82); opacity: .85; }
   .card.rested:hover { transform: rotate(90deg) scale(.86); }
@@ -267,8 +279,8 @@
       <div class="resources" id="enemyResources"></div>
       <div class="stat-line"><span>Hand</span><b id="enemyHandCount"></b></div>
       <div class="stat-line"><span>Deck</span><b id="enemyDeckCount"></b></div>
-      <div class="stat-line"><span>Trash</span><b id="enemyTrashCount"></b></div>
-      <div class="stat-line"><span>Exile</span><b id="enemyExileCount"></b></div>
+      <div class="stat-line pile-link" id="enemyTrashRow" title="Tap to view the enemy Trash"><span>🗑 Trash <em>view</em></span><b id="enemyTrashCount"></b></div>
+      <div class="stat-line pile-link" id="enemyExileRow" title="Tap to view the enemy Exile"><span>⛓ Exile <em>view</em></span><b id="enemyExileCount"></b></div>
     </div>
     <div class="base-zone enemy" id="enemyBaseZone"><div class="bz-label">BASE</div><div class="bz-slot" id="enemyBase"></div></div>
     <div class="battlefield enemy" id="enemyField"></div>
@@ -282,8 +294,8 @@
       <div class="stat-line"><span>Resources</span><b id="playerResText"></b></div>
       <div class="resources" id="playerResources"></div>
       <div class="stat-line"><span>Deck</span><b id="playerDeckCount"></b></div>
-      <div class="stat-line"><span>Trash</span><b id="playerTrashCount" style="cursor:pointer;text-decoration:underline dotted"></b></div>
-      <div class="stat-line"><span>Exile</span><b id="playerExileCount" style="cursor:pointer;text-decoration:underline dotted"></b></div>
+      <div class="stat-line pile-link" id="playerTrashRow" title="Tap to view your Trash (graveyard)"><span>🗑 Trash <em>view</em></span><b id="playerTrashCount"></b></div>
+      <div class="stat-line pile-link" id="playerExileRow" title="Tap to view your Exile"><span>⛓ Exile <em>view</em></span><b id="playerExileCount"></b></div>
     </div>
     <div class="base-zone player" id="playerBaseZone"><div class="bz-label">BASE</div><div class="bz-slot" id="playerBase"></div></div>
     <div class="battlefield player" id="playerField"></div>
@@ -498,6 +510,8 @@ function matchTrashTrait(card, trait){
   if (tl === 'unit')    return card.type === 'unit';
   if (tl === 'pilot')   return card.type === 'pilot';
   if (tl === 'base')    return card.type === 'base';
+  // Color requirements (e.g. "3 blue cards") match the card's printed color.
+  if (['blue','green','red','white','purple','black','colorless'].includes(tl)) return (card.color||'').toLowerCase()===tl;
   const cardTrait = (card.trait||'').toLowerCase();
   return tl.split('/').some(part => cardTrait.includes(part.replace(/[()]/g,'').trim()));
 }
@@ -1323,6 +1337,20 @@ function log(msg, cls='sys'){
 let promptTimer=null;
 function setPrompt(t){ const p=el('prompt'); if(!t){p.style.display='none';return;} p.style.display='block'; p.textContent=t; }
 function flashPrompt(t){ setPrompt(t); clearTimeout(promptTimer); promptTimer=setTimeout(()=>{ if(!G.over) defaultPrompt(); },1700); }
+// Briefly reveal a played Command / Burst card center-screen so the player doesn't miss it.
+let flashCardTimer=null;
+function flashCard(card, tag){
+  if (!card) return;
+  let host=document.getElementById('cardFlash');
+  if (!host){ host=document.createElement('div'); host.id='cardFlash'; document.body.appendChild(host); }
+  const img = card.img ? `style="background-image:url('${card.img}')"` : '';
+  host.innerHTML = `<div class="cf-card"><div class="cf-tag">${tag||'PLAYED'}</div>`+
+    `<div class="cf-img" ${img}>${card.img?'':card.name}</div>`+
+    `<div class="cf-name">${card.name}</div><div class="cf-eff">${plain(card.effect||'').slice(0,140)}</div></div>`;
+  requestAnimationFrame(()=>host.classList.add('show'));
+  clearTimeout(flashCardTimer);
+  flashCardTimer=setTimeout(()=>{ host.classList.remove('show'); }, 1250);
+}
 function defaultPrompt(){ setPrompt(G.turn==='player' ? 'Your turn — deploy, attack, then End Turn.' : ''); }
 
 // ---- effective stats ----
@@ -1461,9 +1489,11 @@ function playFromHand(uidv){
     const myUnits = s.field.filter(u=>u.type==='unit');
     if (myUnits.length===0){ flashPrompt(`Deploy a Unit first — pilot ${card.name} must be paired with one.`); return; }
     if (myUnits.length===1){ // only one possible target: pair it straight away
-      s.hand.splice(idx,1); s.resAvail-=effectiveCost(s,card); attachPilot(myUnits[0],card);
+      s.hand.splice(idx,1); s.resAvail-=effectiveCost(s,card);
       log(`<b>${card.name}</b> pilots <b>${myUnits[0].name}</b>.`, 'me');
-      closeInspect(); clearSel(); render(); return;
+      closeInspect();
+      attachPilot(myUnits[0], card, ()=>{ clearSel(); render(); checkEnd(); });
+      return;
     }
     G.mode='pilot-target'; G.pending=card; setPrompt(`Tap a unit to pair pilot ${card.name} (+${card.pAp} AP / +${card.pHp} HP).`);
     closeInspect(); render();
@@ -1474,6 +1504,7 @@ function playFromHand(uidv){
 
 function startCommand(card, handIdx){
   const s=G.player, a=card.action;
+  flashCard(card, 'YOUR COMMAND');
   if (a.kind==='drawDiscard'){
     commit(card,handIdx);
     for(let i=0;i<a.draw;i++) draw(s);
@@ -1669,8 +1700,11 @@ function fieldClick(uidv){
   if (G.mode==='pilot-target'){
     const u=G.player.field.find(c=>c.uid===uidv && c.type==='unit'); if(!u){ flashPrompt('Pick one of your units.'); return; }
     const card=G.pending, h=G.player.hand.findIndex(c=>c.uid===card.uid); if(h<0) return;
-    G.player.hand.splice(h,1); G.player.resAvail-=effectiveCost(G.player,card); attachPilot(u,card);
-    log(`<b>${card.name}</b> pilots <b>${u.name}</b>.`, 'me'); clearSel(); render(); return;
+    G.player.hand.splice(h,1); G.player.resAvail-=effectiveCost(G.player,card);
+    log(`<b>${card.name}</b> pilots <b>${u.name}</b>.`, 'me');
+    G.mode='idle'; G.pending=null;
+    attachPilot(u, card, ()=>{ clearSel(); render(); checkEnd(); });
+    return;
   }
 
   if (G.mode==='command-target'){
@@ -1775,6 +1809,7 @@ function strikePlayer(atk, defSide){
 function triggerBurst(card, side){
   const bz = card.burst; if (!bz) return;
   const sideCls = side===G.player ? 'me' : 'ai';
+  flashCard(card, (side===G.player?'YOUR':'ENEMY')+' BURST');
   if (bz.kind==='tohand'){ if (side.hand.length<HAND_MAX){ side.hand.push(card); log(`Burst! <b>${card.name}</b> is added to ${who(side)} hand.`, sideCls); } }
   else if (bz.kind==='deploy'){
     if (card.type==='base'){ side.base=card; card.rested=false; card.sick=false; log(`Burst! ${who(side)} deploys base <b>${card.name}</b>.`, sideCls); runTrigger(card, side, parseTrigger(card.effect,'Deploy'), 'Deploy'); }
@@ -1874,7 +1909,7 @@ function damage(u, dmg, side){
   else fx('hit', u.uid);
 }
 
-function attachPilot(u, p){
+function attachPilot(u, p, onDone){
   u.pilot={ name:p.name, pAp:p.pAp, pHp:p.pHp };
   u.pilotCard = p;   // saved so both go to trash together when the unit is destroyed
   u.lv=Math.max(u.lv, p.lv);
@@ -1897,11 +1932,28 @@ function attachPilot(u, p){
     log(`Link established — <b>${u.name}</b> can attack this turn!`, u.owner==='player'?'me':'ai');
   }
   u.maxHp=effMaxHp(u); u.ap=effAp(u);
-  // 【When Paired】 effects fire now — both the pilot's and the unit's own.
-  runTrigger(p, side, parseTrigger(p.effect,'When Paired'), 'Pair');
-  runTrigger(u, side, parseTrigger(u.effect,'When Paired'), 'Pair');
-  // 【When Linked】 fires once, the moment the link is first established.
-  if (justLinked) runTrigger(u, side, parseTrigger(u.effect,'When Linked'), 'Link');
+  // 【When Paired】 (pilot's then unit's) and 【When Linked】 fire now. For the player these are
+  // resolved interactively (so you choose the target), one after another, via the sequencer.
+  const trigs = [
+    { card:p, act:parseTrigger(p.effect,'When Paired'), label:'Pair' },
+    { card:u, act:parseTrigger(u.effect,'When Paired'), label:'Pair' },
+  ];
+  if (justLinked) trigs.push({ card:u, act:parseTrigger(u.effect,'When Linked'), label:'Link' });
+  runTriggerSeq(trigs, side, onDone);
+}
+// Resolve a list of triggers in order. Player-side triggers go through the interactive resolver
+// (so single-target pings let you choose); AI-side triggers auto-resolve. `done` runs at the end.
+function runTriggerSeq(list, side, done){
+  let i=0;
+  (function nxt(){
+    while (i<list.length){
+      const t=list[i++];
+      if (!t.act) continue;
+      if (side===G.player){ resolvePlayerTrigger(t.card, side, t.act, t.label, nxt); return; }
+      runTrigger(t.card, side, t.act, t.label);
+    }
+    if (done) done();
+  })();
 }
 
 function clearSel(){ G.selected=null; G.mode='idle'; G.pending=null; G.pendingHandIdx=-1; defaultPrompt(); }
@@ -1931,14 +1983,14 @@ function aiTurn(){
     // removal on biggest threat
     const dmg = ai.hand.find(c=>c.type==='command' && c.action.kind==='damage' && canAfford(ai,c));
     if (dmg && pl.field.length){
-      const i=ai.hand.indexOf(dmg); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,dmg); sendToTrash(dmg,ai);
+      const i=ai.hand.indexOf(dmg); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,dmg); sendToTrash(dmg,ai); flashCard(dmg,'ENEMY COMMAND');
       if (dmg.action.scope==='all-enemy'){ log(`${who(G.enemy)} plays <b>${dmg.name}</b> (all units).`, 'ai'); for(const u of [...pl.field]) damage(u,dmg.action.amount,pl); }
       else { const t=[...pl.field].sort((a,b)=>b.ap-a.ap)[0]; log(`${who(G.enemy)} plays <b>${dmg.name}</b> on <b>${t.name}</b>.`, 'ai'); damage(t,dmg.action.amount,pl); }
       acted=true; continue;
     }
     // draw if low
     const drawC = ai.hand.find(c=>c.type==='command' && c.action.kind==='draw' && c.action.amount>=2 && canAfford(ai,c));
-    if (drawC && ai.hand.length<=4){ const i=ai.hand.indexOf(drawC); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,drawC); sendToTrash(drawC,ai); for(let k=0;k<drawC.action.amount;k++) draw(ai); log(`${who(G.enemy)} plays <b>${drawC.name}</b>.`, 'ai'); acted=true; continue; }
+    if (drawC && ai.hand.length<=4){ const i=ai.hand.indexOf(drawC); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,drawC); sendToTrash(drawC,ai); flashCard(drawC,'ENEMY COMMAND'); for(let k=0;k<drawC.action.amount;k++) draw(ai); log(`${who(G.enemy)} plays <b>${drawC.name}</b>.`, 'ai'); acted=true; continue; }
     // deploy a base if it improves the guard
     const baseC = ai.hand.find(c=>c.type==='base' && canAfford(ai,c) && (!ai.base || c.hp>ai.base.hp));
     if (baseC){ const i=ai.hand.indexOf(baseC); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,baseC); baseC.rested=false; baseC.sick=false; ai.base=baseC; log(`${who(G.enemy)} deploys base <b>${baseC.name}</b>.`, 'ai'); runTrigger(baseC, ai, parseTrigger(baseC.effect,'Deploy'), 'Deploy'); acted=true; continue; }
@@ -1952,10 +2004,10 @@ function aiTurn(){
     if (pilot && ai.field.some(u=>u.type==='unit')){ const best=ai.field.filter(u=>u.type==='unit').sort((a,b)=>b.baseAp-a.baseAp)[0]; const i=ai.hand.indexOf(pilot); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,pilot); attachPilot(best,pilot); log(`${who(G.enemy)} pairs <b>${pilot.name}</b> with <b>${best.name}</b>.`, 'ai'); acted=true; continue; }
     // buff before attacks
     const buff = ai.hand.find(c=>c.type==='command' && c.action.kind==='buff' && canAfford(ai,c));
-    if (buff && ai.field.some(u=>!u.sick&&!u.rested&&u.ap>0)){ const t=ai.field.filter(u=>!u.sick&&!u.rested&&u.ap>0).sort((a,b)=>b.ap-a.ap)[0]; const i=ai.hand.indexOf(buff); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,buff); sendToTrash(buff,ai); t.tempAp=(t.tempAp||0)+buff.action.amount; t.ap=effAp(t); log(`${who(G.enemy)} empowers <b>${t.name}</b>.`, 'ai'); acted=true; continue; }
+    if (buff && ai.field.some(u=>!u.sick&&!u.rested&&u.ap>0)){ const t=ai.field.filter(u=>!u.sick&&!u.rested&&u.ap>0).sort((a,b)=>b.ap-a.ap)[0]; const i=ai.hand.indexOf(buff); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,buff); sendToTrash(buff,ai); flashCard(buff,'ENEMY COMMAND'); t.tempAp=(t.tempAp||0)+buff.action.amount; t.ap=effAp(t); log(`${who(G.enemy)} empowers <b>${t.name}</b>.`, 'ai'); acted=true; continue; }
     // token-creating command — play it when there's board room
     const tokCmd = ai.hand.find(c=>c.type==='command' && c.action.kind==='token' && canAfford(ai,c));
-    if (tokCmd && ai.field.length<FIELD_MAX){ const i=ai.hand.indexOf(tokCmd); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,tokCmd); sendToTrash(tokCmd,ai); deployTokens(tokCmd.action, ai, tokCmd.name, tokCmd.name, 'ai'); acted=true; continue; }
+    if (tokCmd && ai.field.length<FIELD_MAX){ const i=ai.hand.indexOf(tokCmd); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,tokCmd); sendToTrash(tokCmd,ai); flashCard(tokCmd,'ENEMY COMMAND'); deployTokens(tokCmd.action, ai, tokCmd.name, tokCmd.name, 'ai'); acted=true; continue; }
   }
 
   // Use ready activated abilities before attacks: the base's freely (it can't attack anyway),
@@ -2231,8 +2283,10 @@ el('rulesBtn').addEventListener('click', ()=>{ if(!G.over) location.reload(); })
 el('soundBtn').addEventListener('click', ()=>{ SOUND.on=!SOUND.on; el('soundBtn').textContent=SOUND.on?'🔊':'🔇'; if(SOUND.on){ audioCtx()?.resume?.(); sound('deploy'); } });
 el('startBtn').addEventListener('click', ()=>{ audioCtx()?.resume?.(); startGame(); });
 el('inspect').addEventListener('click', e=>{ if(e.target.id==='inspect') closeInspect(); });
-el('playerTrashCount').addEventListener('click', ()=>{ if(G.player&&G.player.trash.length) showTrashViewer(G.player); });
-el('playerExileCount').addEventListener('click', ()=>{ if(G.player&&G.player.exile.length) showPileViewer(G.player.exile, 'Exile'); });
+el('playerTrashRow').addEventListener('click', ()=>{ showPileViewer((G.player&&G.player.trash)||[], 'Your Trash (Graveyard)'); });
+el('playerExileRow').addEventListener('click', ()=>{ showPileViewer((G.player&&G.player.exile)||[], 'Your Exile'); });
+el('enemyTrashRow').addEventListener('click', ()=>{ showPileViewer((G.enemy&&G.enemy.trash)||[], 'Enemy Trash (Graveyard)'); });
+el('enemyExileRow').addEventListener('click', ()=>{ showPileViewer((G.enemy&&G.enemy.exile)||[], 'Enemy Exile'); });
 el('enemyShields').addEventListener('click', attackDirect);
 el('enemyShieldCount').addEventListener('click', attackDirect);
 el('enemyField').addEventListener('click', e=>{ if(G.mode==='attack-target' && e.target.classList.contains('battlefield')) attackDirect(); });
