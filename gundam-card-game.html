@@ -1294,19 +1294,30 @@ function resolvePlayerTrigger(card, side, act, label, after){
   if (act.kind==='reanimate'){ reanimate(card, G.player, act, fin); return; }
   const enemyKinds = (act.kind==='damage' && act.scope!=='all-enemy') || ['rest','bounce','destroy','debuff','stun'].includes(act.kind);
   const allyKinds  = act.kind==='buff' || act.kind==='heal' || act.kind==='grantKw' || act.kind==='grantReduce' || (act.kind==='grantAttackActive' && act.scope==='friendly' && !act.all);
-  if (enemyKinds || allyKinds){
-    const cands = enemyKinds ? enemyTargets(G.enemy, act) : friendlyTargets(G.player, act);
-    if (cands.length>=2){                        // genuine choice → ask the player
+  if (enemyKinds){
+    // Enemy-targeting effects: ask the player to choose when there's a real choice.
+    const cands = enemyTargets(G.enemy, act);
+    if (cands.length>=2){
       G.mode='trigger-target';
-      G.pending={ card, side, act, label, after, scope: enemyKinds?'enemy':'friendly', cands: cands.map(c=>c.uid) };
-      setPrompt(`${card.name}: tap ${enemyKinds?'an enemy':'a friendly'} unit to target.`);
+      G.pending={ card, side, act, label, after, scope:'enemy', cands: cands.map(c=>c.uid) };
+      setPrompt(`${card.name}: tap an enemy unit to target.`);
       render(); return;
     }
-    applyToTarget(card, side, act, rankTarget(cands, act), label);  // 0–1 candidate → auto
+    applyToTarget(card, side, act, rankTarget(cands, act), label);
     fin(); return;
   }
-  // Self-ping effects: let the player pick which of THEIR Units takes the damage.
-  if (act.kind==='selfPingBuff' || act.kind==='selfPingDraw' || act.kind==='damageBoth'){
+  if (allyKinds){
+    // Friendly-targeting effects always auto-resolve — a click on your own unit after pairing
+    // should start an attack, not confirm a trigger. runTrigger picks the best target.
+    applyToTarget(card, side, act, rankTarget(friendlyTargets(G.player, act), act), label);
+    fin(); return;
+  }
+  // Self-ping effects: let the player pick which of THEIR Units takes the damage (meaningful tradeoff).
+  // damageBoth (Mikazuki etc.) auto-resolves so the linked unit is immediately free to attack.
+  if (act.kind==='damageBoth'){
+    runTrigger(card, side, act, label); fin(); return;
+  }
+  if (act.kind==='selfPingBuff' || act.kind==='selfPingDraw'){
     const fcands = G.player.field.filter(u=>!u.token && u.hp>0);
     if (fcands.length>=2){
       G.mode='trigger-target';
@@ -1314,13 +1325,7 @@ function resolvePlayerTrigger(card, side, act, label, after){
       setPrompt(`${card.name}: tap one of YOUR Units to take ${act.self||act.amount} damage.`);
       render(); return;
     }
-    if (fcands.length===1 && act.kind==='damageBoth'){
-      // friendly forced; still let the player choose the enemy if there's a choice
-      const ec=enemyTargets(G.enemy,{kind:'damage'});
-      if (ec.length>=2){ G.mode='trigger-target'; G.pending={ card, side, act, label, after, scope:'self-ping-enemy', fuid:fcands[0].uid, cands:ec.map(c=>c.uid) };
-        setPrompt(`${card.name}: tap an ENEMY Unit to take ${act.amount} damage.`); render(); return; }
-    }
-    runTrigger(card, side, act, label); fin(); return;   // 0–1 friendly → auto
+    runTrigger(card, side, act, label); fin(); return;
   }
   runTrigger(card, side, act, label);            // non-targeted (draw, tokens, mill, …)
   fin();
