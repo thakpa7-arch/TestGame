@@ -273,6 +273,13 @@
     #inspect img { width: 150px; }
     #overlay { justify-content: flex-start; }
     #overlay h2 { font-size: 24px; }
+    /* Compact the Base + Shield zones into thin horizontal strips so they don't eat vertical space */
+    .base-zone, .shield-zone { width: 100%; flex-direction: row; align-self: auto; justify-content: flex-start;
+      gap: 8px; padding: 4px 8px; min-height: 0; }
+    .base-zone .bz-slot { width: auto; }
+    .base-zone .bz-slot .card { width: 46px; height: 64px; }
+    .shield-zone .sz-grid { flex-wrap: nowrap; }
+    .shield-card { width: 18px; height: 25px; font-size: 10px; }
   }
 </style>
 </head>
@@ -785,14 +792,26 @@ function parseBurst(effect){
   const pl = plain(effect);
   const bm = pl.match(/【\s*burst\s*】\s*([^【]*)/i);
   if (!bm) return null;
-  const t = bm[1].toLowerCase();
+  const raw = bm[1].trim();
+  const t = raw.toLowerCase();
   if (/add this card to your hand/.test(t)) return { kind:'tohand' };
   if (/deploy this card/.test(t)) return { kind:'deploy' };
-  let d;
-  if ((d=t.match(/deal (\d+) damage/))) return { kind:'damage', amount:+d[1] };
-  if ((d=t.match(/draw (\d+)/))) return { kind:'draw', amount:+d[1] };
   if (/activate this card/.test(t)) return { kind:'main', action: inferCommand(effect) };
+  let d;
+  if ((d=t.match(/^draw (\d+)\b/))) return { kind:'draw', amount:+d[1] };
+  // Otherwise parse the Burst clause itself as an action (deal damage / rest / debuff / etc.)
+  // and resolve it like a 【Main】 — so targeted Bursts actually fire and the player can choose.
+  const act = parseClause(raw);
+  if (act) return { kind:'main', action: act };
   return { kind:'tohand' }; // safe default — keep the card
+}
+// "When this Unit destroys an enemy shield area card with battle damage, ... deal N damage to it."
+// A Unit-attached trigger that fires after its battle damage breaks an enemy shield (its own turn only).
+function parseShieldBreak(effect){
+  const t = plain(effect).toLowerCase();
+  if (!/destroys?\s+(?:an?\s+)?enemy['s ]*\s*shield area card/.test(t)) return null;
+  const m = t.match(/deal (\d+) damage/);
+  return m ? { kind:'damage', amount:+m[1] } : null;
 }
 // Pilot names a unit can LINK with (from the card's link field).
 function parseLink(link){ return (link||'').split(/[\/,]/).map(s=>s.trim()).filter(Boolean); }
@@ -1356,6 +1375,8 @@ function makeCard(def, owner){
     c.highManeuver = innateKeyword(def.effect, 'high');
     c.breach = breachAmount(def.effect);
     c.suppression = innateKeyword(def.effect, 'suppression');
+    // "When this Unit destroys an enemy shield area card with battle damage, deal N to a chosen enemy Unit." (e.g. Sinanju)
+    c.onShieldBreak = parseShieldBreak(def.effect);
     // Conditional keyword: "While this is damaged, it gains <Suppression>" (e.g. Barbatos 4th Form).
     c.suppressionWhenDamaged = /while this[^.]*?damaged[^.]*?gains?\s*<\s*suppression/i.test(plain(def.effect));
     c.support = supportAmount(def.effect);
@@ -2037,12 +2058,12 @@ function attackDirect(){
     battle(atk, blk, G.player, G.enemy); return;
   }
   atk.rested=true;
-  strikePlayer(atk, G.enemy);
-  clearSel(); render();
+  strikePlayer(atk, G.enemy, ()=>{ clearSel(); render(); });
 }
 
 // Resolve an attack aimed at a player: Base soaks first, else a Shield breaks (Burst), else defeat.
-function strikePlayer(atk, defSide){
+function strikePlayer(atk, defSide, done){
+  done = done || function(){};
   const side = defSide===G.player ? 'ai' : 'me';
   onAttack(atk, defSide===G.player ? G.enemy : G.player);
   if (defSide.base){
@@ -2050,41 +2071,116 @@ function strikePlayer(atk, defSide){
     log(`<b>${atk.name}</b> hits ${who(defSide)}'s <b>${b.name}</b> base for ${atk.ap}.`, side);
     if (b.hp<=0){ defSide.base=null; fx('die', b.uid); log(`${who(defSide)}'s ${b.name} base is destroyed.`, side); sendToTrash(b, defSide); }
     else fx('hit', b.uid);
-    return;
+    done(); return;
   }
   if (defSide.shields.length>0){
     // <Suppression>: damage to shields hits the first 2 cards simultaneously, else just 1.
     const supp = atk && effSuppression(atk);
     const n = supp ? 2 : 1;
-    for (let k=0; k<n && defSide.shields.length>0; k++){
-      const sh=defSide.shields.pop(); defSide.breakingShield=true; fx('shield');
+    let broke=0, k=0;
+    // Shields break one at a time so each Burst can resolve (a player Burst may need a choice).
+    (function nextShield(){
+      if (k>=n || defSide.shields.length===0){
+        if (broke>0) resolveShieldBreakTrigger(atk, defSide, done);   // attacker's "on shield break" effect
+        else done();
+        return;
+      }
+      k++;
+      const sh=defSide.shields.pop(); defSide.breakingShield=true; fx('shield'); broke++;
       log(`<b>${atk.name}</b> destroys a ${who(defSide)} shield!${supp?' &lt;Suppression&gt;':''} (${defSide.shields.length} left)`, side);
-      triggerBurst(sh, defSide);
-    }
+      triggerBurst(sh, defSide, nextShield, true);
+    })();
     return;
   }
-  endGame(defSide===G.player ? G.enemy : G.player);
+  endGame(defSide===G.player ? G.enemy : G.player); done();
 }
 
-// A broken shield is revealed; if it has a 【Burst】 it may resolve (auto-targeted).
-function triggerBurst(card, side){
-  const bz = card.burst; if (!bz) return;
+// "When this Unit destroys an enemy shield area card with battle damage, deal N to a chosen enemy Unit."
+// Fires only on the attacker's own turn. `defSide` is the side whose shield broke — the damage
+// targets a Unit on that same side (the attacker's enemy). e.g. Sinanju.
+function resolveShieldBreakTrigger(atk, defSide, done){
+  done = done || function(){};
+  const sb = atk && atk.onShieldBreak;
+  const atkSide = defSide===G.player ? G.enemy : G.player;
+  if (!sb || atkSide.who !== G.turn){ done(); return; }
+  const act = { kind:'damage', amount:sb.amount, source:atk };
+  const cands = enemyTargets(defSide, act);
+  if (!cands.length){ done(); return; }
+  flashCard(atk, (atkSide===G.player?'YOUR':'ENEMY')+' EFFECT');
+  if (atkSide===G.player){
+    if (cands.length>=2){          // player's own turn → tap an enemy Unit to target
+      G.mode='trigger-target';
+      G.pending={ card:atk, side:G.player, act, label:atk.name, after:done, scope:'enemy', cands:cands.map(c=>c.uid) };
+      setPrompt(`${atk.name}: shield destroyed — tap an enemy Unit to deal ${sb.amount} damage.`);
+      render(); return;
+    }
+    applyToTarget(atk, G.player, act, cands[0], atk.name); render(); done(); return;
+  }
+  applyToTarget(atk, G.enemy, act, rankTarget(cands, act), atk.name); render(); done();   // AI auto-targets
+}
+
+// A broken shield is revealed; if it has a 【Burst】 it may resolve. When `allowChoice` is set and
+// it's the player's Burst, a target-requiring Burst lets the player pick (via the modal picker, since
+// Bursts fire on the opponent's turn). `done` is called once the Burst finishes resolving.
+function triggerBurst(card, side, done, allowChoice){
+  done = done || function(){};
+  const bz = card.burst; if (!bz){ done(); return; }
   const sideCls = side===G.player ? 'me' : 'ai';
   flashCard(card, (side===G.player?'YOUR':'ENEMY')+' BURST');
-  if (bz.kind==='tohand'){ if (side.hand.length<HAND_MAX){ side.hand.push(card); log(`Burst! <b>${card.name}</b> is added to ${who(side)} hand.`, sideCls); } }
-  else if (bz.kind==='deploy'){
+  if (bz.kind==='tohand'){ if (side.hand.length<HAND_MAX){ side.hand.push(card); log(`Burst! <b>${card.name}</b> is added to ${who(side)} hand.`, sideCls); } done(); return; }
+  if (bz.kind==='deploy'){
     if (card.type==='base'){ side.base=card; card.rested=false; card.sick=false; log(`Burst! ${who(side)} deploys base <b>${card.name}</b>.`, sideCls); runTrigger(card, side, parseTrigger(card.effect,'Deploy'), 'Deploy'); }
     else if (side.field.length<FIELD_MAX){ card.rested=false; card.sick=true; side.field.push(card); log(`Burst! ${who(side)} deploys <b>${card.name}</b>.`, sideCls); runTrigger(card, side, parseTrigger(card.effect,'Deploy'), 'Deploy'); }
+    done(); return;
   }
-  else if (bz.kind==='draw'){ log(`Burst! ${who(side)} draws ${bz.amount}.`, sideCls); for(let i=0;i<bz.amount;i++) draw(side); }
-  else if (bz.kind==='damage'){ const foe=side===G.player?G.enemy:G.player; const t=[...foe.field].sort((a,b)=>b.ap-a.ap)[0]; if(t){ log(`Burst! <b>${card.name}</b> deals ${bz.amount} to <b>${t.name}</b>.`, sideCls); damage(t,bz.amount,foe); } }
-  else if (bz.kind==='main' && bz.action){ log(`Burst! <b>${card.name}</b> activates.`, sideCls); applyCommand({name:card.name, action:bz.action}, side, autoTarget(bz.action, side)); }
+  if (bz.kind==='draw'){ log(`Burst! ${who(side)} draws ${bz.amount}.`, sideCls); for(let i=0;i<bz.amount;i++) draw(side); done(); return; }
+  if (bz.kind==='damage'){
+    const foe=side===G.player?G.enemy:G.player;
+    const cands=foe.field.filter(c=>c.hp>0);
+    if (!cands.length){ done(); return; }
+    const apply=(t)=>{ log(`Burst! <b>${card.name}</b> deals ${bz.amount} to <b>${t.name}</b>.`, sideCls); damage(t,bz.amount,foe); render(); done(); };
+    if (allowChoice && side===G.player && cands.length>=2) promptTargetChoice(cands, `<b>Burst — ${card.name}</b><br>Tap an enemy Unit to deal ${bz.amount} damage.`, apply);
+    else apply([...cands].sort((a,b)=>b.ap-a.ap)[0]);
+    return;
+  }
+  if (bz.kind==='main' && bz.action){
+    log(`Burst! <b>${card.name}</b> activates.`, sideCls);
+    if (allowChoice && side===G.player) burstResolvePlayer(card, side, bz.action, done);
+    else { applyCommand({name:card.name, action:bz.action}, side, autoTarget(bz.action, side)); done(); }
+    return;
+  }
+  done();
+}
+// Resolve a player Burst's 【Main】 that needs a target — pick interactively when there's a choice.
+function burstResolvePlayer(card, side, act, done){
+  done = done || function(){};
+  const foe = side===G.player?G.enemy:G.player;
+  const enemyKinds = (act.kind==='damage' && act.scope!=='all-enemy') || ['rest','destroy','bounce','debuff','stun'].includes(act.kind);
+  if (enemyKinds){
+    const cands = enemyTargets(foe, act);
+    if (!cands.length){ done(); return; }
+    if (cands.length>=2){ promptTargetChoice(cands, `<b>Burst — ${card.name}</b><br>Tap an enemy Unit to target.`, t=>{ applyToTarget(card, side, act, t, 'Burst'); render(); done(); }); return; }
+    applyToTarget(card, side, act, rankTarget(cands, act), 'Burst'); render(); done(); return;
+  }
+  applyCommand({name:card.name, action:act}, side, autoTarget(act, side)); render(); done();   // non-enemy-target → auto
+}
+// Modal target picker (used by player Bursts on the opponent's turn, where field taps are disabled).
+function promptTargetChoice(cands, msg, cb){
+  el('blockMsg').innerHTML = msg;
+  const wrap=el('blockBtns'); wrap.innerHTML='';
+  cands.forEach(t=>{
+    const b=document.createElement('button');
+    b.innerHTML = `${t.name} <span style="opacity:.6;font-size:10px">⚔${effAp(t)}/❤${t.hp}</span>`;
+    b.onclick=()=>{ el('blockModal').classList.remove('show'); cb(t); };
+    wrap.appendChild(b);
+  });
+  el('blockModal').classList.add('show');
 }
 // Pick a sensible automatic target for a burst/AI command.
 function autoTarget(action, side){
   const foe = side===G.player?G.enemy:G.player;
-  if (action.kind==='damage'||action.kind==='rest') return [...foe.field].sort((a,b)=>b.ap-a.ap)[0]||null;
-  if (action.kind==='heal'||action.kind==='buff') return [...side.field].sort((a,b)=>b.baseAp-a.baseAp)[0]||null;
+  if (['damage','rest','destroy','bounce','debuff','stun'].includes(action.kind)) return rankTarget(enemyTargets(foe, action), action);
+  if (['heal','buff','grantKw','grantReduce','grantAttackActive'].includes(action.kind)) return [...side.field].sort((a,b)=>b.baseAp-a.baseAp)[0]||null;
   return null;
 }
 
@@ -2360,19 +2456,19 @@ function resolveAiAttackInner(atk, done){
   const worthAsking = !target || blockers.some(b=> b.hp>atk.ap && b.ap>=atk.hp);
   if (!atk.highManeuver && blockers.length && worthAsking){
     promptPlayerBlock(atk, blockers, target, (blk)=>{
-      if (blk){ blk.rested=true; log(`You intercept with <b>${blk.name}</b> &lt;Blocker&gt;.`, 'me'); battle(atk, blk, G.enemy, G.player); }
-      else if (target){ battle(atk, target, G.enemy, G.player); }
-      else if (!atk.noDirectAttack) aiDirectHit(atk);
-      done();
+      if (blk){ blk.rested=true; log(`You intercept with <b>${blk.name}</b> &lt;Blocker&gt;.`, 'me'); battle(atk, blk, G.enemy, G.player); done(); }
+      else if (target){ battle(atk, target, G.enemy, G.player); done(); }
+      else if (!atk.noDirectAttack){ aiDirectHit(atk, done); }
+      else done();
     });
     return;
   }
   if (target){ battle(atk, target, G.enemy, G.player); done(); return; }
-  if (!atk.noDirectAttack) aiDirectHit(atk);
+  if (!atk.noDirectAttack){ aiDirectHit(atk, done); return; }
   done();
 }
 
-function aiDirectHit(atk){ atk.rested=true; strikePlayer(atk, G.player); render(); }
+function aiDirectHit(atk, done){ atk.rested=true; strikePlayer(atk, G.player, ()=>{ render(); if(done) done(); }); }
 
 // Let the player choose ONE token spec to deploy (e.g. Striker Pack: Sword OR Launcher Strike).
 function promptTokenChoice(specs, cb){
