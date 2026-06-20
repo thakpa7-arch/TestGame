@@ -486,20 +486,31 @@ function parseActivateCost(c){
 function parseActivate(effect){
   const pl = plain(effect);
   // Allow a 【Once per Turn】 (or other timing) modifier to sit between the marker and the cost text.
-  const m = pl.match(/【\s*Activate[･·・\s]*(Main|Action)\s*】\s*(?:【\s*Once per Turn\s*】\s*)?([^【]*)/i);
+  const m = pl.match(/【\s*Activate[･··・\s]*(Main|Action)\s*】\s*(?:【\s*Once per Turn\s*】\s*)?([^【]*)/i);
   if (!m) return null;
-  const cm = m[2].trim().match(/^(.*?)[：:]\s*(.+)$/);
-  if (!cm) return null;                                  // bare reminder text (e.g. <Support N>)
-  const cost = parseActivateCost(cm[1]);
-  if (!cost) return null;
-  const action = parseActivateEffect(cm[2]);
-  if (!action) return null;
-  // Gate on a "【During Link】/【During Pair】" prefix that precedes this clause, if any.
   const before = pl.slice(0, m.index);
   const requireLink = /【\s*During Link\s*】\s*$/i.test(before.replace(/\s*$/,'')) || /【\s*During Link\s*】[^【]*$/i.test(before);
   const requirePair = !requireLink && /【\s*During Pair[^】]*】[^【]*$/i.test(before);
-  return { phase:/action/i.test(m[1])?'action':'main', cost,
-           text:cm[2].replace(/\s*\(.*$/,'').replace(/\.$/,'').trim(), action, requireLink, requirePair };
+  const phase = /action/i.test(m[1])?'action':'main';
+  let cost, action, text;
+  const cm = m[2].trim().match(/^(.*?)[：:]\s*(.+)$/);
+  if (cm){
+    cost = parseActivateCost(cm[1]);
+    action = cost ? parseActivateEffect(cm[2]) : null;
+    text = cm[2];
+  } else {
+    // Colon-less form: "Choose N X cards from your trash. Exile them. If you do, [effect]."
+    const tex = parseTrashExile(m[2].toLowerCase());
+    if (tex && tex.inner){
+      cost = { type:'exile', count:tex.count, trait:tex.trait };
+      const k=tex.inner.kind;
+      const scope = ['damage','destroy','rest','bounce','debuff'].includes(k)?'enemy' : (['buff','heal','setActiveFriendly'].includes(k)?'friendly':'self');
+      action = Object.assign({}, tex.inner, { scope });
+      text = m[2];
+    }
+  }
+  if (!cost || !action) return null;
+  return { phase, cost, text:(text||'').replace(/\s*\(.*$/,'').replace(/\.$/,'').trim(), action, requireLink, requirePair };
 }
 
 // ---- Trash / Graveyard helpers ----
@@ -679,10 +690,14 @@ function inferCommand(effect){
   // Self-targeting ("ping self") commands take priority over the generic enemy-damage rule.
   const ping = parseSelfPing(t);
   if (ping) return ping;
+  // Destroy an enemy Unit ("Choose 1 enemy Unit … Destroy it.").
+  if (/\bdestroy it\b|destroy that unit|destroy the chosen/.test(t)) return { kind:'destroy', scope:'enemy', filter:targetFilter(t) };
   if ((m = t.match(/deal (\d+) damage/))){
     const all = /(all|every|each).{0,24}enemy|enemy.{0,24}(all|every|each)/.test(t);
-    return { kind:'damage', amount:+m[1], scope: all?'all-enemy':'enemy' };
+    return { kind:'damage', amount:+m[1], scope: all?'all-enemy':'enemy', filter:targetFilter(t) };
   }
+  // Return an enemy Unit to hand ("Choose 1 enemy Unit … Return it to its owner's hand.").
+  if (/return it to .*hand|return that unit to .*hand/.test(t)) return { kind:'bounce', scope:'enemy', filter:targetFilter(t) };
   // draw-then-discard (e.g. "Draw 2. Then, discard 1.") — must be checked before plain draw
   if (/draw \d/.test(t) && /discard \d/.test(t)){
     const dm = t.match(/draw (\d+)/), disc = t.match(/discard (\d+)/);
@@ -770,6 +785,20 @@ function parseClause(raw){
   // so "deal N damage to this Unit"/"…to it" hits a friendly, not the foe.
   const ping = parseSelfPing(t);
   if (ping) return ping;
+  // Mill / scry clauses must be checked BEFORE generic AP/damage rules — otherwise a trailing
+  // "…it gets AP-2" (e.g. Zeheart) would match the debuff rule and drop the mill entirely.
+  if ((d=t.match(/place the top (\d+) cards? of your deck into your trash/i)) || (/place the top card of your deck into your trash/.test(t))){
+    const n = d ? +d[1] : 1;
+    const cnd=t.match(/if you placed (?:a |an )?([\w\s\(\)\/]+?) card with this effect,?\s*(.+)/i);
+    if (cnd){ const inner=parseTriggerInner(cnd[2].trim()); if(inner) return { kind:'millCond', amount:n, condTrait:cnd[1].trim(), inner }; }
+    return { kind:'mill', amount:n };
+  }
+  if (/look at the top 2 cards of your deck and return 1 to the top.*place the remaining card into your trash/.test(t))
+    return { kind:'scryMill', amount:2 };
+  if (/look at the top card of your deck.*(?:return it to|place it into)/.test(t))
+    return { kind:'scryKeep', amount:1 };
+  // Destroy an enemy Unit ("Destroy it." / "Destroy that Unit").
+  if (/\bdestroy it\b|destroy that unit/.test(t)) return { kind:'destroy', filter:targetFilter(t) };
   if (/return it to .*hand|return that unit to .*hand|return them to .*hand/.test(t)){ return { kind:'bounce', filter:targetFilter(t) }; }
   if (/\brest it\b|rest that unit/.test(t)){ return { kind:'rest', filter:targetFilter(t) }; }
   if ((d=t.match(/ap\s*-\s*(\d+)/))) return { kind:'debuff', amount:+d[1], filter:targetFilter(t) };
@@ -784,22 +813,6 @@ function parseClause(raw){
     const cond = /if you have no unit/i.test(raw) && specs.length>=2 && !choose ? 'board' : null;
     return specs.length ? { kind:'token', specs, choose, cond } : { kind:'token', count:+((t.match(/deploy (\d+)/)||[])[1]||1) };
   }
-  // Mill: "place the top N cards of your deck into your trash"
-  if ((d=t.match(/place the top (\d+) cards? of your deck into your trash/i))){
-    const cond=t.match(/if you placed (?:a |an )?([\w\s\(\)\/]+?) card with this effect,?\s*(.+)/i);
-    if (cond){ const inner=parseTriggerInner(cond[2].trim()); if(inner) return { kind:'millCond', amount:+d[1], condTrait:cond[1].trim(), inner }; }
-    return { kind:'mill', amount:+d[1] };
-  }
-  if (/place the top card of your deck into your trash/.test(t)){
-    const cond=t.match(/if you placed (?:a |an )?([\w\s\(\)\/]+?) card with this effect,?\s*(.+)/i);
-    if (cond){ const inner=parseTriggerInner(cond[2].trim()); if(inner) return { kind:'millCond', amount:1, condTrait:cond[1].trim(), inner }; }
-    return { kind:'mill', amount:1 };
-  }
-  // Scry+mill: look at top N, keep 1, mill the rest
-  if (/look at the top 2 cards of your deck and return 1 to the top.*place the remaining card into your trash/.test(t))
-    return { kind:'scryMill', amount:2 };
-  if (/look at the top card of your deck.*(?:return it to|place it into)/.test(t))
-    return { kind:'scryKeep', amount:1 };
   // Trash retrieval: "Choose 1 X card from your trash. Add it to your hand."
   if (/from your trash\. add it to your hand/.test(t)){
     const rm=t.match(/choose 1 ([^.]+?) card[^.]*? from your trash/i);
@@ -1053,8 +1066,40 @@ function resolvePlayerTrigger(card, side, act, label, after){
     applyToTarget(card, side, act, rankTarget(cands, act), label);  // 0–1 candidate → auto
     fin(); return;
   }
-  runTrigger(card, side, act, label);            // non-targeted (draw, tokens, self, mill, …)
+  // Self-ping effects: let the player pick which of THEIR Units takes the damage.
+  if (act.kind==='selfPingBuff' || act.kind==='selfPingDraw' || act.kind==='damageBoth'){
+    const fcands = G.player.field.filter(u=>!u.token && u.hp>0);
+    if (fcands.length>=2){
+      G.mode='trigger-target';
+      G.pending={ card, side, act, label, after, scope:'self-ping', cands:fcands.map(c=>c.uid) };
+      setPrompt(`${card.name}: tap one of YOUR Units to take ${act.self||act.amount} damage.`);
+      render(); return;
+    }
+    if (fcands.length===1 && act.kind==='damageBoth'){
+      // friendly forced; still let the player choose the enemy if there's a choice
+      const ec=enemyTargets(G.enemy,{kind:'damage'});
+      if (ec.length>=2){ G.mode='trigger-target'; G.pending={ card, side, act, label, after, scope:'self-ping-enemy', fuid:fcands[0].uid, cands:ec.map(c=>c.uid) };
+        setPrompt(`${card.name}: tap an ENEMY Unit to take ${act.amount} damage.`); render(); return; }
+    }
+    runTrigger(card, side, act, label); fin(); return;   // 0–1 friendly → auto
+  }
+  runTrigger(card, side, act, label);            // non-targeted (draw, tokens, mill, …)
   fin();
+}
+// Resolve a self-ping with a player-chosen friendly (and optional enemy) target.
+function applySelfPingChosen(card, side, act, ftarget, etarget){
+  const cls=side===G.player?'me':'ai', foe=side===G.player?G.enemy:G.player;
+  if (act.kind==='selfPingBuff'){
+    log(`<b>${card.name}</b> deals ${act.self} to your <b>${ftarget.name}</b>, then it gets AP+${act.ap}.`,cls);
+    damage(ftarget, act.self, side); if(ftarget.hp>0){ ftarget.tempAp=(ftarget.tempAp||0)+act.ap; ftarget.ap=effAp(ftarget); }
+  } else if (act.kind==='selfPingDraw'){
+    log(`<b>${card.name}</b> deals ${act.self} to your <b>${ftarget.name}</b> — draw ${act.draw}.`,cls);
+    damage(ftarget, act.self, side); for(let i=0;i<act.draw;i++) draw(side); if(act.discard) autoDiscard(side, act.discard, card.name);
+  } else if (act.kind==='damageBoth'){
+    if(ftarget){ log(`<b>${card.name}</b> deals ${act.amount} to your <b>${ftarget.name}</b>.`,cls); damage(ftarget, act.amount, side); }
+    if(!etarget) etarget = rankTarget(enemyTargets(foe,{kind:'damage'}), {kind:'damage'});
+    if(etarget){ log(`<b>${card.name}</b> deals ${act.amount} to <b>${etarget.name}</b>.`,cls); damage(etarget, act.amount, foe); }
+  }
 }
 // Strip a unit back to its printed state (used by both returnToHand and trash retrieval).
 function resetUnit(u){
@@ -1527,7 +1572,7 @@ function startCommand(card, handIdx){
     });
     return;
   }
-  const needEnemy = (a.kind==='damage'&&a.scope==='enemy') || a.kind==='rest';
+  const needEnemy = (a.kind==='damage'&&a.scope==='enemy') || a.kind==='rest' || a.kind==='destroy' || a.kind==='bounce' || a.kind==='debuff';
   const needAlly  = (a.kind==='heal'||a.kind==='buff');
   // Self-ping commands need one of your own Units to take the damage; auto-resolved (no tap).
   const selfPing  = a.kind==='damageBoth' || a.kind==='selfPingBuff' || a.kind==='selfPingDraw';
@@ -1573,7 +1618,7 @@ function applyCommand(card, side, target){
   }
   else if (a.kind==='heal'){ if (target){ target.hp=Math.min(effMaxHp(target), target.hp + (a.amount>=99?effMaxHp(target):a.amount)); log(`<b>${card.name}</b> repairs <b>${target.name}</b>.`, side===G.player?'me':'ai'); } }
   else if (a.kind==='buff'){ if (target){ target.tempAp=(target.tempAp||0)+a.amount; target.ap=effAp(target); log(`<b>${card.name}</b>: <b>${target.name}</b> gets +${a.amount} AP.`, side===G.player?'me':'ai'); } }
-  else if (a.kind==='rest'){ if (target){ target.rested=true; log(`<b>${card.name}</b> rests <b>${target.name}</b>.`, side===G.player?'me':'ai'); } }
+  else if (a.kind==='rest' || a.kind==='destroy' || a.kind==='bounce' || a.kind==='debuff'){ applyToTarget(card, side, a, target, card.name); }
   // Self-targeting ("ping self") and token-creating commands delegate to the trigger resolver.
   else if (a.kind==='damageBoth' || a.kind==='selfPingBuff' || a.kind==='selfPingDraw' || a.kind==='token'){
     runTrigger(card, side, a, card.name);
@@ -1665,8 +1710,8 @@ function applyActivateEffect(u, target, side){
     log(`<b>${u.name}</b> deals ${a.amount} to all enemy Units.`, cls); for (const t of [...foe.field]) damage(t, a.amount, foe);
   } else if (a.kind==='damage'){
     if (target){ log(`<b>${u.name}</b> deals ${a.amount} to <b>${target.name}</b>.`, cls); damage(target, a.amount, foe); }
-  } else if (a.kind==='rest'){
-    if (target){ target.rested=true; log(`<b>${u.name}</b> rests <b>${target.name}</b>.`, cls); }
+  } else if (a.kind==='rest' || a.kind==='destroy' || a.kind==='bounce'){
+    if (target) applyToTarget(u, side, a, target, u.name);
   } else if (a.kind==='grantBreach'){
     const t=target||u; t.breach=Math.max(t.breach||0, a.amount); log(`<b>${u.name}</b>: <b>${t.name}</b> gains &lt;Breach ${a.amount}&gt;.`, cls);
   } else if (a.kind==='grantHigh'){
@@ -1709,10 +1754,11 @@ function fieldClick(uidv){
 
   if (G.mode==='command-target'){
     const card=G.pending, a=card.action;
-    const enemySide=(a.kind==='damage'||a.kind==='rest');
-    const t=(enemySide?G.enemy:G.player).field.find(c=>c.uid===uidv);
-    if(!t){ flashPrompt(enemySide?'Pick an enemy unit.':'Pick a friendly unit.'); return; }
-    commit(card,G.pendingHandIdx); applyCommand(card,G.player,t); clearSel(); render(); checkEnd(); return;
+    const enemySide=['damage','rest','destroy','bounce','debuff'].includes(a.kind);
+    const pool=(enemySide?G.enemy:G.player).field.find(c=>c.uid===uidv);
+    if(!pool){ flashPrompt(enemySide?'Pick an enemy unit.':'Pick a friendly unit.'); return; }
+    if(enemySide && !enemyTargets(G.enemy,a).includes(pool)){ flashPrompt('That unit isn’t a legal target for this card.'); return; }
+    commit(card,G.pendingHandIdx); applyCommand(card,G.player,pool); clearSel(); render(); checkEnd(); return;
   }
 
   if (G.mode==='activate-target'){
@@ -1724,12 +1770,27 @@ function fieldClick(uidv){
 
   if (G.mode==='trigger-target'){
     const p=G.pending;
-    if (!p.cands.includes(uidv)){ flashPrompt(`Pick a highlighted ${p.scope==='enemy'?'enemy':'friendly'} unit.`); return; }
-    const pool = p.scope==='enemy'?G.enemy:G.player;
-    const t = pool.field.find(c=>c.uid===uidv); if(!t) return;
+    if (!p.cands.includes(uidv)){ flashPrompt('Pick a highlighted unit.'); return; }
+    const enemyScope = p.scope==='enemy' || p.scope==='self-ping-enemy';
+    const t = (enemyScope?G.enemy:G.player).field.find(c=>c.uid===uidv); if(!t) return;
+    const done=()=>{ if (p.after) p.after(); else { clearSel(); render(); checkEnd(); } };
+    if (p.scope==='self-ping'){
+      // chose the friendly Unit to ping; damageBoth then needs an enemy choice
+      if (p.act.kind==='damageBoth'){
+        const ec=enemyTargets(G.enemy,{kind:'damage'});
+        if (ec.length>=2){ G.pending={ card:p.card, side:p.side, act:p.act, label:p.label, after:p.after, scope:'self-ping-enemy', fuid:t.uid, cands:ec.map(c=>c.uid) };
+          setPrompt(`${p.card.name}: now tap an ENEMY Unit to take ${p.act.amount} damage.`); render(); return; }
+        G.mode='idle'; G.pending=null; applySelfPingChosen(p.card, p.side, p.act, t, ec[0]||null); done(); return;
+      }
+      G.mode='idle'; G.pending=null; applySelfPingChosen(p.card, p.side, p.act, t, null); done(); return;
+    }
+    if (p.scope==='self-ping-enemy'){
+      const ft=G.player.field.find(c=>c.uid===p.fuid)||null;
+      G.mode='idle'; G.pending=null; applySelfPingChosen(p.card, p.side, p.act, ft, t); done(); return;
+    }
     G.mode='idle'; G.pending=null;
     applyToTarget(p.card, p.side, p.act, t, p.label);
-    if (p.after) p.after(); else { clearSel(); render(); checkEnd(); }
+    done();
     return;
   }
 
@@ -2098,13 +2159,13 @@ function cardFace(c, ctx){
     if (G.mode==='pilot-target' && c.type==='unit') cls.push('selectable');
     if (G.mode==='command-target' && (G.pending?.action.kind==='heal'||G.pending?.action.kind==='buff')) cls.push('selectable');
     if (G.mode==='activate-target' && G.pending?.activate?.action.scope==='friendly') cls.push('selectable');
-    if (G.mode==='trigger-target' && G.pending?.scope==='friendly' && G.pending.cands.includes(c.uid)) cls.push('selectable');
+    if (G.mode==='trigger-target' && (G.pending?.scope==='friendly'||G.pending?.scope==='self-ping') && G.pending.cands.includes(c.uid)) cls.push('selectable');
   }
   if (ctx==='field-enemy'){
     if (G.mode==='attack-target'){ if (c.rested) cls.push('target'); else cls.push('dim'); }
-    if (G.mode==='command-target' && (G.pending?.action.kind==='damage'||G.pending?.action.kind==='rest')) cls.push('selectable');
+    if (G.mode==='command-target' && ['damage','rest','destroy','bounce','debuff'].includes(G.pending?.action.kind) && enemyTargets(G.enemy,G.pending.action).includes(c)) cls.push('selectable');
     if (G.mode==='activate-target' && G.pending?.activate?.action.scope==='enemy') cls.push('selectable');
-    if (G.mode==='trigger-target' && G.pending?.scope==='enemy' && G.pending.cands.includes(c.uid)) cls.push('selectable');
+    if (G.mode==='trigger-target' && (G.pending?.scope==='enemy'||G.pending?.scope==='self-ping-enemy') && G.pending.cands.includes(c.uid)) cls.push('selectable');
   }
   const isBase = c.type==='base';
   if (isBase) cls.push('isbase');
