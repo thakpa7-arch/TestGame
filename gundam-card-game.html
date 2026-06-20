@@ -750,29 +750,19 @@ function inferCommand(effect){
     const cond = /if you have no unit/i.test(raw) && specs.length>=2 && !choose ? 'board' : null;
     return specs.length ? { kind:'token', specs, choose, cond } : { kind:'token', count:+((t.match(/deploy (\d+)/)||[])[1]||1) };
   }
-  // Self-targeting ("ping self") commands take priority over the generic enemy-damage rule.
-  const ping = parseSelfPing(t);
-  if (ping) return ping;
-  // Destroy an enemy Unit ("Choose 1 enemy Unit … Destroy it.").
-  if (/\bdestroy it\b|destroy that unit|destroy the chosen/.test(t)) return { kind:'destroy', scope:'enemy', filter:targetFilter(t) };
-  if ((m = t.match(/deal (\d+) damage/))){
-    const all = /(all|every|each).{0,24}enemy|enemy.{0,24}(all|every|each)/.test(t);
-    return { kind:'damage', amount:+m[1], scope: all?'all-enemy':'enemy', filter:targetFilter(t) };
-  }
-  // Return an enemy Unit to hand ("Choose 1 enemy Unit … Return it to its owner's hand.").
-  if (/return it to .*hand|return that unit to .*hand/.test(t)) return { kind:'bounce', scope:'enemy', filter:targetFilter(t) };
   // draw-then-discard (e.g. "Draw 2. Then, discard 1.") — must be checked before plain draw
   if (/draw \d/.test(t) && /discard \d/.test(t)){
     const dm = t.match(/draw (\d+)/), disc = t.match(/discard (\d+)/);
     return { kind:'drawDiscard', draw:+dm[1], discard:+(disc[1]) };
   }
-  if ((m = t.match(/draw (\d+)/))) return { kind:'draw', amount:+m[1] };
-  if (/recover|repair|heal/.test(t)){ m = t.match(/(\d+)\s*hp/); return { kind:'heal', amount: m?+m[1]:99 }; }
-  if ((m = t.match(/ap\s*\+\s*(\d+)|\+\s*(\d+)\s*ap|gets ap\+(\d+)/))){
-    return { kind:'buff', amount:+(m[1]||m[2]||m[3]||2) };
+  // Delegate to the unified clause parser so Commands gain every effect the triggers understand
+  // (AP-/debuff, keyword grants, dig, reanimate, set-active, damage-reduction, …).
+  const a = parseClause(raw);
+  if (a){
+    if (['destroy','bounce','rest','debuff','stun'].includes(a.kind) && !a.scope) a.scope='enemy';
+    return a;
   }
-  if (/rest/.test(t) && /enemy/.test(t)) return { kind:'rest', scope:'enemy' };
-  if (/draw/.test(t)) return { kind:'draw', amount:1 };
+  if ((m = t.match(/ap\s*\+\s*(\d+)|\+\s*(\d+)\s*ap|gets ap\+(\d+)/))) return { kind:'buff', amount:+(m[1]||m[2]||m[3]||2) };
   return { kind:'draw', amount:1 }; // never a dead card
 }
 
@@ -1762,23 +1752,14 @@ function startCommand(card, handIdx){
     });
     return;
   }
-  const needEnemy = (a.kind==='damage'&&a.scope==='enemy') || a.kind==='rest' || a.kind==='destroy' || a.kind==='bounce' || a.kind==='debuff';
-  const needAlly  = (a.kind==='heal'||a.kind==='buff');
-  // Self-ping commands need one of your own Units to take the damage; auto-resolved (no tap).
-  const selfPing  = a.kind==='damageBoth' || a.kind==='selfPingBuff' || a.kind==='selfPingDraw';
-  if (needEnemy && G.enemy.field.length===0){ // fallback: just draw
-    commit(card,handIdx); draw(s); log(`<b>${card.name}</b> finds no target — you draw 1 instead.`, 'me'); clearSel(); render(); return;
-  }
-  if ((needAlly || selfPing) && G.player.field.length===0){
-    commit(card,handIdx); draw(s); log(`<b>${card.name}</b> finds no target — you draw 1 instead.`, 'me'); clearSel(); render(); return;
-  }
-  if (needEnemy || needAlly){
-    G.mode='command-target'; G.pending=card; G.pendingHandIdx=handIdx;
-    setPrompt(needEnemy ? 'Tap an enemy unit as the target.' : 'Tap a friendly unit as the target.');
-    closeInspect(); render(); return;
-  }
-  // no target needed
-  commit(card,handIdx); applyCommand(card, G.player, null); closeInspect(); clearSel(); render(); checkEnd();
+  // Fallback to avoid a dead card: if the action needs an enemy/friendly target and there is none, draw instead.
+  const needEnemy = (a.kind==='damage'&&a.scope!=='all-enemy') || ['rest','destroy','bounce','debuff','stun'].includes(a.kind);
+  const needAlly  = ['heal','buff','grantKw','grantReduce'].includes(a.kind) || (a.kind==='grantAttackActive'&&a.scope==='friendly'&&!a.all) || a.kind==='damageBoth' || a.kind==='selfPingBuff' || a.kind==='selfPingDraw';
+  if (needEnemy && G.enemy.field.length===0){ commit(card,handIdx); draw(s); log(`<b>${card.name}</b> finds no target — you draw 1 instead.`, 'me'); clearSel(); render(); return; }
+  if (needAlly && G.player.field.length===0){ commit(card,handIdx); draw(s); log(`<b>${card.name}</b> finds no target — you draw 1 instead.`, 'me'); clearSel(); render(); return; }
+  // Everything else resolves through the same interactive resolver as triggered effects.
+  commit(card,handIdx); closeInspect();
+  resolvePlayerTrigger(card, G.player, a, card.name, ()=>{ clearSel(); render(); checkEnd(); });
 }
 
 function commit(card, handIdx){ G.player.hand.splice(handIdx,1); G.player.resAvail-=effectiveCost(G.player,card); sendToTrash(card, G.player); }
@@ -1808,11 +1789,9 @@ function applyCommand(card, side, target){
   }
   else if (a.kind==='heal'){ if (target){ target.hp=Math.min(effMaxHp(target), target.hp + (a.amount>=99?effMaxHp(target):a.amount)); log(`<b>${card.name}</b> repairs <b>${target.name}</b>.`, side===G.player?'me':'ai'); } }
   else if (a.kind==='buff'){ if (target){ target.tempAp=(target.tempAp||0)+a.amount; target.ap=effAp(target); log(`<b>${card.name}</b>: <b>${target.name}</b> gets +${a.amount} AP.`, side===G.player?'me':'ai'); } }
-  else if (a.kind==='rest' || a.kind==='destroy' || a.kind==='bounce' || a.kind==='debuff'){ applyToTarget(card, side, a, target, card.name); }
-  // Self-targeting ("ping self") and token-creating commands delegate to the trigger resolver.
-  else if (a.kind==='damageBoth' || a.kind==='selfPingBuff' || a.kind==='selfPingDraw' || a.kind==='token'){
-    runTrigger(card, side, a, card.name);
-  }
+  else if (a.kind==='rest' || a.kind==='destroy' || a.kind==='bounce' || a.kind==='debuff' || a.kind==='stun' || a.kind==='grantKw' || a.kind==='grantReduce' || a.kind==='grantAttackActive'){ applyToTarget(card, side, a, target||rankTarget(a.scope==='friendly'||['grantKw','grantReduce','grantAttackActive'].includes(a.kind)?friendlyTargets(side,a):enemyTargets(foe,a),a), card.name); }
+  // Everything else (self-ping, tokens, dig, reanimate, mill, …) goes through the trigger resolver.
+  else { runTrigger(card, side, a, card.name); }
 }
 
 // ---- player-activated abilities (【Activate･Main】 with a rest-self OR exile-from-trash cost) ----
