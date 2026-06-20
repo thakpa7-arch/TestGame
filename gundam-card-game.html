@@ -1312,10 +1312,18 @@ function resolvePlayerTrigger(card, side, act, label, after){
     applyToTarget(card, side, act, rankTarget(friendlyTargets(G.player, act), act), label);
     fin(); return;
   }
-  // Self-ping effects: let the player pick which of THEIR Units takes the damage (meaningful tradeoff).
-  // damageBoth (Mikazuki etc.) auto-resolves so the linked unit is immediately free to attack.
+  // damageBoth (Mikazuki etc.): auto-pick the friendly that takes the self-damage drawback (so the
+  // linked unit is immediately free to attack), but still let the player choose the ENEMY to hit.
   if (act.kind==='damageBoth'){
-    runTrigger(card, side, act, label); fin(); return;
+    const ft = pingFriendly(G.player, act.amount, false);   // tankiest friendly takes the drawback
+    const ec = enemyTargets(G.enemy, { kind:'damage' });
+    if (ec.length>=2){
+      G.mode='trigger-target';
+      G.pending={ card, side, act, label, after, scope:'self-ping-enemy', fuid: ft?ft.uid:null, cands: ec.map(c=>c.uid) };
+      setPrompt(`${card.name}: tap an ENEMY Unit to take ${act.amount} damage.`);
+      render(); return;
+    }
+    runTrigger(card, side, act, label); fin(); return;       // 0–1 enemy → fully auto
   }
   if (act.kind==='selfPingBuff' || act.kind==='selfPingDraw'){
     const fcands = G.player.field.filter(u=>!u.token && u.hp>0);
