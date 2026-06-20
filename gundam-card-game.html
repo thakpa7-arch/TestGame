@@ -943,6 +943,18 @@ function parseClause(raw){
   if ((d=t.match(/ap\s*\+\s*(\d+)/))) return { kind:'buff', amount:+d[1], filter:targetFilter(t) };
   if (/recover|heal/.test(t)){ d=t.match(/(\d+)\s*hp/); return { kind:'heal', amount:d?+d[1]:99 }; }
   if (/deploy \d+ (?:rested )?\[/i.test(t)){
+    // Conditional replacement: "Deploy 1 [A]…. If <cond>, deploy N [B]… instead." → deploy B when the
+    // condition holds, otherwise A. (Corsica Base: 1 Tallgeese, or 2 Leo if a Corsica Base is in trash.)
+    const insteadM = raw.match(/(?:^|\.\s*)(If\b[^.]*?,\s*deploy\b[^.]*?instead)\.?\s*$/i);
+    if (insteadM){
+      const altRaw = insteadM[1];
+      const primRaw = raw.slice(0, insteadM.index);   // the "Deploy 1 [A]…" text before the instead sentence
+      const primSpecs = parseTokenSpecs(primRaw), altSpecs = parseTokenSpecs(altRaw);
+      const condM = altRaw.match(/^if (.+?),\s*deploy/i);
+      const cond = condM ? parseCondition(condM[1]) : null;
+      if (primSpecs.length && altSpecs.length && cond)
+        return { kind:'cond', cond, inner:{ kind:'token', specs:altSpecs }, elseInner:{ kind:'token', specs:primSpecs } };
+    }
     const specs=parseTokenSpecs(raw);
     const choose = specs.length>1 && /\bor\b\s*\d*\s*(?:rested\s+)?\[/i.test(raw);
     const cond = /if you have no unit/i.test(raw) && specs.length>=2 && !choose ? 'board' : null;
@@ -1067,6 +1079,13 @@ function doShieldToHand(card, side, act, label, skipScry){
 // Parse a leading board/turn/trash condition ("If <cond>, …") into a predicate descriptor.
 function parseCondition(t){
   t=t.toLowerCase().trim(); let m;
+  // Compound "<A> and <B>" — both must hold (e.g. "it is your turn and a card … is in your trash").
+  if (/\sand\s/.test(t) && !/\bor\b/.test(t)){
+    const parts = t.split(/\s+and\s+/).map(p=>parseCondition(p)).filter(Boolean);
+    if (parts.length>=2) return { type:'and', conds:parts };
+  }
+  // A specifically-named card sitting in your trash.
+  if ((m=t.match(/a card with ["'“”]?([^"'“”.]+?)["'“”]? in its card name is in your trash/))) return { type:'trashName', name:m[1].trim() };
   if (/it is your turn/.test(t)) return { type:'yourTurn' };
   if (/it is your opponent's turn|it is the opponent's turn/.test(t)) return { type:'oppTurn' };
   if ((m=t.match(/you are lv\.?\s*(\d+) or higher/))) return { type:'level', min:+m[1] };
@@ -1089,6 +1108,8 @@ function condMet(cond, side, source, other){
   if (!cond) return true;
   const foe = side===G.player?G.enemy:G.player;
   switch(cond.type){
+    case 'and':            return cond.conds.every(c=>condMet(c, side, source, other));
+    case 'trashName':      return side.trash.some(c=>(c.name||'').toLowerCase().includes(cond.name.toLowerCase()));
     case 'yourTurn':       return G.turn===side.who;
     case 'oppTurn':        return G.turn!==side.who;
     case 'level':          return (side.resMax||0) >= cond.min;
@@ -1112,7 +1133,7 @@ function runTrigger(card, side, act, label){
   if (!act) return;
   act.source = card;
   // Conditional effect: only resolve the inner effect when the board condition holds.
-  if (act.kind==='cond'){ if (condMet(act.cond, side, card, act.other)) runTrigger(card, side, act.inner, label); return; }
+  if (act.kind==='cond'){ const ok=condMet(act.cond, side, card, act.other); if (ok) runTrigger(card, side, act.inner, label); else if (act.elseInner) runTrigger(card, side, act.elseInner, label); return; }
   const cls = side===G.player?'me':'ai';
   const foe = side===G.player?G.enemy:G.player;
   const name = card.name;
@@ -1253,7 +1274,10 @@ function resolvePlayerTrigger(card, side, act, label, after){
   if (!act){ fin(); return; }
   act.source = card;
   if (act.kind==='cond'){                       // gate, then resolve the inner interactively
-    if (!condMet(act.cond, side, card, act.other)){ fin(); return; }
+    if (!condMet(act.cond, side, card, act.other)){
+      if (act.elseInner) return resolvePlayerTrigger(card, side, act.elseInner, label, after);
+      fin(); return;
+    }
     return resolvePlayerTrigger(card, side, act.inner, label, after);
   }
   if (act.kind==='shieldToHand'){               // take the shield, then chain the "Then,…" part
