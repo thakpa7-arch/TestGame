@@ -834,6 +834,8 @@ function parseClause(raw){
     return { kind:'shieldToHand', scryN: sd?+sd[1]:0, then };
   }
   if ((d=t.match(/place (\d+)?\s*ex resource/))) return { kind:'exResource', amount:+(d[1]||1) };
+  if ((d=t.match(/place (\d+) (?:rested )?resource/))) return { kind:'resourceRamp', amount:+d[1] };
+  if (/deploy 1 ex base/.test(t)) return { kind:'exBase' };
   // Self-targeting ("ping self") clauses — checked before the generic enemy-damage/rest rules
   // so "deal N damage to this Unit"/"…to it" hits a friendly, not the foe.
   const ping = parseSelfPing(t);
@@ -1102,6 +1104,10 @@ function runTrigger(card, side, act, label){
     if (act.then) runTrigger(card, side, act.then, label);   // trailing "Then, <effect>"
   } else if (act.kind==='exResource'){
     side.ex+=act.amount; side.resAvail+=act.amount; log(`${label}: <b>${name}</b> places ${act.amount} EX Resource.`, cls);
+  } else if (act.kind==='resourceRamp'){
+    side.resMax=Math.min(RES_MAX, side.resMax+act.amount); log(`${label}: <b>${name}</b> places ${act.amount} rested Resource.`, cls);
+  } else if (act.kind==='exBase'){
+    if (!side.base || side.base.token){ side.base=exBaseToken(side.who); log(`${label}: <b>${name}</b> deploys an EX Base.`, cls); }
   } else if (act.kind==='draw'){
     for (let i=0;i<act.amount;i++) draw(side); log(`${label}: <b>${name}</b> — draw ${act.amount}.`, cls);
   } else if (act.kind==='drawDiscard'){
