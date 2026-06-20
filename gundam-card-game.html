@@ -195,6 +195,11 @@
   .card.target { outline: 3px dashed var(--red); outline-offset: -3px; }
   .card.dim { opacity: .42; }
   .card .pilot-badge { position: absolute; top: 21px; left: 3px; background: var(--purple); color: #fff; font-size: 7px; padding: 1px 4px; border-radius: 3px; max-width: 90%; overflow: hidden; white-space: nowrap; }
+  /* Paired/linked Pilot shown attached under the Unit's title. */
+  .card .pilot-strip { position: absolute; top: 19px; left: 0; right: 0; display: flex; align-items: center; gap: 3px; background: linear-gradient(90deg, rgba(120,60,200,.95), rgba(70,30,130,.92)); padding: 2px 3px; border-top: 1px solid rgba(216,180,255,.5); border-bottom: 1px solid rgba(0,0,0,.4); }
+  .card .pilot-strip.linked { background: linear-gradient(90deg, rgba(251,191,36,.95), rgba(180,110,10,.9)); }
+  .card .pilot-strip .pp-img { width: 18px; height: 25px; border-radius: 2px; background: #0a0a14 center/cover no-repeat; flex-shrink: 0; box-shadow: 0 0 0 1px rgba(0,0,0,.5); }
+  .card .pilot-strip .pp-txt { font-size: 7px; font-weight: 700; color: #fff; line-height: 1.18; overflow: hidden; white-space: nowrap; text-shadow: 0 1px 1px #000; }
 
   .hand-row { height: 160px; display: flex; align-items: center; justify-content: center; gap: 7px; padding: 6px; background: rgba(18,26,46,.9); backdrop-filter: blur(2px); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; }
   .hand-row .card:hover { transform: translateY(-10px) scale(1.05); }
@@ -1160,6 +1165,8 @@ function makeCard(def, owner){
     c.highManeuver = innateKeyword(def.effect, 'high');
     c.breach = breachAmount(def.effect);
     c.suppression = innateKeyword(def.effect, 'suppression');
+    // Conditional keyword: "While this is damaged, it gains <Suppression>" (e.g. Barbatos 4th Form).
+    c.suppressionWhenDamaged = /while this[^.]*?damaged[^.]*?gains?\s*<\s*suppression/i.test(plain(def.effect));
     c.support = supportAmount(def.effect);
     // continuous self AP/HP buffs that switch on while paired / linked
     const pb = staticSelfBuff(def.effect, 'During Pair'); c.pairAp = pb.ap; c.pairHp = pb.hp;
@@ -1407,6 +1414,8 @@ function effAp(u){
   }
   return Math.max(0, ap);
 }
+// A Unit has <Suppression> if it's printed innately, or conditionally "while damaged" and it is.
+function effSuppression(u){ return !!(u.suppression || (u.suppressionWhenDamaged && u.hp < effMaxHp(u))); }
 function effMaxHp(u){
   let hp = u.baseHp + (u.pilot?u.pilot.pHp:0) + (u.pilot?(u.pairHp||0):0) + (u.linked?(u.linkHp||0):0);
   if (u.trashBuff && u.trashBuff.hpBonus > 0 && G.player){
@@ -1855,10 +1864,11 @@ function strikePlayer(atk, defSide){
   }
   if (defSide.shields.length>0){
     // <Suppression>: damage to shields hits the first 2 cards simultaneously, else just 1.
-    const n = (atk && atk.suppression) ? 2 : 1;
+    const supp = atk && effSuppression(atk);
+    const n = supp ? 2 : 1;
     for (let k=0; k<n && defSide.shields.length>0; k++){
       const sh=defSide.shields.pop(); defSide.breakingShield=true; fx('shield');
-      log(`<b>${atk.name}</b> destroys a ${who(defSide)} shield!${atk&&atk.suppression?' &lt;Suppression&gt;':''} (${defSide.shields.length} left)`, side);
+      log(`<b>${atk.name}</b> destroys a ${who(defSide)} shield!${supp?' &lt;Suppression&gt;':''} (${defSide.shields.length} left)`, side);
       triggerBurst(sh, defSide);
     }
     return;
@@ -2010,6 +2020,7 @@ function runTriggerSeq(list, side, done){
     while (i<list.length){
       const t=list[i++];
       if (!t.act) continue;
+      flashCard(t.card, (side===G.player?'YOUR':'ENEMY')+' '+(t.label==='Link'?'LINK':'PAIR')+' EFFECT');  // show what triggered
       if (side===G.player){ resolvePlayerTrigger(t.card, side, t.act, t.label, nxt); return; }
       runTrigger(t.card, side, t.act, t.label);
     }
@@ -2195,7 +2206,12 @@ function cardFace(c, ctx){
     if (isUnit) overlays += `<div class="ov-stat ov-ap">⚔${c.ap}</div>`;
     overlays += `<div class="ov-stat ov-hp ${dCls}">❤${cur}${cur<mx?'/'+mx:''}</div>`;
     if (cur<mx) overlays += `<div class="hp-bar"><i class="${dCls}" style="width:${Math.max(0,Math.min(100,cur/Math.max(1,mx)*100))}%"></i></div>`;
-    if (isUnit && c.pilot) overlays += `<div class="pilot-badge">🎖 ${c.pilot.name}${c.linked?' ⚡':''}</div>`;
+    if (isUnit && c.pilot){
+      const pimg = c.pilotCard && c.pilotCard.img;
+      overlays += `<div class="pilot-strip ${c.linked?'linked':''}" title="Pilot ${c.pilot.name}${c.linked?' — LINKED':''}">`+
+        `<div class="pp-img" ${pimg?`style="background-image:url('${pimg}')"`:''}></div>`+
+        `<div class="pp-txt">${c.linked?'⚡ ':'🎖 '}${c.pilot.name}<br>+${c.pilot.pAp} AP / +${c.pilot.pHp} HP</div></div>`;
+    }
   } else if (c.type==='pilot'){
     overlays += `<div class="ov-stat ov-ap">+${c.pAp}A</div><div class="ov-stat ov-hp">+${c.pHp}H</div>`;
   }
