@@ -162,9 +162,18 @@
   /* overlays */
   .card .ov-cost { position: absolute; top: 3px; left: 3px; min-width: 18px; height: 18px; padding: 0 3px; border-radius: 9px; background: rgba(6,40,58,.92); color: var(--cyan); font-weight: 800; font-size: 11px; display: flex; align-items: center; justify-content: center; }
   .card .ov-lv { position: absolute; top: 3px; right: 3px; min-width: 18px; height: 18px; padding: 0 3px; border-radius: 9px; background: rgba(58,40,6,.92); color: var(--gold); font-weight: 800; font-size: 10px; display: flex; align-items: center; justify-content: center; }
-  .card .ov-stat { position: absolute; bottom: 3px; padding: 0 4px; height: 17px; border-radius: 4px; font-size: 10px; font-weight: 800; display: flex; align-items: center; background: rgba(0,0,0,.78); }
+  .card .ov-stat { position: absolute; bottom: 4px; padding: 0 4px; height: 19px; border-radius: 5px; font-size: 12px; font-weight: 800; display: flex; align-items: center; background: rgba(0,0,0,.82); box-shadow: 0 0 0 1px rgba(255,255,255,.12); }
   .card .ov-ap { left: 3px; color: #fca5a5; }
   .card .ov-hp { right: 3px; color: #86efac; }
+  /* Damaged HP is highlighted so persistent battle damage is obvious at a glance. */
+  .card .ov-hp.dmg  { color: #fde047; background: rgba(92,52,0,.92); box-shadow: 0 0 0 1px rgba(253,224,71,.7); }
+  .card .ov-hp.crit { color: #fff; background: rgba(190,24,24,.96); box-shadow: 0 0 7px rgba(239,68,68,.85); }
+  .card .hp-bar { position: absolute; left: 4px; right: 4px; bottom: 1px; height: 3px; border-radius: 2px; background: rgba(0,0,0,.65); overflow: hidden; }
+  .card .hp-bar > i { display: block; height: 100%; background: #34d399; transition: width .2s; }
+  .card .hp-bar > i.dmg  { background: #fde047; }
+  .card .hp-bar > i.crit { background: #ef4444; }
+  /* Combat preview badge shown on attackable enemy units while you're choosing a target. */
+  .card .cbt-prev { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 26px; line-height: 1; filter: drop-shadow(0 1px 3px #000); pointer-events: none; z-index: 3; }
   .card .ov-name { position: absolute; left: 0; right: 0; bottom: 21px; font-size: 8px; text-align: center; background: rgba(0,0,0,.6); padding: 1px 2px; line-height: 1.05; }
   .card.rested { transform: rotate(90deg) scale(.82); opacity: .85; }
   .card.rested:hover { transform: rotate(90deg) scale(.86); }
@@ -427,8 +436,9 @@ function parseActivateEffect(t){
   // "Deploy N […] Unit token(s)" — put parsed token(s) onto your field.
   if (/deploy \d+ (?:rested )?\[/i.test(t)){
     const specs=parseTokenSpecs(raw);
-    const cond = /if you have no unit/i.test(raw) && specs.length>=2 ? 'board' : null;
-    return specs.length ? { kind:'token', scope:'self', specs, cond } : { kind:'token', scope:'self' };
+    const choose = specs.length>1 && /\bor\b\s*\d*\s*(?:rested\s+)?\[/i.test(raw);
+    const cond = /if you have no unit/i.test(raw) && specs.length>=2 && !choose ? 'board' : null;
+    return specs.length ? { kind:'token', scope:'self', specs, choose, cond } : { kind:'token', scope:'self' };
   }
   if ((d=t.match(/gains?\s+<\s*breach\s*(\d+)/)))            return { kind:'grantBreach', amount:+d[1], scope:/this unit/.test(t)?'self':'friendly' };
   if (/gains?\s+<\s*high-?maneuver/.test(t))                 return { kind:'grantHigh', scope:/this unit/.test(t)?'self':'friendly' };
@@ -638,14 +648,19 @@ function showTrashViewer(side){ showPileViewer(side.trash, 'Trash'); }
 
 // Interpret a Command card's effect into a simple engine action.
 function inferCommand(effect){
-  const raw = plain(effect);
+  // The played effect of a Command is its 【Main】/【Action】 clause — the 【Burst】 part is
+  // resolved separately, so don't let it leak into the main action (e.g. extra token specs).
+  const full = plain(effect);
+  const mm = full.match(/【\s*(?:Main|Action)[^】]*】([\s\S]*)$/i);
+  const raw = (mm ? mm[1] : full.replace(/【\s*Burst\s*】[^【]*/ig,' ')).trim();
   const t = raw.toLowerCase();
   let m;
-  // Token-creating commands ("Deploy N [Name](…) Unit token(s)").
+  // Token-creating commands ("Deploy N [Name](…) Unit token(s)"). "or" between specs = pick one.
   if (/deploy \d+ (?:rested )?\[/i.test(t)){
     const specs=parseTokenSpecs(raw);
-    const cond = /if you have no unit/i.test(raw) && specs.length>=2 ? 'board' : null;
-    return specs.length ? { kind:'token', specs, cond } : { kind:'token', count:+((t.match(/deploy (\d+)/)||[])[1]||1) };
+    const choose = specs.length>1 && /\bor\b\s*\d*\s*(?:rested\s+)?\[/i.test(raw);
+    const cond = /if you have no unit/i.test(raw) && specs.length>=2 && !choose ? 'board' : null;
+    return specs.length ? { kind:'token', specs, choose, cond } : { kind:'token', count:+((t.match(/deploy (\d+)/)||[])[1]||1) };
   }
   // Self-targeting ("ping self") commands take priority over the generic enemy-damage rule.
   const ping = parseSelfPing(t);
@@ -751,8 +766,9 @@ function parseClause(raw){
   if (/recover|heal/.test(t)){ d=t.match(/(\d+)\s*hp/); return { kind:'heal', amount:d?+d[1]:99 }; }
   if (/deploy \d+ (?:rested )?\[/i.test(t)){
     const specs=parseTokenSpecs(raw);
-    const cond = /if you have no unit/i.test(raw) && specs.length>=2 ? 'board' : null;
-    return specs.length ? { kind:'token', specs, cond } : { kind:'token', count:+((t.match(/deploy (\d+)/)||[])[1]||1) };
+    const choose = specs.length>1 && /\bor\b\s*\d*\s*(?:rested\s+)?\[/i.test(raw);
+    const cond = /if you have no unit/i.test(raw) && specs.length>=2 && !choose ? 'board' : null;
+    return specs.length ? { kind:'token', specs, choose, cond } : { kind:'token', count:+((t.match(/deploy (\d+)/)||[])[1]||1) };
   }
   // Mill: "place the top N cards of your deck into your trash"
   if ((d=t.match(/place the top (\d+) cards? of your deck into your trash/i))){
@@ -1162,11 +1178,16 @@ function makeToken(spec, owner){
     noActive:/can't be set as active/.test(r),
     noPilot:/can't be paired/.test(r) };
 }
+// Score a token spec for the AI's auto-pick of a "deploy A or B" choice.
+function tokenScore(sp){ return sp.ap + sp.hp + (sp.blocker?2:0) + (sp.first?1:0) + (sp.high?1:0); }
 // Deploy the token(s) described by a token action onto `side`'s field (respecting FIELD_MAX).
 function deployTokens(act, side, name, label, cls){
   let specs=act.specs, made=0, names=[];
   if (specs && specs.length>1 && act.cond==='board')   // e.g. White Base: token chosen by how many Units you have
     specs = [ specs[Math.min(side.field.length, specs.length-1)] ];
+  // "Deploy A or B" — pick ONE. The player chooses via startCommand; here (AI/auto) take the best.
+  if (specs && specs.length>1 && act.choose)
+    specs = [ [...specs].sort((a,b)=>tokenScore(b)-tokenScore(a))[0] ];
   if (specs && specs.length){
     for (const sp of specs){
       for (let k=0;k<(sp.count||1);k++){ if(side.field.length>=FIELD_MAX) break; const tk=makeToken(sp, side.who); side.field.push(tk); made++; if(!names.includes(tk.name)) names.push(tk.name); }
@@ -1463,6 +1484,17 @@ function startCommand(card, handIdx){
       closeInspect(); render(); return;
     }
     closeInspect(); clearSel(); render(); checkEnd(); return;
+  }
+  // "Deploy A or B" token command — let the player pick which token to create.
+  if (a.kind==='token' && a.choose && a.specs && a.specs.length>1){
+    if (s.field.length>=FIELD_MAX){ flashPrompt('Battle area full (max '+FIELD_MAX+').'); return; }
+    commit(card,handIdx); closeInspect();
+    promptTokenChoice(a.specs, sp=>{
+      const tk=makeToken(sp, 'player'); s.field.push(tk);
+      log(`<b>${card.name}</b> deploys <b>${tk.name}</b> token (⚔${tk.baseAp}/❤${tk.baseHp}${tk.blocker?' &lt;Blocker&gt;':''}).`, 'me');
+      clearSel(); render(); checkEnd();
+    });
+    return;
   }
   const needEnemy = (a.kind==='damage'&&a.scope==='enemy') || a.kind==='rest';
   const needAlly  = (a.kind==='heal'||a.kind==='buff');
@@ -1785,7 +1817,9 @@ function battle(atk, def, atkSide, defSide){
 
 // <Support N>: rest one other active friendly Unit to boost the attacker, but only when the
 // boost actually changes the trade (lets the attacker destroy the Unit it's fighting).
+// Support is a Main-phase ability, so it may only be used on the controller's OWN turn.
 function applySupport(atk, atkSide, def){
+  if (atkSide.who !== G.turn) return;            // never on the opponent's turn
   if (!def || def.type!=='unit' || def.hp<=0 || atk.ap>=def.hp) return;
   const helpers = atkSide.field.filter(u=>u.support>0 && !u.rested && u.hp>0 && u!==atk);
   if (!helpers.length) return;
@@ -1947,9 +1981,12 @@ function resolveAiAttack(atk, done){
   // Units may only attack a RESTED enemy unit, or the player directly.
   const rested = pl.field.filter(u=>u.rested && u.hp>0);
   const target = rested.filter(u=> atk.ap>=u.hp && (atk.firstStrike || u.ap<atk.hp)).sort((a,b)=>b.ap-a.ap)[0] || null;
-  // You may intercept either kind of attack with an active <Blocker> (unless High-Maneuver).
+  // You may intercept with an active <Blocker> (unless High-Maneuver). To avoid nagging, only
+  // prompt when blocking is meaningful: the attack reaches YOU (no rested unit soaks it), or a
+  // blocker would clearly win the trade. A swing at a rested unit you don't care about won't ask.
   const blockers = pl.field.filter(b=>b.blocker && !b.rested && b.hp>0 && b!==target);
-  if (!atk.highManeuver && blockers.length){
+  const worthAsking = !target || blockers.some(b=> b.hp>atk.ap && b.ap>=atk.hp);
+  if (!atk.highManeuver && blockers.length && worthAsking){
     promptPlayerBlock(atk, blockers, target, (blk)=>{
       if (blk){ blk.rested=true; log(`You intercept with <b>${blk.name}</b> &lt;Blocker&gt;.`, 'me'); battle(atk, blk, G.enemy, G.player); }
       else if (target){ battle(atk, target, G.enemy, G.player); }
@@ -1965,6 +2002,19 @@ function resolveAiAttack(atk, done){
 
 function aiDirectHit(atk){ atk.rested=true; strikePlayer(atk, G.player); render(); }
 
+// Let the player choose ONE token spec to deploy (e.g. Striker Pack: Sword OR Launcher Strike).
+function promptTokenChoice(specs, cb){
+  el('blockMsg').innerHTML = `Choose which Unit token to deploy:`;
+  const wrap=el('blockBtns'); wrap.innerHTML='';
+  specs.forEach(sp=>{
+    const kw=[sp.blocker?'Blocker':null, sp.first?'First Strike':null, sp.high?'High-Maneuver':null].filter(Boolean);
+    const btn=document.createElement('button');
+    btn.innerHTML = `🤖 ${sp.name} (⚔${sp.ap}/❤${sp.hp})${kw.length?' · '+kw.join(', '):''}`;
+    btn.onclick=()=>{ el('blockModal').classList.remove('show'); cb(sp); };
+    wrap.appendChild(btn);
+  });
+  el('blockModal').classList.add('show');
+}
 function promptPlayerBlock(atk, blockers, target, cb){
   const tgtTxt = target ? `your <b>${target.name}</b>` : (G.player.base ? `your <b>${G.player.base.name}</b> base` : 'you directly');
   el('blockMsg').innerHTML = `${who(G.enemy)}'s <b>${atk.name}</b> (AP ${atk.ap}) attacks ${tgtTxt}. Intercept with a &lt;Blocker&gt;?`;
@@ -2009,17 +2059,30 @@ function cardFace(c, ctx){
   const style = c.img ? `background-image:url('${c.img}')` : '';
   let overlays = `<div class="ov-cost">${c.cost}</div>`;
   if (!c.token && (c.lv||0)>0) overlays += `<div class="ov-lv">L${c.lv}</div>`;
+  // Combat preview: on an attackable enemy Unit, show how the trade resolves for your attacker.
+  if (ctx==='field-enemy' && G.mode==='attack-target' && c.rested && c.hp>0){
+    const atk=G.player.field.find(u=>u.uid===G.selected);
+    if (atk){
+      const defDies = atk.ap >= c.hp;
+      const atkDies = (c.ap >= atk.hp) && !(atk.firstStrike && defDies);
+      const icon = atkDies ? (defDies?'🔁':'💀') : (defDies?'✅':'➖');
+      const ttl = atkDies ? (defDies?'Trade — both destroyed':'Your unit dies, target survives') : (defDies?'You destroy it and survive':'Both survive (chip damage)');
+      overlays += `<div class="cbt-prev" title="${ttl}">${icon}</div>`;
+    }
+  }
   if (!c.img){
     overlays += `<div class="fallback"><div class="fn">${isBase?'🏰 ':''}${c.name}</div><div class="ft">${plain(c.effect).slice(0,90)}</div></div><div class="ov-cost">${c.cost}</div>`;
   }
   overlays += `<div class="ov-name">${isBase?'🏰 ':''}${c.name}</div>`;
   if (ctx==='field-player' && G.turn==='player' && G.mode==='idle' && activateReady(c))
     overlays += `<div title="Activated ability ready" style="position:absolute;top:3px;left:50%;transform:translateX(-50%);font-size:15px;line-height:1;filter:drop-shadow(0 0 3px #000);pointer-events:none">⚡</div>`;
-  if (isBase){
-    overlays += `<div class="ov-stat ov-hp">❤${c.hp}${c.hp<c.maxHp?'/'+c.maxHp:''}</div>`;
-  } else if (isUnit){
-    overlays += `<div class="ov-stat ov-ap">⚔${c.ap}</div><div class="ov-stat ov-hp">❤${c.hp}${c.hp<effMaxHp(c)?'/'+effMaxHp(c):''}</div>`;
-    if (c.pilot) overlays += `<div class="pilot-badge">🎖 ${c.pilot.name}${c.linked?' ⚡':''}</div>`;
+  if (isBase || isUnit){
+    const mx = isBase ? c.maxHp : effMaxHp(c), cur = c.hp;
+    const dCls = cur<mx ? (cur/Math.max(1,mx)<=0.4 || cur<=1 ? 'crit' : 'dmg') : '';
+    if (isUnit) overlays += `<div class="ov-stat ov-ap">⚔${c.ap}</div>`;
+    overlays += `<div class="ov-stat ov-hp ${dCls}">❤${cur}${cur<mx?'/'+mx:''}</div>`;
+    if (cur<mx) overlays += `<div class="hp-bar"><i class="${dCls}" style="width:${Math.max(0,Math.min(100,cur/Math.max(1,mx)*100))}%"></i></div>`;
+    if (isUnit && c.pilot) overlays += `<div class="pilot-badge">🎖 ${c.pilot.name}${c.linked?' ⚡':''}</div>`;
   } else if (c.type==='pilot'){
     overlays += `<div class="ov-stat ov-ap">+${c.pAp}A</div><div class="ov-stat ov-hp">+${c.pHp}H</div>`;
   }
