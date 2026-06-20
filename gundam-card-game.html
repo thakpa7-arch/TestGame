@@ -2100,7 +2100,59 @@ function aiTurn(){
   })();
 }
 
+// ---- Action Step on the opponent's turn: let the player use 【Action】 cards in response ----
+function autoActivateTarget(u, attacker){
+  let a=u.activate.action; if(a.kind==='cond')a=a.inner;
+  if (a.scope==='enemy'){ if(attacker&&attacker.hp>0&&G.enemy.field.includes(attacker)) return attacker; return [...G.enemy.field].sort((x,y)=>y.ap-x.ap)[0]||null; }
+  if (a.scope==='friendly'){
+    if (a.kind==='heal') return [...G.player.field].filter(t=>t.hp<effMaxHp(t)).sort((x,y)=>(effMaxHp(y)-y.hp)-(effMaxHp(x)-x.hp))[0]||null;
+    if (a.kind==='setActive') return [...G.player.field].filter(t=>t.rested&&!t.token).sort((x,y)=>y.ap-x.ap)[0]||null;
+    return [...G.player.field].sort((x,y)=>y.ap-x.ap)[0]||null;
+  }
+  return null;
+}
+function autoCommandTarget(c, attacker){
+  const a=c.action;
+  if (['damage','rest','destroy','bounce','debuff'].includes(a.kind)){ if(attacker&&attacker.hp>0&&G.enemy.field.includes(attacker)) return attacker; return [...G.enemy.field].sort((x,y)=>y.ap-x.ap)[0]||null; }
+  if (['heal','buff'].includes(a.kind)) return [...G.player.field].sort((x,y)=>y.baseAp-x.baseAp)[0]||null;
+  return null;
+}
+function collectPlayerActions(attacker){
+  const opts=[];
+  for (const u of [...G.player.field, G.player.base].filter(Boolean)){
+    if (u.activate && u.activate.phase==='action' && !u.activatedThisTurn && u.hp>0
+        && (!u.activate.requireLink || u.linked) && (!u.activate.requirePair || u.pilot)
+        && activateCostPayable(u, G.player)){
+      opts.push({ label:`⚡ ${u.name}`, sub:u.activate.text||'', run:()=>{ flashCard(u,'YOUR ACTION'); applyActivateEffect(u, autoActivateTarget(u, attacker), G.player); } });
+    }
+  }
+  for (const c of G.player.hand){
+    if (c.type==='command' && /【\s*Action/i.test(c.effect||'') && canAfford(G.player,c)){
+      opts.push({ label:`▸ ${c.name}`, sub:'Action command', run:()=>{ const h=G.player.hand.indexOf(c); if(h<0)return; G.player.hand.splice(h,1); G.player.resAvail-=effectiveCost(G.player,c); sendToTrash(c,G.player); flashCard(c,'YOUR ACTION'); applyCommand(c, G.player, autoCommandTarget(c, attacker)); } });
+    }
+  }
+  return opts;
+}
+function offerPlayerActionStep(attacker, cb){
+  if (G.over){ cb(); return; }
+  const opts=collectPlayerActions(attacker);
+  if (!opts.length){ cb(); return; }
+  el('blockMsg').innerHTML = `<b>Action Step</b> — ${who(G.enemy)}'s <b>${attacker.name}</b> (AP ${attacker.ap}) is attacking. Use an Action ability/command, or Pass.`;
+  const wrap=el('blockBtns'); wrap.innerHTML='';
+  opts.forEach(o=>{ const b=document.createElement('button'); b.innerHTML=`${o.label}${o.sub?` <span style="opacity:.6;font-size:10px">${o.sub}</span>`:''}`;
+    b.onclick=()=>{ el('blockModal').classList.remove('show'); o.run(); render(); setTimeout(()=>offerPlayerActionStep(attacker, cb), 80); };
+    wrap.appendChild(b); });
+  const pass=document.createElement('button'); pass.className='ghost'; pass.textContent='Pass (continue battle)';
+  pass.onclick=()=>{ el('blockModal').classList.remove('show'); cb(); };
+  wrap.appendChild(pass);
+  el('blockModal').classList.add('show');
+}
 function resolveAiAttack(atk, done){
+  offerPlayerActionStep(atk, ()=>resolveAiAttackInner(atk, done));
+}
+function resolveAiAttackInner(atk, done){
+  // The player's Action step may have rested/destroyed the attacker — if so, the attack fizzles.
+  if (atk.hp<=0 || atk.rested){ render(); done(); return; }
   const pl=G.player;
   // Units may only attack a RESTED enemy unit, or the player directly.
   const rested = pl.field.filter(u=>u.rested && u.hp>0);
