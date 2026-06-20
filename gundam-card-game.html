@@ -131,6 +131,19 @@
   .base-zone .bz-slot .card { width: 64px; height: 90px; }
   .base-zone .bz-empty { color: var(--muted); font-size: 9px; text-align: center; opacity: .6; }
 
+  /* Shield area — face-down shields sitting on the battlefield, beside the base */
+  .shield-zone { width: 64px; flex-shrink: 0; align-self: stretch; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+    background: rgba(18,26,46,.55); border: 1px dashed rgba(251,191,36,.32); border-radius: 10px; padding: 6px 4px; }
+  .shield-zone.enemy { border-color: rgba(244,114,182,.32); cursor: pointer; }
+  .shield-zone .sz-label { font-size: 9px; letter-spacing: 1px; color: var(--gold); font-weight: 800; opacity: .85; white-space: nowrap; }
+  .shield-zone.enemy .sz-label { color: #fda4af; }
+  .shield-zone .sz-grid { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; align-content: center; }
+  .shield-card { width: 24px; height: 33px; border-radius: 3px; background: linear-gradient(155deg, #2f4170, #15203a);
+    border: 1px solid rgba(251,191,36,.6); box-shadow: 0 0 5px rgba(251,191,36,.28), inset 0 0 7px rgba(0,0,0,.55);
+    display: flex; align-items: center; justify-content: center; font-size: 12px; line-height: 1; }
+  .shield-card.gone { background: #1a2032; border-color: #2a3142; box-shadow: none; opacity: .3; }
+  .shield-card.breaking { animation: shieldPop .45s ease-out forwards; }
+
   /* Hit / impact effects */
   @keyframes fxHit { 0%{ filter: brightness(2.4) saturate(.4); transform: translate(0,0); } 20%{ transform: translate(-4px,2px) rotate(-2deg); } 40%{ transform: translate(4px,-2px) rotate(2deg); } 60%{ transform: translate(-3px,1px); } 100%{ filter: none; transform: translate(0,0); } }
   .card.fx-hit { animation: fxHit .42s ease-out; }
@@ -279,7 +292,6 @@
     <div class="side-stats enemy">
       <div class="name enemy" id="enemyName">ZEON (AI)</div>
       <div class="stat-line"><span>Shields</span><b id="enemyShieldCount"></b></div>
-      <div class="shields" id="enemyShields"></div>
       <div class="stat-line"><span>Resources</span><b id="enemyResText"></b></div>
       <div class="resources" id="enemyResources"></div>
       <div class="stat-line"><span>Hand</span><b id="enemyHandCount"></b></div>
@@ -288,6 +300,7 @@
       <div class="stat-line pile-link" id="enemyExileRow" title="Tap to view the enemy Exile"><span>⛓ Exile <em>view</em></span><b id="enemyExileCount"></b></div>
     </div>
     <div class="base-zone enemy" id="enemyBaseZone"><div class="bz-label">BASE</div><div class="bz-slot" id="enemyBase"></div></div>
+    <div class="shield-zone enemy" id="enemyShieldZone" title="Enemy Shields — attack here to strike directly"></div>
     <div class="battlefield enemy" id="enemyField"></div>
   </div>
 
@@ -295,7 +308,6 @@
     <div class="side-stats player">
       <div class="name player" id="playerName">E.F.S.F. (YOU)</div>
       <div class="stat-line"><span>Shields</span><b id="playerShieldCount"></b></div>
-      <div class="shields" id="playerShields"></div>
       <div class="stat-line"><span>Resources</span><b id="playerResText"></b></div>
       <div class="resources" id="playerResources"></div>
       <div class="stat-line"><span>Deck</span><b id="playerDeckCount"></b></div>
@@ -303,6 +315,7 @@
       <div class="stat-line pile-link" id="playerExileRow" title="Tap to view your Exile"><span>⛓ Exile <em>view</em></span><b id="playerExileCount"></b></div>
     </div>
     <div class="base-zone player" id="playerBaseZone"><div class="bz-label">BASE</div><div class="bz-slot" id="playerBase"></div></div>
+    <div class="shield-zone player" id="playerShieldZone" title="Your Shields"></div>
     <div class="battlefield player" id="playerField"></div>
   </div>
 
@@ -336,10 +349,11 @@
 
 <div id="overlay">
   <h2>MOBILE SUIT CLASH</h2>
-  <p>A tactical duel built on the real <b>Gundam Card Game</b> card pool. Each battle,
+  <p id="introText">A tactical duel built on the real <b>Gundam Card Game</b> card pool. Each battle,
      you and the AI are each dealt one of seven <b>1st-place competitive decklists</b> (GD04
      Phantom Aria era) at random. Every card is genuine — real names, art, costs, AP/HP and effect text.</p>
   <button id="startBtn">START BATTLE</button>
+  <button id="backToBattleBtn" class="gold" style="display:none">◀ Back to Battle</button>
   <div class="rules">
     <b>How to win (official):</b> you defeat your opponent the moment a Unit deals them battle damage
     while they have <b>no Shields left</b> — so break all 6 <span class="badge">🛡 Shields</span>, then land one more hit.
@@ -1551,8 +1565,16 @@ function buildPresetDeck(owner, preset){
 // ---- game state ----
 const G = {
   turn:'player', turnNumber:1, phase:'main', selected:null, mode:'idle', pending:null, pendingHandIdx:-1, over:false,
+  actionLock:false, _lockT:null,
   player:null, enemy:null,
 };
+// Briefly freeze player input (e.g. just after a Command is played) so its
+// reveal/effect lands before the next action can fire.
+function lockActions(ms=500){
+  G.actionLock=true;
+  clearTimeout(G._lockT);
+  G._lockT=setTimeout(()=>{ G.actionLock=false; if(!G.over) render(); }, ms);
+}
 function makeSide(who){ return { who, deck:[], hand:[], field:[], shields:[], trash:[], exile:[], base:null, resourceDeck:RES_MAX, resMax:0, resAvail:0, ex:0 }; }
 function me(){ return G.turn==='player' ? G.player : G.enemy; }
 function who(side){ return side===G.player ? 'You' : (G.enemyDeckName || 'The AI'); }
@@ -1694,7 +1716,7 @@ function affordIssue(side,c){
 }
 
 function playFromHand(uidv){
-  if (G.turn!=='player' || G.over || G.mode!=='idle') return;
+  if (G.turn!=='player' || G.over || G.mode!=='idle' || G.actionLock) return;
   const s=G.player; const idx=s.hand.findIndex(c=>c.uid===uidv); if(idx<0) return;
   const card=s.hand[idx];
   const issue=affordIssue(s,card);
@@ -1736,6 +1758,7 @@ function playFromHand(uidv){
 function startCommand(card, handIdx){
   const s=G.player, a=card.action;
   flashCard(card, 'YOUR COMMAND');
+  lockActions(500);   // brief input freeze so the command reveal/effect lands before the next move
   if (a.kind==='drawDiscard'){
     commit(card,handIdx);
     for(let i=0;i<a.draw;i++) draw(s);
@@ -1916,6 +1939,7 @@ function aiActivate(u){
 // ---- field interaction (player) ----
 function fieldClick(uidv){
   if (G.turn!=='player' || G.over) return;
+  if (G.actionLock && G.mode==='idle') return;   // don't start a new attack mid command-lock
 
   if (G.mode==='pilot-target'){
     const u=G.player.field.find(c=>c.uid===uidv && c.type==='unit'); if(!u){ flashPrompt('Pick one of your units.'); return; }
@@ -2472,8 +2496,8 @@ function applyVisualFx(){
 function render(){
   el('poolCount').textContent = GUNDAM_CARDS.length;
   el('turnInfo').innerHTML = `Turn <b>${G.turnNumber}</b> · ${G.turn==='player'?'<b>Your</b> move':'<b>'+who(G.enemy)+'</b> acting'}`;
-  el('enemyShields').innerHTML = shieldHTML(G.enemy);
-  el('playerShields').innerHTML = shieldHTML(G.player);
+  el('enemyShieldZone').innerHTML = shieldZoneHTML(G.enemy);
+  el('playerShieldZone').innerHTML = shieldZoneHTML(G.player);
   el('enemyShieldCount').textContent=G.enemy.shields.length; el('playerShieldCount').textContent=G.player.shields.length;
   el('enemyResources').innerHTML = resHTML(G.enemy); el('playerResources').innerHTML = resHTML(G.player);
   el('enemyResText').textContent = `${G.enemy.resAvail}/${G.enemy.resMax}${G.enemy.ex?'+EX':''}`;
@@ -2492,7 +2516,7 @@ function render(){
   el('hand').innerHTML = G.player.hand.length ? G.player.hand.map(c=>{
     if(G.mode==='discard') return cardFace(c,'hand').replace('class="card', 'class="card selectable');
     const needsUnit = c.type==='pilot' && !G.player.field.some(u=>u.type==='unit');
-    const playable = G.turn==='player' && canAfford(G.player,c) && !needsUnit && !G.over && G.mode==='idle';
+    const playable = G.turn==='player' && canAfford(G.player,c) && !needsUnit && !G.over && G.mode==='idle' && !G.actionLock;
     return cardFace(c,'hand').replace('class="card', `class="card ${playable?'':'dim'}`);
   }).join('') : `<div class="empty-hint">Hand empty</div>`;
 
@@ -2505,14 +2529,14 @@ function fieldHTML(side, ctx, emptyMsg){
   const cards = side.field.map(c=>cardFace(c,ctx));   // base is rendered in its own zone now
   return cards.length ? cards.join('') : `<div class="empty-hint">${emptyMsg}</div>`;
 }
-function shieldHTML(side){
-  const n=side.shields.length; let s='';
+function shieldZoneHTML(side){
+  const n=side.shields.length; let cards='';
   for(let i=0;i<SHIELD_MAX;i++){
     const breaking = side.breakingShield && i===n;     // the slot just lost — pops on screen
     const gone = i>=n && !breaking;
-    s+=`<div class="shield ${gone?'gone':''} ${breaking?'breaking':''}"></div>`;
+    cards+=`<div class="shield-card ${gone?'gone':''} ${breaking?'breaking':''}">${gone?'':'🛡'}</div>`;
   }
-  return s;
+  return `<div class="sz-label">🛡 ${n}/${SHIELD_MAX}</div><div class="sz-grid">${cards}</div>`;
 }
 function resHTML(side){ let s=''; const total=side.resMax+side.ex; for(let i=0;i<total;i++){ const isEx=i>=side.resMax; s+=`<div class="res ${isEx?'ex':''} ${i<side.resAvail?'':'used'}"></div>`; } return s; }
 
@@ -2549,7 +2573,7 @@ function inspect(c){
   el('insEff').innerHTML = c.effect || '(no printed effect)';
   const btns=el('insBtns'); btns.innerHTML='';
   const inHand = G.player.hand.some(x=>x.uid===c.uid);
-  if (inHand && G.turn==='player' && G.mode==='idle'){
+  if (inHand && G.turn==='player' && G.mode==='idle' && !G.actionLock){
     const ok=canAfford(G.player,c);
     const b=document.createElement('button');
     b.textContent = ok ? `Play (Cost ${c.cost})` : (!levelOk(G.player,c) ? `Need Lv ${c.lv}` : `Need ${c.cost} res`);
@@ -2558,7 +2582,7 @@ function inspect(c){
   // Field actions: a friendly Unit can attack, and a Unit/Base with a ready activated ability can use it.
   const onField = G.player.field.some(x=>x.uid===c.uid);
   const isMyBase = G.player.base && G.player.base.uid===c.uid;
-  if ((onField||isMyBase) && G.turn==='player' && G.mode==='idle'){
+  if ((onField||isMyBase) && G.turn==='player' && G.mode==='idle' && !G.actionLock){
     if (onField && !c.rested && !c.sick && c.ap>0){
       const ab=document.createElement('button');
       ab.innerHTML=`⚔ Attack with ${c.name}`;
@@ -2580,7 +2604,14 @@ function closeInspect(){ el('inspect').classList.remove('show'); }
 // ---- buttons / keys ----
 el('endTurnBtn').addEventListener('click', ()=>{ if(G.turn==='player'&&!G.over){ clearSel(); endTurn(); } });
 el('cancelBtn').addEventListener('click', ()=>{ clearSel(); render(); });
-el('rulesBtn').addEventListener('click', ()=>{ if(!G.over) location.reload(); });
+el('rulesBtn').addEventListener('click', ()=>{
+  if(G.over) return;                                   // game-over screen owns the overlay
+  el('startBtn').style.display='none';                 // mid-game: show rules, not the start button
+  el('introText').style.display='none';
+  el('backToBattleBtn').style.display='inline-block';
+  el('overlay').classList.remove('hidden');
+});
+el('backToBattleBtn').addEventListener('click', ()=>{ el('overlay').classList.add('hidden'); });
 el('soundBtn').addEventListener('click', ()=>{ SOUND.on=!SOUND.on; el('soundBtn').textContent=SOUND.on?'🔊':'🔇'; if(SOUND.on){ audioCtx()?.resume?.(); sound('deploy'); } });
 el('startBtn').addEventListener('click', ()=>{ audioCtx()?.resume?.(); startGame(); });
 el('inspect').addEventListener('click', e=>{ if(e.target.id==='inspect') closeInspect(); });
@@ -2588,7 +2619,7 @@ el('playerTrashRow').addEventListener('click', ()=>{ showPileViewer((G.player&&G
 el('playerExileRow').addEventListener('click', ()=>{ showPileViewer((G.player&&G.player.exile)||[], 'Your Exile'); });
 el('enemyTrashRow').addEventListener('click', ()=>{ showPileViewer((G.enemy&&G.enemy.trash)||[], 'Enemy Trash (Graveyard)'); });
 el('enemyExileRow').addEventListener('click', ()=>{ showPileViewer((G.enemy&&G.enemy.exile)||[], 'Enemy Exile'); });
-el('enemyShields').addEventListener('click', attackDirect);
+el('enemyShieldZone').addEventListener('click', attackDirect);
 el('enemyShieldCount').addEventListener('click', attackDirect);
 el('enemyField').addEventListener('click', e=>{ if(G.mode==='attack-target' && e.target.classList.contains('battlefield')) attackDirect(); });
 document.addEventListener('keydown', e=>{ if(G.over) return; if(e.key==='Escape'){ closeInspect(); clearSel(); render(); } if(e.key==='Enter'&&G.turn==='player'){ clearSel(); endTurn(); } });
