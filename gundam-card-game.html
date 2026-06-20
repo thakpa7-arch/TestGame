@@ -693,6 +693,19 @@ function playerDig(card, side, act, after){
       render(); if(after)after();
     });
 }
+// Deploy a Unit from the trash, paying its cost (player picks; AI auto-picks the strongest affordable).
+function reanimate(card, side, act, after){
+  const fits=c=>c.type==='unit' && !c.token && matchFilter(c,act.filter) && (act.maxLv==null||(c.lv||0)<=act.maxLv);
+  const cands=side.trash.filter(c=>fits(c) && effectiveCost(side,c)<=side.resAvail) ;
+  const done=()=>{ if(after)after(); };
+  if (!cands.length || side.field.length>=FIELD_MAX){ done(); return; }
+  const deploy=(c)=>{ side.trash.splice(side.trash.indexOf(c),1); side.resAvail-=effectiveCost(side,c); resetUnit(c); c.rested=false; c.sick=!c.blitz; side.field.push(c);
+    log(`<b>${card.name}</b>: deploys <b>${c.name}</b> from trash.`, side===G.player?'me':'ai');
+    if (side===G.player) resolvePlayerTrigger(c, side, parseTrigger(c.effect,'Deploy'), 'Deploy', ()=>{ render(); done(); });
+    else { runTrigger(c, side, parseTrigger(c.effect,'Deploy'), 'Deploy'); done(); } };
+  if (side===G.player) showLookAtTop(cands.slice(0,10), `${card.name}: deploy a Unit from your trash (pay its cost)`, ()=>true, true, (chosen)=>{ if(chosen) deploy(chosen); else done(); });
+  else deploy(cands.sort((a,b)=>(b.baseAp+b.baseHp)-(a.baseAp+a.baseHp))[0]);
+}
 // Player "look at top 2, keep 1 on top, the other to trash".
 function playerScryMill(card, side, after){
   if(side.deck.length<2){ if(after)after(); return; }
@@ -853,10 +866,17 @@ function parseClause(raw){
   }
   if (/look at the top card of your deck.*(?:return it to|place it into)/.test(t))
     return { kind:'scryKeep', amount:1 };
-  // "Choose 1 … Unit. During this turn, it may choose an active enemy Unit … as its attack target."
-  if (/may choose an active enemy unit/.test(t) && /attack target/.test(t)){
-    const self = /this unit may choose|it may choose an active enemy unit (?:that is|whose|with)/.test(t) && !/choose 1 of your|choose 1 (?:to \d+ )?(?:other )?(?:active )?(?:friendly )?(?:\([^)]*\) )?units?\b/.test(t.split('may choose an active')[0]||'');
-    return { kind:'grantAttackActive', scope:/this unit may choose/.test(t)?'self':'friendly', filter:friendlyFilter(t) };
+  // "Choose 1 … Unit. During this turn, it may choose a(n) (damaged) active enemy Unit … as its attack target."
+  if (/may choose (?:a |an )?(?:damaged )?active enemy unit/.test(t) && /attack target/.test(t)){
+    const self = /this unit may choose/.test(t) || /all your[^.]*units may choose/.test(t);
+    return { kind:'grantAttackActive', scope:self?'self':'friendly', filter:friendlyFilter(t), all:/all your/.test(t) };
+  }
+  // Damage-reduction shield for this turn/battle.
+  if ((d=t.match(/reduce (?:the next |battle )?damage (?:it|this unit) (?:would receive|receives?) by (\d+)/)) || (d=t.match(/reduce (?:the )?battle damage (?:it|this unit) receives by (\d+)/))){
+    const self=/this unit/.test(t.slice(t.indexOf('reduce'))); return { kind:'grantReduce', amount:+d[1], scope:self?'self':'friendly', filter:friendlyFilter(t) };
+  }
+  if (/can'?t receive battle damage|battle damage it would receive is dealt to this unit/.test(t)){
+    const self=/this unit can'?t receive/.test(t); return { kind:'grantReduce', amount:99, scope:self?'self':'friendly', filter:friendlyFilter(t) };
   }
   // "Choose 1 of your … Unit(s). It gains <Keyword> during this turn." → grant keyword to a chosen friendly.
   if (/(choose|may choose) 1[^.]*?\b(of your|friendly)\b[^.]*?units?\b/.test(t) && /it gains\s*</.test(t)){
@@ -875,6 +895,13 @@ function parseClause(raw){
   // "Choose 1 to N enemy Units. Rest them." → rest several enemies.
   if (/rest them/.test(t) && /enemy unit/.test(t)){
     const cm=t.match(/1 to (\d+)/); return { kind:'restMulti', count:cm?+cm[1]:2, filter:targetFilter(t) };
+  }
+  // Reanimate: "Choose 1 [trait] Unit card from your trash. Pay its cost to deploy it."
+  if (/from your trash/.test(t) && /pay its cost to deploy/.test(t)){
+    const fm=t.match(/choose 1 ([a-z0-9\s\(\)\/\-]*?)\s*(?:unit )?cards?\b/);
+    const lv=t.match(/lv\.?(\d+) or lower/);
+    let flt=(fm?fm[1].trim():''); if(!/unit/.test(flt)) flt=(flt+' unit').trim();
+    return { kind:'reanimate', filter: flt, maxLv: lv?+lv[1]:null };
   }
   // Return a paired Pilot to hand (often a 【Destroyed】 "save the pilot" effect).
   if (/return (?:its|the|this unit's) (?:paired )?pilot to|return the card paired with this unit to/.test(t)) return { kind:'returnPilot' };
@@ -998,6 +1025,7 @@ function applyToTarget(card, side, act, target, label){
   else if (act.kind==='grantKw'){ grantKeyword(target, act.kw, act.amount); target.ap=effAp(target); log(`${label}: <b>${target.name}</b> gains &lt;${kwLabel(act.kw)}${act.kw==='breach'?' '+act.amount:''}&gt; this turn.`,cls); }
   else if (act.kind==='grantAttackActive'){ target.canAttackActive=true; log(`${label}: <b>${target.name}</b> may attack active enemy Units this turn.`,cls); }
   else if (act.kind==='stun'){ target.rested=true; target.stunned=true; log(`${label}: <b>${name}</b> rests <b>${target.name}</b> — it won't ready next turn.`,cls); }
+  else if (act.kind==='grantReduce'){ target.dmgReduce=(target.dmgReduce||0)+act.amount; log(`${label}: <b>${target.name}</b> ${act.amount>=99?"can't receive battle damage":"reduces damage by "+act.amount} this turn.`,cls); }
 }
 // Do the Shield-to-hand portion of a base/unit effect (shield + optional scry), without the trailing "Then,…".
 function doShieldToHand(card, side, act, label, skipScry){
@@ -1067,12 +1095,18 @@ function runTrigger(card, side, act, label){
     const t = rankTarget(friendlyTargets(side,act),act) || side.field.filter(u=>!u.token && (act.scope!=='friendly'||u!==card))[0] || card;
     if (t){ grantKeyword(t, act.kw, act.amount); t.ap=effAp(t); log(`${label}: <b>${t.name}</b> gains &lt;${kwLabel(act.kw)}${act.kw==='breach'?' '+act.amount:''}&gt; this turn.`, cls); }
   } else if (act.kind==='grantAttackActive'){
+    const targets = act.all ? side.field.filter(u=>!u.token) : [act.scope==='self' ? card : (rankTarget(friendlyTargets(side,act),act) || card)];
+    for (const t of targets) if(t){ t.canAttackActive=true; }
+    if (targets[0]) log(`${label}: ${act.all?'your Units':'<b>'+targets[0].name+'</b>'} may attack active enemy Units this turn.`, cls);
+  } else if (act.kind==='grantReduce'){
     const t = act.scope==='self' ? card : (rankTarget(friendlyTargets(side,act),act) || card);
-    if (t){ t.canAttackActive=true; log(`${label}: <b>${t.name}</b> may attack active enemy Units this turn.`, cls); }
+    if (t){ t.dmgReduce=(t.dmgReduce||0)+act.amount; log(`${label}: <b>${t.name}</b> ${act.amount>=99?"can't receive battle damage":"reduces damage by "+act.amount} this turn.`, cls); }
   } else if (act.kind==='restMulti'){
     const cands=enemyTargets(foe,act).sort((a,b)=>effAp(b)-effAp(a)).slice(0,act.count);
     for (const t of cands) t.rested=true;
     if (cands.length) log(`${label}: <b>${name}</b> rests ${cands.length} enemy Unit${cands.length>1?'s':''}.`, cls);
+  } else if (act.kind==='reanimate'){
+    reanimate(card, side, act);
   } else if (act.kind==='shieldToHand'){
     doShieldToHand(card, side, act, label);
     if (act.then) runTrigger(card, side, act.then, label);   // trailing "Then, <effect>"
@@ -1204,8 +1238,9 @@ function resolvePlayerTrigger(card, side, act, label, after){
   // Deck-look effects: let the player actually look and choose.
   if (act.kind==='dig'){ playerDig(card, G.player, act, fin); return; }
   if (act.kind==='scryMill'){ playerScryMill(card, G.player, fin); return; }
+  if (act.kind==='reanimate'){ reanimate(card, G.player, act, fin); return; }
   const enemyKinds = (act.kind==='damage' && act.scope!=='all-enemy') || ['rest','bounce','destroy','debuff','stun'].includes(act.kind);
-  const allyKinds  = act.kind==='buff' || act.kind==='heal' || act.kind==='grantKw' || (act.kind==='grantAttackActive' && act.scope==='friendly');
+  const allyKinds  = act.kind==='buff' || act.kind==='heal' || act.kind==='grantKw' || act.kind==='grantReduce' || (act.kind==='grantAttackActive' && act.scope==='friendly' && !act.all);
   if (enemyKinds || allyKinds){
     const cands = enemyKinds ? enemyTargets(G.enemy, act) : friendlyTargets(G.player, act);
     if (cands.length>=2){                        // genuine choice → ask the player
@@ -1614,7 +1649,7 @@ function beginTurn(turn){
   G.turn=turn; G.mode='idle'; G.phase='start'; G.selected=null; G.pending=null; G.pendingHandIdx=-1;
   const s=me();
   // 1) Start Phase — Active Step: ready all rested cards; refresh per-turn abilities.
-  for (const u of s.field){ if(u.stunned){ u.stunned=false; } else if(!u.noActive){ u.rested=false; } u.sick=false; u.tempAp=0; u.activatedThisTurn=false; u.canAttackActive=false; u.ap=effAp(u); }
+  for (const u of s.field){ if(u.stunned){ u.stunned=false; } else if(!u.noActive){ u.rested=false; } u.sick=false; u.tempAp=0; u.activatedThisTurn=false; u.canAttackActive=false; u.dmgReduce=0; u.ap=effAp(u); }
   if (s.base){ s.base.rested=false; s.base.activatedThisTurn=false; }
   // 2) Draw Phase — draw 1 (the player going first skips their very first draw).
   G.phase='draw';
@@ -1637,7 +1672,7 @@ function endTurn(){
   const s=me();
   // 5) End Phase — Repair Step (regen), then Hand Step (discard down to the hand limit).
   G.phase='end';
-  for (const u of s.field){ if (u.repair>0 && u.hp>0 && u.hp<effMaxHp(u)){ u.hp=Math.min(effMaxHp(u), u.hp+u.repair); } u.tempAp=0; u.canAttackActive=false; u.ap=effAp(u); }
+  for (const u of s.field){ if (u.repair>0 && u.hp>0 && u.hp<effMaxHp(u)){ u.hp=Math.min(effMaxHp(u), u.hp+u.repair); } u.tempAp=0; u.canAttackActive=false; u.dmgReduce=0; u.ap=effAp(u); }
   while (s.hand.length>HAND_MAX){
     const worst=[...s.hand].sort((a,b)=>cardValue(a)-cardValue(b))[0];
     s.hand.splice(s.hand.indexOf(worst),1); sendToTrash(worst, s);
@@ -2114,7 +2149,9 @@ function pickAiBlocker(atk, blockers){
 }
 
 function damage(u, dmg, side){
-  if (dmg<=0 || u.hp<=0) return;   // ignore hits on an already-destroyed Unit
+  if (u.hp<=0) return;
+  if (u.dmgReduce){ dmg = Math.max(0, dmg - u.dmgReduce); }   // damage-reduction / immunity this turn
+  if (dmg<=0) return;   // ignore hits on an already-destroyed Unit / fully-reduced damage
   u.hp-=dmg;
   if (u.hp<=0){
     const i=side.field.indexOf(u); if(i>=0) side.field.splice(i,1);
