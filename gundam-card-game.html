@@ -587,7 +587,8 @@ function matchFilter(card, filterStr){
   if (f.type && card.type !== f.type) return false;
   if (f.color && (card.color||'').toLowerCase() !== f.color) return false;
   if (f.maxLv != null && (card.lv||0) > f.maxLv) return false;
-  if (f.traits){ const ct=(card.trait||'').toLowerCase(); for(const t of f.traits) if(!ct.includes(t)) return false; }
+  // Multiple traits in a filter (e.g. "(Zeon)/(Neo Zeon)") are an OR — match any one.
+  if (f.traits){ const ct=(card.trait||'').toLowerCase(); if(!f.traits.some(t=>ct.includes(t))) return false; }
   return true;
 }
 
@@ -657,6 +658,49 @@ function pingFriendly(side, self, preferAttacker){
   if (!cands.length) return null;
   cands.sort(preferAttacker ? (a,b)=>(b.ap-a.ap)||(b.hp-a.hp) : (a,b)=>b.hp-a.hp);
   return cands[0];
+}
+// Modal: reveal some deck cards face-up and let the player pick one (or none).
+function showLookAtTop(cards, title, canPick, allowSkip, onChoose){
+  const modal=document.createElement('div');
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.86);z-index:1000;display:flex;align-items:center;justify-content:center;padding:14px;';
+  const box=document.createElement('div');
+  box.style.cssText='background:#16162a;border:1px solid #6a4fb0;border-radius:12px;padding:16px;max-width:500px;width:100%;text-align:center;';
+  box.innerHTML=`<h3 style="margin:0 0 12px;color:#d8b4ff;font-size:14px">${title}</h3>`;
+  const row=document.createElement('div'); row.style.cssText='display:flex;gap:8px;flex-wrap:wrap;justify-content:center;';
+  cards.forEach(c=>{
+    const pick=canPick(c);
+    const card=document.createElement('div');
+    card.style.cssText=`width:94px;height:132px;border-radius:8px;border:2px solid ${pick?'#34d399':'#555'};overflow:hidden;cursor:${pick?'pointer':'default'};opacity:${pick?1:.5};position:relative;`+(c.img?`background:url('${c.img}') center/cover;`:'background:#0d1628;display:flex;align-items:center;justify-content:center;color:#cdd;font-size:11px;text-align:center;padding:6px;');
+    if(!c.img) card.textContent=c.name;
+    if(pick) card.onclick=()=>{ modal.remove(); onChoose(c); };
+    row.appendChild(card);
+  });
+  box.appendChild(row);
+  if(allowSkip){ const sk=document.createElement('button'); sk.textContent='Take none'; sk.style.cssText='margin-top:12px;padding:8px 18px;background:#333;color:#fff;border:none;border-radius:6px;cursor:pointer'; sk.onclick=()=>{ modal.remove(); onChoose(null); }; box.appendChild(sk); }
+  modal.appendChild(box); document.body.appendChild(modal);
+}
+// Player "look at top N, add a matching card to hand, return the rest".
+function playerDig(card, side, act, after){
+  const n=Math.min(act.amount, side.deck.length);
+  if(!n){ if(after)after(); return; }
+  const top=side.deck.splice(side.deck.length-n, n);
+  showLookAtTop(top, `${card.name}: top ${n} — add a ${act.filter||'card'} to your hand`,
+    c=>matchFilter(c,act.filter)&&side.hand.length<HAND_MAX, true, (chosen)=>{
+      if(chosen){ top.splice(top.indexOf(chosen),1); side.hand.push(chosen); log(`<b>${card.name}</b>: you add <b>${chosen.name}</b> to hand.`,'me'); }
+      shuffle(top);
+      if(act.dest==='top'){ for(const c of top) side.deck.push(c); } else { for(const c of top) side.deck.unshift(c); }
+      render(); if(after)after();
+    });
+}
+// Player "look at top 2, keep 1 on top, the other to trash".
+function playerScryMill(card, side, after){
+  if(side.deck.length<2){ if(after)after(); return; }
+  const top=side.deck.splice(side.deck.length-2, 2);
+  showLookAtTop(top, `${card.name}: keep one on TOP — the other goes to trash`, ()=>true, false, (chosen)=>{
+    const other=top.find(c=>c!==chosen); side.deck.push(chosen); sendToTrash(other, side);
+    log(`<b>${card.name}</b>: keep <b>${chosen.name}</b> on top, <b>${other.name}</b> to trash.`,'me');
+    render(); if(after)after();
+  });
 }
 
 function trashBlocksAttack(u, side){
@@ -800,6 +844,12 @@ function parseClause(raw){
   }
   if (/look at the top 2 cards of your deck and return 1 to the top.*place the remaining card into your trash/.test(t))
     return { kind:'scryMill', amount:2 };
+  // Dig: "Look at the top N cards. You may reveal 1 [filter] card … add it to your hand. Return the rest …"
+  if ((d=t.match(/look at the top (\d+) cards? of your deck/)) && /add (?:it|them|that card) to your hand/.test(t)){
+    const fm=t.match(/reveal (?:up to )?\d*\s*([a-z0-9\s\(\)\/\-]*?)\s*cards?\b/);
+    const dest = /to the (?:top|bottom)/.test(t) && /to the top/.test(t.split('add')[1]||'') ? 'top' : 'bottom';
+    return { kind:'dig', amount:+d[1], filter: fm?fm[1].trim():null, dest };
+  }
   if (/look at the top card of your deck.*(?:return it to|place it into)/.test(t))
     return { kind:'scryKeep', amount:1 };
   // Destroy an enemy Unit ("Destroy it." / "Destroy that Unit").
@@ -889,10 +939,10 @@ function applyToTarget(card, side, act, target, label){
   else if (act.kind==='heal'){ target.hp=Math.min(effMaxHp(target), target.hp+(act.amount>=99?effMaxHp(target):act.amount)); log(`${label}: <b>${name}</b> repairs <b>${target.name}</b>.`,cls); }
 }
 // Do the Shield-to-hand portion of a base/unit effect (shield + optional scry), without the trailing "Then,…".
-function doShieldToHand(card, side, act, label){
+function doShieldToHand(card, side, act, label, skipScry){
   const cls=side===G.player?'me':'ai';
   if (side.shields.length && side.hand.length<HAND_MAX){ side.hand.push(side.shields.pop()); log(`${label}: <b>${card.name}</b> adds a Shield to ${who(side)} hand.`, cls); }
-  if (act.scryN>0 && side.deck.length>=act.scryN && side.who===G.turn){
+  if (!skipScry && act.scryN>0 && side.deck.length>=act.scryN && side.who===G.turn){
     const top = side.deck.splice(side.deck.length-act.scryN, act.scryN);
     top.sort((a,b)=>cardValue(b)-cardValue(a));
     side.deck.push(top[0]);
@@ -1019,6 +1069,16 @@ function runTrigger(card, side, act, label){
     }
   } else if (act.kind==='scryKeep'){
     if(side.deck.length) log(`${label}: <b>${name}</b> looks at top card — keeps it.`, cls);
+  } else if (act.kind==='dig'){
+    const n=Math.min(act.amount, side.deck.length);
+    if(n){
+      const top=side.deck.splice(side.deck.length-n, n);
+      const pick=[...top].filter(c=>matchFilter(c,act.filter)).sort((a,b)=>cardValue(b)-cardValue(a))[0];
+      if(pick && side.hand.length<HAND_MAX){ top.splice(top.indexOf(pick),1); side.hand.push(pick); log(`${label}: <b>${name}</b> looks at top ${n} — adds <b>${pick.name}</b> to hand.`, cls); }
+      else log(`${label}: <b>${name}</b> looks at top ${n} — no match.`, cls);
+      shuffle(top);
+      if(act.dest==='top'){ for(const c of top) side.deck.push(c); } else { for(const c of top) side.deck.unshift(c); }
+    }
   } else if (act.kind==='trashRetrieve'){
     const cands=side.trash.filter(c=>matchFilter(c,act.filter)&&!c.token);
     if(cands.length&&side.hand.length<HAND_MAX){
@@ -1054,10 +1114,16 @@ function resolvePlayerTrigger(card, side, act, label, after){
     return resolvePlayerTrigger(card, side, act.inner, label, after);
   }
   if (act.kind==='shieldToHand'){               // take the shield, then chain the "Then,…" part
-    doShieldToHand(card, side, act, label);
-    if (act.then) return resolvePlayerTrigger(card, side, act.then, label, after);
-    fin(); return;
+    const chain=()=>{ if (act.then) return resolvePlayerTrigger(card, side, act.then, label, after); fin(); };
+    if (act.scryN===2 && G.player.deck.length>=2 && side.who===G.turn){
+      doShieldToHand(card, side, act, label, true);   // shield now; look at top 2 interactively
+      playerScryMill(card, side, chain); return;
+    }
+    doShieldToHand(card, side, act, label); chain(); return;
   }
+  // Deck-look effects: let the player actually look and choose.
+  if (act.kind==='dig'){ playerDig(card, G.player, act, fin); return; }
+  if (act.kind==='scryMill'){ playerScryMill(card, G.player, fin); return; }
   const enemyKinds = (act.kind==='damage' && act.scope!=='all-enemy') || ['rest','bounce','destroy','debuff'].includes(act.kind);
   const allyKinds  = act.kind==='buff' || act.kind==='heal';
   if (enemyKinds || allyKinds){
@@ -1974,8 +2040,12 @@ function damage(u, dmg, side){
     const i=side.field.indexOf(u); if(i>=0) side.field.splice(i,1);
     fx('die', u.uid); log(`<b>${u.name}</b> is destroyed.`, side===G.player?'me':'ai');
     sendToTrash(u, side);
-    // 【Destroyed】: fires as the Unit leaves play (its controller resolves it).
-    runTrigger(u, side, parseTrigger(u.effect,'Destroyed'), 'Destroyed');
+    // 【Destroyed】: fires as the Unit leaves play (its controller resolves it). A player-side
+    // deck-look (dig/scry) uses its own modal, so it can be interactive even mid-combat.
+    const dact = parseTrigger(u.effect,'Destroyed');
+    if (side===G.player && dact && dact.kind==='dig') playerDig(u, side, dact);
+    else if (side===G.player && dact && dact.kind==='scryMill') playerScryMill(u, side);
+    else runTrigger(u, side, dact, 'Destroyed');
   }
   else fx('hit', u.uid);
 }
