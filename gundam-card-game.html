@@ -1598,11 +1598,28 @@ function tokenArt(name){
   }
   return TOKEN_ART[name] || '';
 }
+// Official token-card art. Token cards have their own collector numbers on the official site:
+// starter-deck Gunpla tokens use a TP-0xx prefix, booster tokens use T0xx. A few numbers are
+// best-guesses (the official image host can't be verified here) — cardFace falls back to the
+// borrowed same-name card art on load error, so a wrong number degrades gracefully.
+const TOKEN_IMG_ID = {
+  'Gundam':'TP-001', 'Guncannon':'TP-002', 'Guntank':'TP-003', 'Tallgeese':'TP-004', 'Leo':'TP-005',
+  'Aile Strike Gundam':'TP-007', 'Sword Strike Gundam':'TP-008', "Char's Zaku Ⅱ":'TP-009', 'Zaku Ⅱ':'TP-010',
+  'Fatum-00':'T011', 'Daughtress':'T012', 'Hy-Gogg':'T013', 'Ad Balloon':'T014',
+  'CGS Mobile Worker':'T015', 'Graze Custom':'T016', 'Gundam Barbatos 4th Form':'T017',
+  'GQuuuuuuX (Omega Psycommu)':'T019', 'GFreD':'T020',
+  'Parts':'T021', 'Wire-Guided Arm':'T022', 'Zeong (Head)':'T023', 'Alvaaron':'T024'
+};
+function tokenOfficialImg(name){
+  const id=TOKEN_IMG_ID[name];
+  return id ? `https://images.weserv.nl/?url=www.gundam-gcg.com/en/images/cards/card/${id}.webp` : '';
+}
 function makeToken(spec, owner){
   const r=(spec.restrict||'').toLowerCase();
   const kw=[]; if(spec.blocker)kw.push('<Blocker>'); if(spec.first)kw.push('<First Strike>'); if(spec.high)kw.push('<High-Maneuver>');
+  const official=tokenOfficialImg(spec.name), borrow=tokenArt(spec.name);
   return { uid:uid++, owner, name:spec.name||'Mobile Suit Token', type:'unit', token:true,
-    color:'-', cost:0, lv:0, trait:spec.trait||'', img:tokenArt(spec.name),
+    color:'-', cost:0, lv:0, trait:spec.trait||'', img:official||borrow, borrowImg:(official?borrow:''), officialImg:!!official,
     effect:`(Token — ${spec.trait?spec.trait+' · ':''}${spec.ap} AP / ${spec.hp} HP${kw.length?' · '+kw.join(' '):''}.)`,
     baseAp:spec.ap, baseHp:spec.hp, ap:spec.ap, hp:spec.hp, maxHp:spec.hp,
     rested:!!spec.rested, sick:true, tempAp:0, pilot:null, link:[], linked:false,
@@ -2734,6 +2751,12 @@ function promptPlayerBlock(atk, blockers, target, cb){
 }
 
 // ---- rendering ----
+// A token's official art failed to load — swap the card background to borrowed art, or clear it.
+function tokenImgFail(img){
+  const card=img.closest('.card');
+  if (card){ const fb=img.getAttribute('data-fb'); card.style.backgroundImage = fb ? `url('${fb}')` : 'none'; }
+  img.remove();
+}
 function cardFace(c, ctx){
   const cls=['card','c-'+(c.color||'-')];
   const isUnit = c.type==='unit'||c.type==='base';
@@ -2759,6 +2782,10 @@ function cardFace(c, ctx){
   if (isBase) cls.push('isbase');
   const style = c.img ? `background-image:url('${c.img}')` : '';
   let overlays = `<div class="ov-cost">${c.cost}</div>`;
+  // Token using a (possibly best-guess) official image: probe it; on 404 fall back to borrowed art,
+  // or clear the background so the name/effect fallback shows instead of a broken image.
+  if (c.token && c.officialImg)
+    overlays += `<img src="${c.img}" alt="" data-fb="${c.borrowImg||''}" style="display:none" onerror="tokenImgFail(this)">`;
   if (!c.token && (c.lv||0)>0) overlays += `<div class="ov-lv">L${c.lv}</div>`;
   // Combat preview: on an attackable enemy Unit, show how the trade resolves for your attacker.
   if (ctx==='field-enemy' && G.mode==='attack-target' && c.rested && c.hp>0){
