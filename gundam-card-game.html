@@ -2039,6 +2039,15 @@ function fieldClick(uidv){
     resolveActivate(u, t); return;
   }
 
+  if (G.mode==='action-step-target'){
+    const p=G.pending;
+    if (!p.cands.includes(uidv)){ flashPrompt('Pick a highlighted enemy unit.'); return; }
+    const t=G.enemy.field.find(c=>c.uid===uidv); if(!t) return;
+    G.mode='idle'; G.pending=null;
+    applyCommand(p.cmd, G.player, t);
+    if (p.after) p.after(); else { render(); checkEnd(); }
+    return;
+  }
   if (G.mode==='trigger-target'){
     const p=G.pending;
     if (!p.cands.includes(uidv)){ flashPrompt('Pick a highlighted unit.'); return; }
@@ -2488,12 +2497,31 @@ function collectPlayerActions(attacker){
     if (u.activate && u.activate.phase==='action' && !u.activatedThisTurn && u.hp>0
         && (!u.activate.requireLink || u.linked) && (!u.activate.requirePair || u.pilot)
         && activateCostPayable(u, G.player)){
-      opts.push({ label:`⚡ ${u.name}`, sub:u.activate.text||'', run:()=>{ flashCard(u,'YOUR ACTION'); applyActivateEffect(u, autoActivateTarget(u, attacker), G.player); } });
+      opts.push({ label:`⚡ ${u.name}`, sub:u.activate.text||'', run:(afterCb)=>{ flashCard(u,'YOUR ACTION'); applyActivateEffect(u, autoActivateTarget(u, attacker), G.player); if (afterCb) afterCb(); } });
     }
   }
   for (const c of G.player.hand){
     if (c.type==='command' && /【\s*Action/i.test(c.effect||'') && canAfford(G.player,c)){
-      opts.push({ label:`▸ ${c.name}`, sub:'Action command', run:()=>{ const h=G.player.hand.indexOf(c); if(h<0)return; G.player.hand.splice(h,1); G.player.resAvail-=effectiveCost(G.player,c); sendToTrash(c,G.player); flashCard(c,'YOUR ACTION'); applyCommand(c, G.player, autoCommandTarget(c, attacker)); } });
+      opts.push({ label:`▸ ${c.name}`, sub:'Action command', run:(afterCb)=>{
+        const h=G.player.hand.indexOf(c); if(h<0)return;
+        const enemyKinds=['damage','rest','destroy','bounce','debuff'];
+        if (enemyKinds.includes(c.action?.kind)){
+          const cands=enemyTargets(G.enemy, c.action);
+          if (cands.length>=2){
+            // Spend the card now, then let player pick target
+            G.player.hand.splice(h,1); G.player.resAvail-=effectiveCost(G.player,c);
+            sendToTrash(c,G.player); flashCard(c,'YOUR ACTION');
+            G.mode='action-step-target';
+            G.pending={ cmd:c, attacker, after:afterCb, cands:cands.map(x=>x.uid) };
+            setPrompt(`${c.name}: tap an ENEMY unit to target.`);
+            render(); return;
+          }
+        }
+        G.player.hand.splice(h,1); G.player.resAvail-=effectiveCost(G.player,c);
+        sendToTrash(c,G.player); flashCard(c,'YOUR ACTION');
+        applyCommand(c, G.player, autoCommandTarget(c, attacker));
+        if (afterCb) afterCb();
+      }});
     }
   }
   return opts;
@@ -2505,7 +2533,7 @@ function offerPlayerActionStep(attacker, cb){
   el('blockMsg').innerHTML = `<b>Action Step</b> — ${who(G.enemy)}'s <b>${attacker.name}</b> (AP ${attacker.ap}) is attacking. Use an Action ability/command, or Pass.`;
   const wrap=el('blockBtns'); wrap.innerHTML='';
   opts.forEach(o=>{ const b=document.createElement('button'); b.innerHTML=`${o.label}${o.sub?` <span style="opacity:.6;font-size:10px">${o.sub}</span>`:''}`;
-    b.onclick=()=>{ el('blockModal').classList.remove('show'); o.run(); render(); setTimeout(()=>offerPlayerActionStep(attacker, cb), 80); };
+    b.onclick=()=>{ el('blockModal').classList.remove('show'); o.run(()=>{ render(); setTimeout(()=>offerPlayerActionStep(attacker, cb), 80); }); render(); };
     wrap.appendChild(b); });
   const pass=document.createElement('button'); pass.className='ghost'; pass.textContent='Pass (continue battle)';
   pass.onclick=()=>{ el('blockModal').classList.remove('show'); cb(); };
@@ -2594,6 +2622,7 @@ function cardFace(c, ctx){
     if (G.mode==='command-target' && ['damage','rest','destroy','bounce','debuff'].includes(G.pending?.action.kind) && enemyTargets(G.enemy,G.pending.action).includes(c)) cls.push('selectable');
     if (G.mode==='activate-target' && G.pending?.activate?.action.scope==='enemy') cls.push('selectable');
     if (G.mode==='trigger-target' && (G.pending?.scope==='enemy'||G.pending?.scope==='self-ping-enemy') && G.pending.cands.includes(c.uid)) cls.push('selectable');
+    if (G.mode==='action-step-target' && G.pending?.cands.includes(c.uid)) cls.push('selectable');
   }
   const isBase = c.type==='base';
   if (isBase) cls.push('isbase');
@@ -2772,7 +2801,17 @@ function closeInspect(){ el('inspect').classList.remove('show'); }
 
 // ---- buttons / keys ----
 el('endTurnBtn').addEventListener('click', ()=>{ if(G.turn==='player'&&!G.over){ clearSel(); endTurn(); } });
-el('cancelBtn').addEventListener('click', ()=>{ clearSel(); render(); });
+el('cancelBtn').addEventListener('click', ()=>{
+  if (G.mode==='action-step-target'){
+    // Card already spent — auto-apply to first candidate so effect isn't lost
+    const p=G.pending; G.mode='idle'; G.pending=null;
+    const t=G.enemy.field.find(c=>p.cands.includes(c.uid))||null;
+    applyCommand(p.cmd, G.player, t);
+    if (p.after) p.after(); else { render(); checkEnd(); }
+    return;
+  }
+  clearSel(); render();
+});
 el('rulesBtn').addEventListener('click', ()=>{
   if(G.over) return;                                   // game-over screen owns the overlay
   el('startBtn').style.display='none';                 // mid-game: show rules, not the start button
@@ -2791,7 +2830,19 @@ el('enemyExileRow').addEventListener('click', ()=>{ showPileViewer((G.enemy&&G.e
 el('enemyShieldZone').addEventListener('click', attackDirect);
 el('enemyShieldCount').addEventListener('click', attackDirect);
 el('enemyField').addEventListener('click', e=>{ if(G.mode==='attack-target' && e.target.classList.contains('battlefield')) attackDirect(); });
-document.addEventListener('keydown', e=>{ if(G.over) return; if(e.key==='Escape'){ closeInspect(); clearSel(); render(); } if(e.key==='Enter'&&G.turn==='player'){ clearSel(); endTurn(); } });
+document.addEventListener('keydown', e=>{
+  if(G.over) return;
+  if(e.key==='Escape'){
+    closeInspect();
+    if (G.mode==='action-step-target'){
+      const p=G.pending; G.mode='idle'; G.pending=null;
+      const t=G.enemy.field.find(c=>p.cands.includes(c.uid))||null;
+      applyCommand(p.cmd, G.player, t);
+      if (p.after) p.after(); else { render(); checkEnd(); }
+    } else { clearSel(); render(); }
+  }
+  if(e.key==='Enter'&&G.turn==='player'){ clearSel(); endTurn(); }
+});
 </script>
 </body>
 </html>
