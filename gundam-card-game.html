@@ -958,7 +958,8 @@ function inferCommand(effect){
     const specs=parseTokenSpecs(raw);
     const choose = specs.length>1 && /\bor\b\s*\d*\s*(?:rested\s+)?\[/i.test(raw);
     const cond = /if you have no unit/i.test(raw) && specs.length>=2 && !choose ? 'board' : null;
-    return specs.length ? { kind:'token', specs, choose, cond } : { kind:'token', count:+((t.match(/deploy (\d+)/)||[])[1]||1) };
+    const tokenLimit = tokenLimitTrait(raw);   // "if you have no (X) Unit tokens in play"
+    return specs.length ? { kind:'token', specs, choose, cond, tokenLimit } : { kind:'token', count:+((t.match(/deploy (\d+)/)||[])[1]||1), tokenLimit };
   }
   // draw-then-discard (e.g. "Draw 2. Then, discard 1.") — must be checked before plain draw
   if (/draw \d/.test(t) && /discard \d/.test(t)){
@@ -1201,7 +1202,8 @@ function parseClause(raw){
     const specs=parseTokenSpecs(raw);
     const choose = specs.length>1 && /\bor\b\s*\d*\s*(?:rested\s+)?\[/i.test(raw);
     const cond = /if you have no unit/i.test(raw) && specs.length>=2 && !choose ? 'board' : null;
-    return specs.length ? { kind:'token', specs, choose, cond } : { kind:'token', count:+((t.match(/deploy (\d+)/)||[])[1]||1) };
+    const tokenLimit = tokenLimitTrait(raw);
+    return specs.length ? { kind:'token', specs, choose, cond, tokenLimit } : { kind:'token', count:+((t.match(/deploy (\d+)/)||[])[1]||1), tokenLimit };
   }
   // Trash retrieval: "Choose 1 X card from your trash. Add it to your hand."
   if (/from your trash\. add it to your hand/.test(t)){
@@ -1865,6 +1867,16 @@ function genericToken(owner){
            baseAp:1, baseHp:1, ap:1, hp:1, maxHp:1, rested:true, sick:true, tempAp:0,
            pilot:null, link:[], linked:false, blitz:false, repair:0, blocker:false, firstStrike:false, highManeuver:false, breach:0, suppression:false, support:0 };
 }
+// "If you have no (Trait) Unit tokens in play, deploy …" — the trait you may have only one of.
+function tokenLimitTrait(raw){
+  const m = (raw||'').match(/if you have no\s*\(([^)]+)\)\s*unit tokens? in play/i);
+  return m ? m[1].trim().toLowerCase() : null;
+}
+// True if the side already controls a Unit token whose trait matches `trait` (so a "no (X) tokens" deploy is blocked).
+function hasTraitToken(side, trait){
+  if (!trait) return false;
+  return (side.field||[]).some(u=>u.token && (u.trait||'').toLowerCase().includes(trait));
+}
 // Parse the token descriptors in a clause: "Deploy N [rested] [Name]((Trait)･APx･HPy･<Kw>･restriction) Unit token(s)".
 // Returns one spec per [Name](...) block found (so "deploy 1 [A] and 1 [B]" yields two). Case is preserved.
 function parseTokenSpecs(text){
@@ -1911,6 +1923,11 @@ function tokenScore(sp){ return sp.ap + sp.hp + (sp.blocker?2:0) + (sp.first?1:0
 // Deploy the token(s) described by a token action onto `side`'s field (respecting FIELD_MAX).
 function deployTokens(act, side, name, label, cls){
   let specs=act.specs, names=[]; const tokens=[];
+  // "If you have no (X) Unit tokens in play" — only one such token may exist (e.g. Striker Pack).
+  if (act.tokenLimit && hasTraitToken(side, act.tokenLimit)){
+    log(`${label}: <b>${name}</b> — you already have a (${act.tokenLimit}) Unit token in play.`, cls);
+    return 0;
+  }
   if (specs && specs.length>1 && act.cond==='board')   // e.g. White Base: token chosen by how many Units you have
     specs = [ specs[Math.min(side.field.length, specs.length-1)] ];
   // "Deploy A or B" — pick ONE. The player chooses via startCommand; here (AI/auto) take the best.
@@ -2389,7 +2406,12 @@ function playFromHand(uidv){
     closeInspect();
     resolvePlayerTrigger(card, s, parseTrigger(card.effect,'Deploy'), 'Deploy', ()=>{ clearSel(); render(); checkEnd(); });
   } else if (card.type==='unit'){
-    if (s.field.length>=FIELD_MAX){ flashPrompt('Battle area full (max '+FIELD_MAX+').'); return; }
+    if (s.field.length>=FIELD_MAX){
+      // Battle area full: place one of your Units in the trash to make room, then deploy.
+      G.mode='field-replace'; G.pending={ card };
+      setPrompt(`Battle area full — tap one of YOUR Units to place in the trash, then ${card.name} deploys.`);
+      closeInspect(); render(); return;
+    }
     s.hand.splice(idx,1); s.resAvail-=effectiveCost(s,card);
     card.rested=false; card.sick = !card.blitz;
     s.field.push(card);
@@ -2417,6 +2439,10 @@ function playFromHand(uidv){
 
 function startCommand(card, handIdx){
   const s=G.player, a=card.action;
+  // "If you have no (X) Unit tokens in play" — block when you already control one (only one allowed).
+  if (a.kind==='token' && a.tokenLimit && hasTraitToken(s, a.tokenLimit)){
+    flashPrompt(`${card.name}: you already have a (${a.tokenLimit}) Unit token in play.`); return;
+  }
   flashCard(card, 'YOUR COMMAND');
   lockActions(FLASH_MS);   // hold off the next move until the command's reveal animation finishes
                            // (only blocks idle actions — picking this command's target still works)
@@ -2644,6 +2670,22 @@ function fieldClick(uidv){
   if (G.turn!=='player' && G.mode!=='action-step-target') return;
   if (G.turn==='player' && G.actionLock && G.mode==='idle') return;
 
+  if (G.mode==='field-replace'){
+    const card=G.pending && G.pending.card; if(!card){ clearSel(); return; }
+    const victim=G.player.field.find(c=>c.uid===uidv);
+    if(!victim){ flashPrompt('Tap one of YOUR Units to place in the trash.'); return; }
+    const i=G.player.field.indexOf(victim); if(i>=0) G.player.field.splice(i,1);
+    fx('die', victim.uid);
+    sendToTrash(victim, G.player);     // placed in trash (not "destroyed" — no Destroyed trigger)
+    log(`<b>${victim.name}</b> is placed in the trash to make room.`, 'me');
+    const h=G.player.hand.findIndex(c=>c.uid===card.uid);
+    if(h>=0){ G.player.hand.splice(h,1); G.player.resAvail-=effectiveCost(G.player,card); }
+    card.rested=false; card.sick=!card.blitz; G.player.field.push(card);
+    G.mode='idle'; G.pending=null; sound('deploy');
+    log(`You deploy <b>${card.name}</b>${card.blitz?' &lt;Blitz&gt;':''}.`, 'me');
+    resolvePlayerTrigger(card, G.player, parseTrigger(card.effect,'Deploy'), 'Deploy', ()=>{ onUnitDeployed(card, G.player, ()=>{ clearSel(); render(); checkEnd(); }); });
+    return;
+  }
   if (G.mode==='pilot-target'){
     const u=G.player.field.find(c=>c.uid===uidv && c.type==='unit'); if(!u){ flashPrompt('Pick one of your units.'); return; }
     if (u.pilot){ flashPrompt(`${u.name} already has a pilot — a Unit can hold only one.`); return; }
@@ -3205,7 +3247,7 @@ function aiMainStep(){
   const buff = ai.hand.find(c=>c.type==='command' && c.action.kind==='buff' && canAfford(ai,c));
   if (buff && ai.field.some(u=>!u.sick&&!u.rested&&u.ap>0)){ const t=ai.field.filter(u=>!u.sick&&!u.rested&&u.ap>0).sort((a,b)=>b.ap-a.ap)[0]; const i=ai.hand.indexOf(buff); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,buff); sendToTrash(buff,ai); flashCard(buff,'ENEMY COMMAND'); t.tempAp=(t.tempAp||0)+buff.action.amount; t.ap=effAp(t); log(`${who(G.enemy)} empowers <b>${t.name}</b>.`, 'ai'); return true; }
   // token-creating command — play it when there's board room
-  const tokCmd = ai.hand.find(c=>c.type==='command' && c.action.kind==='token' && canAfford(ai,c));
+  const tokCmd = ai.hand.find(c=>c.type==='command' && c.action.kind==='token' && canAfford(ai,c) && !(c.action.tokenLimit && hasTraitToken(ai, c.action.tokenLimit)));
   if (tokCmd && ai.field.length<FIELD_MAX){ const i=ai.hand.indexOf(tokCmd); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,tokCmd); sendToTrash(tokCmd,ai); flashCard(tokCmd,'ENEMY COMMAND'); deployTokens(tokCmd.action, ai, tokCmd.name, tokCmd.name, 'ai'); return true; }
   return false;
 }
@@ -3374,6 +3416,7 @@ function cardFace(c, ctx){
     if (G.selected===c.uid) cls.push('attacking');
     if (G.mode==='idle' && isUnit && !c.rested && !c.sick && c.ap>0) cls.push('selectable');
     if (G.mode==='pilot-target' && c.type==='unit' && !c.pilot && !c.noPilot) cls.push('selectable');
+    if (G.mode==='field-replace' && c.type==='unit') cls.push('selectable');
     if (G.mode==='command-target' && (G.pending?.action.kind==='heal'||G.pending?.action.kind==='buff')) cls.push('selectable');
     if (G.mode==='activate-target' && G.pending?.activate?.action.scope==='friendly' && (!G.activateCands || G.activateCands.includes(c.uid))) cls.push('selectable');
     if (G.mode==='activate-cost' && (!G.activateCands || G.activateCands.includes(c.uid))) cls.push('selectable');
