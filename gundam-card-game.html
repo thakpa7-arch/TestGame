@@ -1483,7 +1483,7 @@ function runTrigger(card, side, act, label){
     const pc=card.pilotCard;
     if (pc){
       const ti=side.trash.indexOf(pc); if(ti>=0) side.trash.splice(ti,1);            // rescue from trash (Destroyed)…
-      if (card.pilot && side.field.includes(card)){ card.hp-=(pc.pHp||0); card.pilot=null; card.pilotCard=null; card.linked=false; if (card.baseLv!=null) card.lv=card.baseLv; card.ap=effAp(card); card.maxHp=effMaxHp(card); }  // …or detach from a living Unit
+      if (card.pilot && side.field.includes(card)){ card.hp-=(pc.pHp||0); card.pilot=null; card.pilotCard=null; card.linked=false; card.pilotPairAp=0; card.pilotPairHp=0; card.pilotLinkAp=0; card.pilotLinkHp=0; if (card.baseLv!=null) card.lv=card.baseLv; card.ap=effAp(card); card.maxHp=effMaxHp(card); }  // …or detach from a living Unit
       if (side.hand.length<HAND_MAX){ side.hand.push(pc); log(`${label}: <b>${name}</b> returns Pilot <b>${pc.name}</b> to hand.`, cls); }
     }
   } else if (act.kind==='setActive'){
@@ -1751,6 +1751,7 @@ function applySelfPingChosen(card, side, act, ftarget, etarget, after){
 function resetUnit(u){
   if (u.token) return;
   u.pilot=null; u.pilotCard=null; u.linked=false; u.tempAp=0; u.rested=false; u.sick=true; u.activatedThisTurn=false;
+  u.pilotPairAp=0; u.pilotPairHp=0; u.pilotLinkAp=0; u.pilotLinkHp=0;
   u.ap=u.baseAp; u.hp=u.baseHp; u.maxHp=u.baseHp; if (u.baseLv!=null) u.lv=u.baseLv;
   u.blocker=innateKeyword(u.effect,'blocker'); u.firstStrike=innateKeyword(u.effect,'first'); u.highManeuver=innateKeyword(u.effect,'high');
   u.breach=breachAmount(u.effect); u.suppression=innateKeyword(u.effect,'suppression'); u.support=supportAmount(u.effect);
@@ -1814,6 +1815,10 @@ function makeCard(def, owner){
     const edr = plain(def.effect).match(/receives?\s+effect damage from an enemy,?\s*reduce it by (\d+)/i);
     c.effDmgReduce = edr ? +edr[1] : 0;
     c.support = supportAmount(def.effect);
+    // Attack-target restrictions / grants printed on the Unit itself.
+    c.noDirectAttack = /can'?t choose the enemy player as its attack target/i.test(plain(def.effect));
+    const aam = plain(def.effect).match(/may choose an active enemy unit(?:[^.]*?lv\.?(\d+) or lower)?[^.]*as its attack target/i);
+    c.innateActiveAttack = !!aam; c.activeAttackMaxLv = aam ? (aam[1]?+aam[1]:99) : 0;
     // continuous self AP/HP buffs that switch on while paired / linked
     const pb = staticSelfBuff(def.effect, 'During Pair'); c.pairAp = pb.ap; c.pairHp = pb.hp;
     const lb = staticSelfBuff(def.effect, 'During Link'); c.linkAp = lb.ap; c.linkHp = lb.hp;
@@ -2042,6 +2047,7 @@ const PRESET_DECKS = [
   { name:'PW Barbatos',   dg:'3nST05-004a4nST05-006a4nGD02-054a3nGD02-058a4nGD03-056a4nGD02-055a3nGD04-068a2nST05-001a4nGD03-050a4nST05-010a3nGD03-094a3nGD01-118a3nST05-014a2nST09-009a2nST09-010a2nST05-015' },
   { name:'RW Neo Zeong',  dg:'2nGD01-086a4nGD02-079a2nGD04-077a3nGD01-073a4nST04-001a4nGD04-068a4nGD01-066a4nGD04-033a4nST04-010a4nST03-010a4nST03-013a4nGD01-118a3nST04-012a4nGD01-128' },
   { name:'BW Norn',       dg:'4nGD04-016a4nGD01-086a3nGD04-011a3nST01-001a2nGD01-006a4nGD04-003a2nGD04-068a4nGD04-006a4nGD04-065a4nST01-010a4nGD04-081a4nGD04-098a4nGD01-118a4nGD04-121' },
+  { name:'GW Wing',       dg:'4nST01-009a4nGD01-086a2nGD04-077a4nGD01-072a4nST04-001a4nGD04-068a4nST02-001a4nGD01-024a4nST04-010a4nST02-010a4nGD01-118a4nST04-012a4nGD01-126' },
 ];
 function parsePreset(dg){
   return dg.split('a').map(e=>{ const m=e.match(/^(\d+)n(.+)$/); return m?{n:+m[1],id:m[2]}:null; }).filter(Boolean);
@@ -2160,7 +2166,7 @@ function teamAuraBonus(u, stat){
   return b;
 }
 function effAp(u){
-  let ap = u.baseAp + (u.pilot?u.pilot.pAp:0) + (u.tempAp||0) + (u.battleAp||0) + (u.pilot?(u.pairAp||0):0) + (u.linked?(u.linkAp||0):0);
+  let ap = u.baseAp + (u.pilot?u.pilot.pAp:0) + (u.tempAp||0) + (u.battleAp||0) + (u.pilot?(u.pairAp||0)+(u.pilotPairAp||0):0) + (u.linked?(u.linkAp||0)+(u.pilotLinkAp||0):0);
   if (u.trashBuff && u.trashBuff.apBonus > 0 && G.player){
     const side = u.owner==='player' ? G.player : G.enemy;
     if (trashCount(side, u.trashBuff.trait) >= u.trashBuff.minCount) ap += u.trashBuff.apBonus;
@@ -2170,8 +2176,15 @@ function effAp(u){
 }
 // A Unit has <Suppression> if it's printed innately, or conditionally "while damaged" and it is.
 function effSuppression(u){ return !!(u.suppression || (u.suppressionWhenDamaged && u.hp < effMaxHp(u))); }
+// Can `u` attack an ACTIVE (non-rested) enemy Unit `target`? True if granted this turn, or innately
+// (e.g. Wing Gundam — "may choose an active enemy Unit that is Lv.4 or lower as its attack target").
+function canHitActive(u, target){
+  if (u.canAttackActive) return true;
+  if (u.innateActiveAttack && (target==null || (target.lv||0) <= (u.activeAttackMaxLv||99))) return true;
+  return false;
+}
 function effMaxHp(u){
-  let hp = u.baseHp + (u.pilot?u.pilot.pHp:0) + (u.pilot?(u.pairHp||0):0) + (u.linked?(u.linkHp||0):0);
+  let hp = u.baseHp + (u.pilot?u.pilot.pHp:0) + (u.pilot?(u.pairHp||0)+(u.pilotPairHp||0):0) + (u.linked?(u.linkHp||0)+(u.pilotLinkHp||0):0);
   if (u.trashBuff && u.trashBuff.hpBonus > 0 && G.player){
     const side = u.owner==='player' ? G.player : G.enemy;
     if (trashCount(side, u.trashBuff.trait) >= u.trashBuff.minCount) hp += u.trashBuff.hpBonus;
@@ -2814,14 +2827,14 @@ function fieldClick(uidv){
     const atk=G.player.field.find(c=>c.uid===G.selected); if(!atk){ clearSel(); return; }
     const tgt=G.enemy.field.find(c=>c.uid===uidv);
     if (tgt){
-      if (!tgt.rested && !atk.canAttackActive){ flashPrompt('You can only attack a rested (turned) enemy unit. Attack the shields instead, or a rested unit.'); return; }
+      if (!tgt.rested && !canHitActive(atk, tgt)){ flashPrompt('You can only attack a rested (turned) enemy unit. Attack the shields instead, or a rested unit.'); return; }
       declareAttack(atk, G.player);   // on-attack self-buffs (AP+/High-Maneuver) BEFORE the block step
       // 【Attack】 effects (Marida's ping, etc.) resolve at declaration so YOU pick their targets,
       // then the Block Step and battle follow.
       resolveAttackTriggers(atk, G.player, ()=>{
         if (atk.hp<=0){ clearSel(); render(); checkEnd(); return; }
         const tgt2 = G.enemy.field.find(c=>c.uid===uidv);
-        if (!tgt2 || (!tgt2.rested && !atk.canAttackActive)){ atk.rested=true; clearSel(); render(); checkEnd(); return; }
+        if (!tgt2 || (!tgt2.rested && !canHitActive(atk, tgt2))){ atk.rested=true; clearSel(); render(); checkEnd(); return; }
         const blockers = G.enemy.field.filter(b=>b.blocker && !b.rested && b.hp>0);
         if (!atk.highManeuver && blockers.length && aiWantsBlock(atk)){
           const blk = pickAiBlocker(atk, blockers);
@@ -3140,8 +3153,12 @@ function attachPilot(u, p, onDone){
   u.pilotCard = p;   // saved so both go to trash together when the unit is destroyed
   // A paired Pilot does NOT change the Unit's Lv — the Unit keeps its printed level.
   const side = u.owner==='player'?G.player:G.enemy;
-  // Pilot HP plus any 【During Pair】 "this Unit gets HP+N" both raise current HP now.
-  u.hp += p.pHp + (u.pairHp||0);
+  // The Pilot's own continuous 【During Pair】/【During Link】 self-buffs apply to the Unit it pilots
+  // (e.g. Heero Yuy: 【During Link】AP+1/HP+1).
+  const pPair = staticSelfBuff(p.effect, 'During Pair'); u.pilotPairAp = pPair.ap; u.pilotPairHp = pPair.hp;
+  const pLink = staticSelfBuff(p.effect, 'During Link'); u.pilotLinkAp = pLink.ap; u.pilotLinkHp = pLink.hp;
+  // Pilot HP plus any 【During Pair】 "this Unit gets HP+N" (Unit's and Pilot's) all raise current HP now.
+  u.hp += p.pHp + (u.pairHp||0) + (u.pilotPairHp||0);
   // Keywords the Unit only gains while paired now switch on.
   if (pairGrantsKeyword(u.effect,'blocker')) u.blocker=true;
   if (pairGrantsKeyword(u.effect,'first'))   u.firstStrike=true;
@@ -3150,7 +3167,7 @@ function attachPilot(u, p, onDone){
   let justLinked=false;
   if (linkMatches(u, p)){
     u.linked=true; u.sick=false; justLinked=true;
-    u.hp += (u.linkHp||0);
+    u.hp += (u.linkHp||0) + (u.pilotLinkHp||0);
     // keywords granted specifically by a 【During Link】 clause
     if (clauseGrantsKeyword(u.effect,'blocker','During Link')) u.blocker=true;
     if (clauseGrantsKeyword(u.effect,'first','During Link'))   u.firstStrike=true;
@@ -3415,7 +3432,7 @@ function resolveAiAttackInner(atk, done){
     if (atk.hp<=0 || atk.rested){ render(); done(); return; }
     const pl=G.player;
     // Units may only attack a RESTED enemy unit (or any unit if granted <attack active>), or the player directly.
-    const attackable = atk.canAttackActive ? pl.field.filter(u=>u.hp>0) : pl.field.filter(u=>u.rested && u.hp>0);
+    const attackable = pl.field.filter(u=>u.hp>0 && (u.rested || canHitActive(atk,u)));
     // A clean kill destroys the target and survives the counter (or strikes first).
     const bestKill = attackable.filter(u=> effAp(atk)>=u.hp && (atk.firstStrike || effAp(u)<atk.hp))
                                .sort((a,b)=>aiThreatScore(b)-aiThreatScore(a))[0] || null;
@@ -3492,7 +3509,7 @@ function cardFace(c, ctx){
     if (G.mode==='self-rest-pick' && G.pending?.cands.includes(c.uid) && !G.pending.picked.includes(c.uid)) cls.push('selectable');
   }
   if (ctx==='field-enemy'){
-    if (G.mode==='attack-target'){ const atkU=G.player.field.find(x=>x.uid===G.selected); if (c.rested || (atkU&&atkU.canAttackActive)) cls.push('target'); else cls.push('dim'); }
+    if (G.mode==='attack-target'){ const atkU=G.player.field.find(x=>x.uid===G.selected); if (c.rested || (atkU&&canHitActive(atkU,c))) cls.push('target'); else cls.push('dim'); }
     if (G.mode==='command-target' && ['damage','rest','destroy','bounce','debuff'].includes(G.pending?.action.kind) && enemyTargets(G.enemy,G.pending.action).includes(c)) cls.push('selectable');
     if (G.mode==='activate-target' && G.pending?.activate?.action.scope==='enemy' && (!G.activateCands || G.activateCands.includes(c.uid))) cls.push('selectable');
     if (G.mode==='trigger-target' && (G.pending?.scope==='enemy'||G.pending?.scope==='self-ping-enemy'||G.pending?.scope==='rest-both-enemy') && G.pending.cands.includes(c.uid)) cls.push('selectable');
