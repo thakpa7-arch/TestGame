@@ -2078,8 +2078,10 @@ function aiActivate(u){
 
 // ---- field interaction (player) ----
 function fieldClick(uidv){
-  if (G.turn!=='player' || G.over) return;
-  if (G.actionLock && G.mode==='idle') return;   // don't start a new attack mid command-lock
+  if (G.over) return;
+  // During opponent's turn, only allow clicks needed for action-step target selection.
+  if (G.turn!=='player' && G.mode!=='action-step-target') return;
+  if (G.turn==='player' && G.actionLock && G.mode==='idle') return;
 
   if (G.mode==='pilot-target'){
     const u=G.player.field.find(c=>c.uid===uidv && c.type==='unit'); if(!u){ flashPrompt('Pick one of your units.'); return; }
