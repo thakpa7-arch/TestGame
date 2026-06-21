@@ -244,7 +244,16 @@
   button.ghost { background: var(--panel-2); border: 1px solid var(--line); }
   button.gold { background: var(--gold); color: #3a2206; }
 
-  #log { position: fixed; right: 12px; bottom: 12px; width: 280px; max-height: 170px; overflow-y: auto; background: rgba(10,14,26,.92); border: 1px solid var(--line); border-radius: 8px; padding: 8px; font-size: 11px; color: var(--muted); line-height: 1.4; z-index: 50; }
+  #logPanel { position: fixed; right: 12px; bottom: 12px; width: 280px; z-index: 50; }
+  #logHeader { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    background: rgba(20,28,48,.96); border: 1px solid var(--line); border-radius: 8px 8px 0 0;
+    padding: 5px 10px; font-size: 11px; font-weight: 700; letter-spacing: .6px; color: var(--txt);
+    cursor: pointer; user-select: none; }
+  #logHeader .tgl { color: var(--cyan); font-size: 12px; }
+  #log { max-height: 170px; overflow-y: auto; background: rgba(10,14,26,.92); border: 1px solid var(--line);
+    border-top: none; border-radius: 0 0 8px 8px; padding: 8px; font-size: 11px; color: var(--muted); line-height: 1.4; }
+  #logPanel.collapsed #log { display: none; }
+  #logPanel.collapsed #logHeader { border-radius: 8px; }
   #log .entry { margin-bottom: 3px; }
   #log .me { color: var(--cyan); } #log .ai { color: #fda4af; } #log .sys { color: var(--gold); }
 
@@ -287,7 +296,9 @@
     .card { width: 80px; height: 112px; }
     .card:hover, .hand-row .card:hover { transform: none; box-shadow: none; }
     .hand-row { height: 128px; }
-    #log { width: 44vw; max-width: 190px; max-height: 110px; font-size: 9px; bottom: 6px; right: 6px; }
+    #logPanel { width: 44vw; max-width: 190px; bottom: 6px; right: 6px; }
+    #log { max-height: 110px; font-size: 9px; }
+    #logHeader { font-size: 9px; padding: 4px 8px; }
     #inspect .ins-box { flex-direction: column; align-items: center; }
     #inspect img { width: 150px; }
     #overlay { justify-content: flex-start; }
@@ -356,7 +367,10 @@
 </div>
 
 <div class="prompt" id="prompt" style="display:none"></div>
-<div id="log"></div>
+<div id="logPanel">
+  <div id="logHeader"><span>📜 BATTLE LOG</span><span class="tgl" id="logToggle">▾</span></div>
+  <div id="log"></div>
+</div>
 
 <div id="inspect"><div class="ins-box">
   <img id="insImg" alt="">
@@ -3565,6 +3579,11 @@ function closeInspect(){ el('inspect').classList.remove('show'); }
 
 // ---- buttons / keys ----
 el('endTurnBtn').addEventListener('click', ()=>{ if(G.turn==='player'&&!G.over){ clearSel(); endTurn(); } });
+// Battle-log tab: click the header to minimize/restore the log.
+el('logHeader').addEventListener('click', ()=>{
+  const p=el('logPanel'); const collapsed=p.classList.toggle('collapsed');
+  el('logToggle').textContent = collapsed ? '▸' : '▾';
+});
 el('cancelBtn').addEventListener('click', ()=>{
   if (G.mode==='action-step-target'){
     // Card already spent — auto-apply to first candidate so effect isn't lost
