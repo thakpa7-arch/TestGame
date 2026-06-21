@@ -925,6 +925,16 @@ function parseClause(raw){
   if (/(choose|may choose) 1[^.]*?\b(of your|friendly)\b[^.]*?units?\b/.test(t) && (d=t.match(/it gets ap\+(\d+)/))){
     return { kind:'buff', amount:+d[1], filter:friendlyFilter(t) };
   }
+  // "Choose 1 to N of your [trait] Units. Rest them. If you do, deal damage equal to the number of
+  //  Units rested with this effect to all enemy Units (that are Lv.X or lower)." (Gundam Throne Eins)
+  // The "rest them" here taps YOUR OWN units as a cost — must be matched before the enemy-rest rule.
+  if (/rest them/.test(t) && /damage equal to the number of units rested/.test(t)){
+    const cm=t.match(/1 to (\d+)/);
+    const fm=t.match(/(?:of your|friendly)\s+(?:other |active |rested )*([a-z0-9\s\(\)\/\-]*?)\s*units?\.\s*rest them/);
+    const tr=(fm && (fm[1].match(/\(([^)]+)\)/)||[])[1]) || null;
+    const lv=t.match(/lv\.?(\d+) or lower/);
+    return { kind:'selfRestDamage', max:cm?+cm[1]:1, trait: tr?tr.trim().toLowerCase():null, maxLv:lv?+lv[1]:99 };
+  }
   // "Choose 1 to N enemy Units. Rest them." → rest several enemies.
   if (/rest them/.test(t) && /enemy unit/.test(t)){
     const cm=t.match(/1 to (\d+)/); return { kind:'restMulti', count:cm?+cm[1]:2, filter:targetFilter(t) };
@@ -1072,6 +1082,17 @@ function applyToTarget(card, side, act, target, label){
   else if (act.kind==='stun'){ target.rested=true; target.stunned=true; log(`${label}: <b>${name}</b> rests <b>${target.name}</b> — it won't ready next turn.`,cls); }
   else if (act.kind==='grantReduce'){ target.dmgReduce=(target.dmgReduce||0)+act.amount; log(`${label}: <b>${target.name}</b> ${act.amount>=99?"can't receive battle damage":"reduces damage by "+act.amount} this turn.`,cls); }
 }
+// Rest the chosen friendly Units, then deal damage equal to the count to all enemy Units in Lv range.
+function applySelfRestDamage(card, side, act, chosen, label){
+  const cls=side===G.player?'me':'ai', foe=side===G.player?G.enemy:G.player;
+  for (const u of chosen) u.rested=true;
+  const n=chosen.length;
+  if (n) log(`${label}: <b>${card.name}</b> rests ${n} of ${side===G.player?'your':'its'} own Unit${n>1?'s':''} — ${chosen.map(u=>u.name).join(', ')}.`, cls);
+  if (n>0){
+    const targets=foe.field.filter(u=>(u.lv||0)<=act.maxLv);
+    if (targets.length){ log(`${label}: <b>${card.name}</b> deals ${n} to all enemy Units Lv.${act.maxLv} or lower.`, cls); for (const t of [...targets]) damage(t, n, foe); }
+  }
+}
 // Do the Shield-to-hand portion of a base/unit effect (shield + optional scry), without the trailing "Then,…".
 function doShieldToHand(card, side, act, label, skipScry){
   const cls=side===G.player?'me':'ai';
@@ -1159,6 +1180,13 @@ function runTrigger(card, side, act, label){
     const cands=enemyTargets(foe,act).sort((a,b)=>effAp(b)-effAp(a)).slice(0,act.count);
     for (const t of cands) t.rested=true;
     if (cands.length) log(`${label}: <b>${name}</b> rests ${cands.length} enemy Unit${cands.length>1?'s':''}.`, cls);
+  } else if (act.kind==='selfRestDamage'){
+    // Tap up to `max` of your OWN matching active Units, then deal that many to all enemy Units in range.
+    const cands=side.field.filter(u=>!u.rested && !u.token && u!==card && matchTrashTrait(u, act.trait));
+    const hasTargets=foe.field.some(u=>(u.lv||0)<=act.maxLv);
+    const n=hasTargets?Math.min(act.max, cands.length):0;
+    const chosen=cands.sort((a,b)=>effAp(a)-effAp(b)).slice(0,n);   // keep your strongest attackers active
+    applySelfRestDamage(card, side, act, chosen, label);
   } else if (act.kind==='reanimate'){
     reanimate(card, side, act);
   } else if (act.kind==='shieldToHand'){
@@ -1300,6 +1328,15 @@ function resolvePlayerTrigger(card, side, act, label, after){
   if (act.kind==='dig'){ playerDig(card, G.player, act, fin); return; }
   if (act.kind==='scryMill'){ playerScryMill(card, G.player, fin); return; }
   if (act.kind==='reanimate'){ reanimate(card, G.player, act, fin); return; }
+  // Eins-style "rest up to N of your Units, then AoE": let the player pick which of their Units to tap.
+  if (act.kind==='selfRestDamage'){
+    const cands=side.field.filter(u=>!u.rested && !u.token && u!==card && matchTrashTrait(u, act.trait));
+    if (!cands.length){ fin(); return; }
+    G.mode='self-rest-pick';
+    G.pending={ card, side, act, label, after, picked:[], cands:cands.map(u=>u.uid), max:act.max };
+    setPrompt(`${card.name}: tap up to ${act.max} of your Unit${act.max>1?'s':''} to rest, then Cancel to finish.`);
+    render(); return;
+  }
   // Compound effects (mill/exile/gate/self-damage) whose follow-up may target an enemy:
   // do the non-interactive part here, then resolve the inner THROUGH this resolver so the
   // player chooses the target the card text promises ("choose 1 enemy Unit").
@@ -2079,6 +2116,15 @@ function fieldClick(uidv){
     if (p.after) p.after(); else { render(); checkEnd(); }
     return;
   }
+  if (G.mode==='self-rest-pick'){
+    const p=G.pending;
+    if (!p.cands.includes(uidv)){ flashPrompt('Tap a highlighted Unit of yours.'); return; }
+    if (p.picked.includes(uidv)){ flashPrompt('Already chosen.'); return; }
+    p.picked.push(uidv);
+    if (p.picked.length>=p.max || p.picked.length>=p.cands.length){ finishSelfRest(); return; }
+    setPrompt(`${p.card.name}: rested ${p.picked.length}/${p.max}. Tap another or Cancel to finish.`);
+    render(); return;
+  }
   if (G.mode==='trigger-target'){
     const p=G.pending;
     if (!p.cands.includes(uidv)){ flashPrompt('Pick a highlighted unit.'); return; }
@@ -2420,6 +2466,14 @@ function runTriggerSeq(list, side, done){
 }
 
 function clearSel(){ G.selected=null; G.mode='idle'; G.pending=null; G.pendingHandIdx=-1; defaultPrompt(); }
+// Finish an Eins-style self-rest selection (from a unit tap reaching the max, or Cancel to stop early).
+function finishSelfRest(){
+  const p=G.pending; if (!p) return;
+  const chosen=p.picked.map(uid=>G.player.field.find(u=>u.uid===uid)).filter(Boolean);
+  G.mode='idle'; G.pending=null;
+  applySelfRestDamage(p.card, p.side, p.act, chosen, p.label);
+  if (p.after) p.after(); else { clearSel(); render(); checkEnd(); }
+}
 
 function checkEnd(){ /* direct hits handle the actual win in attackDirect / aiDirect */ }
 
@@ -2647,6 +2701,7 @@ function cardFace(c, ctx){
     if (G.mode==='command-target' && (G.pending?.action.kind==='heal'||G.pending?.action.kind==='buff')) cls.push('selectable');
     if (G.mode==='activate-target' && G.pending?.activate?.action.scope==='friendly') cls.push('selectable');
     if (G.mode==='trigger-target' && (G.pending?.scope==='friendly'||G.pending?.scope==='self-ping') && G.pending.cands.includes(c.uid)) cls.push('selectable');
+    if (G.mode==='self-rest-pick' && G.pending?.cands.includes(c.uid) && !G.pending.picked.includes(c.uid)) cls.push('selectable');
   }
   if (ctx==='field-enemy'){
     if (G.mode==='attack-target'){ const atkU=G.player.field.find(x=>x.uid===G.selected); if (c.rested || (atkU&&atkU.canAttackActive)) cls.push('target'); else cls.push('dim'); }
@@ -2841,6 +2896,7 @@ el('cancelBtn').addEventListener('click', ()=>{
     if (p.after) p.after(); else { render(); checkEnd(); }
     return;
   }
+  if (G.mode==='self-rest-pick'){ finishSelfRest(); return; }   // Cancel = "done choosing"
   clearSel(); render();
 });
 el('rulesBtn').addEventListener('click', ()=>{
@@ -2870,7 +2926,8 @@ document.addEventListener('keydown', e=>{
       const t=G.enemy.field.find(c=>p.cands.includes(c.uid))||null;
       applyCommand(p.cmd, G.player, t);
       if (p.after) p.after(); else { render(); checkEnd(); }
-    } else { clearSel(); render(); }
+    } else if (G.mode==='self-rest-pick'){ finishSelfRest(); }
+    else { clearSel(); render(); }
   }
   if(e.key==='Enter'&&G.turn==='player'){ clearSel(); endTurn(); }
 });
