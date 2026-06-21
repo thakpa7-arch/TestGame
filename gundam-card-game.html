@@ -181,6 +181,9 @@
   .card .ov-lv { position: absolute; top: 3px; right: 3px; min-width: 18px; height: 18px; padding: 0 3px; border-radius: 9px; background: rgba(58,40,6,.92); color: var(--gold); font-weight: 800; font-size: 10px; display: flex; align-items: center; justify-content: center; }
   .card .ov-stat { position: absolute; bottom: 4px; padding: 0 4px; height: 19px; border-radius: 5px; font-size: 12px; font-weight: 800; display: flex; align-items: center; background: rgba(0,0,0,.82); box-shadow: 0 0 0 1px rgba(255,255,255,.12); }
   .card .ov-ap { left: 3px; color: #fca5a5; }
+  /* Boosted attack (team aura / buff) glows gold so increased AP is obvious at a glance. */
+  .card .ov-ap.buffed { color: #fff7d6; background: rgba(120,82,0,.95); box-shadow: 0 0 8px rgba(251,191,36,.9); }
+  .card .ov-ap.weakened { color: #cbd5e1; background: rgba(40,52,74,.95); box-shadow: 0 0 0 1px rgba(148,163,184,.6); }
   .card .ov-hp { right: 3px; color: #86efac; }
   /* Damaged HP is highlighted so persistent battle damage is obvious at a glance. */
   .card .ov-hp.dmg  { color: #fde047; background: rgba(92,52,0,.92); box-shadow: 0 0 0 1px rgba(253,224,71,.7); }
@@ -3007,7 +3010,13 @@ function cardFace(c, ctx){
   if (isBase || isUnit){
     const mx = isBase ? c.maxHp : effMaxHp(c), cur = c.hp;
     const dCls = cur<mx ? (cur/Math.max(1,mx)<=0.4 || cur<=1 ? 'crit' : 'dmg') : '';
-    if (isUnit) overlays += `<div class="ov-stat ov-ap">⚔${c.ap}</div>`;
+    if (isUnit){
+      // Reference = the unit's inherent AP given its pairing/link state. Any extra from a team
+      // aura, temp buff, or trash buff (or a debuff) shows gold (boosted) / grey (weakened).
+      const apRef = c.baseAp + (c.pilot?c.pilot.pAp:0) + (c.pilot?(c.pairAp||0):0) + (c.linked?(c.linkAp||0):0);
+      const apCls = c.ap>apRef ? 'buffed' : (c.ap<apRef ? 'weakened' : '');
+      overlays += `<div class="ov-stat ov-ap ${apCls}">⚔${c.ap}</div>`;
+    }
     overlays += `<div class="ov-stat ov-hp ${dCls}">❤${cur}${cur<mx?'/'+mx:''}</div>`;
     if (cur<mx) overlays += `<div class="hp-bar"><i class="${dCls}" style="width:${Math.max(0,Math.min(100,cur/Math.max(1,mx)*100))}%"></i></div>`;
     if (isUnit && c.pilot){
@@ -3050,6 +3059,13 @@ function applyVisualFx(){
 }
 
 function render(){
+  // Refresh cached AP/HP for every Unit so turn-conditional team auras (e.g. Gundam's
+  // "During your turn, all your Units get AP+1") and mid-turn pairings update immediately
+  // on both sides — combat and the display both read the cached values.
+  for (const s of [G.player, G.enemy]){
+    if (!s) continue;
+    for (const u of s.field){ if (u.hp>0){ u.ap = effAp(u); u.maxHp = effMaxHp(u); } }
+  }
   el('poolCount').textContent = GUNDAM_CARDS.length;
   el('turnInfo').innerHTML = `Turn <b>${G.turnNumber}</b> · ${G.turn==='player'?'<b>Your</b> move':'<b>'+who(G.enemy)+'</b> acting'}`;
   el('enemyShieldZone').innerHTML = shieldZoneHTML(G.enemy);
