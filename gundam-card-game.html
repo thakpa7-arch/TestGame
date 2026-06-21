@@ -1481,9 +1481,10 @@ function resolvePlayerTrigger(card, side, act, label, after){
   const enemyKinds = (act.kind==='damage' && act.scope!=='all-enemy' && act.scope!=='all-both') || ['rest','bounce','destroy','debuff','stun'].includes(act.kind);
   const allyKinds  = act.kind==='buff' || act.kind==='heal' || act.kind==='grantKw' || act.kind==='grantReduce' || (act.kind==='grantAttackActive' && act.scope==='friendly' && !act.all);
   if (enemyKinds){
-    // Enemy-targeting effects: ask the player to choose when there's a real choice.
+    // Enemy-targeting effects: always prompt when there's at least 1 valid target so the player
+    // sees the choice (even with exactly 1 candidate they confirm by clicking it).
     const cands = enemyTargets(G.enemy, act);
-    if (cands.length>=2){
+    if (cands.length>=1){
       G.mode='trigger-target';
       G.pending={ card, side, act, label, after, scope:'enemy', cands: cands.map(c=>c.uid) };
       setPrompt(`${card.name}: tap an enemy unit to target.`);
@@ -3082,7 +3083,18 @@ function shieldZoneHTML(side){
   }
   return `<div class="sz-label">🛡 ${n}/${SHIELD_MAX}</div><div class="sz-grid">${cards}</div>`;
 }
-function resHTML(side){ let s=''; const total=side.resMax+side.ex; for(let i=0;i<total;i++){ const isEx=i>=side.resMax; s+=`<div class="res ${isEx?'ex':''} ${i<side.resAvail?'':'used'}"></div>`; } return s; }
+function resHTML(side){
+  let s='';
+  const spent = Math.max(0, side.resMax + side.ex - side.resAvail);
+  const normalUsed = Math.min(side.resMax, spent);
+  const exUsed = Math.max(0, spent - side.resMax);
+  for(let i=0;i<side.resMax+side.ex;i++){
+    const isEx = i >= side.resMax;
+    const active = isEx ? (i - side.resMax) < (side.ex - exUsed) : i < (side.resMax - normalUsed);
+    s+=`<div class="res ${isEx?'ex':''} ${active?'':'used'}"></div>`;
+  }
+  return s;
+}
 
 function bind(){
   el('hand').querySelectorAll('.card').forEach(n=> n.onclick=()=>{
