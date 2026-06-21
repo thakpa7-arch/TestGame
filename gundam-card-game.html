@@ -209,7 +209,7 @@
   #cardFlash .cf-name { font-size: 13px; font-weight: 800; margin-top: 6px; }
   #cardFlash .cf-eff { font-size: 9px; color: var(--muted); margin-top: 4px; line-height: 1.25; max-height: 44px; overflow: hidden; }
   /* Reveal of cards drawn by an effect / the turn draw — each drawn card pops into a center row. */
-  #drawReveal { position: fixed; top: 14%; left: 50%; transform: translateX(-50%); z-index: 121; display: flex; gap: 8px; pointer-events: none; }
+  #drawReveal { position: fixed; bottom: 20%; left: 50%; transform: translateX(-50%); z-index: 121; display: flex; gap: 8px; pointer-events: none; }
   #drawReveal .dr-card { width: 88px; height: 124px; border-radius: 8px; border: 2px solid var(--cyan); box-shadow: 0 0 18px rgba(34,211,238,.55); background-size: cover; background-position: center top; background-color: #0c1426; position: relative; animation: drPop .3s cubic-bezier(.2,1.4,.5,1) both; }
   @keyframes drPop { 0% { transform: translateY(20px) scale(.55); opacity: 0; } 100% { transform: translateY(0) scale(1); opacity: 1; } }
   #drawReveal .dr-tag { position: absolute; top: -9px; left: 50%; transform: translateX(-50%); background: var(--cyan); color: #04202a; font-size: 9px; font-weight: 800; padding: 1px 6px; border-radius: 6px; letter-spacing: 1px; white-space: nowrap; }
@@ -1391,7 +1391,7 @@ function runTrigger(card, side, act, label){
     const pc=card.pilotCard;
     if (pc){
       const ti=side.trash.indexOf(pc); if(ti>=0) side.trash.splice(ti,1);            // rescue from trash (Destroyed)…
-      if (card.pilot && side.field.includes(card)){ card.hp-=(pc.pHp||0); card.pilot=null; card.pilotCard=null; card.linked=false; card.ap=effAp(card); card.maxHp=effMaxHp(card); }  // …or detach from a living Unit
+      if (card.pilot && side.field.includes(card)){ card.hp-=(pc.pHp||0); card.pilot=null; card.pilotCard=null; card.linked=false; if (card.baseLv!=null) card.lv=card.baseLv; card.ap=effAp(card); card.maxHp=effMaxHp(card); }  // …or detach from a living Unit
       if (side.hand.length<HAND_MAX){ side.hand.push(pc); log(`${label}: <b>${name}</b> returns Pilot <b>${pc.name}</b> to hand.`, cls); }
     }
   } else if (act.kind==='setActive'){
@@ -1652,7 +1652,7 @@ function applySelfPingChosen(card, side, act, ftarget, etarget){
 function resetUnit(u){
   if (u.token) return;
   u.pilot=null; u.pilotCard=null; u.linked=false; u.tempAp=0; u.rested=false; u.sick=true; u.activatedThisTurn=false;
-  u.ap=u.baseAp; u.hp=u.baseHp; u.maxHp=u.baseHp;
+  u.ap=u.baseAp; u.hp=u.baseHp; u.maxHp=u.baseHp; if (u.baseLv!=null) u.lv=u.baseLv;
   u.blocker=innateKeyword(u.effect,'blocker'); u.firstStrike=innateKeyword(u.effect,'first'); u.highManeuver=innateKeyword(u.effect,'high');
   u.breach=breachAmount(u.effect); u.suppression=innateKeyword(u.effect,'suppression'); u.support=supportAmount(u.effect);
 }
@@ -1697,7 +1697,7 @@ function makeCard(def, owner){
               cost: def.cost, lv: def.lv, trait: def.trait, effect: def.effect, img: def.img };
   c.burst = parseBurst(def.effect);
   if (def.type === 'unit' || def.type === 'base'){
-    c.baseAp = def.ap; c.baseHp = def.hp; c.ap = def.ap; c.hp = def.hp; c.maxHp = def.hp;
+    c.baseAp = def.ap; c.baseHp = def.hp; c.ap = def.ap; c.hp = def.hp; c.maxHp = def.hp; c.baseLv = def.lv;
     c.rested = false; c.sick = true; c.tempAp = 0; c.pilot = null; c.linked = false;
     c.link = parseLink(def.link);
     c.blitz = hasKeyword(def.effect, 'blitz');
@@ -2888,7 +2888,8 @@ function damage(u, dmg, side, kind){
 function attachPilot(u, p, onDone){
   u.pilot={ name:p.name, pAp:p.pAp, pHp:p.pHp };
   u.pilotCard = p;   // saved so both go to trash together when the unit is destroyed
-  u.lv=Math.max(u.lv, p.lv);
+  // A paired Pilot's Lv adds to the Unit's Lv (raising it for "Lv X or lower" effects, etc.).
+  u.lv = (u.baseLv!=null?u.baseLv:u.lv) + (p.lv||0);
   const side = u.owner==='player'?G.player:G.enemy;
   // Pilot HP plus any 【During Pair】 "this Unit gets HP+N" both raise current HP now.
   u.hp += p.pHp + (u.pairHp||0);
