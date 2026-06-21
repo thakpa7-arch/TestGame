@@ -962,6 +962,15 @@ function parseClause(raw){
     const lv=t.match(/lv\.?(\d+) or lower/);
     return { kind:'selfRestDamage', max:cm?+cm[1]:1, trait: tr?tr.trim().toLowerCase():null, maxLv:lv?+lv[1]:99 };
   }
+  // "Choose 1 of your [trait] Unit AND 1 enemy Unit (Lv.X or lower). Rest them." → rest one of each.
+  // (Gun EZ) Has both "rest them" and "enemy unit", so must precede the enemy-only rule below; the
+  // friendly side may be a token, so the player must be offered the friendly choice (incl. Parts).
+  if (/rest them/.test(t) && /(of your|friendly)[^.]*?\band 1 enemy unit\b/.test(t)){
+    const fPart=t.split(/\band 1 enemy unit\b/)[0];
+    const ePart='enemy unit'+(t.split(/\band 1 enemy unit\b/)[1]||'');
+    const eLv=(ePart.match(/lv\.?(\d+) or lower/)||[])[1];
+    return { kind:'restBoth', filter:friendlyFilter(fPart), enemyFilter:{ maxLv: eLv?+eLv:99 } };
+  }
   // "Choose 1 to N enemy Units. Rest them." → rest several enemies.
   if (/rest them/.test(t) && /enemy unit/.test(t)){
     const cm=t.match(/1 to (\d+)/); return { kind:'restMulti', count:cm?+cm[1]:2, filter:targetFilter(t) };
@@ -1133,6 +1142,21 @@ function applySelfRestDamage(card, side, act, chosen, label){
     if (targets.length){ log(`${label}: <b>${card.name}</b> deals ${n} to all enemy Units Lv.${act.maxLv} or lower.`, cls); for (const t of [...targets]) damage(t, n, foe); }
   }
 }
+// Candidate friendly Units for a restBoth effect: active (un-rested), trait-matching, INCLUDING
+// tokens (a Parts token is a real League Militaire Unit and must be eligible).
+function restBothCands(side, act){
+  return friendlyTargets(side, { filter: act.filter }).filter(u=>!u.rested);
+}
+// AI auto-pick: rest its least useful friendly (lowest AP) of the eligible ones.
+function restBothFriendly(side, act){
+  return restBothCands(side, act).sort((a,b)=>effAp(a)-effAp(b))[0] || null;
+}
+// Rest the chosen friendly and the chosen enemy (Gun EZ). Either may be null if none was legal.
+function applyRestBoth(card, side, act, friendly, enemy, label){
+  const cls=side===G.player?'me':'ai';
+  if (friendly){ friendly.rested=true; log(`${label}: <b>${card.name}</b> rests ${side===G.player?'your':'its'} <b>${friendly.name}</b>.`, cls); }
+  if (enemy){ enemy.rested=true; log(`${label}: <b>${card.name}</b> rests enemy <b>${enemy.name}</b>.`, cls); }
+}
 // Do the Shield-to-hand portion of a base/unit effect (shield + optional scry), without the trailing "Then,…".
 function doShieldToHand(card, side, act, label, skipScry){
   const cls=side===G.player?'me':'ai';
@@ -1220,6 +1244,10 @@ function runTrigger(card, side, act, label){
     const cands=enemyTargets(foe,act).sort((a,b)=>effAp(b)-effAp(a)).slice(0,act.count);
     for (const t of cands) t.rested=true;
     if (cands.length) log(`${label}: <b>${name}</b> rests ${cands.length} enemy Unit${cands.length>1?'s':''}.`, cls);
+  } else if (act.kind==='restBoth'){
+    // AI auto: rest a low-value friendly of its own and the strongest legal enemy.
+    const f=restBothFriendly(side, act), e=rankTarget(enemyTargets(foe,{kind:'rest',filter:act.enemyFilter}), {kind:'rest'});
+    applyRestBoth(card, side, act, f, e, label);
   } else if (act.kind==='selfRestDamage'){
     // Tap up to `max` of your OWN matching active Units, then deal that many to all enemy Units in range.
     const cands=side.field.filter(u=>!u.rested && !u.token && u!==card && matchTrashTrait(u, act.trait));
@@ -1379,6 +1407,27 @@ function resolvePlayerTrigger(card, side, act, label, after){
     G.pending={ card, side, act, label, after, picked:[], cands:cands.map(u=>u.uid), max:act.max };
     setPrompt(`${card.name}: tap up to ${act.max} of your Unit${act.max>1?'s':''} to rest, then Cancel to finish.`);
     render(); return;
+  }
+  // Gun EZ: rest 1 of your matching (active) Units, then 1 enemy Unit — both chosen by the player.
+  if (act.kind==='restBoth'){
+    const fcands=restBothCands(side, act);
+    const proceedEnemy=(chosenFriendly)=>{
+      const ecands=enemyTargets(G.enemy, { kind:'rest', filter:act.enemyFilter });
+      if (ecands.length>=2){
+        G.mode='trigger-target';
+        G.pending={ card, side, act, label, after, scope:'rest-both-enemy', fuid: chosenFriendly?chosenFriendly.uid:null, cands: ecands.map(c=>c.uid) };
+        setPrompt(`${card.name}: now tap an ENEMY Unit to rest.`);
+        render(); return;
+      }
+      applyRestBoth(card, side, act, chosenFriendly, ecands[0]||null, label); fin(); return;
+    };
+    if (fcands.length>=2){
+      G.mode='trigger-target';
+      G.pending={ card, side, act, label, after, scope:'rest-both-friendly', cands: fcands.map(c=>c.uid) };
+      setPrompt(`${card.name}: tap one of YOUR Units to rest.`);
+      render(); return;
+    }
+    proceedEnemy(fcands[0]||null); return;
   }
   // Compound effects (mill/exile/gate/self-damage) whose follow-up may target an enemy:
   // do the non-interactive part here, then resolve the inner THROUGH this resolver so the
@@ -1598,28 +1647,11 @@ function tokenArt(name){
   }
   return TOKEN_ART[name] || '';
 }
-// Official token-card art. Token cards have their own collector numbers on the official site:
-// starter-deck Gunpla tokens use a TP-0xx prefix, booster tokens use T0xx. A few numbers are
-// best-guesses (the official image host can't be verified here) — cardFace falls back to the
-// borrowed same-name card art on load error, so a wrong number degrades gracefully.
-const TOKEN_IMG_ID = {
-  'Gundam':'TP-001', 'Guncannon':'TP-002', 'Guntank':'TP-003', 'Tallgeese':'TP-004', 'Leo':'TP-005',
-  'Aile Strike Gundam':'TP-007', 'Sword Strike Gundam':'TP-008', "Char's Zaku Ⅱ":'TP-009', 'Zaku Ⅱ':'TP-010',
-  'Fatum-00':'T011', 'Daughtress':'T012', 'Hy-Gogg':'T013', 'Ad Balloon':'T014',
-  'CGS Mobile Worker':'T015', 'Graze Custom':'T016', 'Gundam Barbatos 4th Form':'T017',
-  'GQuuuuuuX (Omega Psycommu)':'T019', 'GFreD':'T020',
-  'Parts':'T021', 'Wire-Guided Arm':'T022', 'Zeong (Head)':'T023', 'Alvaaron':'T024'
-};
-function tokenOfficialImg(name){
-  const id=TOKEN_IMG_ID[name];
-  return id ? `https://images.weserv.nl/?url=www.gundam-gcg.com/en/images/cards/card/${id}.webp` : '';
-}
 function makeToken(spec, owner){
   const r=(spec.restrict||'').toLowerCase();
   const kw=[]; if(spec.blocker)kw.push('<Blocker>'); if(spec.first)kw.push('<First Strike>'); if(spec.high)kw.push('<High-Maneuver>');
-  const official=tokenOfficialImg(spec.name), borrow=tokenArt(spec.name);
   return { uid:uid++, owner, name:spec.name||'Mobile Suit Token', type:'unit', token:true,
-    color:'-', cost:0, lv:0, trait:spec.trait||'', img:official||borrow, borrowImg:(official?borrow:''), officialImg:!!official,
+    color:'-', cost:0, lv:0, trait:spec.trait||'', img:tokenArt(spec.name),
     effect:`(Token — ${spec.trait?spec.trait+' · ':''}${spec.ap} AP / ${spec.hp} HP${kw.length?' · '+kw.join(' '):''}.)`,
     baseAp:spec.ap, baseHp:spec.hp, ap:spec.ap, hp:spec.hp, maxHp:spec.hp,
     rested:!!spec.rested, sick:true, tempAp:0, pilot:null, link:[], linked:false,
@@ -2190,9 +2222,20 @@ function fieldClick(uidv){
   if (G.mode==='trigger-target'){
     const p=G.pending;
     if (!p.cands.includes(uidv)){ flashPrompt('Pick a highlighted unit.'); return; }
-    const enemyScope = p.scope==='enemy' || p.scope==='self-ping-enemy';
+    const enemyScope = p.scope==='enemy' || p.scope==='self-ping-enemy' || p.scope==='rest-both-enemy';
     const t = (enemyScope?G.enemy:G.player).field.find(c=>c.uid===uidv); if(!t) return;
     const done=()=>{ if (p.after) p.after(); else { clearSel(); render(); checkEnd(); } };
+    if (p.scope==='rest-both-friendly'){
+      // chose the friendly to rest; now pick the enemy (or auto if 0–1 legal)
+      const ec=enemyTargets(G.enemy, { kind:'rest', filter:p.act.enemyFilter });
+      if (ec.length>=2){ G.pending={ card:p.card, side:p.side, act:p.act, label:p.label, after:p.after, scope:'rest-both-enemy', fuid:t.uid, cands:ec.map(c=>c.uid) };
+        setPrompt(`${p.card.name}: now tap an ENEMY Unit to rest.`); render(); return; }
+      G.mode='idle'; G.pending=null; applyRestBoth(p.card, p.side, p.act, t, ec[0]||null, p.label); done(); return;
+    }
+    if (p.scope==='rest-both-enemy'){
+      const ft=G.player.field.find(c=>c.uid===p.fuid)||null;
+      G.mode='idle'; G.pending=null; applyRestBoth(p.card, p.side, p.act, ft, t, p.label); done(); return;
+    }
     if (p.scope==='self-ping'){
       // chose the friendly Unit to ping; damageBoth then needs an enemy choice
       if (p.act.kind==='damageBoth'){
@@ -2751,12 +2794,6 @@ function promptPlayerBlock(atk, blockers, target, cb){
 }
 
 // ---- rendering ----
-// A token's official art failed to load — swap the card background to borrowed art, or clear it.
-function tokenImgFail(img){
-  const card=img.closest('.card');
-  if (card){ const fb=img.getAttribute('data-fb'); card.style.backgroundImage = fb ? `url('${fb}')` : 'none'; }
-  img.remove();
-}
 function cardFace(c, ctx){
   const cls=['card','c-'+(c.color||'-')];
   const isUnit = c.type==='unit'||c.type==='base';
@@ -2768,24 +2805,20 @@ function cardFace(c, ctx){
     if (G.mode==='pilot-target' && c.type==='unit') cls.push('selectable');
     if (G.mode==='command-target' && (G.pending?.action.kind==='heal'||G.pending?.action.kind==='buff')) cls.push('selectable');
     if (G.mode==='activate-target' && G.pending?.activate?.action.scope==='friendly') cls.push('selectable');
-    if (G.mode==='trigger-target' && (G.pending?.scope==='friendly'||G.pending?.scope==='self-ping') && G.pending.cands.includes(c.uid)) cls.push('selectable');
+    if (G.mode==='trigger-target' && (G.pending?.scope==='friendly'||G.pending?.scope==='self-ping'||G.pending?.scope==='rest-both-friendly') && G.pending.cands.includes(c.uid)) cls.push('selectable');
     if (G.mode==='self-rest-pick' && G.pending?.cands.includes(c.uid) && !G.pending.picked.includes(c.uid)) cls.push('selectable');
   }
   if (ctx==='field-enemy'){
     if (G.mode==='attack-target'){ const atkU=G.player.field.find(x=>x.uid===G.selected); if (c.rested || (atkU&&atkU.canAttackActive)) cls.push('target'); else cls.push('dim'); }
     if (G.mode==='command-target' && ['damage','rest','destroy','bounce','debuff'].includes(G.pending?.action.kind) && enemyTargets(G.enemy,G.pending.action).includes(c)) cls.push('selectable');
     if (G.mode==='activate-target' && G.pending?.activate?.action.scope==='enemy') cls.push('selectable');
-    if (G.mode==='trigger-target' && (G.pending?.scope==='enemy'||G.pending?.scope==='self-ping-enemy') && G.pending.cands.includes(c.uid)) cls.push('selectable');
+    if (G.mode==='trigger-target' && (G.pending?.scope==='enemy'||G.pending?.scope==='self-ping-enemy'||G.pending?.scope==='rest-both-enemy') && G.pending.cands.includes(c.uid)) cls.push('selectable');
     if (G.mode==='action-step-target' && G.pending?.cands.includes(c.uid)) cls.push('selectable');
   }
   const isBase = c.type==='base';
   if (isBase) cls.push('isbase');
   const style = c.img ? `background-image:url('${c.img}')` : '';
   let overlays = `<div class="ov-cost">${c.cost}</div>`;
-  // Token using a (possibly best-guess) official image: probe it; on 404 fall back to borrowed art,
-  // or clear the background so the name/effect fallback shows instead of a broken image.
-  if (c.token && c.officialImg)
-    overlays += `<img src="${c.img}" alt="" data-fb="${c.borrowImg||''}" style="display:none" onerror="tokenImgFail(this)">`;
   if (!c.token && (c.lv||0)>0) overlays += `<div class="ov-lv">L${c.lv}</div>`;
   // Combat preview: on an attackable enemy Unit, show how the trade resolves for your attacker.
   if (ctx==='field-enemy' && G.mode==='attack-target' && c.rested && c.hp>0){
