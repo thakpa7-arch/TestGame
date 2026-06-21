@@ -252,8 +252,10 @@
   #logHeader .tgl { color: var(--cyan); font-size: 12px; }
   #log { max-height: 170px; overflow-y: auto; background: rgba(10,14,26,.92); border: 1px solid var(--line);
     border-top: none; border-radius: 0 0 8px 8px; padding: 8px; font-size: 11px; color: var(--muted); line-height: 1.4; }
+  #logPanel.collapsed { width: auto; }
   #logPanel.collapsed #log { display: none; }
-  #logPanel.collapsed #logHeader { border-radius: 8px; }
+  #logPanel.collapsed #logHeader { border-radius: 8px; gap: 5px; padding: 5px 9px; }
+  #logPanel.collapsed .lh-txt { display: none; }
   #log .entry { margin-bottom: 3px; }
   #log .me { color: var(--cyan); } #log .ai { color: #fda4af; } #log .sys { color: var(--gold); }
 
@@ -368,7 +370,7 @@
 
 <div class="prompt" id="prompt" style="display:none"></div>
 <div id="logPanel">
-  <div id="logHeader"><span>📜 BATTLE LOG</span><span class="tgl" id="logToggle">▾</span></div>
+  <div id="logHeader"><span>📜<span class="lh-txt"> BATTLE LOG</span></span><span class="tgl" id="logToggle">▾</span></div>
   <div id="log"></div>
 </div>
 
