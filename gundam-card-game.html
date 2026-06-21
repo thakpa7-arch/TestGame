@@ -2359,8 +2359,14 @@ function beginTurn(turn){
 
 function endTurn(){
   if (G.over) return;
+  // 5) End Phase — Action Step first: on your own turn, use Action abilities/commands before Repair.
+  if (me()===G.player){ offerPlayerActionStep(null, finishEndPhase); return; }
+  finishEndPhase();
+}
+function finishEndPhase(){
+  if (G.over) return;
   const s=me();
-  // 5) End Phase — Repair Step (regen), then Hand Step (discard down to the hand limit).
+  // Repair Step (regen), then Hand Step (discard down to the hand limit).
   G.phase='end';
   for (const u of s.field){ if (u.repair>0 && u.hp>0 && u.hp<effMaxHp(u)){ u.hp=Math.min(effMaxHp(u), u.hp+u.repair); } u.tempAp=0; u.battleAp=0; u.canAttackActive=false; u.dmgReduce=0; resetTurnKeywords(u); u.ap=effAp(u); }
   while (s.hand.length>HAND_MAX){
@@ -2855,8 +2861,12 @@ function strikePlayer(atk, defSide, done){
   if (defSide.base){
     const b=defSide.base; b.hp-=atk.ap;
     log(`<b>${atk.name}</b> hits ${who(defSide)}'s <b>${b.name}</b> base for ${atk.ap}.`, side);
-    if (b.hp<=0){ defSide.base=null; fx('die', b.uid); log(`${who(defSide)}'s ${b.name} base is destroyed.`, side); sendToTrash(b, defSide); }
-    else fx('hit', b.uid);
+    if (b.hp<=0){
+      defSide.base=null; fx('die', b.uid); log(`${who(defSide)}'s ${b.name} base is destroyed.`, side); sendToTrash(b, defSide);
+      // The base is a shield-area card, so destroying it triggers "on shield break" effects (Sinanju).
+      resolveShieldBreakTrigger(atk, defSide, done); return;
+    }
+    fx('hit', b.uid);
     done(); return;
   }
   if (defSide.shields.length>0){
@@ -3381,12 +3391,14 @@ function offerPlayerActionStep(attacker, cb){
   if (G.over){ cb(); return; }
   const opts=collectPlayerActions(attacker);
   if (!opts.length){ cb(); return; }
-  el('blockMsg').innerHTML = `<b>Action Step</b> — ${who(G.enemy)}'s <b>${attacker.name}</b> (AP ${attacker.ap}) is attacking. Use an Action ability/command, or Pass.`;
+  el('blockMsg').innerHTML = attacker
+    ? `<b>Action Step</b> — ${who(G.enemy)}'s <b>${attacker.name}</b> (AP ${attacker.ap}) is attacking. Use an Action ability/command, or Pass.`
+    : `<b>End Phase — Action Step.</b> Use an Action ability/command before the Repair Step, or Pass.`;
   const wrap=el('blockBtns'); wrap.innerHTML='';
   opts.forEach(o=>{ const b=document.createElement('button'); b.innerHTML=`${o.label}${o.sub?` <span style="opacity:.6;font-size:10px">${o.sub}</span>`:''}`;
     b.onclick=()=>{ el('blockModal').classList.remove('show'); o.run(()=>{ render(); setTimeout(()=>offerPlayerActionStep(attacker, cb), 80); }); render(); };
     wrap.appendChild(b); });
-  const pass=document.createElement('button'); pass.className='ghost'; pass.textContent='Pass (continue battle)';
+  const pass=document.createElement('button'); pass.className='ghost'; pass.textContent = attacker ? 'Pass (continue battle)' : 'Pass (continue to Repair)';
   pass.onclick=()=>{ el('blockModal').classList.remove('show'); cb(); };
   wrap.appendChild(pass);
   el('blockModal').classList.add('show');
