@@ -434,8 +434,10 @@ function innateKeyword(effect, kw){
 }
 // A keyword the Unit gains specifically while a Pilot is paired (the case we can model).
 function pairGrantsKeyword(effect, kw){
-  const p = plain(effect);
-  return /pair/i.test(p) && new RegExp('gains?\\s+<\\s*'+kw, 'i').test(p);
+  // Only a continuous 【During Pair】 "...gains <kw>" grants the keyword while paired. A one-time
+  // 【When Paired】/【When Linked】 trigger ("...gains <kw> during this turn") elsewhere in the text
+  // must NOT leak a permanent grant onto every pairing (and "repair" must not match "pair").
+  return clauseGrantsKeyword(effect, kw, 'During Pair');
 }
 function repairAmount(effect){ const m = plain(effect).match(/<\s*repair\s*(\d+)/i); return m?+m[1]:0; }
 function breachAmount(effect){ const m = plain(effect).match(/<\s*breach\s*(\d+)/i); return m?+m[1]:0; }
@@ -455,6 +457,21 @@ function staticSelfBuff(effect, kw){
 function clauseGrantsKeyword(effect, kw, clauseKw){
   const m = plain(effect).match(new RegExp('【\\s*'+clauseKw+'[^】]*】\\s*([^【]*)','i'));
   return !!m && new RegExp('gains?\\s+<\\s*'+kw, 'i').test(m[1]);
+}
+// A continuous team aura printed under 【During Pair】/【During Link】: "(During your turn,)
+// all your Units get AP+N (and HP+N)." (e.g. Gundam + Amuro). Applies while the source Unit
+// meets its pair/link requirement (and, if stated, only on the controller's turn).
+function parseTeamAura(effect){
+  const pl = plain(effect);
+  const m = pl.match(/【\s*During (Pair|Link)[^】]*】\s*([^【]*)/i);
+  if (!m) return null;
+  const seg = m[2].toLowerCase();
+  if (!/all your units?\b[^.]*\bget\b/.test(seg)) return null;
+  const ap=(seg.match(/ap\+(\d+)/)||[])[1], hp=(seg.match(/hp\+(\d+)/)||[])[1];
+  if (!ap && !hp) return null;
+  return { ap:+(ap||0), hp:+(hp||0),
+           requirePair:/pair/i.test(m[1]), requireLink:/link/i.test(m[1]),
+           yourTurnOnly:/during your turn/.test(seg) };
 }
 // Parse the effect half of an activated ability into an engine action.
 function parseActivateEffect(t){
@@ -1588,6 +1605,8 @@ function makeCard(def, owner){
     // continuous self AP/HP buffs that switch on while paired / linked
     const pb = staticSelfBuff(def.effect, 'During Pair'); c.pairAp = pb.ap; c.pairHp = pb.hp;
     const lb = staticSelfBuff(def.effect, 'During Link'); c.linkAp = lb.ap; c.linkHp = lb.hp;
+    // continuous team aura ("all your Units get AP+N") while paired/linked (e.g. Gundam + Amuro)
+    c.teamAura = parseTeamAura(def.effect);
     // player-activated ability (cost：effect); used at most once per turn
     c.activate = parseActivate(def.effect); c.activatedThisTurn = false;
     // trash-conditional effects
@@ -1831,12 +1850,28 @@ function flashCard(card, tag){
 function defaultPrompt(){ setPrompt(G.turn==='player' ? 'Your turn — deploy, attack, then End Turn.' : ''); }
 
 // ---- effective stats ----
+// Is a Unit's team aura ("all your Units get AP+N") currently switched on?
+function teamAuraActive(src){
+  const a=src.teamAura; if(!a || src.hp<=0) return false;
+  if (a.requirePair && !src.pilot) return false;
+  if (a.requireLink && !src.linked) return false;
+  if (a.yourTurnOnly && G.turn !== src.owner) return false;
+  return true;
+}
+// Sum the AP (or HP) bonus that a Unit receives from friendly team auras.
+function teamAuraBonus(u, stat){
+  const side = u.owner==='player' ? G.player : G.enemy;
+  if (!side) return 0;
+  let b=0; for (const src of side.field){ if (src.teamAura && teamAuraActive(src)) b += src.teamAura[stat]||0; }
+  return b;
+}
 function effAp(u){
   let ap = u.baseAp + (u.pilot?u.pilot.pAp:0) + (u.tempAp||0) + (u.pilot?(u.pairAp||0):0) + (u.linked?(u.linkAp||0):0);
   if (u.trashBuff && u.trashBuff.apBonus > 0 && G.player){
     const side = u.owner==='player' ? G.player : G.enemy;
     if (trashCount(side, u.trashBuff.trait) >= u.trashBuff.minCount) ap += u.trashBuff.apBonus;
   }
+  ap += teamAuraBonus(u, 'ap');
   return Math.max(0, ap);
 }
 // A Unit has <Suppression> if it's printed innately, or conditionally "while damaged" and it is.
@@ -1847,6 +1882,7 @@ function effMaxHp(u){
     const side = u.owner==='player' ? G.player : G.enemy;
     if (trashCount(side, u.trashBuff.trait) >= u.trashBuff.minCount) hp += u.trashBuff.hpBonus;
   }
+  hp += teamAuraBonus(u, 'hp');
   return hp;
 }
 
