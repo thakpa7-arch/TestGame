@@ -462,6 +462,20 @@ function clauseGrantsKeyword(effect, kw, clauseKw){
   const m = plain(effect).match(new RegExp('【\\s*'+clauseKw+'[^】]*】\\s*([^【]*)','i'));
   return !!m && new RegExp('gains?\\s+<\\s*'+kw, 'i').test(m[1]);
 }
+// Does a Unit have a keyword from a PERSISTENT source (printed innately, or a continuous
+// 【During Pair】/【During Link】 grant that is currently active)? Used to wipe one-turn grants
+// (e.g. Char's 【Attack】 High-Maneuver) at turn boundaries without dropping continuous ones.
+function persistentKeyword(u, kw){
+  if (innateKeyword(u.effect, kw)) return true;
+  if (u.pilot && clauseGrantsKeyword(u.effect, kw, 'During Pair')) return true;
+  if (u.linked && clauseGrantsKeyword(u.effect, kw, 'During Link')) return true;
+  return false;
+}
+// Reset the transient combat keywords granted "this turn" back to their persistent baseline.
+function resetTurnKeywords(u){
+  u.highManeuver = persistentKeyword(u, 'high');
+  u.firstStrike  = persistentKeyword(u, 'first');
+}
 // A continuous team aura printed under 【During Pair】/【During Link】: "(During your turn,)
 // all your Units get AP+N (and HP+N)." (e.g. Gundam + Amuro). Applies while the source Unit
 // meets its pair/link requirement (and, if stated, only on the controller's turn).
@@ -913,8 +927,12 @@ function parseClause(raw){
       return { kind:'trashRetrieve', filter: rm?rm[1].trim():null };
     }
   }
-  // self-targeted buff: "This Unit gets AP+N during this turn" (and maybe gains <High-Maneuver>)
-  if ((d=t.match(/this unit gets ap\+(\d+)/))) return { kind:'selfbuff', amount:+d[1], hman:/<\s*high-?maneuver/.test(t) };
+  // self-targeted buff: "This Unit gets AP+N during this turn" (and maybe gains <High-Maneuver>).
+  // The High-Maneuver may be gated on "if it is a Link Unit" (e.g. Char Aznable's 【Attack】).
+  if ((d=t.match(/this unit gets ap\+(\d+)/))){
+    const hman = /<\s*high-?maneuver/.test(t);
+    return { kind:'selfbuff', amount:+d[1], hman, hmanIfLink: hman && /if it is a link unit/.test(t) };
+  }
   if (/add (1|one)?\s*of your shields to your hand/.test(t)){
     const sd = t.match(/look at the top (\d+)/);
     // A trailing "Then, <effect>" (often conditional) resolves after the shield is taken.
@@ -1338,8 +1356,9 @@ function runTrigger(card, side, act, label){
     log(`${label}: <b>${name}</b> gains &lt;${kwLabel(act.kw)}${act.kw==='breach'?' '+act.amount:''}&gt; this turn.`, cls);
   } else if (act.kind==='selfbuff'){
     card.tempAp=(card.tempAp||0)+act.amount; card.ap=effAp(card);
-    if (act.hman) card.highManeuver=true;
-    log(`${label}: <b>${name}</b> gets AP+${act.amount} this turn${act.hman?' and &lt;High-Maneuver&gt;':''}.`, cls);
+    const gotHM = act.hman && (!act.hmanIfLink || card.linked);
+    if (gotHM) card.highManeuver=true;
+    log(`${label}: <b>${name}</b> gets AP+${act.amount} this turn${gotHM?' and &lt;High-Maneuver&gt;':''}.`, cls);
   } else if (act.kind==='mill'){
     const milled=[]; for(let i=0;i<act.amount&&side.deck.length;i++){ const c=side.deck.pop(); sendToTrash(c,side); milled.push(c.name); }
     if(milled.length) log(`${label}: <b>${name}</b> mills ${milled.length} — ${milled.join(', ')}.`, cls);
@@ -2049,7 +2068,7 @@ function beginTurn(turn){
   G.turn=turn; G.mode='idle'; G.phase='start'; G.selected=null; G.pending=null; G.pendingHandIdx=-1;
   const s=me();
   // 1) Start Phase — Active Step: ready all rested cards; refresh per-turn abilities.
-  for (const u of s.field){ if(u.stunned){ u.stunned=false; } else if(!u.noActive){ u.rested=false; } u.sick=false; u.tempAp=0; u.activatedThisTurn=false; u.canAttackActive=false; u.dmgReduce=0; u.ap=effAp(u); }
+  for (const u of s.field){ if(u.stunned){ u.stunned=false; } else if(!u.noActive){ u.rested=false; } u.sick=false; u.tempAp=0; u.activatedThisTurn=false; u.canAttackActive=false; u.dmgReduce=0; resetTurnKeywords(u); u.ap=effAp(u); }
   if (s.base){ s.base.rested=false; s.base.activatedThisTurn=false; }
   // 2) Draw Phase — draw 1 (whoever goes first skips their very first draw).
   G.phase='draw';
@@ -2073,7 +2092,7 @@ function endTurn(){
   const s=me();
   // 5) End Phase — Repair Step (regen), then Hand Step (discard down to the hand limit).
   G.phase='end';
-  for (const u of s.field){ if (u.repair>0 && u.hp>0 && u.hp<effMaxHp(u)){ u.hp=Math.min(effMaxHp(u), u.hp+u.repair); } u.tempAp=0; u.canAttackActive=false; u.dmgReduce=0; u.ap=effAp(u); }
+  for (const u of s.field){ if (u.repair>0 && u.hp>0 && u.hp<effMaxHp(u)){ u.hp=Math.min(effMaxHp(u), u.hp+u.repair); } u.tempAp=0; u.canAttackActive=false; u.dmgReduce=0; resetTurnKeywords(u); u.ap=effAp(u); }
   while (s.hand.length>HAND_MAX){
     const worst=[...s.hand].sort((a,b)=>cardValue(a)-cardValue(b))[0];
     s.hand.splice(s.hand.indexOf(worst),1); sendToTrash(worst, s);
@@ -2439,6 +2458,7 @@ function fieldClick(uidv){
     const tgt=G.enemy.field.find(c=>c.uid===uidv);
     if (tgt){
       if (!tgt.rested && !atk.canAttackActive){ flashPrompt('You can only attack a rested (turned) enemy unit. Attack the shields instead, or a rested unit.'); return; }
+      declareAttack(atk, G.player);   // on-attack self-buffs (AP+/High-Maneuver) BEFORE the block step
       // The defender may redirect to an active Blocker (unless attacker has High-Maneuver)
       const blockers = G.enemy.field.filter(b=>b.blocker && !b.rested && b.hp>0);
       if (!atk.highManeuver && blockers.length && aiWantsBlock(atk)){
@@ -2455,6 +2475,7 @@ function attackDirect(){
   if (G.turn!=='player' || G.mode!=='attack-target' || G.over) return;
   const atk=G.player.field.find(c=>c.uid===G.selected); if(!atk) return;
   if (atk.noDirectAttack){ flashPrompt(`${atk.name} can't attack the enemy player directly — pick a rested enemy unit.`); return; }
+  declareAttack(atk, G.player);   // on-attack self-buffs (AP+/High-Maneuver) BEFORE the block step
   // Defender may block a direct attack with an active <Blocker> (unless attacker has High-Maneuver)
   const blockers = G.enemy.field.filter(b=>b.blocker && !b.rested && b.hp>0);
   if (!atk.highManeuver && blockers.length && aiWantsBlock(atk)){
@@ -2590,8 +2611,34 @@ function autoTarget(action, side){
 }
 
 // 【Attack】: fires once when this Unit declares an attack (its own turn only).
+// On-declaration self-buffs (AP+ / High-Maneuver / First Strike) from BOTH the Unit's and its
+// paired Pilot's 【Attack】 clause. Runs BEFORE the Block Step so granted <High-Maneuver> (e.g.
+// Char Aznable's "if it is a Link Unit, it gains <High-Maneuver>") actually prevents the block.
+function declareAttack(atk, atkSide){
+  const cls = atkSide===G.player?'me':'ai';
+  const apply=(act)=>{
+    if (!act) return;
+    if (act.kind==='selfbuff'){
+      if (act.amount) atk.tempAp=(atk.tempAp||0)+act.amount;
+      const gotHM = act.hman && (!act.hmanIfLink || atk.linked);
+      if (gotHM) atk.highManeuver=true;
+      atk.ap=effAp(atk);
+      if (act.amount || gotHM)
+        log(`Attack: <b>${atk.name}</b> gets AP+${act.amount||0} this turn${gotHM?' and &lt;High-Maneuver&gt;':''}.`, cls);
+    } else if (act.kind==='selfKeyword'){
+      grantKeyword(atk, act.kw, act.amount); atk.ap=effAp(atk);
+      log(`Attack: <b>${atk.name}</b> gains &lt;${kwLabel(act.kw)}${act.kw==='breach'?' '+act.amount:''}&gt; this turn.`, cls);
+    }
+  };
+  apply(parseTrigger(atk.effect,'Attack'));
+  if (atk.pilotCard) apply(parseTrigger(atk.pilotCard.effect,'Attack'));
+}
+// Battle-time 【Attack】 effects (enemy damage, etc.) from the Unit and its Pilot. The self-buffs
+// were already applied at declaration, so skip them here to avoid stacking AP twice.
 function onAttack(atk, atkSide){
-  runTrigger(atk, atkSide, parseTrigger(atk.effect,'Attack'), 'Attack');
+  const run=(act)=>{ if (act && act.kind!=='selfbuff' && act.kind!=='selfKeyword') runTrigger(atk, atkSide, act, 'Attack'); };
+  run(parseTrigger(atk.effect,'Attack'));
+  if (atk.pilotCard) run(parseTrigger(atk.pilotCard.effect,'Attack'));
 }
 // Simultaneous battle, modified by First Strike (striker hits first; if foe dies, no return).
 function battle(atk, def, atkSide, defSide){
@@ -2906,6 +2953,7 @@ function resolveAiAttack(atk, done){
 function resolveAiAttackInner(atk, done){
   // The player's Action step may have rested/destroyed the attacker — if so, the attack fizzles.
   if (atk.hp<=0 || atk.rested){ render(); done(); return; }
+  declareAttack(atk, G.enemy);   // AI on-attack self-buffs (AP+/High-Maneuver) BEFORE the block step
   const pl=G.player;
   // Units may only attack a RESTED enemy unit (or any unit if granted <attack active>), or the player directly.
   const attackable = atk.canAttackActive ? pl.field.filter(u=>u.hp>0) : pl.field.filter(u=>u.rested && u.hp>0);
