@@ -208,6 +208,12 @@
   #cardFlash .cf-tag { font-size: 9px; letter-spacing: 2px; color: var(--gold); font-weight: 800; margin-bottom: 4px; }
   #cardFlash .cf-name { font-size: 13px; font-weight: 800; margin-top: 6px; }
   #cardFlash .cf-eff { font-size: 9px; color: var(--muted); margin-top: 4px; line-height: 1.25; max-height: 44px; overflow: hidden; }
+  /* Reveal of cards drawn by an effect / the turn draw — each drawn card pops into a center row. */
+  #drawReveal { position: fixed; top: 14%; left: 50%; transform: translateX(-50%); z-index: 121; display: flex; gap: 8px; pointer-events: none; }
+  #drawReveal .dr-card { width: 88px; height: 124px; border-radius: 8px; border: 2px solid var(--cyan); box-shadow: 0 0 18px rgba(34,211,238,.55); background-size: cover; background-position: center top; background-color: #0c1426; position: relative; animation: drPop .3s cubic-bezier(.2,1.4,.5,1) both; }
+  @keyframes drPop { 0% { transform: translateY(20px) scale(.55); opacity: 0; } 100% { transform: translateY(0) scale(1); opacity: 1; } }
+  #drawReveal .dr-tag { position: absolute; top: -9px; left: 50%; transform: translateX(-50%); background: var(--cyan); color: #04202a; font-size: 9px; font-weight: 800; padding: 1px 6px; border-radius: 6px; letter-spacing: 1px; white-space: nowrap; }
+  #drawReveal .dr-name { position: absolute; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.62); color: #fff; font-size: 8px; text-align: center; padding: 2px; line-height: 1.05; }
   .card .ov-name { position: absolute; left: 0; right: 0; bottom: 21px; font-size: 8px; text-align: center; background: rgba(0,0,0,.6); padding: 1px 2px; line-height: 1.05; }
   .card.rested { transform: rotate(90deg) scale(.82); opacity: .85; }
   .card.rested:hover { transform: rotate(90deg) scale(.86); }
@@ -1957,6 +1963,21 @@ function flashCard(card, tag){
   clearTimeout(flashCardTimer);
   flashCardTimer=setTimeout(()=>{ host.classList.remove('show'); }, FLASH_MS);
 }
+// Pop each card the player draws (turn draw + effect draws) into a brief center row so you SEE
+// every card you draw. Consecutive draws in the same burst stack into the row.
+let drawRevealTimer=null;
+function revealDraw(card){
+  if (!card) return;
+  let host=document.getElementById('drawReveal');
+  if (!host){ host=document.createElement('div'); host.id='drawReveal'; document.body.appendChild(host); }
+  const t=document.createElement('div'); t.className='dr-card';
+  if (card.img) t.style.backgroundImage=`url('${card.img}')`;
+  t.innerHTML=`<div class="dr-tag">DREW</div><div class="dr-name">${card.name}</div>`;
+  host.appendChild(t);
+  while (host.children.length>6) host.removeChild(host.firstChild);
+  clearTimeout(drawRevealTimer);
+  drawRevealTimer=setTimeout(()=>{ if(host) host.innerHTML=''; }, 1600);
+}
 function defaultPrompt(){ setPrompt(G.turn==='player' ? 'Your turn — deploy, attack, then End Turn.' : ''); }
 
 // ---- effective stats ----
@@ -2142,9 +2163,9 @@ function draw(side, silent){
   }
   const c = side.deck.pop();
   if (side.hand.length<HAND_MAX) side.hand.push(c);
-  // Reveal the player's own draws (turn draw and effect draws) so you can see what you got — but
-  // never reveal the AI's cards.
-  if (!silent && side===G.player && c) log(`You draw <b>${c.name}</b>.`, 'me');
+  // Reveal the player's own draws (turn draw and effect draws) so you can see what you got — both
+  // a log line and a card pop — but never reveal the AI's cards.
+  if (!silent && side===G.player && c){ log(`You draw <b>${c.name}</b>.`, 'me'); revealDraw(c); }
   return c;
 }
 
