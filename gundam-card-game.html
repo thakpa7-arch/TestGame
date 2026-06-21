@@ -1501,7 +1501,16 @@ function resolvePlayerTrigger(card, side, act, label, after){
   // damageBoth (Mikazuki etc.): auto-pick the friendly that takes the self-damage drawback (so the
   // linked unit is immediately free to attack), but still let the player choose the ENEMY to hit.
   if (act.kind==='damageBoth'){
-    const ft = pingFriendly(G.player, act.amount, false);   // tankiest friendly takes the drawback
+    // "Choose 1 of your Units and 1 enemy Unit." — let the player pick the friendly first (the
+    // self-ping → self-ping-enemy click chain then asks for the enemy), e.g. Gundam Barbatos Adapt.
+    const fcands = G.player.field.filter(u=>u.hp>0);
+    if (fcands.length>=2){
+      G.mode='trigger-target';
+      G.pending={ card, side, act, label, after, scope:'self-ping', cands:fcands.map(u=>u.uid) };
+      setPrompt(`${card.name}: tap one of YOUR Units to take ${act.amount} damage.`);
+      render(); return;
+    }
+    const ft = fcands[0] || pingFriendly(G.player, act.amount, false);
     const ec = enemyTargets(G.enemy, { kind:'damage' });
     if (ec.length>=2){
       G.mode='trigger-target';
@@ -1509,7 +1518,7 @@ function resolvePlayerTrigger(card, side, act, label, after){
       setPrompt(`${card.name}: tap an ENEMY Unit to take ${act.amount} damage.`);
       render(); return;
     }
-    runTrigger(card, side, act, label); fin(); return;       // 0–1 enemy → fully auto
+    runTrigger(card, side, act, label); fin(); return;       // 0–1 of each → fully auto
   }
   if (act.kind==='selfPingBuff' || act.kind==='selfPingDraw'){
     const fcands = G.player.field.filter(u=>!u.token && u.hp>0);
@@ -1915,12 +1924,26 @@ function setupMiniCard(c){
     <div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.7);color:#fff;font-size:8px;padding:1px 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.name}</div>
     <div style="position:absolute;top:1px;left:2px;color:#8ad;font-size:9px;font-weight:bold">${c.cost}</div></div>`;
 }
+// The signature art for a deck: its highest cost+Lv Unit with an image (its "ace" card).
+function presetArt(preset){
+  const defs = parsePreset(preset.dg).map(e=>CARD_BY_ID.get(e.id)).filter(d=>d && d.img);
+  const units = defs.filter(d=>d.type==='unit');
+  const pick = (units.length?units:defs).sort((a,b)=>((b.cost||0)+(b.lv||0))-((a.cost||0)+(a.lv||0)))[0];
+  return pick ? pick.img : '';
+}
 function setupChooseDeck(){
-  const cards=PRESET_DECKS.map((d,i)=>`<button class="setup-deck" data-i="${i}"
-     style="background:linear-gradient(160deg,#23204a,#191636);color:#e8e2ff;border:1px solid #6a4fb0;border-radius:10px;padding:14px 16px;min-width:150px;cursor:pointer;font-size:14px;font-weight:600">${d.name}</button>`).join('');
+  const cards=PRESET_DECKS.map((d,i)=>{
+    const art=presetArt(d);
+    const bg = art ? `background-image:url('${art}');background-size:cover;background-position:center top` : 'background:linear-gradient(160deg,#23204a,#191636)';
+    return `<button class="setup-deck" data-i="${i}"
+      style="position:relative;width:150px;height:200px;border-radius:12px;border:1px solid #6a4fb0;cursor:pointer;overflow:hidden;padding:0;${bg}">
+      <div style="position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,0) 45%,rgba(8,6,20,.92) 88%)"></div>
+      <div style="position:absolute;bottom:0;left:0;right:0;padding:8px 6px;color:#fff;font-size:14px;font-weight:700;text-shadow:0 1px 3px #000">${d.name}</div>
+    </button>`;
+  }).join('');
   const m=setupModal(`<h2 style="color:#d8b4ff;margin:0 0 6px">Choose your deck</h2>
     <p style="color:#9aa;margin:0 0 16px;font-size:13px">Seven 1st-place competitive decklists (GD04 Phantom Aria). The AI takes a different one at random.</p>
-    <div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center">${cards}</div>`);
+    <div style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center">${cards}</div>`);
   m.querySelectorAll('.setup-deck').forEach(b=>b.onclick=()=>setupDeckChosen(+b.dataset.i));
 }
 function setupDeckChosen(i){
@@ -1977,20 +2000,13 @@ function setupHandMulligan(allowRedraw){
   };
 }
 function setupShieldsStep(){
+  // Place the top 6 cards of each deck face-down as Shields (no shield redraw — not a real rule).
   for (const s of [G.player, G.enemy]){ s.shields.length=0; for (let i=0;i<SHIELD_MAX && s.deck.length;i++) s.shields.push(s.deck.pop()); s.base=exBaseToken(s.who); }
-  setupShieldMulligan(true);
-}
-function setupShieldMulligan(allowRedraw){
-  const m=setupModal(`<h2 style="color:#d8b4ff;margin:0 0 10px">Shields set</h2>
+  const m=setupModal(`<h2 style="color:#d8b4ff;margin:0 0 10px">Ready to battle</h2>
     <div style="font-size:30px;letter-spacing:4px;margin:8px 0">${'🛡'.repeat(SHIELD_MAX)}</div>
-    <p style="color:#9aa;font-size:13px">6 face-down Shields placed for each side.${allowRedraw?' You may redraw your 6 Shields once — shuffle them back and draw 6 new.':' Mulligan used.'}</p>
-    <div>${allowRedraw?'<button id="keepSh" style="background:#2e6b3a;color:#fff;border:none;border-radius:8px;padding:11px 20px;margin:4px;cursor:pointer;font-weight:600">Keep Shields</button> <button id="mullSh" style="background:#7a3a3a;color:#fff;border:none;border-radius:8px;padding:11px 20px;margin:4px;cursor:pointer;font-weight:600">Mulligan Shields</button>':'<button id="keepSh" style="background:#2e6b3a;color:#fff;border:none;border-radius:8px;padding:11px 20px;margin:4px;cursor:pointer;font-weight:600">Begin Battle</button>'}</div>`);
-  el('keepSh').onclick=()=>setupFinalize();
-  if (allowRedraw) el('mullSh').onclick=()=>{
-    G.player.deck.push(...G.player.shields); G.player.shields.length=0; shuffle(G.player.deck);
-    for (let i=0;i<SHIELD_MAX && G.player.deck.length;i++) G.player.shields.push(G.player.deck.pop());
-    setupShieldMulligan(false);
-  };
+    <p style="color:#9aa;font-size:13px">6 face-down Shields and an EX Base are set for each side.</p>
+    <div><button id="beginBtl" style="background:#2e6b3a;color:#fff;border:none;border-radius:8px;padding:11px 24px;margin:4px;cursor:pointer;font-weight:600">Begin Battle</button></div>`);
+  el('beginBtl').onclick=()=>setupFinalize();
 }
 function setupFinalize(){
   closeSetupModal();
