@@ -597,32 +597,35 @@ function parseActivateCost(c){
 // "exile N cards from trash" cost is modeled; other exotic costs return null.
 function parseActivate(effect){
   const pl = plain(effect);
-  // Allow a 【Once per Turn】 (or other timing) modifier to sit between the marker and the cost text.
-  const m = pl.match(/【\s*Activate[･··・\s]*(Main|Action)\s*】\s*(?:【\s*Once per Turn\s*】\s*)?([^【]*)/i);
+  // Capture an optional 【Once per Turn】 modifier between the marker and the cost text — only those
+  // abilities are limited to once a turn; others can repeat as long as their cost is payable (Lupus).
+  const m = pl.match(/【\s*Activate[･··・\s]*(Main|Action)\s*】\s*(【\s*Once per Turn\s*】\s*)?([^【]*)/i);
   if (!m) return null;
+  const oncePerTurn = !!m[2];
+  const body = m[3];
   const before = pl.slice(0, m.index);
   const requireLink = /【\s*During Link\s*】\s*$/i.test(before.replace(/\s*$/,'')) || /【\s*During Link\s*】[^【]*$/i.test(before);
   const requirePair = !requireLink && /【\s*During Pair[^】]*】[^【]*$/i.test(before);
   const phase = /action/i.test(m[1])?'action':'main';
   let cost, action, text;
-  const cm = m[2].trim().match(/^(.*?)[：:]\s*(.+)$/);
+  const cm = body.trim().match(/^(.*?)[：:]\s*(.+)$/);
   if (cm){
     cost = parseActivateCost(cm[1]);
     action = cost ? parseActivateEffect(cm[2]) : null;
     text = cm[2];
   } else {
     // Colon-less form: "Choose N X cards from your trash. Exile them. If you do, [effect]."
-    const tex = parseTrashExile(m[2].toLowerCase());
+    const tex = parseTrashExile(body.toLowerCase());
     if (tex && tex.inner){
       cost = { type:'exile', count:tex.count, trait:tex.trait };
       const k=tex.inner.kind;
       const scope = ['damage','destroy','rest','bounce','debuff'].includes(k)?'enemy' : (['buff','heal','setActiveFriendly'].includes(k)?'friendly':'self');
       action = Object.assign({}, tex.inner, { scope });
-      text = m[2];
+      text = body;
     }
   }
   if (!cost || !action) return null;
-  return { phase, cost, text:(text||'').replace(/\s*\(.*$/,'').replace(/\.$/,'').trim(), action, requireLink, requirePair };
+  return { phase, cost, text:(text||'').replace(/\s*\(.*$/,'').replace(/\.$/,'').trim(), action, requireLink, requirePair, oncePerTurn };
 }
 
 // ---- Trash / Graveyard helpers ----
@@ -2543,7 +2546,8 @@ function activatePhaseOk(u){
   return G.turn===u.owner && G.mode==='idle';
 }
 function activateReady(u){
-  if (!(u && u.activate && !u.activatedThisTurn && u.hp>0)) return false;
+  if (!(u && u.activate && u.hp>0)) return false;
+  if (u.activate.oncePerTurn && u.activatedThisTurn) return false;   // only 【Once per Turn】 abilities are capped
   if (!activatePhaseOk(u)) return false;
   const side = u.owner==='player' ? G.player : G.enemy;
   if (u.activate.requireLink && !u.linked) return false;
@@ -3293,7 +3297,7 @@ function autoCommandTarget(c, attacker){
 function collectPlayerActions(attacker){
   const opts=[];
   for (const u of [...G.player.field, G.player.base].filter(Boolean)){
-    if (u.activate && u.activate.phase==='action' && !u.activatedThisTurn && u.hp>0
+    if (u.activate && u.activate.phase==='action' && (!u.activate.oncePerTurn || !u.activatedThisTurn) && u.hp>0
         && (!u.activate.requireLink || u.linked) && (!u.activate.requirePair || u.pilot)
         && activateCostPayable(u, G.player)){
       opts.push({ label:`⚡ ${u.name}`, sub:u.activate.text||'', run:(afterCb)=>{ flashCard(u,'YOUR ACTION'); applyActivateEffect(u, autoActivateTarget(u, attacker), G.player); if (afterCb) afterCb(); } });
