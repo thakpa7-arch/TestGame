@@ -2438,7 +2438,7 @@ function startCommand(card, handIdx){
     promptTokenChoice(a.specs, sp=>{
       const tk=makeToken(sp, 'player'); s.field.push(tk);
       log(`<b>${card.name}</b> deploys <b>${tk.name}</b> token (⚔${tk.baseAp}/❤${tk.baseHp}${tk.blocker?' &lt;Blocker&gt;':''}).`, 'me');
-      clearSel(); render(); checkEnd();
+      onUnitDeployed(tk, s, ()=>{ clearSel(); render(); checkEnd(); }, true);   // tokens can trigger ally-deploy listeners
     });
     return;
   }
@@ -2944,14 +2944,13 @@ function declareAttack(atk, atkSide){
       log(`Attack: <b>${atk.name}</b> gains &lt;${kwLabel(act.kw)}${act.kw==='breach'?' '+act.amount:''}&gt; this turn.`, cls);
     }
   };
-  apply(parseTrigger(atk.effect,'Attack'));
+  apply(gatedAttackAction(atk.effect, atk));
   apply(pilotAttackAction(atk));
 }
-// The paired Pilot's 【Attack】 action, honoring a 【During Link】/【During Pair】 gate printed just
-// before the 【Attack】 marker (e.g. Marida Cruz fires only while her Unit is a Link Unit).
-function pilotAttackAction(atk){
-  if (!atk.pilotCard) return null;
-  const pl = plain(atk.pilotCard.effect);
+// An 【Attack】 action from `effect`, honoring a 【During Link】/【During Pair】 gate printed just
+// before the 【Attack】 marker (e.g. Sword Strike Gundam, Marida Cruz fire only as a Link Unit).
+function gatedAttackAction(effect, atk){
+  const pl = plain(effect);
   const m = pl.match(/(【[^】]*】\s*)?【\s*Attack[^】]*】\s*([^【]*)/i);
   if (!m) return null;
   const gate = m[1] || '';
@@ -2959,13 +2958,16 @@ function pilotAttackAction(atk){
   if (/during pair/i.test(gate) && !atk.pilot)  return null;
   return parseClause(m[2]);
 }
+function pilotAttackAction(atk){
+  return atk.pilotCard ? gatedAttackAction(atk.pilotCard.effect, atk) : null;
+}
 // 【Attack】 effects that pick a target (enemy damage, etc.) from the Unit and its Pilot. Resolved
 // when the attack is DECLARED — before the Block Step — so the player chooses targets (Marida,
 // Kshatriya-style). Self-buffs were already applied by declareAttack(), so they're skipped here.
 function resolveAttackTriggers(atk, atkSide, done){
   const acts=[];
   const add=(act)=>{ if (act && act.kind!=='selfbuff' && act.kind!=='selfKeyword'){ act.source=atk; acts.push(act); } };
-  add(parseTrigger(atk.effect,'Attack'));
+  add(gatedAttackAction(atk.effect, atk));
   add(pilotAttackAction(atk));
   let i=0;
   (function next(){
