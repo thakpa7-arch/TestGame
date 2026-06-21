@@ -510,6 +510,21 @@ function parseTeamAura(effect){
            requirePair:/pair/i.test(m[1]), requireLink:/link/i.test(m[1]),
            yourTurnOnly:/during your turn/.test(seg) };
 }
+// A continuous trait grant: 【During Link/Pair】"All your Units gain (Trait)." (e.g. Neo Zeong).
+function parseTraitAura(effect){
+  const m = plain(effect).match(/【\s*During (Link|Pair)[^】]*】\s*all your units? gain\s*\(([^)]+)\)/i);
+  if (!m) return null;
+  return { trait:m[2].trim().toLowerCase(), requireLink:/link/i.test(m[1]), requirePair:/pair/i.test(m[1]) };
+}
+// "When this Unit OR one of your (Trait) Units is deployed, <effect>." A passive listener that fires
+// the effect whenever a matching friendly Unit (other than itself) is deployed (e.g. Neo Zeong).
+function parseAllyDeploy(effect){
+  const m = plain(effect).match(/when this unit or one of your\s*([a-z0-9\/() -]*?)\s*units? (?:is|are) deployed,\s*([^【]*)/i);
+  if (!m) return null;
+  const trait=(m[1]||'').replace(/[()]/g,'').trim().toLowerCase()||null;
+  const act=parseClause(m[2]);
+  return act ? { trait, act } : null;
+}
 // Parse the effect half of an activated ability into an engine action.
 function parseActivateEffect(t){
   const raw = t; t = t.toLowerCase(); let d;
@@ -757,6 +772,40 @@ function showLookAtTop(cards, title, canPick, allowSkip, onChoose){
   });
   box.appendChild(row);
   if(allowSkip){ const sk=document.createElement('button'); sk.textContent='Take none'; sk.style.cssText='margin-top:12px;padding:8px 18px;background:#333;color:#fff;border:none;border-radius:6px;cursor:pointer'; sk.onclick=()=>{ modal.remove(); onChoose(null); }; box.appendChild(sk); }
+  modal.appendChild(box); document.body.appendChild(modal);
+}
+// Multi-select trash cards to pay an "exile N cards" cost (e.g. Lupus), then continue activation.
+function pickExileCards(u, cands, n){
+  const chosen=[];
+  const modal=document.createElement('div');
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.86);z-index:1000;display:flex;align-items:center;justify-content:center;padding:14px;';
+  const box=document.createElement('div');
+  box.style.cssText='background:#16162a;border:1px solid #6a4fb0;border-radius:12px;padding:16px;max-width:580px;width:100%;text-align:center;';
+  const row=document.createElement('div'); row.style.cssText='display:flex;gap:8px;flex-wrap:wrap;justify-content:center;max-height:52vh;overflow-y:auto;';
+  const confirm=document.createElement('button');
+  confirm.style.cssText='margin-top:12px;padding:8px 20px;background:#6a4fb0;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700';
+  const upd=()=>{ confirm.textContent=`Exile (${chosen.length}/${n})`; confirm.disabled=chosen.length!==n; confirm.style.opacity=chosen.length===n?1:.5; };
+  cands.forEach(c=>{
+    const tile=document.createElement('div');
+    tile.style.cssText='width:84px;height:118px;border-radius:7px;border:2px solid #555;overflow:hidden;cursor:pointer;position:relative;'+(c.img?`background:url('${c.img}') center/cover;`:'background:#0d1628;display:flex;align-items:center;justify-content:center;color:#cdd;font-size:10px;text-align:center;padding:4px;');
+    if(!c.img) tile.textContent=c.name;
+    tile.onclick=()=>{ const i=chosen.indexOf(c);
+      if(i>=0){ chosen.splice(i,1); tile.style.borderColor='#555'; }
+      else { if(chosen.length>=n) return; chosen.push(c); tile.style.borderColor='#34d399'; }
+      upd(); };
+    row.appendChild(tile);
+  });
+  confirm.onclick=()=>{
+    if(chosen.length!==n) return;
+    modal.remove();
+    for(const c of chosen){ const i=G.player.trash.indexOf(c); if(i>=0) G.player.exile.push(G.player.trash.splice(i,1)[0]); }
+    refreshTrashStats(G.player);
+    log(`<b>${u.name}</b> exiles ${chosen.map(c=>'<b>'+c.name+'</b>').join(', ')} from trash.`, 'me');
+    G.activatePrepaid=true;
+    activatePickTarget(u, null);
+  };
+  box.innerHTML=`<h3 style="margin:0 0 10px;color:#d8b4ff;font-size:14px">${u.name}: choose ${n} card${n>1?'s':''} from your trash to exile</h3>`;
+  box.appendChild(row); box.appendChild(confirm); upd();
   modal.appendChild(box); document.body.appendChild(modal);
 }
 // Player "look at top N, add a matching card to hand, return the rest".
@@ -1099,7 +1148,8 @@ function parseClause(raw){
   if ((d=t.match(/ap\s*-\s*(\d+)/))){
     // "All enemy Units get AP-N" (e.g. Banshee Norn's 【Attack】) is a board-wide debuff, not a choice.
     const all = /all enemy units?/.test(t) || (/all units?/.test(t) && /enemy/.test(t));
-    return { kind:'debuff', amount:+d[1], scope: all?'all-enemy':'enemy', filter:targetFilter(t) };
+    // "during this battle" (e.g. Kira) lasts only for the current battle, not the whole turn.
+    return { kind:'debuff', amount:+d[1], scope: all?'all-enemy':'enemy', dur:/during this battle/.test(t)?'battle':'turn', filter:targetFilter(t) };
   }
   if ((d=t.match(/deal (\d+) damage/))){
     // "to all enemy Units" hits the foe only; "to all Units" (no "enemy") hits BOTH sides.
@@ -1239,7 +1289,7 @@ function applyToTarget(card, side, act, target, label){
   else if (act.kind==='rest'){ target.rested=true; log(`${label}: <b>${name}</b> rests <b>${target.name}</b>.`,cls); }
   else if (act.kind==='bounce'){ const i=foe.field.indexOf(target); if(i>=0)foe.field.splice(i,1); returnToHand(target,foe); log(`${label}: <b>${name}</b> returns <b>${target.name}</b> to hand.`,cls); }
   else if (act.kind==='destroy'){ log(`${label}: <b>${name}</b> destroys <b>${target.name}</b>.`,cls); const i=foe.field.indexOf(target); if(i>=0)foe.field.splice(i,1); fx('die',target.uid); sendToTrash(target,foe); runTrigger(target,foe,parseTrigger(target.effect,'Destroyed'),'Destroyed'); }
-  else if (act.kind==='debuff'){ target.tempAp=(target.tempAp||0)-act.amount; target.ap=effAp(target); log(`${label}: <b>${target.name}</b> gets AP-${act.amount} this turn.`,cls); }
+  else if (act.kind==='debuff'){ if(act.dur==='battle'){ target.battleAp=(target.battleAp||0)-act.amount; } else { target.tempAp=(target.tempAp||0)-act.amount; } target.ap=effAp(target); log(`${label}: <b>${target.name}</b> gets AP-${act.amount} this ${act.dur==='battle'?'battle':'turn'}.`,cls); }
   else if (act.kind==='buff'){ target.tempAp=(target.tempAp||0)+act.amount; target.ap=effAp(target); log(`${label}: <b>${target.name}</b> gets AP+${act.amount} this turn.`,cls); }
   else if (act.kind==='heal'){ target.hp=Math.min(effMaxHp(target), target.hp+(act.amount>=99?effMaxHp(target):act.amount)); log(`${label}: <b>${name}</b> repairs <b>${target.name}</b>.`,cls); }
   else if (act.kind==='grantKw'){ grantKeyword(target, act.kw, act.amount); target.ap=effAp(target); log(`${label}: <b>${target.name}</b> gains &lt;${kwLabel(act.kw)}${act.kw==='breach'?' '+act.amount:''}&gt; this turn.`,cls); }
@@ -1748,6 +1798,8 @@ function makeCard(def, owner){
     const lb = staticSelfBuff(def.effect, 'During Link'); c.linkAp = lb.ap; c.linkHp = lb.hp;
     // continuous team aura ("all your Units get AP+N") while paired/linked (e.g. Gundam + Amuro)
     c.teamAura = parseTeamAura(def.effect);
+    c.traitAura = parseTraitAura(def.effect);     // 【During Link】"All your Units gain (Trait)"
+    c.allyDeploy = parseAllyDeploy(def.effect);   // "when one of your (Trait) Units is deployed, …"
     // player-activated ability (cost：effect); used at most once per turn
     c.activate = parseActivate(def.effect); c.activatedThisTurn = false;
     // trash-conditional effects
@@ -2034,6 +2086,30 @@ function teamAuraActive(src){
   if (a.yourTurnOnly && G.turn !== src.owner) return false;
   return true;
 }
+// Does a Unit have `trait` — printed, or granted by a friendly active trait aura (Neo Zeong's
+// 【During Link】"All your Units gain (Neo Zeon)")?
+function unitHasTrait(unit, side, trait){
+  if ((unit.trait||'').toLowerCase().includes(trait)) return true;
+  for (const src of (side.field||[])){
+    const a=src.traitAura;
+    if (a && a.trait===trait && src.hp>0 && (!a.requireLink||src.linked) && (!a.requirePair||src.pilot)) return true;
+  }
+  return false;
+}
+// Fire any friendly "when one of your (Trait) Units is deployed" listeners (e.g. Neo Zeong's 3
+// damage) after `unit` is deployed. Resolves them in sequence, then runs `after`.
+function onUnitDeployed(unit, side, after){
+  const srcs=(side.field||[]).filter(src=>src!==unit && src.allyDeploy && src.hp>0
+    && (!src.allyDeploy.trait || unitHasTrait(unit, side, src.allyDeploy.trait)));
+  let i=0;
+  (function next(){
+    if (i>=srcs.length){ if(after) after(); return; }
+    const src=srcs[i++], ad=src.allyDeploy; ad.act.source=src;
+    log(`<b>${src.name}</b> reacts to <b>${unit.name}</b> deploying.`, side===G.player?'me':'ai');
+    if (side===G.player) resolvePlayerTrigger(src, side, ad.act, src.name, next);
+    else { runTrigger(src, side, ad.act, src.name); next(); }
+  })();
+}
 // Sum the AP (or HP) bonus that a Unit receives from friendly team auras.
 function teamAuraBonus(u, stat){
   const side = u.owner==='player' ? G.player : G.enemy;
@@ -2042,7 +2118,7 @@ function teamAuraBonus(u, stat){
   return b;
 }
 function effAp(u){
-  let ap = u.baseAp + (u.pilot?u.pilot.pAp:0) + (u.tempAp||0) + (u.pilot?(u.pairAp||0):0) + (u.linked?(u.linkAp||0):0);
+  let ap = u.baseAp + (u.pilot?u.pilot.pAp:0) + (u.tempAp||0) + (u.battleAp||0) + (u.pilot?(u.pairAp||0):0) + (u.linked?(u.linkAp||0):0);
   if (u.trashBuff && u.trashBuff.apBonus > 0 && G.player){
     const side = u.owner==='player' ? G.player : G.enemy;
     if (trashCount(side, u.trashBuff.trait) >= u.trashBuff.minCount) ap += u.trashBuff.apBonus;
@@ -2220,7 +2296,7 @@ function beginTurn(turn){
   G.turn=turn; G.mode='idle'; G.phase='start'; G.selected=null; G.pending=null; G.pendingHandIdx=-1;
   const s=me();
   // 1) Start Phase — Active Step: ready all rested cards; refresh per-turn abilities.
-  for (const u of s.field){ if(u.stunned){ u.stunned=false; } else if(!u.noActive){ u.rested=false; } u.sick=false; u.tempAp=0; u.activatedThisTurn=false; u.canAttackActive=false; u.dmgReduce=0; resetTurnKeywords(u); u.ap=effAp(u); }
+  for (const u of s.field){ if(u.stunned){ u.stunned=false; } else if(!u.noActive){ u.rested=false; } u.sick=false; u.tempAp=0; u.battleAp=0; u.activatedThisTurn=false; u.canAttackActive=false; u.dmgReduce=0; resetTurnKeywords(u); u.ap=effAp(u); }
   if (s.base){ s.base.rested=false; s.base.activatedThisTurn=false; }
   // 2) Draw Phase — draw 1 (whoever goes first skips their very first draw).
   G.phase='draw';
@@ -2244,7 +2320,7 @@ function endTurn(){
   const s=me();
   // 5) End Phase — Repair Step (regen), then Hand Step (discard down to the hand limit).
   G.phase='end';
-  for (const u of s.field){ if (u.repair>0 && u.hp>0 && u.hp<effMaxHp(u)){ u.hp=Math.min(effMaxHp(u), u.hp+u.repair); } u.tempAp=0; u.canAttackActive=false; u.dmgReduce=0; resetTurnKeywords(u); u.ap=effAp(u); }
+  for (const u of s.field){ if (u.repair>0 && u.hp>0 && u.hp<effMaxHp(u)){ u.hp=Math.min(effMaxHp(u), u.hp+u.repair); } u.tempAp=0; u.battleAp=0; u.canAttackActive=false; u.dmgReduce=0; resetTurnKeywords(u); u.ap=effAp(u); }
   while (s.hand.length>HAND_MAX){
     const worst=[...s.hand].sort((a,b)=>cardValue(a)-cardValue(b))[0];
     s.hand.splice(s.hand.indexOf(worst),1); sendToTrash(worst, s);
@@ -2298,7 +2374,7 @@ function playFromHand(uidv){
     sound('deploy');
     log(`You deploy <b>${card.name}</b>${card.blitz?' &lt;Blitz&gt;':''}.`, 'me');
     closeInspect();
-    resolvePlayerTrigger(card, s, parseTrigger(card.effect,'Deploy'), 'Deploy', ()=>{ clearSel(); render(); checkEnd(); });
+    resolvePlayerTrigger(card, s, parseTrigger(card.effect,'Deploy'), 'Deploy', ()=>{ onUnitDeployed(card, s, ()=>{ clearSel(); render(); checkEnd(); }); });
   } else if (card.type==='pilot'){
     // A Unit holds at most one Pilot — only offer Units that aren't already paired (and can be).
     const myUnits = s.field.filter(u=>u.type==='unit' && !u.pilot && !u.noPilot);
@@ -2435,8 +2511,9 @@ function restCostCands(u, side){
 }
 function startActivate(u){
   if (!activateReady(u)){ flashPrompt(`${u.name}'s ability isn't available.`); return; }
+  const cost=u.activate.cost;
   // "Rest 1 of your other (trait) Unit" cost: let the player pick WHICH Unit to rest first.
-  if (u.activate.cost.type==='restUnit'){
+  if (cost.type==='restUnit'){
     const cc = restCostCands(u, G.player);
     if (cc.length>1){
       G.mode='activate-cost'; G.pending=u; G.activateCands=cc.map(c=>c.uid);
@@ -2444,6 +2521,11 @@ function startActivate(u){
       closeInspect(); render(); return;
     }
     return activatePickTarget(u, cc[0]||null);
+  }
+  // "Exile N (trait) cards from your trash" cost (e.g. Lupus): let the player choose WHICH to exile.
+  if (cost.type==='exile' && cost.count>0){
+    const cands=G.player.trash.filter(c=>matchTrashTrait(c, cost.trait));
+    if (cands.length>cost.count){ closeInspect(); pickExileCards(u, cands, cost.count); return; }
   }
   activatePickTarget(u, null);
 }
@@ -2462,7 +2544,7 @@ function activatePickTarget(u, costUnit){
 }
 function resolveActivate(u, target, costUnit){      // player path
   applyActivateEffect(u, target, G.player, costUnit);
-  G.activateCostUnit=null;
+  G.activateCostUnit=null; G.activatePrepaid=false;
   clearSel(); render(); checkEnd();
 }
 function applyActivateEffect(u, target, side, costUnit){
@@ -2477,8 +2559,8 @@ function applyActivateEffect(u, target, side, costUnit){
   }
   else if (cost.type==='resource'){ side.resAvail=Math.max(0, side.resAvail-cost.amount); log(`<b>${u.name}</b> pays ${cost.amount} resource${cost.amount===1?'':'s'}.`, cls); }
   else if (cost.type==='exile'){
-    const n=exileFromTrash(side, cost.count, cost.trait);
-    log(`<b>${u.name}</b> exiles ${n} ${cost.trait?cost.trait+' ':''}card${n===1?'':'s'} from trash.`, cls);
+    if (G.activatePrepaid){ /* the player already chose & exiled the cards interactively */ }
+    else { const n=exileFromTrash(side, cost.count, cost.trait); log(`<b>${u.name}</b> exiles ${n} ${cost.trait?cost.trait+' ':''}card${n===1?'':'s'} from trash.`, cls); }
   }
   u.activatedThisTurn=true; sound('deploy');
   // Conditional ability: cost is paid, but the effect only happens if the condition holds.
@@ -2886,7 +2968,12 @@ function battle(atk, def, atkSide, defSide){
   else { damage(def,a,defSide,'battle'); damage(atk,d,atkSide,'battle'); }
   // <Breach N>: when this attack destroys an enemy Unit, hit the top enemy shield.
   if (atk.breach>0 && def.type==='unit' && def.hp<=0) breachShield(atk, defSide);
+  clearBattleScoped();                 // "during this battle" effects (e.g. Kira's AP-2) end now
   clearSel(); render(); checkEnd();
+}
+// Clear "during this battle" AP modifiers from every Unit once the battle ends.
+function clearBattleScoped(){
+  for (const s of [G.player, G.enemy]){ if(!s) continue; for (const u of s.field){ if(u.battleAp){ u.battleAp=0; u.ap=effAp(u); } } }
 }
 
 // <Support N>: rest one other active friendly Unit to boost the attacker, but only when the
@@ -3016,7 +3103,7 @@ function runTriggerSeq(list, side, done){
   })();
 }
 
-function clearSel(){ G.selected=null; G.mode='idle'; G.pending=null; G.pendingHandIdx=-1; G.activateCands=null; G.activateCostUnit=null; defaultPrompt(); }
+function clearSel(){ G.selected=null; G.mode='idle'; G.pending=null; G.pendingHandIdx=-1; G.activateCands=null; G.activateCostUnit=null; G.activatePrepaid=false; defaultPrompt(); }
 // Finish an Eins-style self-rest selection (from a unit tap reaching the max, or Cancel to stop early).
 function finishSelfRest(){
   const p=G.pending; if (!p) return;
@@ -3084,7 +3171,7 @@ function aiMainStep(){
   // deploy best affordable unit
   if (ai.field.length<FIELD_MAX){
     const dep = ai.hand.filter(c=>c.type==='unit' && canAfford(ai,c)).sort((a,b)=>(b.baseAp+b.baseHp)-(a.baseAp+a.baseHp))[0];
-    if (dep){ const i=ai.hand.indexOf(dep); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,dep); dep.rested=false; dep.sick=!dep.blitz; ai.field.push(dep); flashCard(dep,'ENEMY DEPLOY'); log(`${who(G.enemy)} deploys <b>${dep.name}</b>.`, 'ai'); runTrigger(dep, ai, parseTrigger(dep.effect,'Deploy'), 'Deploy'); return true; }
+    if (dep){ const i=ai.hand.indexOf(dep); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,dep); dep.rested=false; dep.sick=!dep.blitz; ai.field.push(dep); flashCard(dep,'ENEMY DEPLOY'); log(`${who(G.enemy)} deploys <b>${dep.name}</b>.`, 'ai'); runTrigger(dep, ai, parseTrigger(dep.effect,'Deploy'), 'Deploy'); onUnitDeployed(dep, ai); return true; }
   }
   // pair a pilot — only onto a Unit that has no pilot yet (a Unit holds at most one)
   const pilot = ai.hand.find(c=>c.type==='pilot' && canAfford(ai,c));
