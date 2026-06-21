@@ -356,9 +356,10 @@
 
 <div id="overlay">
   <h2>MOBILE SUIT CLASH</h2>
-  <p id="introText">A tactical duel built on the real <b>Gundam Card Game</b> card pool. Each battle,
-     you and the AI are each dealt one of seven <b>1st-place competitive decklists</b> (GD04
-     Phantom Aria era) at random. Every card is genuine — real names, art, costs, AP/HP and effect text.</p>
+  <p id="introText">A tactical duel built on the real <b>Gundam Card Game</b> card pool. You <b>choose</b> one of
+     seven <b>1st-place competitive decklists</b> (GD04 Phantom Aria era); the AI takes a different one.
+     You then <b>roll for turn order</b>, may <b>mulligan</b> your opening hand, and may redraw your Shields.
+     Every card is genuine — real names, art, costs, AP/HP and effect text.</p>
   <button id="startBtn">START BATTLE</button>
   <button id="backToBattleBtn" class="gold" style="display:none">◀ Back to Battle</button>
   <div class="rules">
@@ -1890,28 +1891,124 @@ function effMaxHp(u){
 function startGame(){
   uid = 1;
   Object.assign(G, { turn:'player', turnNumber:1, phase:'main', selected:null, mode:'idle', pending:null, pendingHandIdx:-1, over:false,
+                     firstPlayer:'player', skipDrawSide:null,
                      player:makeSide('player'), enemy:makeSide('enemy') });
-  // Randomly assign two distinct competitive decklists to the player and the AI.
-  const pool = shuffle([...PRESET_DECKS]);
-  const playerPreset = pool[0], enemyPreset = pool[1];
-  G.playerDeckName = playerPreset.name; G.enemyDeckName = enemyPreset.name;
-  el('playerName').textContent = playerPreset.name + ' (YOU)';
-  el('enemyName').textContent = enemyPreset.name + ' (AI)';
-  G.player.deck = buildPresetDeck('player', playerPreset);
-  G.enemy.deck = buildPresetDeck('enemy', enemyPreset);
-  // Place the top 6 cards of each deck face-down as Shields, and an EX Base in each base section.
-  for (const s of [G.player, G.enemy]){
-    for (let i=0;i<SHIELD_MAX && s.deck.length;i++) s.shields.push(s.deck.pop());
-    s.base = exBaseToken(s.who);
+  G.setup = {};
+  el('overlay').classList.add('hidden');
+  setupChooseDeck();
+}
+// ---- pre-game setup: deck choice → dice roll for turn order → hand mulligan → shield mulligan ----
+function setupModal(html){
+  let m=el('setupModal');
+  if(!m){ m=document.createElement('div'); m.id='setupModal';
+    m.style.cssText='position:fixed;inset:0;background:radial-gradient(circle at 50% 30%,#1a1638,#0a0a18);z-index:1200;display:flex;align-items:center;justify-content:center;padding:18px;';
+    document.body.appendChild(m); }
+  m.innerHTML=`<div style="background:#12122a;border:1px solid #6a4fb0;border-radius:14px;padding:22px;max-width:720px;width:100%;text-align:center;max-height:92vh;overflow-y:auto;box-shadow:0 10px 50px rgba(0,0,0,.6)">${html}</div>`;
+  m.style.display='flex';
+  return m;
+}
+function closeSetupModal(){ const m=el('setupModal'); if(m) m.style.display='none'; }
+function setupMiniCard(c){
+  const img = c.img ? `background-image:url('${c.img}');background-size:cover;background-position:center` : 'background:#0d1628';
+  return `<div style="width:74px;height:104px;border-radius:7px;border:1px solid #4a4a6a;${img};position:relative;overflow:hidden;flex:0 0 auto">
+    ${c.img?'':`<div style="font-size:9px;color:#cdd;padding:4px;text-align:center">${c.name}</div>`}
+    <div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.7);color:#fff;font-size:8px;padding:1px 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.name}</div>
+    <div style="position:absolute;top:1px;left:2px;color:#8ad;font-size:9px;font-weight:bold">${c.cost}</div></div>`;
+}
+function setupChooseDeck(){
+  const cards=PRESET_DECKS.map((d,i)=>`<button class="setup-deck" data-i="${i}"
+     style="background:linear-gradient(160deg,#23204a,#191636);color:#e8e2ff;border:1px solid #6a4fb0;border-radius:10px;padding:14px 16px;min-width:150px;cursor:pointer;font-size:14px;font-weight:600">${d.name}</button>`).join('');
+  const m=setupModal(`<h2 style="color:#d8b4ff;margin:0 0 6px">Choose your deck</h2>
+    <p style="color:#9aa;margin:0 0 16px;font-size:13px">Seven 1st-place competitive decklists (GD04 Phantom Aria). The AI takes a different one at random.</p>
+    <div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center">${cards}</div>`);
+  m.querySelectorAll('.setup-deck').forEach(b=>b.onclick=()=>setupDeckChosen(+b.dataset.i));
+}
+function setupDeckChosen(i){
+  G.setup.playerPreset = PRESET_DECKS[i];
+  G.setup.enemyPreset  = shuffle(PRESET_DECKS.filter((_,j)=>j!==i))[0];
+  setupDiceRoll();
+}
+function setupDiceRoll(){
+  let pr,er; do{ pr=1+Math.floor(Math.random()*6); er=1+Math.floor(Math.random()*6); } while(pr===er);
+  const playerWon = pr>er;
+  const m=setupModal(`<h2 style="color:#d8b4ff;margin:0 0 10px">Roll for turn order</h2>
+    <div style="font-size:34px;margin:14px 0">🎲 You <b style="color:#86efac">${pr}</b> &nbsp;vs&nbsp; AI <b style="color:#fca5a5">${er}</b> 🎲</div>
+    <p style="color:${playerWon?'#86efac':'#fca5a5'};font-size:14px">${playerWon?'You won the roll — choose who takes the first turn.':'The AI won the roll.'}</p>
+    <div id="orderBtns" style="margin-top:8px"></div>`);
+  if (playerWon){
+    el('orderBtns').innerHTML=`
+      <button id="goFirst" style="background:#2e6b3a;color:#fff;border:none;border-radius:8px;padding:11px 20px;margin:4px;cursor:pointer;font-weight:600">Go First</button>
+      <button id="goSecond" style="background:#3a3a6b;color:#fff;border:none;border-radius:8px;padding:11px 20px;margin:4px;cursor:pointer;font-weight:600">Go Second (+1 EX Resource)</button>`;
+    el('goFirst').onclick=()=>setupOrderChosen('player');
+    el('goSecond').onclick=()=>setupOrderChosen('enemy');
+  } else {
+    // AI picks: take the first turn for tempo.
+    el('orderBtns').innerHTML=`<p style="color:#aab;font-size:13px">The AI chooses to take the first turn.</p>`;
+    setTimeout(()=>setupOrderChosen('enemy'), 1300);
   }
-  // The player going second (Zeon) gets an EX Resource.
-  G.enemy.ex = 1;
+}
+function setupOrderChosen(first){
+  G.firstPlayer = first;
+  G.skipDrawSide = first;                 // the first player skips their opening draw
+  setupDealHands();
+}
+function setupDealHands(){
+  const pp=G.setup.playerPreset, ep=G.setup.enemyPreset;
+  G.playerDeckName=pp.name; G.enemyDeckName=ep.name;
+  el('playerName').textContent=pp.name+' (YOU)';
+  el('enemyName').textContent=ep.name+' (AI)';
+  G.player.deck=shuffle(buildPresetDeck('player',pp));
+  G.enemy.deck=shuffle(buildPresetDeck('enemy',ep));
   for (let i=0;i<HAND_START;i++){ draw(G.player,true); draw(G.enemy,true); }
+  aiMulligan(G.enemy);                     // AI decides its own redraw silently
+  setupHandMulligan(true);
+}
+function setupHandMulligan(allowRedraw){
+  const hand=G.player.hand.map(setupMiniCard).join('');
+  const m=setupModal(`<h2 style="color:#d8b4ff;margin:0 0 10px">Your opening hand</h2>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:10px 0">${hand}</div>
+    <p style="color:#9aa;font-size:13px">${allowRedraw?'You may redraw your whole hand once — shuffle all 5 back and draw 5 new.':'Mulligan used — this is your hand.'}</p>
+    <div>${allowRedraw?'<button id="keepHand" style="background:#2e6b3a;color:#fff;border:none;border-radius:8px;padding:11px 20px;margin:4px;cursor:pointer;font-weight:600">Keep</button> <button id="mullHand" style="background:#7a3a3a;color:#fff;border:none;border-radius:8px;padding:11px 20px;margin:4px;cursor:pointer;font-weight:600">Mulligan</button>':'<button id="keepHand" style="background:#2e6b3a;color:#fff;border:none;border-radius:8px;padding:11px 20px;margin:4px;cursor:pointer;font-weight:600">Continue</button>'}</div>`);
+  el('keepHand').onclick=()=>setupShieldsStep();
+  if (allowRedraw) el('mullHand').onclick=()=>{
+    G.player.deck.push(...G.player.hand); G.player.hand.length=0; shuffle(G.player.deck);
+    for (let i=0;i<HAND_START;i++) draw(G.player,true);
+    setupHandMulligan(false);
+  };
+}
+function setupShieldsStep(){
+  for (const s of [G.player, G.enemy]){ s.shields.length=0; for (let i=0;i<SHIELD_MAX && s.deck.length;i++) s.shields.push(s.deck.pop()); s.base=exBaseToken(s.who); }
+  setupShieldMulligan(true);
+}
+function setupShieldMulligan(allowRedraw){
+  const m=setupModal(`<h2 style="color:#d8b4ff;margin:0 0 10px">Shields set</h2>
+    <div style="font-size:30px;letter-spacing:4px;margin:8px 0">${'🛡'.repeat(SHIELD_MAX)}</div>
+    <p style="color:#9aa;font-size:13px">6 face-down Shields placed for each side.${allowRedraw?' You may redraw your 6 Shields once — shuffle them back and draw 6 new.':' Mulligan used.'}</p>
+    <div>${allowRedraw?'<button id="keepSh" style="background:#2e6b3a;color:#fff;border:none;border-radius:8px;padding:11px 20px;margin:4px;cursor:pointer;font-weight:600">Keep Shields</button> <button id="mullSh" style="background:#7a3a3a;color:#fff;border:none;border-radius:8px;padding:11px 20px;margin:4px;cursor:pointer;font-weight:600">Mulligan Shields</button>':'<button id="keepSh" style="background:#2e6b3a;color:#fff;border:none;border-radius:8px;padding:11px 20px;margin:4px;cursor:pointer;font-weight:600">Begin Battle</button>'}</div>`);
+  el('keepSh').onclick=()=>setupFinalize();
+  if (allowRedraw) el('mullSh').onclick=()=>{
+    G.player.deck.push(...G.player.shields); G.player.shields.length=0; shuffle(G.player.deck);
+    for (let i=0;i<SHIELD_MAX && G.player.deck.length;i++) G.player.shields.push(G.player.deck.pop());
+    setupShieldMulligan(false);
+  };
+}
+function setupFinalize(){
+  closeSetupModal();
+  const second = G.firstPlayer==='player' ? G.enemy : G.player;
+  second.ex = 1;                          // the player going second gets an EX Resource
   el('overlay').classList.add('hidden');
   el('log').innerHTML='';
-  log(`Battle start! <b>${G.playerDeckName}</b> vs <b>${G.enemyDeckName}</b>.`, 'sys');
-  log('Each side: 6 Shields set, EX Base deployed. The AI gains an EX Resource (going second).', 'sys');
-  beginTurn('player');
+  log(`Battle start! <b>${G.playerDeckName}</b> (you) vs <b>${G.enemyDeckName}</b> (AI).`, 'sys');
+  log(`${G.firstPlayer==='player'?'You take':'The AI takes'} the first turn. ${second===G.player?'You gain':'The AI gains'} an EX Resource (going second). 6 Shields + EX Base each.`, 'sys');
+  G.turnNumber=1;
+  beginTurn(G.firstPlayer);
+}
+// AI opening-hand redraw: mulligan a hand with too few early plays (no Lv≤3 cards).
+function aiMulligan(side){
+  const cheap = side.hand.filter(c=>(c.lv||0)<=3).length;
+  if (cheap>=2) return;
+  side.deck.push(...side.hand); side.hand.length=0; shuffle(side.deck);
+  for (let i=0;i<HAND_START;i++) draw(side,true);
 }
 
 function draw(side, silent){
@@ -1931,9 +2028,10 @@ function beginTurn(turn){
   // 1) Start Phase — Active Step: ready all rested cards; refresh per-turn abilities.
   for (const u of s.field){ if(u.stunned){ u.stunned=false; } else if(!u.noActive){ u.rested=false; } u.sick=false; u.tempAp=0; u.activatedThisTurn=false; u.canAttackActive=false; u.dmgReduce=0; u.ap=effAp(u); }
   if (s.base){ s.base.rested=false; s.base.activatedThisTurn=false; }
-  // 2) Draw Phase — draw 1 (the player going first skips their very first draw).
+  // 2) Draw Phase — draw 1 (whoever goes first skips their very first draw).
   G.phase='draw';
-  if (G.turnNumber>1 || turn==='enemy') draw(s);
+  if (G.skipDrawSide===turn) G.skipDrawSide=null;   // first player's opening turn: no draw
+  else draw(s);
   if (G.over) return;
   // 3) Resource Phase — place the top card of the 10-card Resource Deck (active). EX Resource adds +1.
   G.phase='resource';
@@ -1964,8 +2062,9 @@ function endTurn(){
     const used=s.ex-s.resAvail; s.ex=s.resAvail;
     log(`${who(s)} used up ${used} EX Resource${used===1?'':'s'}.`, s===G.player?'me':'ai');
   }
-  if (G.turn==='player') beginTurn('enemy');
-  else { G.turnNumber++; beginTurn('player'); }
+  const next = G.turn==='player' ? 'enemy' : 'player';
+  if (next===(G.firstPlayer||'player')) G.turnNumber++;   // new round when the first player comes back up
+  beginTurn(next);
 }
 
 // ---- playing cards ----
