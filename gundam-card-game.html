@@ -727,6 +727,33 @@ function reanimate(card, side, act, after){
   if (side===G.player) showLookAtTop(cands.slice(0,10), `${card.name}: deploy a Unit from your trash (pay its cost)`, ()=>true, true, (chosen)=>{ if(chosen) deploy(chosen); else done(); });
   else deploy(cands.sort((a,b)=>(b.baseAp+b.baseHp)-(a.baseAp+a.baseHp))[0]);
 }
+// Deploy a matching Unit from HAND for free (Full Frontal's 【When Paired】). "You may" → can decline.
+function deployFromHand(card, side, act, after){
+  const done=()=>{ if(after) after(); };
+  const cands=side.hand.filter(c=>c.type==='unit' && matchFilter(c, act.filter));
+  if (!cands.length || side.field.length>=FIELD_MAX){ done(); return; }
+  const deploy=(c)=>{
+    side.hand.splice(side.hand.indexOf(c),1);
+    c.rested=false; c.sick=!c.blitz; side.field.push(c);
+    sound('deploy');
+    log(`<b>${card.name}</b>: deploys <b>${c.name}</b> from hand for free.`, side===G.player?'me':'ai');
+    if (side===G.player) resolvePlayerTrigger(c, side, parseTrigger(c.effect,'Deploy'), 'Deploy', ()=>{ render(); done(); });
+    else { runTrigger(c, side, parseTrigger(c.effect,'Deploy'), 'Deploy'); done(); }
+  };
+  if (side===G.player) showLookAtTop(cands.slice(0,10), `${card.name}: you may deploy a Unit from your hand (free)`, ()=>true, true, (chosen)=>{ if(chosen) deploy(chosen); else done(); });
+  else deploy(cands.sort((a,b)=>(b.baseAp+b.baseHp)-(a.baseAp+a.baseHp))[0]);
+}
+// Deal damage to every Unit in range: foe's field for "all enemy Units", or both fields for "all Units".
+function damageAll(card, side, act, label){
+  const cls=side===G.player?'me':'ai', foe=side===G.player?G.enemy:G.player, f=act.filter||{};
+  const inRange=u=>(f.maxLv==null||(u.lv||0)<=f.maxLv)&&(f.maxAp==null||effAp(u)<=f.maxAp)&&(f.maxHp==null||u.hp<=f.maxHp);
+  const list=[];
+  for(const u of [...foe.field]) if(inRange(u)) list.push([u,foe]);
+  if(act.scope==='all-both') for(const u of [...side.field]) if(inRange(u)) list.push([u,side]);
+  if(!list.length) return;
+  log(`${label}: <b>${card.name}</b> deals ${act.amount} to ${act.scope==='all-both'?'all':'all enemy'} Units${f.maxLv?' Lv.'+f.maxLv+' or lower':''}.`, cls);
+  for(const [u,s] of list) damage(u, act.amount, s);
+}
 // Player "look at top 2, keep 1 on top, the other to trash".
 function playerScryMill(card, side, after){
   if(side.deck.length<2){ if(after)after(); return; }
@@ -955,11 +982,24 @@ function parseClause(raw){
   if (/return it to .*hand|return that unit to .*hand|return them to .*hand/.test(t)){ return { kind:'bounce', filter:targetFilter(t) }; }
   if (/\brest it\b|rest that unit/.test(t)){ return { kind:'rest', filter:targetFilter(t) }; }
   if ((d=t.match(/ap\s*-\s*(\d+)/))) return { kind:'debuff', amount:+d[1], filter:targetFilter(t) };
-  if ((d=t.match(/deal (\d+) damage/))) return { kind:'damage', amount:+d[1], scope:/all (enemy )?units|to all/.test(t)?'all-enemy':'enemy', both:/to them|to each/.test(t), filter:targetFilter(t) };
+  if ((d=t.match(/deal (\d+) damage/))){
+    // "to all enemy Units" hits the foe only; "to all Units" (no "enemy") hits BOTH sides.
+    const tgt=(t.match(/deal \d+ damage to (all[^.]*)/)||[])[1]||'';
+    let scope='enemy';
+    if (tgt) scope = /enemy/.test(tgt) ? 'all-enemy' : 'all-both';
+    else if (/to all/.test(t)) scope='all-enemy';
+    return { kind:'damage', amount:+d[1], scope, both:/to them|to each/.test(t), filter:targetFilter(t) };
+  }
   if ((d=t.match(/draw (\d+)/))) return { kind:'draw', amount:+d[1] };
   if (/\bdraw\b/.test(t)) return { kind:'draw', amount:1 };
   if ((d=t.match(/ap\s*\+\s*(\d+)/))) return { kind:'buff', amount:+d[1], filter:targetFilter(t) };
   if (/recover|heal/.test(t)){ d=t.match(/(\d+)\s*hp/); return { kind:'heal', amount:d?+d[1]:99 }; }
+  // "(You may) deploy 1 [trait] Unit card (that is Lv.N or lower) from your hand." (Full Frontal etc.)
+  // A real card from hand — distinct from the bracketed token-deploy rule below.
+  if (/deploy 1 .*?card.*?from your hand/.test(t)){
+    const m=t.match(/deploy 1 (.*?card.*?)\s+from your hand/);
+    return { kind:'deployFromHand', filter: m ? m[1].trim() : 'unit' };
+  }
   if (/deploy \d+ (?:rested )?\[/i.test(t)){
     // Conditional replacement: "Deploy 1 [A]…. If <cond>, deploy N [B]… instead." → deploy B when the
     // condition holds, otherwise A. (Corsica Base: 1 Tallgeese, or 2 Leo if a Corsica Base is in trash.)
@@ -1204,8 +1244,10 @@ function runTrigger(card, side, act, label){
     for(let i=0;i<act.draw;i++) draw(side);
     log(`${label}: <b>${name}</b> — draw ${act.draw}, discard ${act.discard}.`, cls);
     autoDiscard(side, act.discard, name);
-  } else if (act.kind==='damage' && act.scope==='all-enemy'){
-    if (foe.field.length){ log(`${label}: <b>${name}</b> deals ${act.amount} to all enemy Units.`, cls); for(const t of [...foe.field]) damage(t,act.amount,foe); }
+  } else if (act.kind==='damage' && (act.scope==='all-enemy' || act.scope==='all-both')){
+    damageAll(card, side, act, label);
+  } else if (act.kind==='deployFromHand'){
+    deployFromHand(card, side, act);
   } else if (act.kind==='damage' || act.kind==='rest' || act.kind==='bounce' || act.kind==='destroy' || act.kind==='debuff' || act.kind==='stun'){
     applyToTarget(card, side, act, rankTarget(enemyTargets(foe, act), act), label);
   } else if (act.kind==='buff' || act.kind==='heal'){
@@ -1328,6 +1370,7 @@ function resolvePlayerTrigger(card, side, act, label, after){
   if (act.kind==='dig'){ playerDig(card, G.player, act, fin); return; }
   if (act.kind==='scryMill'){ playerScryMill(card, G.player, fin); return; }
   if (act.kind==='reanimate'){ reanimate(card, G.player, act, fin); return; }
+  if (act.kind==='deployFromHand'){ deployFromHand(card, G.player, act, fin); return; }
   // Eins-style "rest up to N of your Units, then AoE": let the player pick which of their Units to tap.
   if (act.kind==='selfRestDamage'){
     const cands=side.field.filter(u=>!u.rested && !u.token && u!==card && matchTrashTrait(u, act.trait));
@@ -1368,7 +1411,7 @@ function resolvePlayerTrigger(card, side, act, label, after){
     }
     fin(); return;
   }
-  const enemyKinds = (act.kind==='damage' && act.scope!=='all-enemy') || ['rest','bounce','destroy','debuff','stun'].includes(act.kind);
+  const enemyKinds = (act.kind==='damage' && act.scope!=='all-enemy' && act.scope!=='all-both') || ['rest','bounce','destroy','debuff','stun'].includes(act.kind);
   const allyKinds  = act.kind==='buff' || act.kind==='heal' || act.kind==='grantKw' || act.kind==='grantReduce' || (act.kind==='grantAttackActive' && act.scope==='friendly' && !act.all);
   if (enemyKinds){
     // Enemy-targeting effects: ask the player to choose when there's a real choice.
@@ -1922,7 +1965,7 @@ function startCommand(card, handIdx){
     return;
   }
   // Fallback to avoid a dead card: if the action needs an enemy/friendly target and there is none, draw instead.
-  const needEnemy = (a.kind==='damage'&&a.scope!=='all-enemy') || ['rest','destroy','bounce','debuff','stun'].includes(a.kind);
+  const needEnemy = (a.kind==='damage'&&a.scope!=='all-enemy'&&a.scope!=='all-both') || ['rest','destroy','bounce','debuff','stun'].includes(a.kind);
   const needAlly  = ['heal','buff','grantKw','grantReduce'].includes(a.kind) || (a.kind==='grantAttackActive'&&a.scope==='friendly'&&!a.all) || a.kind==='damageBoth' || a.kind==='selfPingBuff' || a.kind==='selfPingDraw';
   if (needEnemy && G.enemy.field.length===0){ commit(card,handIdx); draw(s); log(`<b>${card.name}</b> finds no target — you draw 1 instead.`, 'me'); clearSel(); render(); return; }
   if (needAlly && G.player.field.length===0){ commit(card,handIdx); draw(s); log(`<b>${card.name}</b> finds no target — you draw 1 instead.`, 'me'); clearSel(); render(); return; }
@@ -1953,7 +1996,7 @@ function applyCommand(card, side, target){
   }
   else if (a.kind==='draw'){ for(let i=0;i<a.amount;i++) draw(side); log(`<b>${card.name}</b>: draw ${a.amount}.`, side===G.player?'me':'ai'); }
   else if (a.kind==='damage'){
-    if (a.scope==='all-enemy'){ log(`<b>${card.name}</b> hits all enemy units for ${a.amount}.`, side===G.player?'me':'ai'); for (const u of [...foe.field]) damage(u,a.amount,foe); }
+    if (a.scope==='all-enemy' || a.scope==='all-both'){ damageAll(card, side, a, card.name); }
     else if (target){ log(`<b>${card.name}</b> deals ${a.amount} to <b>${target.name}</b>.`, side===G.player?'me':'ai'); damage(target,a.amount,foe); }
   }
   else if (a.kind==='heal'){ if (target){ target.hp=Math.min(effMaxHp(target), target.hp + (a.amount>=99?effMaxHp(target):a.amount)); log(`<b>${card.name}</b> repairs <b>${target.name}</b>.`, side===G.player?'me':'ai'); } }
@@ -2044,8 +2087,8 @@ function applyActivateEffect(u, target, side){
     if (target){ target.tempAp=(target.tempAp||0)-a.amount; target.ap=effAp(target); log(`<b>${u.name}</b>: <b>${target.name}</b> gets AP-${a.amount} this turn.`, cls); }
   } else if (a.kind==='heal'){
     if (target){ target.hp=Math.min(effMaxHp(target), target.hp+a.amount); log(`<b>${u.name}</b> repairs <b>${target.name}</b> (+${a.amount} HP).`, cls); }
-  } else if (a.kind==='damage' && a.scope==='all-enemy'){
-    log(`<b>${u.name}</b> deals ${a.amount} to all enemy Units.`, cls); for (const t of [...foe.field]) damage(t, a.amount, foe);
+  } else if (a.kind==='damage' && (a.scope==='all-enemy' || a.scope==='all-both')){
+    damageAll(u, side, a, u.name);
   } else if (a.kind==='damage'){
     if (target){ log(`<b>${u.name}</b> deals ${a.amount} to <b>${target.name}</b>.`, cls); damage(target, a.amount, foe); }
   } else if (a.kind==='rest' || a.kind==='destroy' || a.kind==='bounce'){
@@ -2294,7 +2337,7 @@ function triggerBurst(card, side, done, allowChoice){
 function burstResolvePlayer(card, side, act, done){
   done = done || function(){};
   const foe = side===G.player?G.enemy:G.player;
-  const enemyKinds = (act.kind==='damage' && act.scope!=='all-enemy') || ['rest','destroy','bounce','debuff','stun'].includes(act.kind);
+  const enemyKinds = (act.kind==='damage' && act.scope!=='all-enemy' && act.scope!=='all-both') || ['rest','destroy','bounce','debuff','stun'].includes(act.kind);
   if (enemyKinds){
     const cands = enemyTargets(foe, act);
     if (!cands.length){ done(); return; }
@@ -2513,7 +2556,7 @@ function aiMainStep(){
   const dmg = ai.hand.find(c=>c.type==='command' && c.action.kind==='damage' && canAfford(ai,c));
   if (dmg && pl.field.length){
     const i=ai.hand.indexOf(dmg); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,dmg); sendToTrash(dmg,ai); flashCard(dmg,'ENEMY COMMAND');
-    if (dmg.action.scope==='all-enemy'){ log(`${who(G.enemy)} plays <b>${dmg.name}</b> (all units).`, 'ai'); for(const u of [...pl.field]) damage(u,dmg.action.amount,pl); }
+    if (dmg.action.scope==='all-enemy' || dmg.action.scope==='all-both'){ log(`${who(G.enemy)} plays <b>${dmg.name}</b> (all units).`, 'ai'); damageAll(dmg, ai, dmg.action, dmg.name); }
     else { const t=[...pl.field].sort((a,b)=>b.ap-a.ap)[0]; log(`${who(G.enemy)} plays <b>${dmg.name}</b> on <b>${t.name}</b>.`, 'ai'); damage(t,dmg.action.amount,pl); }
     return true;
   }
