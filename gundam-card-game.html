@@ -478,7 +478,7 @@ function parseActivateEffect(t){
     const cond = /if you have no unit/i.test(raw) && specs.length>=2 && !choose ? 'board' : null;
     return specs.length ? { kind:'token', scope:'self', specs, choose, cond } : { kind:'token', scope:'self' };
   }
-  if ((d=t.match(/gains?\s+<\s*breach\s*(\d+)/)))            return { kind:'grantBreach', amount:+d[1], scope:/this unit/.test(t)?'self':'friendly' };
+  if ((d=t.match(/gains?\s+<\s*breach\s*(\d+)/)))            return { kind:'grantKw', kw:'breach', amount:+d[1], scope:/this unit/.test(t)?'self':'friendly', filter:friendlyFilter(t) };
   if (/gains?\s+<\s*high-?maneuver/.test(t))                 return { kind:'grantHigh', scope:/this unit/.test(t)?'self':'friendly' };
   if (/recover|heal/.test(t)){ d=t.match(/(\d+)\s*hp/);      return { kind:'heal', amount:d?+d[1]:1, scope:'friendly' }; }
   if ((d=t.match(/deal (\d+) damage to all enemy/)))        return { kind:'damage', amount:+d[1], scope:'all-enemy' };
@@ -501,8 +501,8 @@ function parseActivateCost(c){
   if (RES_SYM[raw]) return { type:'resource', amount:RES_SYM[raw] };
   if (/rest this (base|unit)/.test(c)) return { type:'rest' };
   // "Rest 1 of your (Trait) Unit(s)" — pay by resting a friendly Unit (often from a Base).
-  let rm = c.match(/^rest 1 (?:of your |friendly )([a-z\/() ]*?)\s*units?$/);
-  if (rm){ const trait=(rm[1]||'').trim().replace(/[()]/g,'').trim()||null; return { type:'restUnit', trait }; }
+  let rm = c.match(/^rest 1 (?:of your |friendly )(?:(other|another)\s+)?([a-z\/() ]*?)\s*units?$/);
+  if (rm){ const trait=(rm[2]||'').trim().replace(/[()]/g,'').trim()||null; return { type:'restUnit', trait, excludeSelf: !!rm[1] }; }
   let m = c.match(/exile (\d+) ([a-z\/() ]*?)\s*cards? from your trash/);
   if (m){ const trait=(m[2]||'').trim().replace(/[()]/g,'').trim()||null; return { type:'exile', count:+m[1], trait }; }
   return null;
@@ -832,8 +832,16 @@ function linkMatches(u, p){
 // Returns null for text we don't model, so we never fabricate an effect.
 function hpLimit(t){ const m=t.match(/(\d+)\s*or less hp/); return m?+m[1]:99; }
 function parseTrigger(effect, kw){
-  const m = plain(effect).match(new RegExp('【\\s*'+kw+'[^】]*】\\s*([^【]*)','i'));
-  return m ? parseClause(m[1]) : null;
+  const pl = plain(effect);
+  const m = pl.match(new RegExp('【\\s*'+kw+'[^】]*】\\s*([^【]*)','i'));
+  if (m) return parseClause(m[1]);
+  // Some cards write a Deploy trigger without the bracket, e.g. Neo Zeong's
+  // "When this Unit (or one of your … Units) is deployed, <effect>".
+  if (kw==='Deploy'){
+    const dm = pl.match(/when this unit(?:\s+or one of your[^,]*?)?\s+is deployed,\s*([^【]*)/i);
+    if (dm) return parseClause(dm[1]);
+  }
+  return null;
 }
 // Parse one effect clause (original-case `raw`) into an engine action.
 function parseClause(raw){
@@ -1754,6 +1762,12 @@ function endTurn(){
     s.hand.splice(s.hand.indexOf(worst),1); sendToTrash(worst, s);
     log(`${who(s)} discards <b>${worst.name}</b> down to the hand limit.`, s===G.player?'me':'ai');
   }
+  // EX Resources are one-time tempo: any that were rested to pay a cost this turn are spent for
+  // good (they don't refresh next turn). resAvail<ex means at least that many EX were used.
+  if (s.ex>0 && s.resAvail<s.ex){
+    const used=s.ex-s.resAvail; s.ex=s.resAvail;
+    log(`${who(s)} used up ${used} EX Resource${used===1?'':'s'}.`, s===G.player?'me':'ai');
+  }
   if (G.turn==='player') beginTurn('enemy');
   else { G.turnNumber++; beginTurn('player'); }
 }
@@ -1885,7 +1899,7 @@ function applyCommand(card, side, target){
 function activateCostPayable(u, side){
   const c=u.activate.cost;
   if (c.type==='rest') return !u.rested;                  // a rest cost needs an active card
-  if (c.type==='restUnit') return side.field.some(x=>!x.rested && !x.token && matchTrashTrait(x, c.trait)); // a friendly Unit to rest
+  if (c.type==='restUnit') return side.field.some(x=>!x.rested && !x.token && (!c.excludeSelf || x!==u) && matchTrashTrait(x, c.trait)); // a friendly Unit to rest
   if (c.type==='exile') return trashCount(side, c.trait) >= c.count;
   if (c.type==='resource') return side.resAvail >= c.amount;
   return false;
@@ -1933,7 +1947,7 @@ function applyActivateEffect(u, target, side){
   // Pay the ability's cost.
   if (cost.type==='rest'){ u.rested=true; }
   else if (cost.type==='restUnit'){
-    const v=side.field.filter(x=>!x.rested && !x.token && matchTrashTrait(x, cost.trait)).sort((x,y)=>x.ap-y.ap)[0];
+    const v=side.field.filter(x=>!x.rested && !x.token && (!cost.excludeSelf || x!==u) && matchTrashTrait(x, cost.trait)).sort((x,y)=>x.ap-y.ap)[0];
     if (v){ v.rested=true; log(`<b>${u.name}</b> rests <b>${v.name}</b> as a cost.`, cls); }
   }
   else if (cost.type==='resource'){ side.resAvail=Math.max(0, side.resAvail-cost.amount); log(`<b>${u.name}</b> pays ${cost.amount} resource${cost.amount===1?'':'s'}.`, cls); }
@@ -1968,8 +1982,8 @@ function applyActivateEffect(u, target, side){
     if (target){ log(`<b>${u.name}</b> deals ${a.amount} to <b>${target.name}</b>.`, cls); damage(target, a.amount, foe); }
   } else if (a.kind==='rest' || a.kind==='destroy' || a.kind==='bounce'){
     if (target) applyToTarget(u, side, a, target, u.name);
-  } else if (a.kind==='grantBreach'){
-    const t=target||u; t.breach=Math.max(t.breach||0, a.amount); log(`<b>${u.name}</b>: <b>${t.name}</b> gains &lt;Breach ${a.amount}&gt;.`, cls);
+  } else if (a.kind==='grantKw'){
+    const t=target||u; grantKeyword(t, a.kw, a.amount); t.ap=effAp(t); log(`<b>${u.name}</b>: <b>${t.name}</b> gains &lt;${kwLabel(a.kw)}${a.kw==='breach'?' '+a.amount:''}&gt;.`, cls);
   } else if (a.kind==='grantHigh'){
     const t=target||u; t.highManeuver=true; log(`<b>${u.name}</b>: <b>${t.name}</b> gains &lt;High-Maneuver&gt;.`, cls);
   }
@@ -2259,10 +2273,18 @@ function applySupport(atk, atkSide, def){
   log(`<b>${h.name}</b> &lt;Support&gt; rests to give <b>${atk.name}</b> +${h.support} AP.`, atkSide===G.player?'me':'ai');
 }
 
-// <Breach N>: deal damage to the first card in the enemy shield area (it breaks; Burst may fire).
+// <Breach N>: deal the breach damage to the FIRST card in the enemy shield area. A standing Base
+// sits in front of the shields, so it takes the hit first; otherwise the top Shield breaks (Burst may fire).
 function breachShield(atk, defSide){
-  if (defSide.shields.length<=0) return;
   const side = defSide===G.player ? 'ai' : 'me';
+  if (defSide.base){
+    const b=defSide.base; b.hp-=atk.breach;
+    log(`<b>${atk.name}</b> &lt;Breach ${atk.breach}&gt; hits ${who(defSide)}'s <b>${b.name}</b> base for ${atk.breach}.`, side);
+    if (b.hp<=0){ defSide.base=null; fx('die', b.uid); sendToTrash(b, defSide); log(`${who(defSide)}'s ${b.name} base is destroyed by Breach.`, side); }
+    else fx('hit', b.uid);
+    return;
+  }
+  if (defSide.shields.length<=0) return;
   const sh=defSide.shields.pop(); defSide.breakingShield=true; fx('shield');
   log(`<b>${atk.name}</b> &lt;Breach&gt; destroys a ${who(defSide)} shield! (${defSide.shields.length} left)`, side);
   triggerBurst(sh, defSide);
@@ -2377,40 +2399,54 @@ function endGame(winnerSide){
 // ---- AI ----
 function aiTurn(){
   if (G.over) return;
+  G._aiGuard = 0;
+  aiMainLoop();
+}
+// One main-phase action per tick, each followed by a render + short pause, so the player can
+// actually SEE the AI's deploys and command reveals. (A synchronous while-loop flashed every
+// card in a single frame, so the player never saw e.g. two Close Combats being played.)
+function aiMainLoop(){
+  if (G.over) return;
+  if (G._aiGuard++ < 40 && aiMainStep()){ render(); setTimeout(aiMainLoop, 700); return; }
+  aiPostMain();
+}
+// Perform the single highest-priority main-phase action; return true if something was done.
+function aiMainStep(){
   const ai=G.enemy, pl=G.player;
-  let guard=0, acted=true;
-  while (acted && guard++<40){
-    acted=false;
-    // removal on biggest threat
-    const dmg = ai.hand.find(c=>c.type==='command' && c.action.kind==='damage' && canAfford(ai,c));
-    if (dmg && pl.field.length){
-      const i=ai.hand.indexOf(dmg); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,dmg); sendToTrash(dmg,ai); flashCard(dmg,'ENEMY COMMAND');
-      if (dmg.action.scope==='all-enemy'){ log(`${who(G.enemy)} plays <b>${dmg.name}</b> (all units).`, 'ai'); for(const u of [...pl.field]) damage(u,dmg.action.amount,pl); }
-      else { const t=[...pl.field].sort((a,b)=>b.ap-a.ap)[0]; log(`${who(G.enemy)} plays <b>${dmg.name}</b> on <b>${t.name}</b>.`, 'ai'); damage(t,dmg.action.amount,pl); }
-      acted=true; continue;
-    }
-    // draw if low
-    const drawC = ai.hand.find(c=>c.type==='command' && c.action.kind==='draw' && c.action.amount>=2 && canAfford(ai,c));
-    if (drawC && ai.hand.length<=4){ const i=ai.hand.indexOf(drawC); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,drawC); sendToTrash(drawC,ai); flashCard(drawC,'ENEMY COMMAND'); for(let k=0;k<drawC.action.amount;k++) draw(ai); log(`${who(G.enemy)} plays <b>${drawC.name}</b>.`, 'ai'); acted=true; continue; }
-    // deploy a base if it improves the guard
-    const baseC = ai.hand.find(c=>c.type==='base' && canAfford(ai,c) && (!ai.base || c.hp>ai.base.hp));
-    if (baseC){ const i=ai.hand.indexOf(baseC); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,baseC); baseC.rested=false; baseC.sick=false; ai.base=baseC; log(`${who(G.enemy)} deploys base <b>${baseC.name}</b>.`, 'ai'); runTrigger(baseC, ai, parseTrigger(baseC.effect,'Deploy'), 'Deploy'); acted=true; continue; }
-    // deploy best affordable unit
-    if (ai.field.length<FIELD_MAX){
-      const dep = ai.hand.filter(c=>c.type==='unit' && canAfford(ai,c)).sort((a,b)=>(b.baseAp+b.baseHp)-(a.baseAp+a.baseHp))[0];
-      if (dep){ const i=ai.hand.indexOf(dep); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,dep); dep.rested=false; dep.sick=!dep.blitz; ai.field.push(dep); log(`${who(G.enemy)} deploys <b>${dep.name}</b>.`, 'ai'); runTrigger(dep, ai, parseTrigger(dep.effect,'Deploy'), 'Deploy'); acted=true; continue; }
-    }
-    // pair a pilot
-    const pilot = ai.hand.find(c=>c.type==='pilot' && canAfford(ai,c));
-    if (pilot && ai.field.some(u=>u.type==='unit')){ const best=ai.field.filter(u=>u.type==='unit').sort((a,b)=>b.baseAp-a.baseAp)[0]; const i=ai.hand.indexOf(pilot); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,pilot); attachPilot(best,pilot); log(`${who(G.enemy)} pairs <b>${pilot.name}</b> with <b>${best.name}</b>.`, 'ai'); acted=true; continue; }
-    // buff before attacks
-    const buff = ai.hand.find(c=>c.type==='command' && c.action.kind==='buff' && canAfford(ai,c));
-    if (buff && ai.field.some(u=>!u.sick&&!u.rested&&u.ap>0)){ const t=ai.field.filter(u=>!u.sick&&!u.rested&&u.ap>0).sort((a,b)=>b.ap-a.ap)[0]; const i=ai.hand.indexOf(buff); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,buff); sendToTrash(buff,ai); flashCard(buff,'ENEMY COMMAND'); t.tempAp=(t.tempAp||0)+buff.action.amount; t.ap=effAp(t); log(`${who(G.enemy)} empowers <b>${t.name}</b>.`, 'ai'); acted=true; continue; }
-    // token-creating command — play it when there's board room
-    const tokCmd = ai.hand.find(c=>c.type==='command' && c.action.kind==='token' && canAfford(ai,c));
-    if (tokCmd && ai.field.length<FIELD_MAX){ const i=ai.hand.indexOf(tokCmd); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,tokCmd); sendToTrash(tokCmd,ai); flashCard(tokCmd,'ENEMY COMMAND'); deployTokens(tokCmd.action, ai, tokCmd.name, tokCmd.name, 'ai'); acted=true; continue; }
+  // removal on biggest threat
+  const dmg = ai.hand.find(c=>c.type==='command' && c.action.kind==='damage' && canAfford(ai,c));
+  if (dmg && pl.field.length){
+    const i=ai.hand.indexOf(dmg); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,dmg); sendToTrash(dmg,ai); flashCard(dmg,'ENEMY COMMAND');
+    if (dmg.action.scope==='all-enemy'){ log(`${who(G.enemy)} plays <b>${dmg.name}</b> (all units).`, 'ai'); for(const u of [...pl.field]) damage(u,dmg.action.amount,pl); }
+    else { const t=[...pl.field].sort((a,b)=>b.ap-a.ap)[0]; log(`${who(G.enemy)} plays <b>${dmg.name}</b> on <b>${t.name}</b>.`, 'ai'); damage(t,dmg.action.amount,pl); }
+    return true;
   }
-
+  // draw if low
+  const drawC = ai.hand.find(c=>c.type==='command' && c.action.kind==='draw' && c.action.amount>=2 && canAfford(ai,c));
+  if (drawC && ai.hand.length<=4){ const i=ai.hand.indexOf(drawC); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,drawC); sendToTrash(drawC,ai); flashCard(drawC,'ENEMY COMMAND'); for(let k=0;k<drawC.action.amount;k++) draw(ai); log(`${who(G.enemy)} plays <b>${drawC.name}</b>.`, 'ai'); return true; }
+  // deploy a base if it improves the guard
+  const baseC = ai.hand.find(c=>c.type==='base' && canAfford(ai,c) && (!ai.base || c.hp>ai.base.hp));
+  if (baseC){ const i=ai.hand.indexOf(baseC); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,baseC); baseC.rested=false; baseC.sick=false; ai.base=baseC; flashCard(baseC,'ENEMY BASE'); log(`${who(G.enemy)} deploys base <b>${baseC.name}</b>.`, 'ai'); runTrigger(baseC, ai, parseTrigger(baseC.effect,'Deploy'), 'Deploy'); return true; }
+  // deploy best affordable unit
+  if (ai.field.length<FIELD_MAX){
+    const dep = ai.hand.filter(c=>c.type==='unit' && canAfford(ai,c)).sort((a,b)=>(b.baseAp+b.baseHp)-(a.baseAp+a.baseHp))[0];
+    if (dep){ const i=ai.hand.indexOf(dep); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,dep); dep.rested=false; dep.sick=!dep.blitz; ai.field.push(dep); flashCard(dep,'ENEMY DEPLOY'); log(`${who(G.enemy)} deploys <b>${dep.name}</b>.`, 'ai'); runTrigger(dep, ai, parseTrigger(dep.effect,'Deploy'), 'Deploy'); return true; }
+  }
+  // pair a pilot
+  const pilot = ai.hand.find(c=>c.type==='pilot' && canAfford(ai,c));
+  if (pilot && ai.field.some(u=>u.type==='unit')){ const best=ai.field.filter(u=>u.type==='unit').sort((a,b)=>b.baseAp-a.baseAp)[0]; const i=ai.hand.indexOf(pilot); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,pilot); flashCard(pilot,'ENEMY PILOT'); attachPilot(best,pilot); log(`${who(G.enemy)} pairs <b>${pilot.name}</b> with <b>${best.name}</b>.`, 'ai'); return true; }
+  // buff before attacks
+  const buff = ai.hand.find(c=>c.type==='command' && c.action.kind==='buff' && canAfford(ai,c));
+  if (buff && ai.field.some(u=>!u.sick&&!u.rested&&u.ap>0)){ const t=ai.field.filter(u=>!u.sick&&!u.rested&&u.ap>0).sort((a,b)=>b.ap-a.ap)[0]; const i=ai.hand.indexOf(buff); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,buff); sendToTrash(buff,ai); flashCard(buff,'ENEMY COMMAND'); t.tempAp=(t.tempAp||0)+buff.action.amount; t.ap=effAp(t); log(`${who(G.enemy)} empowers <b>${t.name}</b>.`, 'ai'); return true; }
+  // token-creating command — play it when there's board room
+  const tokCmd = ai.hand.find(c=>c.type==='command' && c.action.kind==='token' && canAfford(ai,c));
+  if (tokCmd && ai.field.length<FIELD_MAX){ const i=ai.hand.indexOf(tokCmd); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,tokCmd); sendToTrash(tokCmd,ai); flashCard(tokCmd,'ENEMY COMMAND'); deployTokens(tokCmd.action, ai, tokCmd.name, tokCmd.name, 'ai'); return true; }
+  return false;
+}
+// After the main phase: use ready activated abilities, then run the attack sequence.
+function aiPostMain(){
+  if (G.over) return;
+  const ai=G.enemy;
   // Use ready activated abilities before attacks: the base's freely (it can't attack anyway),
   // and a unit's only when it's enemy removal or the unit couldn't attack this turn regardless.
   const baseAct = activateReady(ai.base) ? [ai.base] : [];
