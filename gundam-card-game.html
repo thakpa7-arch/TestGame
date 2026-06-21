@@ -146,11 +146,17 @@
 
   /* Hit / impact effects */
   @keyframes fxHit { 0%{ filter: brightness(2.4) saturate(.4); transform: translate(0,0); } 20%{ transform: translate(-4px,2px) rotate(-2deg); } 40%{ transform: translate(4px,-2px) rotate(2deg); } 60%{ transform: translate(-3px,1px); } 100%{ filter: none; transform: translate(0,0); } }
+  /* Rested cards are rotated 90°; the hit/death shake must keep that rotation or the card appears
+     to stand up ("set active") then drop back to rested. */
+  @keyframes fxHitRested { 0%{ filter: brightness(2.4) saturate(.4); transform: rotate(90deg) scale(.82) translate(0,0); } 20%{ transform: rotate(90deg) scale(.82) translate(-4px,2px); } 40%{ transform: rotate(90deg) scale(.82) translate(4px,-2px); } 60%{ transform: rotate(90deg) scale(.82) translate(-3px,1px); } 100%{ filter: none; transform: rotate(90deg) scale(.82); } }
   .card.fx-hit { animation: fxHit .42s ease-out; }
+  .card.rested.fx-hit { animation: fxHitRested .42s ease-out; }
   .card.fx-hit::after { content:''; position:absolute; inset:0; background: radial-gradient(circle at 50% 45%, rgba(255,90,60,.85), rgba(255,160,40,.25) 45%, transparent 70%); animation: fxFlash .42s ease-out forwards; pointer-events:none; }
   @keyframes fxFlash { 0%{ opacity:1; transform: scale(.4); } 100%{ opacity:0; transform: scale(1.3); } }
   .card.fx-die { animation: fxDie .4s ease-in forwards; }
   @keyframes fxDie { 0%{ filter: brightness(3); } 100%{ opacity:0; transform: scale(.5) rotate(12deg); filter: brightness(0); } }
+  @keyframes fxDieRested { 0%{ filter: brightness(3); transform: rotate(90deg) scale(.82); } 100%{ opacity:0; transform: rotate(90deg) scale(.4); filter: brightness(0); } }
+  .card.rested.fx-die { animation: fxDieRested .4s ease-in forwards; }
   @keyframes shakeScreen { 0%,100%{ transform: translate(0,0);} 15%{ transform: translate(-7px,4px);} 30%{ transform: translate(8px,-5px);} 45%{ transform: translate(-6px,3px);} 60%{ transform: translate(5px,4px);} 75%{ transform: translate(-3px,-2px);} }
   .shake { animation: shakeScreen .4s ease-in-out; }
   @keyframes shieldPop { 0%{ transform: scale(1); box-shadow:0 0 6px rgba(251,191,36,.4);} 40%{ transform: scale(1.5); box-shadow:0 0 18px 6px rgba(255,120,60,.9);} 100%{ transform: scale(0); opacity:0; } }
@@ -581,11 +587,14 @@ function parseActivate(effect){
 // ---- Trash / Graveyard helpers ----
 function matchTrashTrait(card, trait){
   if (!trait) return true;
-  const tl = trait.toLowerCase().replace(/[()]/g,'').trim();
-  if (tl === 'command') return card.type === 'command';
-  if (tl === 'unit')    return card.type === 'unit';
-  if (tl === 'pilot')   return card.type === 'pilot';
-  if (tl === 'base')    return card.type === 'base';
+  let tl = trait.toLowerCase().replace(/[()]/g,'').trim();
+  // A card-type qualifier ("… Unit"/"Pilot"/"Base"/"Command") requires that type IN ADDITION to any
+  // trait/colour — e.g. "(Tekkadan)/(Teiwaz) Unit" means a Tekkadan-or-Teiwaz card that is a Unit.
+  let needType=null;
+  const tm = tl.match(/\b(unit|pilot|base|command)s?\b/);
+  if (tm){ needType=tm[1]; tl = tl.replace(/\b(unit|pilot|base|command)s?\b/g,'').replace(/\s+/g,' ').trim(); }
+  if (needType && card.type !== needType) return false;
+  if (!tl) return true;                                   // pure type requirement (e.g. just "Unit")
   // Color requirements (e.g. "3 blue cards") match the card's printed color.
   if (['blue','green','red','white','purple','black','colorless'].includes(tl)) return (card.color||'').toLowerCase()===tl;
   const cardTrait = (card.trait||'').toLowerCase();
@@ -807,14 +816,47 @@ function playerScryMill(card, side, after){
 function trashBlocksAttack(u, side){
   return !!(u.trashCantAttack && (side.trash||[]).length <= u.trashCantAttack.maxCount);
 }
+// Pile viewer (Trash / Exile): shows card art grouped by type then primary trait, with identical
+// copies stacked under a ×N badge.
 function showPileViewer(pile, title){
   const modal=document.createElement('div');
-  modal.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.85);z-index:999;display:flex;align-items:center;justify-content:center;';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.86);z-index:999;display:flex;align-items:center;justify-content:center;padding:14px;';
   const box=document.createElement('div');
-  box.style.cssText='background:#1a1a2e;border:1px solid #555;border-radius:10px;padding:16px;max-width:440px;width:90%;max-height:82vh;overflow-y:auto;';
-  box.innerHTML=`<h3 style="margin:0 0 10px;color:#aaa">${title} (${pile.length})</h3>`+
-    (pile.length?[...pile].reverse().map(c=>`<div style="padding:4px 0;border-bottom:1px solid #2a2a3e;color:#ccc;font-size:13px"><b>${c.name}</b> <span style="opacity:.55">${c.type} · Cost ${c.cost}</span></div>`).join(''):'<div style="color:#555">Empty</div>')+
-    `<button style="margin-top:12px;padding:8px 20px;background:#333;color:#fff;border:none;border-radius:5px;cursor:pointer" onclick="this.closest('div').parentNode.remove()">Close</button>`;
+  box.style.cssText='background:#141426;border:1px solid #555;border-radius:12px;padding:16px;max-width:680px;width:96%;max-height:88vh;overflow-y:auto;';
+  const typeOrder={unit:0,pilot:1,command:2,base:3};
+  const groups=new Map();
+  for(const c of pile){
+    const trait=((c.trait||'').match(/\(([^)]+)\)/)||[,'No trait'])[1];
+    const key=c.type+' · ('+trait+')';
+    if(!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(c);
+  }
+  const keys=[...groups.keys()].sort((a,b)=>{
+    const ta=typeOrder[a.split(' · ')[0]]??9, tb=typeOrder[b.split(' · ')[0]]??9;
+    return ta-tb || a.localeCompare(b);
+  });
+  let html=`<h3 style="margin:0 0 8px;color:#d8b4ff">${title} (${pile.length})</h3>`;
+  if(!pile.length) html+='<div style="color:#666;padding:8px 0">Empty</div>';
+  for(const key of keys){
+    const cards=groups.get(key);
+    const byName=new Map();
+    for(const c of cards){ if(!byName.has(c.name)) byName.set(c.name,{c,n:0}); byName.get(c.name).n++; }
+    html+=`<div style="margin:12px 0 5px;color:#9fb4dd;font-size:12px;font-weight:700;text-transform:capitalize">${key} <span style="opacity:.55">×${cards.length}</span></div>`;
+    html+='<div style="display:flex;flex-wrap:wrap;gap:8px">';
+    for(const {c,n} of byName.values()){
+      const bg=c.img?`background-image:url('${c.img}');background-size:cover;background-position:center top`:'background:#0d1628';
+      html+=`<div title="${c.name} · Cost ${c.cost}" style="position:relative;width:74px;height:104px;border-radius:7px;border:1px solid #4a4a6a;overflow:hidden;${bg}">`;
+      if(!c.img) html+=`<div style="padding:14px 5px;font-size:9px;color:#cdd;text-align:center">${c.name}</div>`;
+      html+=`<div style="position:absolute;top:2px;left:2px;background:rgba(6,40,58,.92);color:#22d3ee;font-size:9px;font-weight:800;border-radius:7px;padding:0 4px">${c.cost}</div>`;
+      if(n>1) html+=`<div style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,.85);color:#fff;font-size:10px;font-weight:800;border-radius:7px;padding:0 5px">×${n}</div>`;
+      html+=`<div style="position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.62);color:#fff;font-size:8px;text-align:center;padding:1px 2px;line-height:1.05">${c.name}</div>`;
+      html+='</div>';
+    }
+    html+='</div>';
+  }
+  html+=`<div style="text-align:center"><button style="margin-top:14px;padding:8px 22px;background:#333;color:#fff;border:none;border-radius:6px;cursor:pointer">Close</button></div>`;
+  box.innerHTML=html;
+  box.querySelector('button').onclick=()=>modal.remove();
   modal.appendChild(box);
   modal.addEventListener('click',e=>{ if(e.target===modal) modal.remove(); });
   document.body.appendChild(modal);
@@ -1899,6 +1941,9 @@ let promptTimer=null;
 function setPrompt(t){ const p=el('prompt'); if(!t){p.style.display='none';return;} p.style.display='block'; p.textContent=t; }
 function flashPrompt(t){ setPrompt(t); clearTimeout(promptTimer); promptTimer=setTimeout(()=>{ if(!G.over) defaultPrompt(); },1700); }
 // Briefly reveal a played Command / Burst card center-screen so the player doesn't miss it.
+// FLASH_MS is shared by the reveal duration, the player's input lock, and the AI's pacing so a
+// card's animation always finishes before the next action begins.
+const FLASH_MS = 1000;
 let flashCardTimer=null;
 function flashCard(card, tag){
   if (!card) return;
@@ -1910,7 +1955,7 @@ function flashCard(card, tag){
     `<div class="cf-name">${card.name}</div><div class="cf-eff">${plain(card.effect||'').slice(0,140)}</div></div>`;
   requestAnimationFrame(()=>host.classList.add('show'));
   clearTimeout(flashCardTimer);
-  flashCardTimer=setTimeout(()=>{ host.classList.remove('show'); }, 1250);
+  flashCardTimer=setTimeout(()=>{ host.classList.remove('show'); }, FLASH_MS);
 }
 function defaultPrompt(){ setPrompt(G.turn==='player' ? 'Your turn — deploy, attack, then End Turn.' : ''); }
 
@@ -2097,6 +2142,9 @@ function draw(side, silent){
   }
   const c = side.deck.pop();
   if (side.hand.length<HAND_MAX) side.hand.push(c);
+  // Reveal the player's own draws (turn draw and effect draws) so you can see what you got — but
+  // never reveal the AI's cards.
+  if (!silent && side===G.player && c) log(`You draw <b>${c.name}</b>.`, 'me');
   return c;
 }
 
@@ -2205,7 +2253,8 @@ function playFromHand(uidv){
 function startCommand(card, handIdx){
   const s=G.player, a=card.action;
   flashCard(card, 'YOUR COMMAND');
-  lockActions(500);   // brief input freeze so the command reveal/effect lands before the next move
+  lockActions(FLASH_MS);   // hold off the next move until the command's reveal animation finishes
+                           // (only blocks idle actions — picking this command's target still works)
   if (a.kind==='drawDiscard'){
     commit(card,handIdx);
     for(let i=0;i<a.draw;i++) draw(s);
@@ -2228,11 +2277,13 @@ function startCommand(card, handIdx){
     });
     return;
   }
-  // Fallback to avoid a dead card: if the action needs an enemy/friendly target and there is none, draw instead.
+  // A Command with no legal target fizzles: it's spent and goes to the trash with no effect
+  // (no free replacement draw).
   const needEnemy = (a.kind==='damage'&&a.scope!=='all-enemy'&&a.scope!=='all-both') || ['rest','destroy','bounce','debuff','stun'].includes(a.kind);
   const needAlly  = ['heal','buff','grantKw','grantReduce'].includes(a.kind) || (a.kind==='grantAttackActive'&&a.scope==='friendly'&&!a.all) || a.kind==='damageBoth' || a.kind==='selfPingBuff' || a.kind==='selfPingDraw';
-  if (needEnemy && G.enemy.field.length===0){ commit(card,handIdx); draw(s); log(`<b>${card.name}</b> finds no target — you draw 1 instead.`, 'me'); clearSel(); render(); return; }
-  if (needAlly && G.player.field.length===0){ commit(card,handIdx); draw(s); log(`<b>${card.name}</b> finds no target — you draw 1 instead.`, 'me'); clearSel(); render(); return; }
+  const noEnemyTgt = needEnemy && enemyTargets(G.enemy, a).length===0;
+  const noAllyTgt  = needAlly && G.player.field.length===0;
+  if (noEnemyTgt || noAllyTgt){ commit(card,handIdx); log(`<b>${card.name}</b> has no legal target — it fizzles into the trash.`, 'me'); closeInspect(); clearSel(); render(); checkEnd(); return; }
   // Everything else resolves through the same interactive resolver as triggered effects.
   commit(card,handIdx); closeInspect();
   resolvePlayerTrigger(card, G.player, a, card.name, ()=>{ clearSel(); render(); checkEnd(); });
@@ -2906,7 +2957,7 @@ function aiTurn(){
 // card in a single frame, so the player never saw e.g. two Close Combats being played.)
 function aiMainLoop(){
   if (G.over) return;
-  if (G._aiGuard++ < 40 && aiMainStep()){ render(); setTimeout(aiMainLoop, 700); return; }
+  if (G._aiGuard++ < 40 && aiMainStep()){ render(); setTimeout(aiMainLoop, FLASH_MS+150); return; }
   aiPostMain();
 }
 // Perform the single highest-priority main-phase action; return true if something was done.
