@@ -206,10 +206,14 @@
   .card.rested { transform: rotate(90deg) scale(.82); opacity: .85; }
   .card.rested:hover { transform: rotate(90deg) scale(.86); }
   .card.sick::after { content: "💤"; position: absolute; top: 3px; right: 3px; font-size: 13px; }
-  .card.selectable { outline: 3px solid var(--green); outline-offset: -3px; }
+  /* Targetable units breathe from dark to full colour (instead of any rest-like motion) so it's
+     obvious what an effect/attack can hit. */
+  @keyframes targetBreathe { 0%,100% { filter: brightness(.5) saturate(.85); } 50% { filter: brightness(1.08) saturate(1.1); } }
+  .card.selectable { outline: 3px solid var(--green); outline-offset: -3px; animation: targetBreathe 1.15s ease-in-out infinite; }
   .card.selected, .card.attacking { outline: 3px solid var(--cyan); box-shadow: 0 0 16px var(--cyan); }
-  .card.target { outline: 3px dashed var(--red); outline-offset: -3px; }
+  .card.target { outline: 3px dashed var(--red); outline-offset: -3px; animation: targetBreathe 1.15s ease-in-out infinite; }
   .card.dim { opacity: .42; }
+  @media (prefers-reduced-motion: reduce) { .card.selectable, .card.target { animation: none; } }
   .card .pilot-badge { position: absolute; top: 21px; left: 3px; background: var(--purple); color: #fff; font-size: 7px; padding: 1px 4px; border-radius: 3px; max-width: 90%; overflow: hidden; white-space: nowrap; }
   /* Paired/linked Pilot shown attached under the Unit's title. */
   .card .pilot-strip { position: absolute; top: 19px; left: 0; right: 0; display: flex; align-items: center; gap: 3px; background: linear-gradient(90deg, rgba(120,60,200,.95), rgba(70,30,130,.92)); padding: 2px 3px; border-top: 1px solid rgba(216,180,255,.5); border-bottom: 1px solid rgba(0,0,0,.4); }
@@ -1014,6 +1018,11 @@ function parseClause(raw){
   if (/rest them/.test(t) && /enemy unit/.test(t)){
     const cm=t.match(/1 to (\d+)/); return { kind:'restMulti', count:cm?+cm[1]:2, filter:targetFilter(t) };
   }
+  // "Choose 1 to N enemy Units. Deal X damage to them." → player picks 1..N enemies, each takes X.
+  if (/1 to (\d+) enemy units?/.test(t) && (d=t.match(/deal (\d+) damage/))){
+    const cm=t.match(/1 to (\d+) enemy units?/);
+    return { kind:'damageMulti', amount:+d[1], count:cm?+cm[1]:2, filter:targetFilter(t) };
+  }
   // Reanimate: "Choose 1 [trait] Unit card from your trash. Pay its cost to deploy it."
   if (/from your trash/.test(t) && /pay its cost to deploy/.test(t)){
     const fm=t.match(/choose 1 ([a-z0-9\s\(\)\/\-]*?)\s*(?:unit )?cards?\b/);
@@ -1112,6 +1121,9 @@ function kwLabel(kw){ return {first:'First Strike',high:'High-Maneuver',blocker:
 function targetFilter(t){
   const f={}; let m;
   if ((m=t.match(/lv\.?\s*(\d+) or lower/i))) f.maxLv=+m[1];
+  // "whose Lv. is equal to or lower than this Unit" — a cap relative to the SOURCE Unit's Lv
+  // (e.g. Marida Cruz). Resolved against act.source at target-selection time.
+  if (/(?:lv\.?[^.]*?)?equal to or lower than this unit/i.test(t)) f.maxLvSelf=true;
   if ((m=t.match(/(\d+) or less ap/i)) || (m=t.match(/with (\d+) or less ap/i))) f.maxAp=+m[1];
   if ((m=t.match(/(\d+) or less hp/i))) f.maxHp=+m[1];
   if (/lowest hp/i.test(t)) f.lowestHp=true;
@@ -1122,7 +1134,10 @@ function targetFilter(t){
 // Valid enemy targets for a single-target removal/debuff action (respects act.filter).
 function enemyTargets(foe, act){
   const f=act.filter||{};
+  // "Lv. equal to or lower than this Unit": cap by the source Unit's current level.
+  const selfLvCap = (f.maxLvSelf && act.source) ? (act.source.lv||0) : null;
   let list=foe.field.filter(u=>u.hp>0
+    && (selfLvCap==null || (u.lv||0)<=selfLvCap)
     && (f.maxLv==null || (u.lv||0)<=f.maxLv)
     && (act.maxLv==null || (u.lv||0)<=act.maxLv)               // legacy field from parseTriggerInner
     && (f.maxAp==null || effAp(u)<=f.maxAp)
@@ -1283,6 +1298,11 @@ function runTrigger(card, side, act, label){
     const cands=enemyTargets(foe,act).sort((a,b)=>effAp(b)-effAp(a)).slice(0,act.count);
     for (const t of cands) t.rested=true;
     if (cands.length) log(`${label}: <b>${name}</b> rests ${cands.length} enemy Unit${cands.length>1?'s':''}.`, cls);
+  } else if (act.kind==='damageMulti'){
+    // AI auto: hit up to `count` strongest enemies, each for `amount`.
+    const cands=enemyTargets(foe,act).sort((a,b)=>effAp(b)-effAp(a)).slice(0,act.count);
+    if (cands.length) log(`${label}: <b>${name}</b> deals ${act.amount} to ${cands.length} enemy Unit${cands.length>1?'s':''}.`, cls);
+    for (const t of cands) damage(t, act.amount, foe);
   } else if (act.kind==='restBoth'){
     // AI auto: rest a low-value friendly of its own and the strongest legal enemy.
     const f=restBothFriendly(side, act), e=rankTarget(enemyTargets(foe,{kind:'rest',filter:act.enemyFilter}), {kind:'rest'});
@@ -1499,6 +1519,15 @@ function resolvePlayerTrigger(card, side, act, label, after){
       }
     }
     fin(); return;
+  }
+  // "Choose 1 to N enemy Units. Deal X damage to them." — let the player tap up to N enemies.
+  if (act.kind==='damageMulti'){
+    const cands = enemyTargets(G.enemy, act);
+    if (!cands.length){ fin(); return; }
+    G.mode='trigger-multi';
+    G.pending={ card, side, act, label, after, picked:[], cands: cands.map(c=>c.uid), max: Math.min(act.count, cands.length) };
+    setPrompt(`${card.name}: tap up to ${G.pending.max} enemy Unit${G.pending.max>1?'s':''} to deal ${act.amount} each (Cancel to finish).`);
+    render(); return;
   }
   const enemyKinds = (act.kind==='damage' && act.scope!=='all-enemy' && act.scope!=='all-both') || ['rest','bounce','destroy','debuff','stun'].includes(act.kind);
   const allyKinds  = act.kind==='buff' || act.kind==='heal' || act.kind==='grantKw' || act.kind==='grantReduce' || (act.kind==='grantAttackActive' && act.scope==='friendly' && !act.all);
@@ -1950,16 +1979,24 @@ function setupMiniCard(c){
     <div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.7);color:#fff;font-size:8px;padding:1px 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${c.name}</div>
     <div style="position:absolute;top:1px;left:2px;color:#8ad;font-size:9px;font-weight:bold">${c.cost}</div></div>`;
 }
-// The signature art for a deck: its highest cost+Lv Unit with an image (its "ace" card).
-function presetArt(preset){
+// A deck's candidate "ace" arts, best (highest cost+Lv Unit) first.
+function presetArtCandidates(preset){
   const defs = parsePreset(preset.dg).map(e=>CARD_BY_ID.get(e.id)).filter(d=>d && d.img);
   const units = defs.filter(d=>d.type==='unit');
-  const pick = (units.length?units:defs).sort((a,b)=>((b.cost||0)+(b.lv||0))-((a.cost||0)+(a.lv||0)))[0];
+  return (units.length?units:defs).sort((a,b)=>((b.cost||0)+(b.lv||0))-((a.cost||0)+(a.lv||0)));
+}
+// The signature art for a deck (its ace), avoiding any image already used by another deck so
+// every deck tile shows a distinct card (two Neo Zeong / two Barbatos decks otherwise collide).
+function presetArt(preset, used){
+  const cand = presetArtCandidates(preset);
+  const pick = (used && cand.find(c=>!used.has(c.img))) || cand[0];
+  if (pick && used) used.add(pick.img);
   return pick ? pick.img : '';
 }
 function setupChooseDeck(){
+  const used=new Set();
   const cards=PRESET_DECKS.map((d,i)=>{
-    const art=presetArt(d);
+    const art=presetArt(d, used);
     const bg = art ? `background-image:url('${art}');background-size:cover;background-position:center top` : 'background:linear-gradient(160deg,#23204a,#191636)';
     return `<button class="setup-deck" data-i="${i}"
       style="position:relative;width:150px;height:200px;border-radius:12px;border:1px solid #6a4fb0;cursor:pointer;overflow:hidden;padding:0;${bg}">
@@ -2401,6 +2438,15 @@ function fieldClick(uidv){
     setPrompt(`${p.card.name}: rested ${p.picked.length}/${p.max}. Tap another or Cancel to finish.`);
     render(); return;
   }
+  if (G.mode==='trigger-multi'){
+    const p=G.pending;
+    if (!p.cands.includes(uidv)){ flashPrompt('Tap a highlighted enemy Unit.'); return; }
+    if (p.picked.includes(uidv)){ flashPrompt('Already chosen.'); return; }
+    p.picked.push(uidv);
+    if (p.picked.length>=p.max){ finishMultiDamage(); return; }
+    setPrompt(`${p.card.name}: hit ${p.picked.length}/${p.max}. Tap another or Cancel to finish.`);
+    render(); return;
+  }
   if (G.mode==='trigger-target'){
     const p=G.pending;
     if (!p.cands.includes(uidv)){ flashPrompt('Pick a highlighted unit.'); return; }
@@ -2459,14 +2505,21 @@ function fieldClick(uidv){
     if (tgt){
       if (!tgt.rested && !atk.canAttackActive){ flashPrompt('You can only attack a rested (turned) enemy unit. Attack the shields instead, or a rested unit.'); return; }
       declareAttack(atk, G.player);   // on-attack self-buffs (AP+/High-Maneuver) BEFORE the block step
-      // The defender may redirect to an active Blocker (unless attacker has High-Maneuver)
-      const blockers = G.enemy.field.filter(b=>b.blocker && !b.rested && b.hp>0);
-      if (!atk.highManeuver && blockers.length && aiWantsBlock(atk)){
-        const blk = pickAiBlocker(atk, blockers);
-        blk.rested=true; log(`${who(G.enemy)}'s <b>${blk.name}</b> &lt;Blocker&gt; intercepts!`, 'ai');
-        battle(atk, blk, G.player, G.enemy); return;
-      }
-      battle(atk,tgt,G.player,G.enemy); return;
+      // 【Attack】 effects (Marida's ping, etc.) resolve at declaration so YOU pick their targets,
+      // then the Block Step and battle follow.
+      resolveAttackTriggers(atk, G.player, ()=>{
+        if (atk.hp<=0){ clearSel(); render(); checkEnd(); return; }
+        const tgt2 = G.enemy.field.find(c=>c.uid===uidv);
+        if (!tgt2 || (!tgt2.rested && !atk.canAttackActive)){ atk.rested=true; clearSel(); render(); checkEnd(); return; }
+        const blockers = G.enemy.field.filter(b=>b.blocker && !b.rested && b.hp>0);
+        if (!atk.highManeuver && blockers.length && aiWantsBlock(atk)){
+          const blk = pickAiBlocker(atk, blockers);
+          blk.rested=true; log(`${who(G.enemy)}'s <b>${blk.name}</b> &lt;Blocker&gt; intercepts!`, 'ai');
+          battle(atk, blk, G.player, G.enemy); return;
+        }
+        battle(atk,tgt2,G.player,G.enemy);
+      });
+      return;
     }
   }
 }
@@ -2476,22 +2529,24 @@ function attackDirect(){
   const atk=G.player.field.find(c=>c.uid===G.selected); if(!atk) return;
   if (atk.noDirectAttack){ flashPrompt(`${atk.name} can't attack the enemy player directly — pick a rested enemy unit.`); return; }
   declareAttack(atk, G.player);   // on-attack self-buffs (AP+/High-Maneuver) BEFORE the block step
-  // Defender may block a direct attack with an active <Blocker> (unless attacker has High-Maneuver)
-  const blockers = G.enemy.field.filter(b=>b.blocker && !b.rested && b.hp>0);
-  if (!atk.highManeuver && blockers.length && aiWantsBlock(atk)){
-    const blk = pickAiBlocker(atk, blockers);
-    blk.rested=true; log(`${who(G.enemy)}'s <b>${blk.name}</b> &lt;Blocker&gt; intercepts your attack!`, 'ai');
-    battle(atk, blk, G.player, G.enemy); return;
-  }
-  atk.rested=true;
-  strikePlayer(atk, G.enemy, ()=>{ clearSel(); render(); });
+  resolveAttackTriggers(atk, G.player, ()=>{
+    if (atk.hp<=0){ clearSel(); render(); checkEnd(); return; }
+    // Defender may block a direct attack with an active <Blocker> (unless attacker has High-Maneuver)
+    const blockers = G.enemy.field.filter(b=>b.blocker && !b.rested && b.hp>0);
+    if (!atk.highManeuver && blockers.length && aiWantsBlock(atk)){
+      const blk = pickAiBlocker(atk, blockers);
+      blk.rested=true; log(`${who(G.enemy)}'s <b>${blk.name}</b> &lt;Blocker&gt; intercepts your attack!`, 'ai');
+      battle(atk, blk, G.player, G.enemy); return;
+    }
+    atk.rested=true;
+    strikePlayer(atk, G.enemy, ()=>{ clearSel(); render(); });
+  });
 }
 
 // Resolve an attack aimed at a player: Base soaks first, else a Shield breaks (Burst), else defeat.
 function strikePlayer(atk, defSide, done){
   done = done || function(){};
   const side = defSide===G.player ? 'ai' : 'me';
-  onAttack(atk, defSide===G.player ? G.enemy : G.player);
   if (defSide.base){
     const b=defSide.base; b.hp-=atk.ap;
     log(`<b>${atk.name}</b> hits ${who(defSide)}'s <b>${b.name}</b> base for ${atk.ap}.`, side);
@@ -2631,19 +2686,39 @@ function declareAttack(atk, atkSide){
     }
   };
   apply(parseTrigger(atk.effect,'Attack'));
-  if (atk.pilotCard) apply(parseTrigger(atk.pilotCard.effect,'Attack'));
+  apply(pilotAttackAction(atk));
 }
-// Battle-time 【Attack】 effects (enemy damage, etc.) from the Unit and its Pilot. The self-buffs
-// were already applied at declaration, so skip them here to avoid stacking AP twice.
-function onAttack(atk, atkSide){
-  const run=(act)=>{ if (act && act.kind!=='selfbuff' && act.kind!=='selfKeyword') runTrigger(atk, atkSide, act, 'Attack'); };
-  run(parseTrigger(atk.effect,'Attack'));
-  if (atk.pilotCard) run(parseTrigger(atk.pilotCard.effect,'Attack'));
+// The paired Pilot's 【Attack】 action, honoring a 【During Link】/【During Pair】 gate printed just
+// before the 【Attack】 marker (e.g. Marida Cruz fires only while her Unit is a Link Unit).
+function pilotAttackAction(atk){
+  if (!atk.pilotCard) return null;
+  const pl = plain(atk.pilotCard.effect);
+  const m = pl.match(/(【[^】]*】\s*)?【\s*Attack[^】]*】\s*([^【]*)/i);
+  if (!m) return null;
+  const gate = m[1] || '';
+  if (/during link/i.test(gate) && !atk.linked) return null;
+  if (/during pair/i.test(gate) && !atk.pilot)  return null;
+  return parseClause(m[2]);
+}
+// 【Attack】 effects that pick a target (enemy damage, etc.) from the Unit and its Pilot. Resolved
+// when the attack is DECLARED — before the Block Step — so the player chooses targets (Marida,
+// Kshatriya-style). Self-buffs were already applied by declareAttack(), so they're skipped here.
+function resolveAttackTriggers(atk, atkSide, done){
+  const acts=[];
+  const add=(act)=>{ if (act && act.kind!=='selfbuff' && act.kind!=='selfKeyword'){ act.source=atk; acts.push(act); } };
+  add(parseTrigger(atk.effect,'Attack'));
+  add(pilotAttackAction(atk));
+  let i=0;
+  (function next(){
+    if (i>=acts.length || atk.hp<=0){ done(); return; }
+    const a=acts[i++];
+    if (atkSide===G.player) resolvePlayerTrigger(atk, atkSide, a, 'Attack', next);
+    else { runTrigger(atk, atkSide, a, 'Attack'); next(); }
+  })();
 }
 // Simultaneous battle, modified by First Strike (striker hits first; if foe dies, no return).
 function battle(atk, def, atkSide, defSide){
   atk.rested=true;
-  onAttack(atk, atkSide);
   // <Support N>: an active friendly Unit may rest to give the attacker +N AP this turn.
   applySupport(atk, atkSide, def);
   // First Strike only triggers on this Unit's attack — i.e. on its owner's turn. The
@@ -2793,6 +2868,15 @@ function finishSelfRest(){
   const chosen=p.picked.map(uid=>G.player.field.find(u=>u.uid===uid)).filter(Boolean);
   G.mode='idle'; G.pending=null;
   applySelfRestDamage(p.card, p.side, p.act, chosen, p.label);
+  if (p.after) p.after(); else { clearSel(); render(); checkEnd(); }
+}
+// Finish a "Choose 1 to N enemy Units. Deal X to them." multi-pick (a tap reaching the max, or Cancel).
+function finishMultiDamage(){
+  const p=G.pending; if (!p) return;
+  const chosen=p.picked.map(uid=>G.enemy.field.find(u=>u.uid===uid)).filter(Boolean);
+  G.mode='idle'; G.pending=null;
+  if (chosen.length) log(`${p.label}: <b>${p.card.name}</b> deals ${p.act.amount} to ${chosen.length} enemy Unit${chosen.length>1?'s':''}.`, p.side===G.player?'me':'ai');
+  for (const t of chosen) damage(t, p.act.amount, G.enemy);
   if (p.after) p.after(); else { clearSel(); render(); checkEnd(); }
 }
 
@@ -2954,27 +3038,31 @@ function resolveAiAttackInner(atk, done){
   // The player's Action step may have rested/destroyed the attacker — if so, the attack fizzles.
   if (atk.hp<=0 || atk.rested){ render(); done(); return; }
   declareAttack(atk, G.enemy);   // AI on-attack self-buffs (AP+/High-Maneuver) BEFORE the block step
-  const pl=G.player;
-  // Units may only attack a RESTED enemy unit (or any unit if granted <attack active>), or the player directly.
-  const attackable = atk.canAttackActive ? pl.field.filter(u=>u.hp>0) : pl.field.filter(u=>u.rested && u.hp>0);
-  const target = attackable.filter(u=> atk.ap>=u.hp && (atk.firstStrike || u.ap<atk.hp)).sort((a,b)=>b.ap-a.ap)[0] || null;
-  // You may intercept with an active <Blocker> (unless High-Maneuver). To avoid nagging, only
-  // prompt when blocking is meaningful: the attack reaches YOU (no rested unit soaks it), or a
-  // blocker would clearly win the trade. A swing at a rested unit you don't care about won't ask.
-  const blockers = pl.field.filter(b=>b.blocker && !b.rested && b.hp>0 && b!==target);
-  const worthAsking = !target || blockers.some(b=> b.hp>atk.ap && b.ap>=atk.hp);
-  if (!atk.highManeuver && blockers.length && worthAsking){
-    promptPlayerBlock(atk, blockers, target, (blk)=>{
-      if (blk){ blk.rested=true; log(`You intercept with <b>${blk.name}</b> &lt;Blocker&gt;.`, 'me'); battle(atk, blk, G.enemy, G.player); done(); }
-      else if (target){ battle(atk, target, G.enemy, G.player); done(); }
-      else if (!atk.noDirectAttack){ aiDirectHit(atk, done); }
-      else done();
-    });
-    return;
-  }
-  if (target){ battle(atk, target, G.enemy, G.player); done(); return; }
-  if (!atk.noDirectAttack){ aiDirectHit(atk, done); return; }
-  done();
+  // 【Attack】 effects (e.g. Marida's ping) resolve at declaration, before the Block Step.
+  resolveAttackTriggers(atk, G.enemy, ()=>{
+    if (atk.hp<=0 || atk.rested){ render(); done(); return; }
+    const pl=G.player;
+    // Units may only attack a RESTED enemy unit (or any unit if granted <attack active>), or the player directly.
+    const attackable = atk.canAttackActive ? pl.field.filter(u=>u.hp>0) : pl.field.filter(u=>u.rested && u.hp>0);
+    const target = attackable.filter(u=> atk.ap>=u.hp && (atk.firstStrike || u.ap<atk.hp)).sort((a,b)=>b.ap-a.ap)[0] || null;
+    // You may intercept with an active <Blocker> (unless High-Maneuver). To avoid nagging, only
+    // prompt when blocking is meaningful: the attack reaches YOU (no rested unit soaks it), or a
+    // blocker would clearly win the trade. A swing at a rested unit you don't care about won't ask.
+    const blockers = pl.field.filter(b=>b.blocker && !b.rested && b.hp>0 && b!==target);
+    const worthAsking = !target || blockers.some(b=> b.hp>atk.ap && b.ap>=atk.hp);
+    if (!atk.highManeuver && blockers.length && worthAsking){
+      promptPlayerBlock(atk, blockers, target, (blk)=>{
+        if (blk){ blk.rested=true; log(`You intercept with <b>${blk.name}</b> &lt;Blocker&gt;.`, 'me'); battle(atk, blk, G.enemy, G.player); done(); }
+        else if (target){ battle(atk, target, G.enemy, G.player); done(); }
+        else if (!atk.noDirectAttack){ aiDirectHit(atk, done); }
+        else done();
+      });
+      return;
+    }
+    if (target){ battle(atk, target, G.enemy, G.player); done(); return; }
+    if (!atk.noDirectAttack){ aiDirectHit(atk, done); return; }
+    done();
+  });
 }
 
 function aiDirectHit(atk, done){ atk.rested=true; strikePlayer(atk, G.player, ()=>{ render(); if(done) done(); }); }
@@ -3031,6 +3119,7 @@ function cardFace(c, ctx){
     if (G.mode==='command-target' && ['damage','rest','destroy','bounce','debuff'].includes(G.pending?.action.kind) && enemyTargets(G.enemy,G.pending.action).includes(c)) cls.push('selectable');
     if (G.mode==='activate-target' && G.pending?.activate?.action.scope==='enemy' && (!G.activateCands || G.activateCands.includes(c.uid))) cls.push('selectable');
     if (G.mode==='trigger-target' && (G.pending?.scope==='enemy'||G.pending?.scope==='self-ping-enemy'||G.pending?.scope==='rest-both-enemy') && G.pending.cands.includes(c.uid)) cls.push('selectable');
+    if (G.mode==='trigger-multi' && G.pending?.cands.includes(c.uid) && !G.pending.picked.includes(c.uid)) cls.push('selectable');
     if (G.mode==='action-step-target' && G.pending?.cands.includes(c.uid)) cls.push('selectable');
   }
   const isBase = c.type==='base';
@@ -3244,6 +3333,7 @@ el('cancelBtn').addEventListener('click', ()=>{
     return;
   }
   if (G.mode==='self-rest-pick'){ finishSelfRest(); return; }   // Cancel = "done choosing"
+  if (G.mode==='trigger-multi'){ finishMultiDamage(); return; } // Cancel = "done choosing"
   clearSel(); render();
 });
 el('rulesBtn').addEventListener('click', ()=>{
@@ -3274,6 +3364,7 @@ document.addEventListener('keydown', e=>{
       applyCommand(p.cmd, G.player, t);
       if (p.after) p.after(); else { render(); checkEnd(); }
     } else if (G.mode==='self-rest-pick'){ finishSelfRest(); }
+    else if (G.mode==='trigger-multi'){ finishMultiDamage(); }
     else { clearSel(); render(); }
   }
   if(e.key==='Enter'&&G.turn==='player'){ clearSel(); endTurn(); }
