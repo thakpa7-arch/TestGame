@@ -1300,6 +1300,37 @@ function resolvePlayerTrigger(card, side, act, label, after){
   if (act.kind==='dig'){ playerDig(card, G.player, act, fin); return; }
   if (act.kind==='scryMill'){ playerScryMill(card, G.player, fin); return; }
   if (act.kind==='reanimate'){ reanimate(card, G.player, act, fin); return; }
+  // Compound effects (mill/exile/gate/self-damage) whose follow-up may target an enemy:
+  // do the non-interactive part here, then resolve the inner THROUGH this resolver so the
+  // player chooses the target the card text promises ("choose 1 enemy Unit").
+  const cls0 = side===G.player?'me':'ai';
+  if (act.kind==='millCond'){
+    const milled=[], cards=[];
+    for(let i=0;i<act.amount&&side.deck.length;i++){ const c=side.deck.pop(); sendToTrash(c,side); milled.push(c.name); cards.push(c); }
+    if(milled.length) log(`${label}: <b>${card.name}</b> mills ${milled.length} — ${milled.join(', ')}.`, cls0);
+    if(cards.some(c=>matchTrashTrait(c,act.condTrait)) && act.inner) return resolvePlayerTrigger(card, side, act.inner, label, after);
+    fin(); return;
+  }
+  if (act.kind==='selfDamageThen'){
+    log(`${label}: <b>${card.name}</b> takes ${act.self} damage.`, cls0); damage(card, act.self, side);
+    if (act.inner) return resolvePlayerTrigger(card, side, act.inner, label, after);
+    fin(); return;
+  }
+  if (act.kind==='trashGate'){
+    if (trashCount(side,act.trait)>=act.minCount && act.inner) return resolvePlayerTrigger(card, side, act.inner, label, after);
+    fin(); return;
+  }
+  if (act.kind==='trashExile'){
+    if (trashCount(side, act.trait) >= act.count && act.inner){
+      const needsEnemy = ['destroy','rest','damage','debuff','bounce'].includes(act.inner.kind);
+      if (!needsEnemy || G.enemy.field.some(u=>!u.token)){
+        const n=exileFromTrash(side, act.count, act.trait);
+        log(`${label}: <b>${card.name}</b> exiles ${n} ${act.trait?act.trait+' ':''}card${n===1?'':'s'} from trash.`, cls0);
+        return resolvePlayerTrigger(card, side, act.inner, label, after);
+      }
+    }
+    fin(); return;
+  }
   const enemyKinds = (act.kind==='damage' && act.scope!=='all-enemy') || ['rest','bounce','destroy','debuff','stun'].includes(act.kind);
   const allyKinds  = act.kind==='buff' || act.kind==='heal' || act.kind==='grantKw' || act.kind==='grantReduce' || (act.kind==='grantAttackActive' && act.scope==='friendly' && !act.all);
   if (enemyKinds){
