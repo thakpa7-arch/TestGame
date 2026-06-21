@@ -500,9 +500,9 @@ function parseActivateEffect(t){
   if (/gains?\s+<\s*high-?maneuver/.test(t))                 return { kind:'grantHigh', scope:/this unit/.test(t)?'self':'friendly' };
   if (/recover|heal/.test(t)){ d=t.match(/(\d+)\s*hp/);      return { kind:'heal', amount:d?+d[1]:1, scope:'friendly' }; }
   if ((d=t.match(/deal (\d+) damage to all enemy/)))        return { kind:'damage', amount:+d[1], scope:'all-enemy' };
-  if (/\brest it\b|rest that unit|rest 1 enemy unit/.test(t)) return { kind:'rest', scope:'enemy' };
-  if ((d=t.match(/ap\s*-\s*(\d+)/)))                         return { kind:'debuff', amount:+d[1], scope:'enemy' };
-  if ((d=t.match(/deal (\d+) damage/)) && /enemy/.test(t))   return { kind:'damage', amount:+d[1], scope:'enemy' };
+  if (/\brest it\b|rest that unit|rest 1 enemy unit/.test(t)) return { kind:'rest', scope:'enemy', filter:targetFilter(t) };
+  if ((d=t.match(/ap\s*-\s*(\d+)/)))                         return { kind:'debuff', amount:+d[1], scope:'enemy', filter:targetFilter(t) };
+  if ((d=t.match(/deal (\d+) damage/)) && /enemy/.test(t))   return { kind:'damage', amount:+d[1], scope:'enemy', filter:targetFilter(t) };
   if ((d=t.match(/ap\s*\+\s*(\d+)/))){
     const all = /all (your |friendly )|all of your|1 to \d+ friendly/.test(t);
     return { kind:'buff', amount:+d[1], scope: all?'all-friendly':'friendly' };
@@ -770,7 +770,7 @@ function damageAll(card, side, act, label){
   if(act.scope==='all-both') for(const u of [...side.field]) if(inRange(u)) list.push([u,side]);
   if(!list.length) return;
   log(`${label}: <b>${card.name}</b> deals ${act.amount} to ${act.scope==='all-both'?'all':'all enemy'} Units${f.maxLv?' Lv.'+f.maxLv+' or lower':''}.`, cls);
-  for(const [u,s] of list) damage(u, act.amount, s);
+  for(const [u,s] of list) damage(u, act.amount, s, s===side?'self':undefined);
 }
 // Player "look at top 2, keep 1 on top, the other to trash".
 function playerScryMill(card, side, after){
@@ -1308,9 +1308,9 @@ function runTrigger(card, side, act, label){
   } else if (act.kind==='setActive'){
     card.rested=false; log(`${label}: <b>${name}</b> is set active.`, cls);
   } else if (act.kind==='selfDamage'){
-    log(`${label}: <b>${name}</b> takes ${act.self} damage.`, cls); damage(card, act.self, side);
+    log(`${label}: <b>${name}</b> takes ${act.self} damage.`, cls); damage(card, act.self, side, 'self');
   } else if (act.kind==='selfDamageThen'){
-    log(`${label}: <b>${name}</b> takes ${act.self} damage.`, cls); damage(card, act.self, side);
+    log(`${label}: <b>${name}</b> takes ${act.self} damage.`, cls); damage(card, act.self, side, 'self');
     if (act.inner) runTrigger(card, side, act.inner, label);
   } else if (act.kind==='damageBoth'){
     const ft=pingFriendly(side, act.amount, false), et=[...foe.field].sort((a,b)=>b.ap-a.ap)[0];
@@ -1319,11 +1319,11 @@ function runTrigger(card, side, act, label){
   } else if (act.kind==='selfPingBuff'){
     const t=pingFriendly(side, act.self, true);
     if (t){ log(`${label}: <b>${name}</b> deals ${act.self} to your <b>${t.name}</b>, then it gets AP+${act.ap}.`, cls);
-      damage(t, act.self, side); if (t.hp>0){ t.tempAp=(t.tempAp||0)+act.ap; t.ap=effAp(t); } }
+      damage(t, act.self, side, 'self'); if (t.hp>0){ t.tempAp=(t.tempAp||0)+act.ap; t.ap=effAp(t); } }
   } else if (act.kind==='selfPingDraw'){
     const t=pingFriendly(side, act.self, false);
     if (t){ log(`${label}: <b>${name}</b> deals ${act.self} to your <b>${t.name}</b> — draw ${act.draw}.`, cls);
-      damage(t, act.self, side); for (let i=0;i<act.draw;i++) draw(side); if (act.discard) autoDiscard(side, act.discard, name); }
+      damage(t, act.self, side, 'self'); for (let i=0;i<act.draw;i++) draw(side); if (act.discard) autoDiscard(side, act.discard, name); }
   } else if (act.kind==='token'){
     deployTokens(act, side, name, label, cls);
   } else if (act.kind==='setActiveFriendly'){
@@ -1459,7 +1459,7 @@ function resolvePlayerTrigger(card, side, act, label, after){
     fin(); return;
   }
   if (act.kind==='selfDamageThen'){
-    log(`${label}: <b>${card.name}</b> takes ${act.self} damage.`, cls0); damage(card, act.self, side);
+    log(`${label}: <b>${card.name}</b> takes ${act.self} damage.`, cls0); damage(card, act.self, side, 'self');
     if (act.inner) return resolvePlayerTrigger(card, side, act.inner, label, after);
     fin(); return;
   }
@@ -1539,12 +1539,12 @@ function applySelfPingChosen(card, side, act, ftarget, etarget){
   const cls=side===G.player?'me':'ai', foe=side===G.player?G.enemy:G.player;
   if (act.kind==='selfPingBuff'){
     log(`<b>${card.name}</b> deals ${act.self} to your <b>${ftarget.name}</b>, then it gets AP+${act.ap}.`,cls);
-    damage(ftarget, act.self, side); if(ftarget.hp>0){ ftarget.tempAp=(ftarget.tempAp||0)+act.ap; ftarget.ap=effAp(ftarget); }
+    damage(ftarget, act.self, side, 'self'); if(ftarget.hp>0){ ftarget.tempAp=(ftarget.tempAp||0)+act.ap; ftarget.ap=effAp(ftarget); }
   } else if (act.kind==='selfPingDraw'){
     log(`<b>${card.name}</b> deals ${act.self} to your <b>${ftarget.name}</b> — draw ${act.draw}.`,cls);
-    damage(ftarget, act.self, side); for(let i=0;i<act.draw;i++) draw(side); if(act.discard) autoDiscard(side, act.discard, card.name);
+    damage(ftarget, act.self, side, 'self'); for(let i=0;i<act.draw;i++) draw(side); if(act.discard) autoDiscard(side, act.discard, card.name);
   } else if (act.kind==='damageBoth'){
-    if(ftarget){ log(`<b>${card.name}</b> deals ${act.amount} to your <b>${ftarget.name}</b>.`,cls); damage(ftarget, act.amount, side); }
+    if(ftarget){ log(`<b>${card.name}</b> deals ${act.amount} to your <b>${ftarget.name}</b>.`,cls); damage(ftarget, act.amount, side, 'self'); }
     if(!etarget) etarget = rankTarget(enemyTargets(foe,{kind:'damage'}), {kind:'damage'});
     if(etarget){ log(`<b>${card.name}</b> deals ${act.amount} to <b>${etarget.name}</b>.`,cls); damage(etarget, act.amount, foe); }
   }
@@ -1612,6 +1612,9 @@ function makeCard(def, owner){
     c.onShieldBreak = parseShieldBreak(def.effect);
     // Conditional keyword: "While this is damaged, it gains <Suppression>" (e.g. Barbatos 4th Form).
     c.suppressionWhenDamaged = /while this[^.]*?damaged[^.]*?gains?\s*<\s*suppression/i.test(plain(def.effect));
+    // Static effect-damage reduction: "When this Unit receives effect damage from an enemy, reduce it by N." (Silver Bullet)
+    const edr = plain(def.effect).match(/receives?\s+effect damage from an enemy,?\s*reduce it by (\d+)/i);
+    c.effDmgReduce = edr ? +edr[1] : 0;
     c.support = supportAmount(def.effect);
     // continuous self AP/HP buffs that switch on while paired / linked
     const pb = staticSelfBuff(def.effect, 'During Pair'); c.pairAp = pb.ap; c.pairHp = pb.hp;
@@ -2243,9 +2246,10 @@ function startActivate(u){
   if (!activateReady(u)){ flashPrompt(`${u.name}'s ability isn't available.`); return; }
   const act=u.activate.action;
   if (act.scope==='friendly' || act.scope==='enemy'){
-    const side = act.scope==='enemy' ? G.enemy : G.player;
-    if (!side.field.length){ flashPrompt('No valid target for that ability.'); return; }
-    G.mode='activate-target'; G.pending=u;
+    // Respect the ability's target restriction (e.g. V-Dash "enemy Unit with 4 or less HP").
+    const cands = act.scope==='enemy' ? enemyTargets(G.enemy, act) : friendlyTargets(G.player, act);
+    if (!cands.length){ flashPrompt('No valid target for that ability.'); return; }
+    G.mode='activate-target'; G.pending=u; G.activateCands=cands.map(c=>c.uid);
     setPrompt(`${u.name}: tap ${act.scope==='enemy'?'an enemy':'a friendly'} unit to target.`);
     closeInspect(); render(); return;
   }
@@ -2277,7 +2281,7 @@ function applyActivateEffect(u, target, side){
   } else if (a.kind==='selfPingBuff'){
     const t = target || pingFriendly(side, a.self, true);
     if (t){ log(`<b>${u.name}</b> deals ${a.self} to your <b>${t.name}</b>, then it gets AP+${a.ap}.`, cls);
-      damage(t, a.self, side); if (t.hp>0){ t.tempAp=(t.tempAp||0)+a.ap; t.ap=effAp(t); } }
+      damage(t, a.self, side, 'self'); if (t.hp>0){ t.tempAp=(t.tempAp||0)+a.ap; t.ap=effAp(t); } }
   } else if (['selfDamage','selfDamageThen','damageBoth','selfPingDraw','token'].includes(a.kind)){
     runTrigger(u, side, a, u.name);
   } else if (a.kind==='buff' && a.scope==='all-friendly'){
@@ -2310,7 +2314,7 @@ function aiActivate(u){
   if (a.scope==='self'){ /* setActive / self keyword grant — no target */ }
   else if (a.scope==='all-friendly'){ if(!ai.field.length) return false; }
   else if (a.scope==='all-enemy'){ if(!pl.field.length) return false; }
-  else if (a.scope==='enemy'){ if(!pl.field.length) return false; target=[...pl.field].sort((x,y)=>y.ap-x.ap)[0]; }
+  else if (a.scope==='enemy'){ const ec=enemyTargets(pl, a); if(!ec.length) return false; target=[...ec].sort((x,y)=>y.ap-x.ap)[0]; }
   else { // friendly single target
     if (a.kind==='heal'){ target=[...ai.field].filter(t=>t.hp<effMaxHp(t)).sort((x,y)=>(effMaxHp(y)-y.hp)-(effMaxHp(x)-x.hp))[0]; if(!target) return false; }
     else if (a.kind==='selfPingBuff'){ target=pingFriendly(ai, a.self, true); if(!target) return false; }
@@ -2351,9 +2355,10 @@ function fieldClick(uidv){
 
   if (G.mode==='activate-target'){
     const u=G.pending, scope=u.activate.action.scope;
+    if (G.activateCands && !G.activateCands.includes(uidv)){ flashPrompt('Pick a highlighted unit.'); return; }
     const t=(scope==='enemy'?G.enemy:G.player).field.find(c=>c.uid===uidv);
     if(!t){ flashPrompt(scope==='enemy'?'Pick an enemy unit.':'Pick a friendly unit.'); return; }
-    resolveActivate(u, t); return;
+    G.activateCands=null; resolveActivate(u, t); return;
   }
 
   if (G.mode==='action-step-target'){
@@ -2597,8 +2602,8 @@ function battle(atk, def, atkSide, defSide){
   const fs = atk.firstStrike ? 'me' : 'both';
   log(`<b>${atk.name}</b> (${atk.ap}/${atk.hp}) vs <b>${def.name}</b> (${def.ap}/${def.hp})${fs!=='both'?' — &lt;First Strike&gt;':''}.`, atkSide===G.player?'me':'ai');
   const a=atk.ap, d=def.ap;
-  if (fs==='me'){ damage(def,a,defSide); if (def.hp>0) damage(atk,d,atkSide); }
-  else { damage(def,a,defSide); damage(atk,d,atkSide); }
+  if (fs==='me'){ damage(def,a,defSide,'battle'); if (def.hp>0) damage(atk,d,atkSide,'battle'); }
+  else { damage(def,a,defSide,'battle'); damage(atk,d,atkSide,'battle'); }
   // <Breach N>: when this attack destroys an enemy Unit, hit the top enemy shield.
   if (atk.breach>0 && def.type==='unit' && def.hp<=0) breachShield(atk, defSide);
   clearSel(); render(); checkEnd();
@@ -2658,9 +2663,15 @@ function pickAiBlocker(atk, blockers){
   })[0];
 }
 
-function damage(u, dmg, side){
+// kind: 'battle' = combat damage, 'self' = friendly self-inflicted, else = enemy effect damage.
+function damage(u, dmg, side, kind){
   if (u.hp<=0) return;
   if (u.dmgReduce){ dmg = Math.max(0, dmg - u.dmgReduce); }   // damage-reduction / immunity this turn
+  // Static "reduce enemy effect damage by N" (e.g. Silver Bullet) — only vs enemy effect damage.
+  if (u.effDmgReduce && kind!=='battle' && kind!=='self'){
+    dmg = Math.max(0, dmg - u.effDmgReduce);
+    if (dmg<=0) log(`<b>${u.name}</b> reduces the effect damage to 0.`, side===G.player?'me':'ai');
+  }
   if (dmg<=0) return;   // ignore hits on an already-destroyed Unit / fully-reduced damage
   u.hp-=dmg;
   if (u.hp<=0){
@@ -2725,7 +2736,7 @@ function runTriggerSeq(list, side, done){
   })();
 }
 
-function clearSel(){ G.selected=null; G.mode='idle'; G.pending=null; G.pendingHandIdx=-1; defaultPrompt(); }
+function clearSel(){ G.selected=null; G.mode='idle'; G.pending=null; G.pendingHandIdx=-1; G.activateCands=null; defaultPrompt(); }
 // Finish an Eins-style self-rest selection (from a unit tap reaching the max, or Cancel to stop early).
 function finishSelfRest(){
   const p=G.pending; if (!p) return;
@@ -2960,14 +2971,14 @@ function cardFace(c, ctx){
     if (G.mode==='idle' && isUnit && !c.rested && !c.sick && c.ap>0) cls.push('selectable');
     if (G.mode==='pilot-target' && c.type==='unit' && !c.pilot && !c.noPilot) cls.push('selectable');
     if (G.mode==='command-target' && (G.pending?.action.kind==='heal'||G.pending?.action.kind==='buff')) cls.push('selectable');
-    if (G.mode==='activate-target' && G.pending?.activate?.action.scope==='friendly') cls.push('selectable');
+    if (G.mode==='activate-target' && G.pending?.activate?.action.scope==='friendly' && (!G.activateCands || G.activateCands.includes(c.uid))) cls.push('selectable');
     if (G.mode==='trigger-target' && (G.pending?.scope==='friendly'||G.pending?.scope==='self-ping'||G.pending?.scope==='rest-both-friendly') && G.pending.cands.includes(c.uid)) cls.push('selectable');
     if (G.mode==='self-rest-pick' && G.pending?.cands.includes(c.uid) && !G.pending.picked.includes(c.uid)) cls.push('selectable');
   }
   if (ctx==='field-enemy'){
     if (G.mode==='attack-target'){ const atkU=G.player.field.find(x=>x.uid===G.selected); if (c.rested || (atkU&&atkU.canAttackActive)) cls.push('target'); else cls.push('dim'); }
     if (G.mode==='command-target' && ['damage','rest','destroy','bounce','debuff'].includes(G.pending?.action.kind) && enemyTargets(G.enemy,G.pending.action).includes(c)) cls.push('selectable');
-    if (G.mode==='activate-target' && G.pending?.activate?.action.scope==='enemy') cls.push('selectable');
+    if (G.mode==='activate-target' && G.pending?.activate?.action.scope==='enemy' && (!G.activateCands || G.activateCands.includes(c.uid))) cls.push('selectable');
     if (G.mode==='trigger-target' && (G.pending?.scope==='enemy'||G.pending?.scope==='self-ping-enemy'||G.pending?.scope==='rest-both-enemy') && G.pending.cands.includes(c.uid)) cls.push('selectable');
     if (G.mode==='action-step-target' && G.pending?.cands.includes(c.uid)) cls.push('selectable');
   }
