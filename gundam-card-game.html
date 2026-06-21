@@ -1908,7 +1908,7 @@ function makeToken(spec, owner){
 function tokenScore(sp){ return sp.ap + sp.hp + (sp.blocker?2:0) + (sp.first?1:0) + (sp.high?1:0); }
 // Deploy the token(s) described by a token action onto `side`'s field (respecting FIELD_MAX).
 function deployTokens(act, side, name, label, cls){
-  let specs=act.specs, made=0, names=[];
+  let specs=act.specs, names=[]; const tokens=[];
   if (specs && specs.length>1 && act.cond==='board')   // e.g. White Base: token chosen by how many Units you have
     specs = [ specs[Math.min(side.field.length, specs.length-1)] ];
   // "Deploy A or B" — pick ONE. The player chooses via startCommand; here (AI/auto) take the best.
@@ -1916,14 +1916,18 @@ function deployTokens(act, side, name, label, cls){
     specs = [ [...specs].sort((a,b)=>tokenScore(b)-tokenScore(a))[0] ];
   if (specs && specs.length){
     for (const sp of specs){
-      for (let k=0;k<(sp.count||1);k++){ if(side.field.length>=FIELD_MAX) break; const tk=makeToken(sp, side.who); side.field.push(tk); made++; if(!names.includes(tk.name)) names.push(tk.name); }
+      for (let k=0;k<(sp.count||1);k++){ if(side.field.length>=FIELD_MAX) break; const tk=makeToken(sp, side.who); side.field.push(tk); tokens.push(tk); if(!names.includes(tk.name)) names.push(tk.name); }
     }
   } else {
-    for (let k=0;k<(act.count||1);k++){ if(side.field.length>=FIELD_MAX) break; side.field.push(genericToken(side.who)); made++; }
+    for (let k=0;k<(act.count||1);k++){ if(side.field.length>=FIELD_MAX) break; const tk=genericToken(side.who); side.field.push(tk); tokens.push(tk); }
     names.push('Mobile Suit');
   }
-  if (made) log(`${label}: <b>${name}</b> deploys ${made} token${made===1?'':'s'} (${names.join(', ')}).`, cls);
-  return made;
+  if (tokens.length) log(`${label}: <b>${name}</b> deploys ${tokens.length} token${tokens.length===1?'':'s'} (${names.join(', ')}).`, cls);
+  // Each deployed token can trigger a friendly "when one of your (Trait) Units is deployed" listener
+  // (e.g. Neo Zeong while linked grants all your Units (Neo Zeon)). Auto-resolved — token deploys
+  // happen inside synchronous effect resolution.
+  for (const tk of tokens) onUnitDeployed(tk, side, null, true);
+  return tokens.length;
 }
 
 function shuffle(a){ for (let i=a.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; [a[i],a[j]]=[a[j],a[i]]; } return a; }
@@ -2112,7 +2116,9 @@ function unitHasTrait(unit, side, trait){
 }
 // Fire any friendly "when one of your (Trait) Units is deployed" listeners (e.g. Neo Zeong's 3
 // damage) after `unit` is deployed. Resolves them in sequence, then runs `after`.
-function onUnitDeployed(unit, side, after){
+// `forceAuto` resolves the reaction without an interactive target prompt (used when a token is
+// deployed mid-effect, where we can't safely enter target-selection mode).
+function onUnitDeployed(unit, side, after, forceAuto){
   const srcs=(side.field||[]).filter(src=>src!==unit && src.allyDeploy && src.hp>0
     && (!src.allyDeploy.trait || unitHasTrait(unit, side, src.allyDeploy.trait)));
   let i=0;
@@ -2120,7 +2126,7 @@ function onUnitDeployed(unit, side, after){
     if (i>=srcs.length){ if(after) after(); return; }
     const src=srcs[i++], ad=src.allyDeploy; ad.act.source=src;
     log(`<b>${src.name}</b> reacts to <b>${unit.name}</b> deploying.`, side===G.player?'me':'ai');
-    if (side===G.player) resolvePlayerTrigger(src, side, ad.act, src.name, next);
+    if (side===G.player && !forceAuto) resolvePlayerTrigger(src, side, ad.act, src.name, next);
     else { runTrigger(src, side, ad.act, src.name); next(); }
   })();
 }
