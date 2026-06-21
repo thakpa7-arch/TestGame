@@ -1971,8 +1971,9 @@ function playFromHand(uidv){
     closeInspect();
     resolvePlayerTrigger(card, s, parseTrigger(card.effect,'Deploy'), 'Deploy', ()=>{ clearSel(); render(); checkEnd(); });
   } else if (card.type==='pilot'){
-    const myUnits = s.field.filter(u=>u.type==='unit');
-    if (myUnits.length===0){ flashPrompt(`Deploy a Unit first — pilot ${card.name} must be paired with one.`); return; }
+    // A Unit holds at most one Pilot — only offer Units that aren't already paired (and can be).
+    const myUnits = s.field.filter(u=>u.type==='unit' && !u.pilot && !u.noPilot);
+    if (myUnits.length===0){ flashPrompt(`No unpaired Unit available — pilot ${card.name} needs a Unit with no pilot.`); return; }
     if (myUnits.length===1){ // only one possible target: pair it straight away
       s.hand.splice(idx,1); s.resAvail-=effectiveCost(s,card);
       log(`<b>${card.name}</b> pilots <b>${myUnits[0].name}</b>.`, 'me');
@@ -2177,6 +2178,8 @@ function fieldClick(uidv){
 
   if (G.mode==='pilot-target'){
     const u=G.player.field.find(c=>c.uid===uidv && c.type==='unit'); if(!u){ flashPrompt('Pick one of your units.'); return; }
+    if (u.pilot){ flashPrompt(`${u.name} already has a pilot — a Unit can hold only one.`); return; }
+    if (u.noPilot){ flashPrompt(`${u.name} can't be paired with a pilot.`); return; }
     const card=G.pending, h=G.player.hand.findIndex(c=>c.uid===card.uid); if(h<0) return;
     G.player.hand.splice(h,1); G.player.resAvail-=effectiveCost(G.player,card);
     log(`<b>${card.name}</b> pilots <b>${u.name}</b>.`, 'me');
@@ -2631,9 +2634,10 @@ function aiMainStep(){
     const dep = ai.hand.filter(c=>c.type==='unit' && canAfford(ai,c)).sort((a,b)=>(b.baseAp+b.baseHp)-(a.baseAp+a.baseHp))[0];
     if (dep){ const i=ai.hand.indexOf(dep); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,dep); dep.rested=false; dep.sick=!dep.blitz; ai.field.push(dep); flashCard(dep,'ENEMY DEPLOY'); log(`${who(G.enemy)} deploys <b>${dep.name}</b>.`, 'ai'); runTrigger(dep, ai, parseTrigger(dep.effect,'Deploy'), 'Deploy'); return true; }
   }
-  // pair a pilot
+  // pair a pilot — only onto a Unit that has no pilot yet (a Unit holds at most one)
   const pilot = ai.hand.find(c=>c.type==='pilot' && canAfford(ai,c));
-  if (pilot && ai.field.some(u=>u.type==='unit')){ const best=ai.field.filter(u=>u.type==='unit').sort((a,b)=>b.baseAp-a.baseAp)[0]; const i=ai.hand.indexOf(pilot); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,pilot); flashCard(pilot,'ENEMY PILOT'); attachPilot(best,pilot); log(`${who(G.enemy)} pairs <b>${pilot.name}</b> with <b>${best.name}</b>.`, 'ai'); return true; }
+  const pairable = ai.field.filter(u=>u.type==='unit' && !u.pilot && !u.noPilot);
+  if (pilot && pairable.length){ const best=pairable.sort((a,b)=>b.baseAp-a.baseAp)[0]; const i=ai.hand.indexOf(pilot); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,pilot); flashCard(pilot,'ENEMY PILOT'); attachPilot(best,pilot); log(`${who(G.enemy)} pairs <b>${pilot.name}</b> with <b>${best.name}</b>.`, 'ai'); return true; }
   // buff before attacks
   const buff = ai.hand.find(c=>c.type==='command' && c.action.kind==='buff' && canAfford(ai,c));
   if (buff && ai.field.some(u=>!u.sick&&!u.rested&&u.ap>0)){ const t=ai.field.filter(u=>!u.sick&&!u.rested&&u.ap>0).sort((a,b)=>b.ap-a.ap)[0]; const i=ai.hand.indexOf(buff); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,buff); sendToTrash(buff,ai); flashCard(buff,'ENEMY COMMAND'); t.tempAp=(t.tempAp||0)+buff.action.amount; t.ap=effAp(t); log(`${who(G.enemy)} empowers <b>${t.name}</b>.`, 'ai'); return true; }
@@ -2802,7 +2806,7 @@ function cardFace(c, ctx){
   if (ctx==='field-player'){
     if (G.selected===c.uid) cls.push('attacking');
     if (G.mode==='idle' && isUnit && !c.rested && !c.sick && c.ap>0) cls.push('selectable');
-    if (G.mode==='pilot-target' && c.type==='unit') cls.push('selectable');
+    if (G.mode==='pilot-target' && c.type==='unit' && !c.pilot && !c.noPilot) cls.push('selectable');
     if (G.mode==='command-target' && (G.pending?.action.kind==='heal'||G.pending?.action.kind==='buff')) cls.push('selectable');
     if (G.mode==='activate-target' && G.pending?.activate?.action.scope==='friendly') cls.push('selectable');
     if (G.mode==='trigger-target' && (G.pending?.scope==='friendly'||G.pending?.scope==='self-ping'||G.pending?.scope==='rest-both-friendly') && G.pending.cands.includes(c.uid)) cls.push('selectable');
@@ -2904,7 +2908,7 @@ function render(){
   el('playerBase').innerHTML = G.player.base ? cardFace(G.player.base,'field-player') : `<div class="bz-empty">no base</div>`;
   el('hand').innerHTML = G.player.hand.length ? G.player.hand.map(c=>{
     if(G.mode==='discard') return cardFace(c,'hand').replace('class="card', 'class="card selectable');
-    const needsUnit = c.type==='pilot' && !G.player.field.some(u=>u.type==='unit');
+    const needsUnit = c.type==='pilot' && !G.player.field.some(u=>u.type==='unit' && !u.pilot && !u.noPilot);
     const playable = G.turn==='player' && canAfford(G.player,c) && !needsUnit && !G.over && G.mode==='idle' && !G.actionLock;
     return cardFace(c,'hand').replace('class="card', `class="card ${playable?'':'dim'}`);
   }).join('') : `<div class="empty-hint">Hand empty</div>`;
