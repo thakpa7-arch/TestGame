@@ -553,7 +553,7 @@ function parseActivateEffect(t){
   // Self-targeting ("ping self") activated abilities take priority over enemy-damage rules.
   const ping = parseSelfPing(t);
   if (ping) return Object.assign(ping, { scope: ping.kind==='selfPingBuff' ? 'friendly' : 'self' });
-  if (/set this unit as active/.test(t))                    return { kind:'setActive', scope:'self' };
+  if (/set this unit as active/.test(t))                    return { kind:'setActive', scope:'self', noDirectTurn:/can'?t choose the enemy player[^.]*as its attack target/.test(t) };
   // "Choose 1 friendly Unit… Set it as active." — re-ready one of your Units (often a Blocker).
   if (/set it as active/.test(t) && /(friendly|of your)[^.]*unit/.test(t)) return { kind:'setActive', scope:'friendly' };
   // "Deploy N […] Unit token(s)" — put parsed token(s) onto your field.
@@ -1819,8 +1819,10 @@ function makeCard(def, owner){
     const edr = plain(def.effect).match(/receives?\s+effect damage from an enemy,?\s*reduce it by (\d+)/i);
     c.effDmgReduce = edr ? +edr[1] : 0;
     c.support = supportAmount(def.effect);
-    // Attack-target restrictions / grants printed on the Unit itself.
-    c.noDirectAttack = /can'?t choose the enemy player as its attack target/i.test(plain(def.effect));
+    // Attack-target restrictions / grants printed on the Unit itself. A PERMANENT "can't choose the
+    // enemy player" (Zowort) is innate; a "…during this turn" version (Norn's ability) is a one-turn
+    // effect applied when the ability resolves, NOT a permanent trait.
+    c.noDirectAttack = /can'?t choose the enemy player as its attack target(?!\s+during this turn)/i.test(plain(def.effect));
     const aam = plain(def.effect).match(/may choose an active enemy unit(?:[^.]*?lv\.?(\d+) or lower)?[^.]*as its attack target/i);
     c.innateActiveAttack = !!aam; c.activeAttackMaxLv = aam ? (aam[1]?+aam[1]:99) : 0;
     // continuous self AP/HP buffs that switch on while paired / linked
@@ -2187,6 +2189,9 @@ function canHitActive(u, target){
   if (u.innateActiveAttack && (target==null || (target.lv||0) <= (u.activeAttackMaxLv||99))) return true;
   return false;
 }
+// Can't attack the enemy player directly — either innately (Zowort) or as a one-turn effect
+// (Norn's ability sets noDirectTurn, which clears at the end of the turn).
+function cantHitPlayer(u){ return !!(u.noDirectAttack || u.noDirectTurn); }
 function effMaxHp(u){
   let hp = u.baseHp + (u.pilot?u.pilot.pHp:0) + (u.pilot?(u.pairHp||0)+(u.pilotPairHp||0):0) + (u.linked?(u.linkHp||0)+(u.pilotLinkHp||0):0);
   if (u.trashBuff && u.trashBuff.hpBonus > 0 && G.player){
@@ -2355,7 +2360,7 @@ function beginTurn(turn){
   G.turn=turn; G.mode='idle'; G.phase='start'; G.selected=null; G.pending=null; G.pendingHandIdx=-1;
   const s=me();
   // 1) Start Phase — Active Step: ready all rested cards; refresh per-turn abilities.
-  for (const u of s.field){ if(u.stunned){ u.stunned=false; } else if(!u.noActive){ u.rested=false; } u.sick=false; u.tempAp=0; u.battleAp=0; u.activatedThisTurn=false; u.canAttackActive=false; u.dmgReduce=0; resetTurnKeywords(u); u.ap=effAp(u); }
+  for (const u of s.field){ if(u.stunned){ u.stunned=false; } else if(!u.noActive){ u.rested=false; } u.sick=false; u.tempAp=0; u.battleAp=0; u.activatedThisTurn=false; u.canAttackActive=false; u.noDirectTurn=false; u.dmgReduce=0; resetTurnKeywords(u); u.ap=effAp(u); }
   if (s.base){ s.base.rested=false; s.base.activatedThisTurn=false; }
   // 2) Draw Phase — draw 1 (whoever goes first skips their very first draw).
   G.phase='draw';
@@ -2385,7 +2390,7 @@ function finishEndPhase(){
   const s=me();
   // Repair Step (regen), then Hand Step (discard down to the hand limit).
   G.phase='end';
-  for (const u of s.field){ if (u.repair>0 && u.hp>0 && u.hp<effMaxHp(u)){ u.hp=Math.min(effMaxHp(u), u.hp+u.repair); } u.tempAp=0; u.battleAp=0; u.canAttackActive=false; u.dmgReduce=0; resetTurnKeywords(u); u.ap=effAp(u); }
+  for (const u of s.field){ if (u.repair>0 && u.hp>0 && u.hp<effMaxHp(u)){ u.hp=Math.min(effMaxHp(u), u.hp+u.repair); } u.tempAp=0; u.battleAp=0; u.canAttackActive=false; u.noDirectTurn=false; u.dmgReduce=0; resetTurnKeywords(u); u.ap=effAp(u); }
   while (s.hand.length>HAND_MAX){
     const worst=[...s.hand].sort((a,b)=>cardValue(a)-cardValue(b))[0];
     s.hand.splice(s.hand.indexOf(worst),1); sendToTrash(worst, s);
@@ -2643,6 +2648,7 @@ function applyActivateEffect(u, target, side, costUnit){
   if (a.kind==='setActive'){
     const t = (a.scope==='friendly' && target) ? target : u;
     t.rested=false; log(`<b>${u.name}</b>: <b>${t.name}</b> is set active.`, cls);
+    if (a.noDirectTurn){ t.noDirectTurn=true; log(`<b>${t.name}</b> can't attack the enemy player directly this turn.`, cls); }
   } else if (a.kind==='selfPingBuff'){
     const t = target || pingFriendly(side, a.self, true);
     if (t){ log(`<b>${u.name}</b> deals ${a.self} to your <b>${t.name}</b>, then it gets AP+${a.ap}.`, cls);
@@ -2855,7 +2861,7 @@ function fieldClick(uidv){
 function attackDirect(){
   if (G.turn!=='player' || G.mode!=='attack-target' || G.over) return;
   const atk=G.player.field.find(c=>c.uid===G.selected); if(!atk) return;
-  if (atk.noDirectAttack){ flashPrompt(`${atk.name} can't attack the enemy player directly — pick a rested enemy unit.`); return; }
+  if (cantHitPlayer(atk)){ flashPrompt(`${atk.name} can't attack the enemy player directly — pick a rested enemy unit.`); return; }
   declareAttack(atk, G.player);   // on-attack self-buffs (AP+/High-Maneuver) BEFORE the block step
   resolveAttackTriggers(atk, G.player, ()=>{
     if (atk.hp<=0){ clearSel(); render(); checkEnd(); return; }
@@ -3256,7 +3262,7 @@ function aiRemovalTarget(amount){
 // the base (soaks AP), and shields (one broken per landing hit, two under Suppression)?
 function aiHasLethal(attackers){
   const pl=G.player;
-  const faceable=[...attackers].filter(u=>!u.noDirectAttack && effAp(u)>0);
+  const faceable=[...attackers].filter(u=>!cantHitPlayer(u) && effAp(u)>0);
   if (!faceable.length) return false;
   const sorted=faceable.sort((a,b)=>effAp(b)-effAp(a));
   const blockers=pl.field.filter(b=>b.blocker && !b.rested && b.hp>0).length;
@@ -3459,7 +3465,7 @@ function resolveAiAttackInner(atk, done){
     // player is low on defenses (close out the game by pressuring shields) unless the trade kills a
     // very scary threat.
     const lowDef = !pl.base && pl.shields.length<=2;
-    const goFace = !atk.noDirectAttack && (G.aiForceFace || !bestKill || aiThreatScore(bestKill) < 4
+    const goFace = !cantHitPlayer(atk) && (G.aiForceFace || !bestKill || aiThreatScore(bestKill) < 4
                     || (lowDef && aiThreatScore(bestKill) < 7));
     const target = goFace ? null : bestKill;
     // The player may intercept with an active <Blocker> (unless the attacker has High-Maneuver).
@@ -3468,13 +3474,13 @@ function resolveAiAttackInner(atk, done){
       promptPlayerBlock(atk, blockers, target, (blk)=>{
         if (blk){ blk.rested=true; log(`You intercept with <b>${blk.name}</b> &lt;Blocker&gt;.`, 'me'); battle(atk, blk, G.enemy, G.player); done(); }
         else if (target){ battle(atk, target, G.enemy, G.player); done(); }
-        else if (!atk.noDirectAttack){ aiDirectHit(atk, done); }
+        else if (!cantHitPlayer(atk)){ aiDirectHit(atk, done); }
         else done();
       });
       return;
     }
     if (target){ battle(atk, target, G.enemy, G.player); done(); return; }
-    if (!atk.noDirectAttack){ aiDirectHit(atk, done); return; }
+    if (!cantHitPlayer(atk)){ aiDirectHit(atk, done); return; }
     done();
   });
 }
