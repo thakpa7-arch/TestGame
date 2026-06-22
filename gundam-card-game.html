@@ -491,6 +491,9 @@ function staticSelfBuff(effect, kw){
   if (!m) return { ap:0, hp:0 };
   const t = m[1].toLowerCase();
   if (!/this unit gets/.test(t)) return { ap:0, hp:0 };   // skip "all your Units…" auras
+  // "AP+N for each of your [rested] (Trait) Units" — a dynamic per-Unit buff (e.g. Kyrios).
+  const per = t.match(/ap\+(\d+) for each of your (rested )?\(?([a-z0-9\/ \-]+?)\)?\s*units?/);
+  if (per) return { ap:0, hp:0, apPer:{ amount:+per[1], rested:!!per[2], trait:per[3].trim().replace(/[()]/g,'') } };
   const ap=(t.match(/ap\+(\d+)/)||[])[1], hp=(t.match(/hp\+(\d+)/)||[])[1];
   return { ap:+(ap||0), hp:+(hp||0) };
 }
@@ -1835,8 +1838,8 @@ function makeCard(def, owner){
     const aam = plain(def.effect).match(/may choose an active enemy unit(?:[^.]*?lv\.?(\d+) or lower)?[^.]*as its attack target/i);
     c.innateActiveAttack = !!aam; c.activeAttackMaxLv = aam ? (aam[1]?+aam[1]:99) : 0;
     // continuous self AP/HP buffs that switch on while paired / linked
-    const pb = staticSelfBuff(def.effect, 'During Pair'); c.pairAp = pb.ap; c.pairHp = pb.hp;
-    const lb = staticSelfBuff(def.effect, 'During Link'); c.linkAp = lb.ap; c.linkHp = lb.hp;
+    const pb = staticSelfBuff(def.effect, 'During Pair'); c.pairAp = pb.ap; c.pairHp = pb.hp; c.pairApPer = pb.apPer||null;
+    const lb = staticSelfBuff(def.effect, 'During Link'); c.linkAp = lb.ap; c.linkHp = lb.hp; c.linkApPer = lb.apPer||null;
     // continuous team aura ("all your Units get AP+N") while paired/linked (e.g. Gundam + Amuro)
     c.teamAura = parseTeamAura(def.effect);
     c.traitAura = parseTraitAura(def.effect);     // 【During Link】"All your Units gain (Trait)"
@@ -2185,6 +2188,12 @@ function effAp(u){
   if (u.trashBuff && u.trashBuff.apBonus > 0 && G.player){
     const side = u.owner==='player' ? G.player : G.enemy;
     if (trashCount(side, u.trashBuff.trait) >= u.trashBuff.minCount) ap += u.trashBuff.apBonus;
+  }
+  // "AP+N for each of your [rested] (Trait) Units" while paired/linked (e.g. Kyrios).
+  const per = (u.linked && u.linkApPer) || (u.pilot && u.pairApPer);
+  if (per){
+    const side = u.owner==='player' ? G.player : G.enemy;
+    if (side) ap += per.amount * side.field.filter(x=>(!per.rested || x.rested) && (x.trait||'').toLowerCase().includes(per.trait)).length;
   }
   ap += teamAuraBonus(u, 'ap');
   return Math.max(0, ap);
@@ -3775,6 +3784,11 @@ function inspect(c){
       ac.onclick=()=>{ closeInspect(); startActivate(c); };
       btns.appendChild(ac);
     }
+  }
+  // View the paired Pilot's own card (its art/effect), if this Unit has one.
+  if (c.pilotCard){
+    const pv=document.createElement('button'); pv.innerHTML=`🎖 View pilot: ${c.pilotCard.name}`;
+    pv.onclick=()=>inspect(c.pilotCard); btns.appendChild(pv);
   }
   const cl=document.createElement('button'); cl.className='ghost'; cl.textContent='Close'; cl.onclick=closeInspect; btns.appendChild(cl);
   el('inspect').classList.add('show');
