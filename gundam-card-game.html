@@ -1281,7 +1281,7 @@ function enemyTargets(foe, act){
     && (act.hp==null || act.hp>=99 || u.hp<=act.hp)            // legacy "N or less HP" field
     && (!f.orFilter || f.orFilter.some(o=>(o.maxLv==null||(u.lv||0)<=o.maxLv) && (o.maxAp==null||effAp(u)<=o.maxAp) && (o.maxHp==null||u.hp<=o.maxHp)))
     && (!f.rested || u.rested) && (!f.active || !u.rested));
-  if (act.kind==='bounce'||act.kind==='destroy') list=list.filter(u=>!u.token);
+  // Tokens ARE valid targets for destroy/bounce (a bounced token just ceases to exist).
   if (act.kind==='rest') list=list.filter(u=>!u.rested);
   return list;
 }
