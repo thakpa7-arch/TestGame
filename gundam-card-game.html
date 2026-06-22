@@ -1756,14 +1756,18 @@ function resetUnit(u){
   u.blocker=innateKeyword(u.effect,'blocker'); u.firstStrike=innateKeyword(u.effect,'first'); u.highManeuver=innateKeyword(u.effect,'high');
   u.breach=breachAmount(u.effect); u.suppression=innateKeyword(u.effect,'suppression'); u.support=supportAmount(u.effect);
 }
-// Return a deployed unit to its owner's hand, stripped back to a fresh card.
-// A paired Pilot can't return with the Unit — it is placed in the owner's trash.
+// Return a deployed unit to its owner's hand, stripped back to a fresh card. A paired Pilot follows
+// the Unit — it returns to the owner's hand too (it goes where the Unit goes).
 function returnToHand(u, owner){
   if (u.token) return;                       // tokens vanish instead
-  if (u.pilotCard){ sendToTrash(u.pilotCard, owner); log(`<b>${u.pilotCard.name}</b> is sent to trash as <b>${u.name}</b> returns to hand.`, owner===G.player?'me':'ai'); }
+  const pilot = u.pilotCard;                 // grab the paired Pilot before resetUnit() clears it
   resetUnit(u);
   const hand = owner.hand;
   if (hand.length<HAND_MAX) hand.push(u);
+  if (pilot){
+    if (hand.length<HAND_MAX) hand.push(pilot); else sendToTrash(pilot, owner);
+    log(`<b>${pilot.name}</b> returns to ${owner===G.player?'your':'its'} hand with <b>${u.name}</b>.`, owner===G.player?'me':'ai');
+  }
 }
 // Refresh trash-conditional stats for a side (after any trash-size change).
 function refreshTrashStats(side){
