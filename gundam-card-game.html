@@ -185,6 +185,8 @@
   /* overlays */
   .card .ov-cost { position: absolute; top: 3px; left: 3px; min-width: 18px; height: 18px; padding: 0 3px; border-radius: 9px; background: rgba(6,40,58,.92); color: var(--cyan); font-weight: 800; font-size: 11px; display: flex; align-items: center; justify-content: center; }
   .card .ov-lv { position: absolute; top: 3px; right: 3px; min-width: 18px; height: 18px; padding: 0 3px; border-radius: 9px; background: rgba(58,40,6,.92); color: var(--gold); font-weight: 800; font-size: 10px; display: flex; align-items: center; justify-content: center; }
+  .card .ov-view { position: absolute; top: 3px; left: 3px; width: 19px; height: 19px; border-radius: 50%; background: rgba(6,18,40,.9); color: #cfe3ff; font-size: 11px; line-height: 19px; text-align: center; cursor: pointer; z-index: 6; box-shadow: 0 0 0 1px rgba(120,180,255,.35); }
+  .card .ov-view:hover { background: rgba(34,211,238,.85); color: #04202a; }
   .card .ov-stat { position: absolute; bottom: 4px; padding: 0 4px; height: 19px; border-radius: 5px; font-size: 12px; font-weight: 800; display: flex; align-items: center; background: rgba(0,0,0,.82); box-shadow: 0 0 0 1px rgba(255,255,255,.12); }
   .card .ov-ap { left: 3px; color: #fca5a5; }
   /* Boosted attack (team aura / buff) glows gold so increased AP is obvious at a glance. */
@@ -3565,6 +3567,8 @@ function cardFace(c, ctx){
   const style = c.img ? `background-image:url('${c.img}')` : '';
   let overlays = `<div class="ov-cost">${c.cost}</div>`;
   if (!c.token && (c.lv||0)>0) overlays += `<div class="ov-lv">L${c.lv}</div>`;
+  // Tap-to-view magnifier on field cards (a single tap opens the inspector, no hold needed).
+  if (ctx==='field-player' || ctx==='field-enemy') overlays += `<div class="ov-view" data-view="${c.uid}" title="View card">🔍</div>`;
   // Combat preview: on an attackable enemy Unit, show how the trade resolves for your attacker.
   if (ctx==='field-enemy' && G.mode==='attack-target' && c.rested && c.hp>0){
     const atk=G.player.field.find(u=>u.uid===G.selected);
@@ -3730,6 +3734,8 @@ function bind(){
   el('enemyField').querySelectorAll('.card').forEach(n=>{ n.onclick=()=>{ if(_lpFired){ _lpFired=false; return; } fieldClick(+n.dataset.uid); }; attachLongPress(n, ()=>{ const c=G.enemy.field.find(x=>x.uid===+n.dataset.uid); if(c) inspect(c); }); });
   el('playerBase').querySelectorAll('.card').forEach(n=> n.onclick=()=>{ if(G.player.base) inspect(G.player.base); });
   el('enemyBase').querySelectorAll('.card').forEach(n=> n.onclick=()=>{ if(G.enemy.base) inspect(G.enemy.base); });
+  // Magnifier: a single tap views the card (no hold), without firing the card's tap action.
+  document.querySelectorAll('.ov-view').forEach(v=>{ v.onclick=(e)=>{ e.stopPropagation(); const uid=+v.dataset.view; const c=G.player.field.concat(G.enemy.field).find(x=>x.uid===uid); if(c) inspect(c); }; });
 }
 
 // ---- inspector ----
