@@ -1351,7 +1351,7 @@ function doShieldToHand(card, side, act, label, skipScry){
     const grabbed=side.shields.pop(); side.hand.push(grabbed);
     log(`${label}: <b>${card.name}</b> adds a Shield to ${who(side)} hand.`, cls);
     // Reveal which card you pulled from your own shield (the player only — hide the AI's).
-    if (side===G.player){ log(`You take <b>${grabbed.name}</b> from your shields.`, 'me'); revealDraw(grabbed); }
+    if (side===G.player){ log(`You take <b>${grabbed.name}</b> from your shields.`, 'me'); revealDraw(grabbed, 'SHIELD'); }
   }
   if (!skipScry && act.scryN>0 && side.deck.length>=act.scryN && side.who===G.turn){
     const top = side.deck.splice(side.deck.length-act.scryN, act.scryN);
@@ -2113,13 +2113,13 @@ function flashCard(card, tag){
 // Pop each card the player draws (turn draw + effect draws) into a brief center row so you SEE
 // every card you draw. Consecutive draws in the same burst stack into the row.
 let drawRevealTimer=null;
-function revealDraw(card){
+function revealDraw(card, tag){
   if (!card) return;
   let host=document.getElementById('drawReveal');
   if (!host){ host=document.createElement('div'); host.id='drawReveal'; document.body.appendChild(host); }
   const t=document.createElement('div'); t.className='dr-card';
   if (card.img) t.style.backgroundImage=`url('${card.img}')`;
-  t.innerHTML=`<div class="dr-tag">DREW</div><div class="dr-name">${card.name}</div>`;
+  t.innerHTML=`<div class="dr-tag">${tag||'DREW'}</div><div class="dr-name">${card.name}</div>`;
   host.appendChild(t);
   while (host.children.length>6) host.removeChild(host.firstChild);
   clearTimeout(drawRevealTimer);
@@ -2940,7 +2940,7 @@ function triggerBurst(card, side, done, allowChoice){
   const bz = card.burst; if (!bz){ done(); return; }
   const sideCls = side===G.player ? 'me' : 'ai';
   flashCard(card, (side===G.player?'YOUR':'ENEMY')+' BURST');
-  if (bz.kind==='tohand'){ if (side.hand.length<HAND_MAX){ side.hand.push(card); log(`Burst! <b>${card.name}</b> is added to ${who(side)} hand.`, sideCls); } done(); return; }
+  if (bz.kind==='tohand'){ if (side.hand.length<HAND_MAX){ side.hand.push(card); log(`Burst! <b>${card.name}</b> is added to ${who(side)} hand.`, sideCls); if (side===G.player) revealDraw(card, 'BURST'); } done(); return; }
   if (bz.kind==='deploy'){
     if (card.type==='base'){ side.base=card; card.rested=false; card.sick=false; log(`Burst! ${who(side)} deploys base <b>${card.name}</b>.`, sideCls); runTrigger(card, side, parseTrigger(card.effect,'Deploy'), 'Deploy'); }
     else if (side.field.length<FIELD_MAX){ card.rested=false; card.sick=true; side.field.push(card); log(`Burst! ${who(side)} deploys <b>${card.name}</b>.`, sideCls); runTrigger(card, side, parseTrigger(card.effect,'Deploy'), 'Deploy'); }
@@ -3440,9 +3440,12 @@ function resolveAiAttackInner(atk, done){
     // A clean kill destroys the target and survives the counter (or strikes first).
     const bestKill = attackable.filter(u=> effAp(atk)>=u.hp && (atk.firstStrike || effAp(u)<atk.hp))
                                .sort((a,b)=>aiThreatScore(b)-aiThreatScore(a))[0] || null;
-    // Go face when: committing to lethal, the unit can't trade, or no worthwhile trade exists
-    // (a small/harmless rested Unit isn't worth giving up shield pressure for).
-    const goFace = !atk.noDirectAttack && (G.aiForceFace || !bestKill || aiThreatScore(bestKill) < 4);
+    // Go face when: committing to lethal, the unit can't trade, no worthwhile trade exists, or the
+    // player is low on defenses (close out the game by pressuring shields) unless the trade kills a
+    // very scary threat.
+    const lowDef = !pl.base && pl.shields.length<=2;
+    const goFace = !atk.noDirectAttack && (G.aiForceFace || !bestKill || aiThreatScore(bestKill) < 4
+                    || (lowDef && aiThreatScore(bestKill) < 7));
     const target = goFace ? null : bestKill;
     // The player may intercept with an active <Blocker> (unless the attacker has High-Maneuver).
     const blockers = pl.field.filter(b=>b.blocker && !b.rested && b.hp>0 && b!==target);
