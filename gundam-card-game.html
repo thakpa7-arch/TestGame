@@ -1253,6 +1253,9 @@ function kwLabel(kw){ return {first:'First Strike',high:'High-Maneuver',blocker:
 // Extract single-target restrictions from an effect clause (Lv./AP/HP caps, lowest HP, rested/active).
 function targetFilter(t){
   const f={}; let m;
+  // "Lv.X or lower OR has Y or less AP" — a single OR cap (e.g. GN Armor Type-E), not two ANDed caps.
+  const orm = t.match(/lv\.?\s*(\d+) or lower or (?:has |with )?(\d+) or less ap/i);
+  if (orm){ f.orFilter=[{maxLv:+orm[1]},{maxAp:+orm[2]}]; return f; }
   if ((m=t.match(/lv\.?\s*(\d+) or lower/i))) f.maxLv=+m[1];
   // "whose Lv. is equal to or lower than this Unit" — a cap relative to the SOURCE Unit's Lv
   // (e.g. Marida Cruz). Resolved against act.source at target-selection time.
@@ -1276,6 +1279,7 @@ function enemyTargets(foe, act){
     && (f.maxAp==null || effAp(u)<=f.maxAp)
     && (f.maxHp==null || u.hp<=f.maxHp)
     && (act.hp==null || act.hp>=99 || u.hp<=act.hp)            // legacy "N or less HP" field
+    && (!f.orFilter || f.orFilter.some(o=>(o.maxLv==null||(u.lv||0)<=o.maxLv) && (o.maxAp==null||effAp(u)<=o.maxAp) && (o.maxHp==null||u.hp<=o.maxHp)))
     && (!f.rested || u.rested) && (!f.active || !u.rested));
   if (act.kind==='bounce'||act.kind==='destroy') list=list.filter(u=>!u.token);
   if (act.kind==='rest') list=list.filter(u=>!u.rested);
@@ -1807,6 +1811,9 @@ function makeCard(def, owner){
     c.blitz = hasKeyword(def.effect, 'blitz');
     c.repair = repairAmount(def.effect);
     c.blocker = innateKeyword(def.effect, 'blocker');
+    // Conditional Blocker: "While you have a (Trait) Pilot in play, this Unit gains <Blocker>." (Virtue)
+    const cbm = plain(def.effect).match(/while you have an?\s*\(([^)]+)\)\s*pilot in play[^.]*gains?\s*<\s*blocker/i);
+    c.condBlocker = cbm ? cbm[1].trim().toLowerCase() : null;
     c.firstStrike = innateKeyword(def.effect, 'first');
     c.highManeuver = innateKeyword(def.effect, 'high');
     c.breach = breachAmount(def.effect);
@@ -2182,6 +2189,12 @@ function effAp(u){
 }
 // A Unit has <Suppression> if it's printed innately, or conditionally "while damaged" and it is.
 function effSuppression(u){ return !!(u.suppression || (u.suppressionWhenDamaged && u.hp < effMaxHp(u))); }
+// A Unit is a <Blocker> if printed, or via "While you have a (Trait) Pilot in play" (Virtue).
+function effBlocker(u){
+  if (u.blocker) return true;
+  if (u.condBlocker){ const side=u.owner==='player'?G.player:G.enemy; return !!(side&&side.field.some(x=>x.pilotCard && (x.pilotCard.trait||'').toLowerCase().includes(u.condBlocker))); }
+  return false;
+}
 // Can `u` attack an ACTIVE (non-rested) enemy Unit `target`? True if granted this turn, or innately
 // (e.g. Wing Gundam — "may choose an active enemy Unit that is Lv.4 or lower as its attack target").
 function canHitActive(u, target){
@@ -2848,7 +2861,7 @@ function fieldClick(uidv){
         if (atk.hp<=0){ clearSel(); render(); checkEnd(); return; }
         const tgt2 = G.enemy.field.find(c=>c.uid===uidv);
         if (!tgt2 || (!tgt2.rested && !canHitActive(atk, tgt2))){ atk.rested=true; clearSel(); render(); checkEnd(); return; }
-        const blockers = G.enemy.field.filter(b=>b.blocker && !b.rested && b.hp>0);
+        const blockers = G.enemy.field.filter(b=>effBlocker(b) && !b.rested && b.hp>0);
         if (!atk.highManeuver && blockers.length && aiWantsBlock(atk)){
           const blk = pickAiBlocker(atk, blockers);
           blk.rested=true; log(`${who(G.enemy)}'s <b>${blk.name}</b> &lt;Blocker&gt; intercepts!`, 'ai');
@@ -2869,7 +2882,7 @@ function attackDirect(){
   resolveAttackTriggers(atk, G.player, ()=>{
     if (atk.hp<=0){ clearSel(); render(); checkEnd(); return; }
     // Defender may block a direct attack with an active <Blocker> (unless attacker has High-Maneuver)
-    const blockers = G.enemy.field.filter(b=>b.blocker && !b.rested && b.hp>0);
+    const blockers = G.enemy.field.filter(b=>effBlocker(b) && !b.rested && b.hp>0);
     if (!atk.highManeuver && blockers.length && aiWantsBlock(atk)){
       const blk = pickAiBlocker(atk, blockers);
       blk.rested=true; log(`${who(G.enemy)}'s <b>${blk.name}</b> &lt;Blocker&gt; intercepts your attack!`, 'ai');
@@ -3117,7 +3130,7 @@ function breachShield(atk, defSide){
 // ---- Blocker decision helpers (AI as defender) ----
 function aiWantsBlock(atk){
   // Block if it saves a shield in danger, or sets up a favourable trade.
-  const blockers = G.enemy.field.filter(b=>b.blocker && !b.rested && b.hp>0);
+  const blockers = G.enemy.field.filter(b=>effBlocker(b) && !b.rested && b.hp>0);
   if (!blockers.length) return false;
   const best = pickAiBlocker(atk, blockers);
   const kills = best.ap >= atk.hp;              // blocker kills attacker
@@ -3250,7 +3263,7 @@ function endGame(winnerSide){
 // ---- AI ----
 // How dangerous a player Unit is to the AI (used for removal/trade priority).
 function aiThreatScore(u){
-  return effAp(u)*2 + ((u.blocker && !u.rested)?5:0) + (u.linked?2:0) + (u.hp*0.3) + (u.repair||0);
+  return effAp(u)*2 + ((effBlocker(u) && !u.rested)?5:0) + (u.linked?2:0) + (u.hp*0.3) + (u.repair||0);
 }
 // Best target for a single-target removal of `amount` damage: prefer something it KILLS (by threat),
 // else chip the scariest Unit.
@@ -3268,7 +3281,7 @@ function aiHasLethal(attackers){
   const faceable=[...attackers].filter(u=>!cantHitPlayer(u) && effAp(u)>0);
   if (!faceable.length) return false;
   const sorted=faceable.sort((a,b)=>effAp(b)-effAp(a));
-  const blockers=pl.field.filter(b=>b.blocker && !b.rested && b.hp>0).length;
+  const blockers=pl.field.filter(b=>effBlocker(b) && !b.rested && b.hp>0).length;
   const hm=sorted.filter(u=>u.highManeuver);
   const normal=sorted.filter(u=>!u.highManeuver);
   const landing=[...hm, ...normal.slice(blockers)];   // the player blocks the strongest normals
@@ -3472,7 +3485,7 @@ function resolveAiAttackInner(atk, done){
                     || (lowDef && aiThreatScore(bestKill) < 7));
     const target = goFace ? null : bestKill;
     // The player may intercept with an active <Blocker> (unless the attacker has High-Maneuver).
-    const blockers = pl.field.filter(b=>b.blocker && !b.rested && b.hp>0 && b!==target);
+    const blockers = pl.field.filter(b=>effBlocker(b) && !b.rested && b.hp>0 && b!==target);
     if (!atk.highManeuver && blockers.length){
       promptPlayerBlock(atk, blockers, target, (blk)=>{
         if (blk){ blk.rested=true; log(`You intercept with <b>${blk.name}</b> &lt;Blocker&gt;.`, 'me'); battle(atk, blk, G.enemy, G.player); done(); }
