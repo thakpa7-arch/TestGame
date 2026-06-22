@@ -3369,9 +3369,20 @@ function autoActivateTarget(u, attacker){
 }
 function autoCommandTarget(c, attacker){
   const a=c.action;
-  if (['damage','rest','destroy','bounce','debuff'].includes(a.kind)){ if(attacker&&attacker.hp>0&&G.enemy.field.includes(attacker)) return attacker; return [...G.enemy.field].sort((x,y)=>y.ap-x.ap)[0]||null; }
+  if (['damage','rest','destroy','bounce','debuff'].includes(a.kind)){
+    const cands=enemyTargets(G.enemy, a);              // respect the command's filter (Lv/AP/HP caps)
+    if (attacker && cands.includes(attacker)) return attacker;
+    return rankTarget(cands, a);
+  }
   if (['heal','buff'].includes(a.kind)) return [...G.player.field].sort((x,y)=>y.baseAp-x.baseAp)[0]||null;
   return null;
+}
+// An enemy-targeting Action command needs at least one legal target to be usable.
+function actionCmdUsable(c){
+  const a=c.action; if(!a) return false;
+  const ek=['damage','rest','destroy','bounce','debuff'];
+  if (ek.includes(a.kind) && a.scope!=='all-enemy' && a.scope!=='all-both') return enemyTargets(G.enemy, a).length>0;
+  return true;
 }
 function collectPlayerActions(attacker){
   const opts=[];
@@ -3383,21 +3394,25 @@ function collectPlayerActions(attacker){
     }
   }
   for (const c of G.player.hand){
-    if (c.type==='command' && /【\s*Action/i.test(c.effect||'') && canAfford(G.player,c)){
+    // Only offer an 【Action】 command you can actually afford AND legally aim (no targeting a
+    // non-valid Unit — e.g. Close Combat / a ping with a Lv/AP/HP cap and no eligible target).
+    if (c.type==='command' && /【\s*Action/i.test(c.effect||'') && canAfford(G.player,c) && actionCmdUsable(c)){
       opts.push({ label:`▸ ${c.name}`, sub:'Action command', run:(afterCb)=>{
         const h=G.player.hand.indexOf(c); if(h<0)return;
         const enemyKinds=['damage','rest','destroy','bounce','debuff'];
-        if (enemyKinds.includes(c.action?.kind)){
+        if (enemyKinds.includes(c.action?.kind) && c.action.scope!=='all-enemy' && c.action.scope!=='all-both'){
           const cands=enemyTargets(G.enemy, c.action);
-          if (cands.length>=2){
-            // Spend the card now, then let player pick target
-            G.player.hand.splice(h,1); G.player.resAvail-=effectiveCost(G.player,c);
-            sendToTrash(c,G.player); flashCard(c,'YOUR ACTION');
+          if (!cands.length){ flashPrompt(`${c.name}: no legal target.`); if(afterCb) afterCb(); return; }
+          G.player.hand.splice(h,1); G.player.resAvail-=effectiveCost(G.player,c);
+          sendToTrash(c,G.player); flashCard(c,'YOUR ACTION');
+          if (cands.length>=2){          // let the player choose among the valid targets
             G.mode='action-step-target';
             G.pending={ cmd:c, attacker, after:afterCb, cands:cands.map(x=>x.uid) };
             setPrompt(`${c.name}: tap an ENEMY unit to target.`);
             render(); return;
           }
+          applyCommand(c, G.player, cands[0]);   // exactly one legal target
+          if (afterCb) afterCb(); return;
         }
         G.player.hand.splice(h,1); G.player.resAvail-=effectiveCost(G.player,c);
         sendToTrash(c,G.player); flashCard(c,'YOUR ACTION');
