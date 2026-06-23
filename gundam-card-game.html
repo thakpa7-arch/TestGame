@@ -1834,8 +1834,11 @@ function makeCard(def, owner){
     // Attack-target restrictions / grants printed on the Unit itself. A PERMANENT "can't choose the
     // enemy player" (Zowort) is innate; a "…during this turn" version (Norn's ability) is a one-turn
     // effect applied when the ability resolves, NOT a permanent trait.
-    c.noDirectAttack = /can'?t choose the enemy player as its attack target(?!\s+during this turn)/i.test(plain(def.effect));
-    const aaText = plain(def.effect);
+    // Restriction text printed inside a deployed token's spec — e.g. Victory Gundam's [Parts] token
+    // ("…can't choose the enemy player…") — must NOT leak onto the parent Unit, so strip token specs.
+    const restrictText = stripTokenSpecs(plain(def.effect));
+    c.noDirectAttack = /can'?t choose the enemy player as its attack target(?!\s+during this turn)/i.test(restrictText);
+    const aaText = restrictText;
     const aam = aaText.match(/may choose an active enemy unit(?:[^.]*?lv\.?(\d+) or lower)?[^.]*as its attack target/i);
     c.innateActiveAttack = !!aam; c.activeAttackMaxLv = aam ? (aam[1]?+aam[1]:99) : 0;
     // GFreD-style: the target must have AP ≤ this Unit's AP (not a Lv cap), and the grant is only
