@@ -3740,36 +3740,42 @@ function unlockAudio(){
   if(!_audioPrimed){ try{ const b=ac.createBuffer(1,1,ac.sampleRate||22050); const s=ac.createBufferSource(); s.buffer=b; s.connect(ac.destination); s.start(0); _audioPrimed=true; }catch(e){} }
   if(ac.state==='suspended'){ try{ ac.resume(); }catch(e){} }
 }
-// Synthesized SFX tuned for a Gundam feel: beam-weapon zaps (detuned saw+square), mobile-suit
-// thrusters (filtered noise) and heavy explosive booms, instead of plain beeps.
+// Synthesized SFX with a smooth, futuristic sci-fi feel: soft sine/triangle tones with gentle
+// envelopes, lowpass-tamed timbres, airy filter-swept whooshes and shimmer pings — deliberately
+// kept soft so nothing is harsh or fatiguing.
 function sound(kind){
   if(!SOUND.on) return; const ac=audioCtx(); if(!ac) return;
   if(ac.state==='suspended') ac.resume();
-  const t0=ac.currentTime;
-  // single oscillator: quick attack, exponential decay, optional pitch slide; `delay` staggers layers.
-  const tone=(freq,dur,type,gain,slideTo,delay)=>{ const t=t0+(delay||0); const o=ac.createOscillator(),g=ac.createGain();
-    o.type=type||'sine'; o.frequency.setValueAtTime(freq,t); if(slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(20,slideTo),t+dur);
-    g.gain.setValueAtTime(.0001,t); g.gain.exponentialRampToValueAtTime(gain||.2,t+.006); g.gain.exponentialRampToValueAtTime(.0006,t+dur);
-    o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t+dur+.03); };
-  // two slightly-detuned oscillators (saw + square) = the bright, electric "beam weapon" timbre.
-  const beam=(freq,dur,gain,slideTo,delay)=>{ tone(freq,dur,'sawtooth',gain,slideTo,delay); tone(freq*1.008,dur,'square',(gain||.2)*.55,slideTo?slideTo*1.008:0,delay); };
-  // filtered noise burst = thrusters / explosions / shield static.
-  const noise=(dur,gain,filt,delay)=>{ const t=t0+(delay||0); const n=Math.max(1,Math.floor(ac.sampleRate*dur)); const buf=ac.createBuffer(1,n,ac.sampleRate); const d=buf.getChannelData(0); for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*(1-i/n); const src=ac.createBufferSource(); src.buffer=buf; const g=ac.createGain(); g.gain.value=gain||.25; const f=ac.createBiquadFilter(); f.type='lowpass'; f.frequency.value=filt||1400; src.connect(f); f.connect(g); g.connect(ac.destination); src.start(t); };
+  const t0=ac.currentTime, out=ac.destination;
+  // a clean tone: soft (click-free) attack, exponential tail, optional pitch glide and lowpass sweep.
+  const tone=(freq,dur,o2={})=>{ const {type='sine',gain=.14,to=0,delay=0,lp=0,lpTo=0,q=0.7,atk=0.012}=o2;
+    const t=t0+delay; const o=ac.createOscillator(); const g=ac.createGain();
+    o.type=type; o.frequency.setValueAtTime(freq,t); if(to) o.frequency.exponentialRampToValueAtTime(Math.max(20,to),t+dur);
+    if(lp){ const f=ac.createBiquadFilter(); f.type='lowpass'; f.Q.value=q; f.frequency.setValueAtTime(lp,t); if(lpTo) f.frequency.exponentialRampToValueAtTime(Math.max(60,lpTo),t+dur); o.connect(f); f.connect(g); }
+    else o.connect(g);
+    g.gain.setValueAtTime(.0001,t); g.gain.exponentialRampToValueAtTime(gain,t+atk); g.gain.exponentialRampToValueAtTime(.0005,t+dur);
+    g.connect(out); o.start(t); o.stop(t+dur+.05); };
+  // a bell/ping with an octave shimmer — a soft sci-fi UI confirm.
+  const ping=(freq,dur,gain,delay)=>{ tone(freq,dur,{type:'triangle',gain:gain||.12,delay,atk:.004}); tone(freq*2,dur*.7,{type:'sine',gain:(gain||.12)*.35,delay,atk:.004}); };
+  // airy band-passed noise swept across the spectrum — a futuristic whoosh, not harsh static.
+  const whoosh=(dur,gain,f0,f1,delay)=>{ const t=t0+(delay||0); const n=Math.max(1,Math.floor(ac.sampleRate*dur)); const buf=ac.createBuffer(1,n,ac.sampleRate); const d=buf.getChannelData(0); for(let i=0;i<n;i++) d[i]=(Math.random()*2-1); const src=ac.createBufferSource(); src.buffer=buf; const f=ac.createBiquadFilter(); f.type='bandpass'; f.Q.value=.8; f.frequency.setValueAtTime(f0,t); f.frequency.exponentialRampToValueAtTime(Math.max(80,f1),t+dur); const g=ac.createGain(); g.gain.setValueAtTime(.0001,t); g.gain.exponentialRampToValueAtTime(gain||.12,t+dur*.3); g.gain.exponentialRampToValueAtTime(.0004,t+dur); src.connect(f); f.connect(g); g.connect(out); src.start(t); };
+  // soft sub-bass body for impacts.
+  const sub=(freq,dur,gain,delay)=>tone(freq,dur,{type:'sine',gain:gain||.2,to:freq*.5,delay,atk:.006});
 
-  if(kind==='deploy'){            // a mobile suit powers up and launches
-    tone(150,.07,'sawtooth',.12,360); beam(300,.2,.12,600,.04); noise(.14,.09,1100,.02);
-  } else if(kind==='hit'){        // beam graze / round impact
-    beam(700,.12,.17,150); noise(.1,.2,2200);
-  } else if(kind==='shield'){     // energy field deflects the shot — bright electric ring
-    beam(1150,.2,.16,430); noise(.16,.22,3200); tone(1700,.13,'sine',.08,820,.02);
-  } else if(kind==='die'){        // mobile suit explodes
-    noise(.42,.38,720); tone(120,.4,'sawtooth',.24,36); tone(64,.5,'sine',.22,30,.04);
-  } else if(kind==='direct'){     // a beam cannon slams the player's line
-    beam(430,.34,.22,62); noise(.5,.42,560); tone(58,.52,'sine',.3,26,.05);
-  } else if(kind==='win'){        // heroic anthem flourish
-    [392,523,659,784,1047].forEach((f,i)=>beam(f,.3,.16,0,i*.11));
-  } else if(kind==='lose'){       // reactor shutdown / power-down
-    [440,330,247,165].forEach((f,i)=>tone(f,.36,'sawtooth',.18,f*.9,i*.16)); noise(.5,.12,520,.22);
+  if(kind==='deploy'){            // systems online — gentle rising sweep + confirm ping
+    whoosh(.28,.06,300,1400); tone(420,.18,{type:'triangle',gain:.10,to:760,lp:1200,lpTo:3200}); ping(880,.16,.07,.06);
+  } else if(kind==='hit'){        // soft muted impact
+    tone(300,.1,{type:'sine',gain:.12,to:150,lp:1600}); sub(90,.12,.12);
+  } else if(kind==='shield'){     // energy field — airy shimmer, no buzz
+    ping(1320,.26,.09); ping(1760,.22,.05,.03); whoosh(.22,.05,1800,3600);
+  } else if(kind==='die'){        // muffled explosion — sub boom + downward filtered noise
+    sub(80,.5,.22); whoosh(.42,.15,900,160); tone(140,.4,{type:'sine',gain:.11,to:50});
+  } else if(kind==='direct'){     // heavy slam — deep sub + airy descending sweep
+    sub(64,.55,.26); whoosh(.5,.16,1200,200); tone(180,.45,{type:'triangle',gain:.12,to:60,lp:2000,lpTo:300});
+  } else if(kind==='win'){        // ascending shimmer arpeggio
+    [523,659,784,1047,1319].forEach((f,i)=>ping(f,.5,.10,i*.12));
+  } else if(kind==='lose'){       // power-down — smooth descending tones, filter closing
+    [392,294,196].forEach((f,i)=>tone(f,.5,{type:'triangle',gain:.12,to:f*.86,lp:2400,lpTo:500,delay:i*.18})); whoosh(.6,.06,1400,200,.2);
   }
 }
 let fxQueue = [];
