@@ -3745,8 +3745,17 @@ function unlockAudio(){
 // kept soft so nothing is harsh or fatiguing.
 function sound(kind){
   if(!SOUND.on) return; const ac=audioCtx(); if(!ac) return;
-  if(ac.state==='suspended') ac.resume();
-  const t0=ac.currentTime;
+  // Browsers (autoplay policy) start the context suspended. resume() is async, so if we schedule
+  // immediately the very first sounds land while still suspended and are lost. Defer rendering until
+  // the context is actually running — chain off the resume() promise on the gesture that triggered it.
+  if(ac.state==='running'){ renderSound(ac, kind); return; }
+  try{ const p=ac.resume(); if(p&&p.then) p.then(()=>{ if(SOUND.on) renderSound(ac, kind); }, ()=>{}); else renderSound(ac, kind); }
+  catch(e){ try{ renderSound(ac, kind); }catch(_){} }
+}
+function renderSound(ac, kind){
+  // small lookahead so scheduling never lands in the past (which clips/drops the attack), especially
+  // right after a resume() when currentTime has just begun advancing.
+  const t0=ac.currentTime + 0.03;
   // master gain gives reliable headroom so the soft, filtered tones stay clearly audible.
   const out=ac.createGain(); out.gain.value=1.7; out.connect(ac.destination);
   // a clean tone: soft (click-free) attack, exponential tail, optional pitch glide and lowpass sweep.
@@ -3969,7 +3978,7 @@ el('backToBattleBtn').addEventListener('click', ()=>{ el('overlay').classList.ad
 // Unlock audio on the very first user interaction anywhere (covers the start button, deck-picker
 // taps, etc.) so SFX play during AI turns and timed effects on mobile.
 _UNLOCK_EVTS.forEach(ev=>document.addEventListener(ev, unlockAudio, true));
-el('soundBtn').addEventListener('click', ()=>{ SOUND.on=!SOUND.on; el('soundBtn').textContent=SOUND.on?'🔊':'🔇'; if(SOUND.on){ unlockAudio(); sound('deploy'); } });
+el('soundBtn').addEventListener('click', ()=>{ SOUND.on=!SOUND.on; el('soundBtn').textContent=SOUND.on?'🔊':'🔇'; if(SOUND.on){ unlockAudio(); const ac=audioCtx(); sound('deploy'); try{ log(`Audio: ${ac?ac.state:'unavailable'}${ac&&ac.state!=='running'?' — tap again to enable':''}.`, 'sys'); }catch(e){} } });
 el('startBtn').addEventListener('click', ()=>{ unlockAudio(); startGame(); });
 el('inspect').addEventListener('click', e=>{ if(e.target.id==='inspect') closeInspect(); });
 el('playerTrashRow').addEventListener('click', ()=>{ showPileViewer((G.player&&G.player.trash)||[], 'Your Trash (Graveyard)'); });
