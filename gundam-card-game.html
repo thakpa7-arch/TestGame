@@ -1835,8 +1835,13 @@ function makeCard(def, owner){
     // enemy player" (Zowort) is innate; a "…during this turn" version (Norn's ability) is a one-turn
     // effect applied when the ability resolves, NOT a permanent trait.
     c.noDirectAttack = /can'?t choose the enemy player as its attack target(?!\s+during this turn)/i.test(plain(def.effect));
-    const aam = plain(def.effect).match(/may choose an active enemy unit(?:[^.]*?lv\.?(\d+) or lower)?[^.]*as its attack target/i);
+    const aaText = plain(def.effect);
+    const aam = aaText.match(/may choose an active enemy unit(?:[^.]*?lv\.?(\d+) or lower)?[^.]*as its attack target/i);
     c.innateActiveAttack = !!aam; c.activeAttackMaxLv = aam ? (aam[1]?+aam[1]:99) : 0;
+    // GFreD-style: the target must have AP ≤ this Unit's AP (not a Lv cap), and the grant is only
+    // active 【When Linked】. Wing Gundam's version has no link gate and uses a Lv cap.
+    c.activeAttackByAp = !!(aam && /active enemy unit with ap[^.]*?this unit/i.test(aaText));
+    c.activeAttackLink = !!(aam && /(when linked|during link)[^.]*may choose an active enemy/i.test(aaText));
     // continuous self AP/HP buffs that switch on while paired / linked
     const pb = staticSelfBuff(def.effect, 'During Pair'); c.pairAp = pb.ap; c.pairHp = pb.hp; c.pairApPer = pb.apPer||null;
     const lb = staticSelfBuff(def.effect, 'During Link'); c.linkAp = lb.ap; c.linkHp = lb.hp; c.linkApPer = lb.apPer||null;
@@ -2210,7 +2215,12 @@ function effBlocker(u){
 // (e.g. Wing Gundam — "may choose an active enemy Unit that is Lv.4 or lower as its attack target").
 function canHitActive(u, target){
   if (u.canAttackActive) return true;
-  if (u.innateActiveAttack && (target==null || (target.lv||0) <= (u.activeAttackMaxLv||99))) return true;
+  if (u.innateActiveAttack){
+    if (u.activeAttackLink && !u.linked) return false;            // GFreD: only 【When Linked】
+    if (target==null) return true;                                // generic "can attack active" check
+    if (u.activeAttackByAp) return effAp(target) <= effAp(u);     // GFreD: target AP ≤ this Unit's AP
+    return (target.lv||0) <= (u.activeAttackMaxLv||99);           // Wing Gundam: Lv cap
+  }
   return false;
 }
 // Can't attack the enemy player directly — either innately (Zowort) or as a one-turn effect
@@ -3218,7 +3228,10 @@ function attachPilot(u, p, onDone){
     { card:p, act:parseTrigger(p.effect,'When Paired'), label:'Pair' },
     { card:u, act:parseTrigger(u.effect,'When Paired'), label:'Pair' },
   ];
-  if (justLinked) trigs.push({ card:u, act:parseTrigger(u.effect,'When Linked'), label:'Link' });
+  if (justLinked){
+    trigs.push({ card:p, act:parseTrigger(p.effect,'When Linked'), label:'Link' });   // pilot's own 【When Linked】 (e.g. Nyaan)
+    trigs.push({ card:u, act:parseTrigger(u.effect,'When Linked'), label:'Link' });
+  }
   runTriggerSeq(trigs, side, onDone);
 }
 // Resolve a list of triggers in order. Player-side triggers go through the interactive resolver
