@@ -3153,23 +3153,27 @@ function breachShield(atk, defSide){
 
 // ---- Blocker decision helpers (AI as defender) ----
 function aiWantsBlock(atk){
-  // Block if it saves a shield in danger, or sets up a favourable trade.
+  // Decide whether to spend a <Blocker> intercepting this attack. Shields are the AI's life total,
+  // so it protects dwindling shields aggressively; otherwise it blocks for a favourable trade.
   const blockers = G.enemy.field.filter(b=>effBlocker(b) && !b.rested && b.hp>0);
   if (!blockers.length) return false;
   const best = pickAiBlocker(atk, blockers);
-  const kills = best.ap >= atk.hp;              // blocker kills attacker
-  if (G.enemy.shields.length<=2) return true;   // protect dwindling shields
-  if (kills) return true;                   // good trade
-  if (best.hp > atk.ap && best.ap > 0) return true; // survives and bites back
+  const ap = effAp(atk);
+  const kills = effAp(best) >= atk.hp;                   // the blocker destroys the attacker
+  if (G.enemy.shields.length<=2) return true;            // low on life — protect the shield
+  if (kills) return true;                                // favourable trade
+  if (best.hp > ap && effAp(best) > 0) return true;      // survives the counter and bites back
   return false;
 }
 function pickAiBlocker(atk, blockers){
-  // Prefer one that survives and ideally kills the attacker.
+  // Most adequate blocker first (kills and/or survives); among equally-good ones, spend the LEAST
+  // valuable body so the AI's best <Blocker> stays available for the next threat.
+  const ap = effAp(atk);
   return [...blockers].sort((x,y)=>{
-    const xs=(x.hp>atk.ap?1:0)+(x.ap>=atk.hp?1:0);
-    const ys=(y.hp>atk.ap?1:0)+(y.ap>=atk.hp?1:0);
+    const xs=(x.hp>ap?1:0)+(effAp(x)>=atk.hp?1:0);
+    const ys=(y.hp>ap?1:0)+(effAp(y)>=atk.hp?1:0);
     if (ys!==xs) return ys-xs;
-    return y.hp-x.hp;
+    return aiThreatScore(x)-aiThreatScore(y);
   })[0];
 }
 
