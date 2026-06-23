@@ -3362,13 +3362,31 @@ function aiMainStep(){
     const dep = ai.hand.filter(c=>c.type==='unit' && canAfford(ai,c)).sort((a,b)=>(b.baseAp+b.baseHp)-(a.baseAp+a.baseHp))[0];
     if (dep){ const i=ai.hand.indexOf(dep); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,dep); dep.rested=false; dep.sick=!dep.blitz; ai.field.push(dep); flashCard(dep,'ENEMY DEPLOY'); log(`${who(G.enemy)} deploys <b>${dep.name}</b>.`, 'ai'); runTrigger(dep, ai, parseTrigger(dep.effect,'Deploy'), 'Deploy'); onUnitDeployed(dep, ai); return true; }
   }
-  // pair a pilot — prefer a Unit it LINKS with (forms a Link Unit: bonuses + can attack immediately)
-  const pilot = ai.hand.find(c=>c.type==='pilot' && canAfford(ai,c));
+  // pair a pilot — evaluate EVERY (pilot, unit) combination and take the best one. Forming a Link is
+  // worth the most (stat boost + the Unit can attack immediately), and most of all on a just-deployed
+  // (summoning-sick) Unit that otherwise couldn't attack this turn.
+  const pilots = ai.hand.filter(c=>c.type==='pilot' && canAfford(ai,c));
   const pairable = ai.field.filter(u=>u.type==='unit' && !u.pilot && !u.noPilot);
-  if (pilot && pairable.length){
-    const linkable = pairable.filter(u=>linkMatches(u, pilot)).sort((a,b)=>b.baseAp-a.baseAp);
-    const best = linkable[0] || pairable.sort((a,b)=>b.baseAp-a.baseAp)[0];
-    const i=ai.hand.indexOf(pilot); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,pilot); flashCard(pilot,'ENEMY PILOT'); attachPilot(best,pilot); log(`${who(G.enemy)} pairs <b>${pilot.name}</b> with <b>${best.name}</b>.`, 'ai'); return true;
+  if (pilots.length && pairable.length){
+    let bestP=null, bestU=null, bestScore=-1;
+    for (const p of pilots){
+      for (const u of pairable){
+        let s = (p.pAp||0) + (p.pHp||0)*0.5;            // raw pilot stat contribution
+        if (linkMatches(u, p)){
+          s += 7;                                        // a Link is a real payoff (bonuses + immediate attack)
+          if (u.sick) s += 5;                            // ...and it lets a summoning-sick Unit attack NOW
+          s += effAp(u)*0.5;                             // a bigger body leverages the Link more
+        } else {
+          s += effAp(u)*0.2;                             // a plain pair still adds stats — favour a strong body
+        }
+        if (s>bestScore){ bestScore=s; bestP=p; bestU=u; }
+      }
+    }
+    if (bestP){
+      const i=ai.hand.indexOf(bestP); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,bestP);
+      flashCard(bestP,'ENEMY PILOT'); attachPilot(bestU,bestP);
+      log(`${who(G.enemy)} pairs <b>${bestP.name}</b> with <b>${bestU.name}</b>.`, 'ai'); return true;
+    }
   }
   // buff before attacks
   const buff = ai.hand.find(c=>c.type==='command' && c.action.kind==='buff' && canAfford(ai,c));
@@ -3377,6 +3395,30 @@ function aiMainStep(){
   const tokCmd = ai.hand.find(c=>c.type==='command' && c.action.kind==='token' && canAfford(ai,c) && !(c.action.tokenLimit && hasTraitToken(ai, c.action.tokenLimit)));
   if (tokCmd && ai.field.length<FIELD_MAX){ const i=ai.hand.indexOf(tokCmd); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,tokCmd); sendToTrash(tokCmd,ai); flashCard(tokCmd,'ENEMY COMMAND'); deployTokens(tokCmd.action, ai, tokCmd.name, tokCmd.name, 'ai'); return true; }
   return false;
+}
+// Plan which attacker hits which enemy Unit. The point is SEQUENCING: assign the WEAKEST attacker
+// that can cleanly kill each worthwhile threat, so the strongest bodies stay free to pressure the
+// player's shields instead of wasting themselves trading into a small Unit. Returns attacker.uid ->
+// target Unit; anything not in the map pushes the player directly.
+function planAiAttacks(attackers){
+  const pl=G.player, plan=new Map(), used=new Set();
+  if (G.aiForceFace) return plan;                       // committing to lethal: everything goes face
+  const lowDef = !pl.base && pl.shields.length<=2;
+  const bar = lowDef ? 7 : 4;                           // when the player is nearly dead, only divert for scary threats
+  const threats = pl.field.filter(u=>u.hp>0 && aiThreatScore(u)>=bar)
+                          .sort((a,b)=>aiThreatScore(b)-aiThreatScore(a));
+  for (const tgt of threats){
+    const cands = attackers.filter(a=>!used.has(a.uid)
+        && (tgt.rested || canHitActive(a,tgt))           // can legally attack it
+        && effAp(a)>=tgt.hp                              // and kill it
+        && (a.firstStrike || effAp(tgt)<effAp(a) || cantHitPlayer(a)));  // and survive (or it can't go face anyway)
+    if (!cands.length) continue;
+    // cheapest sufficient killer: a Unit that can't pressure the player anyway first, then lowest AP,
+    // so the strongest face-capable attackers are saved for the player's shields.
+    cands.sort((a,b)=> (cantHitPlayer(b)?1:0)-(cantHitPlayer(a)?1:0) || effAp(a)-effAp(b));
+    plan.set(cands[0].uid, tgt); used.add(cands[0].uid);
+  }
+  return plan;
 }
 // After the main phase: use ready activated abilities, then run the attack sequence.
 function aiPostMain(){
@@ -3393,15 +3435,22 @@ function aiPostMain(){
   // If swinging everything at the player wins this turn, commit to going face (take lethal).
   G.aiForceFace = aiHasLethal(attackers);
   if (G.aiForceFace) log(`${who(G.enemy)} goes for the win!`, 'ai');
-  // Attack with the strongest first so face damage / lethal lands before chip attackers.
-  attackers.sort((a,b)=>effAp(b)-effAp(a));
+  const plan = planAiAttacks(attackers);
+  // Sequence: take the planned kills first (with their small assigned attackers, clearing threats),
+  // then push the remaining bodies at the player's shields strongest-first.
+  attackers.sort((a,b)=>{
+    const pa=plan.has(a.uid), pb=plan.has(b.uid);
+    if (pa!==pb) return pa?-1:1;                 // planned kills resolve first
+    if (pa&&pb) return effAp(a)-effAp(b);        // among kills: smallest killer first
+    return effAp(b)-effAp(a);                    // among face pushers: strongest first
+  });
   let i=0;
   (function next(){
     if (G.over) return;
     if (i>=attackers.length){ G.aiForceFace=false; setTimeout(()=>{ if(!G.over){ log(`${who(G.enemy)} ends its turn.`, 'ai'); endTurn(); } }, 450); return; }
     const atk=attackers[i++];
     if (atk.rested || atk.hp<=0){ next(); return; }
-    resolveAiAttack(atk, ()=> setTimeout(next, 650));
+    resolveAiAttack(atk, ()=> setTimeout(next, 650), plan.get(atk.uid)||null);
   })();
 }
 
@@ -3488,10 +3537,10 @@ function offerPlayerActionStep(attacker, cb){
   wrap.appendChild(pass);
   el('blockModal').classList.add('show');
 }
-function resolveAiAttack(atk, done){
-  offerPlayerActionStep(atk, ()=>resolveAiAttackInner(atk, done));
+function resolveAiAttack(atk, done, forced){
+  offerPlayerActionStep(atk, ()=>resolveAiAttackInner(atk, done, forced));
 }
-function resolveAiAttackInner(atk, done){
+function resolveAiAttackInner(atk, done, forced){
   // The player's Action step may have rested/destroyed the attacker — if so, the attack fizzles.
   if (atk.hp<=0 || atk.rested){ render(); done(); return; }
   declareAttack(atk, G.enemy);   // AI on-attack self-buffs (AP+/High-Maneuver) BEFORE the block step
@@ -3501,16 +3550,20 @@ function resolveAiAttackInner(atk, done){
     const pl=G.player;
     // Units may only attack a RESTED enemy unit (or any unit if granted <attack active>), or the player directly.
     const attackable = pl.field.filter(u=>u.hp>0 && (u.rested || canHitActive(atk,u)));
-    // A clean kill destroys the target and survives the counter (or strikes first).
-    const bestKill = attackable.filter(u=> effAp(atk)>=u.hp && (atk.firstStrike || effAp(u)<atk.hp))
-                               .sort((a,b)=>aiThreatScore(b)-aiThreatScore(a))[0] || null;
-    // Go face when: committing to lethal, the unit can't trade, no worthwhile trade exists, or the
-    // player is low on defenses (close out the game by pressuring shields) unless the trade kills a
-    // very scary threat.
-    const lowDef = !pl.base && pl.shields.length<=2;
-    const goFace = !cantHitPlayer(atk) && (G.aiForceFace || !bestKill || aiThreatScore(bestKill) < 4
-                    || (lowDef && aiThreatScore(bestKill) < 7));
-    const target = goFace ? null : bestKill;
+    // Honour the planned target (from planAiAttacks) if it's still a legal kill this attacker can reach.
+    let target = (forced && attackable.includes(forced)) ? forced : null;
+    if (!target){
+      // A clean kill destroys the target and survives the counter (or strikes first).
+      const bestKill = attackable.filter(u=> effAp(atk)>=u.hp && (atk.firstStrike || effAp(u)<atk.hp))
+                                 .sort((a,b)=>aiThreatScore(b)-aiThreatScore(a))[0] || null;
+      // Go face when: committing to lethal, the unit can't trade, no worthwhile trade exists, or the
+      // player is low on defenses (close out the game by pressuring shields) unless the trade kills a
+      // very scary threat.
+      const lowDef = !pl.base && pl.shields.length<=2;
+      const goFace = !cantHitPlayer(atk) && (G.aiForceFace || !bestKill || aiThreatScore(bestKill) < 4
+                      || (lowDef && aiThreatScore(bestKill) < 7));
+      target = goFace ? null : bestKill;
+    }
     // The player may intercept with an active <Blocker> (unless the attacker has High-Maneuver).
     const blockers = pl.field.filter(b=>effBlocker(b) && !b.rested && b.hp>0 && b!==target);
     if (!atk.highManeuver && blockers.length){
