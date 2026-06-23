@@ -3778,12 +3778,12 @@ function renderSound(ac, kind){
 
   if(kind==='deploy'){            // systems online — gentle rising sweep + confirm ping
     whoosh(.28,.10,300,1400); tone(420,.18,{type:'triangle',gain:.16,to:760,lp:1200,lpTo:3200}); ping(880,.16,.12,.06);
-  } else if(kind==='hit'){        // soft muted impact
-    tone(300,.1,{type:'sine',gain:.16,to:150,lp:1600}); sub(90,.12,.16);
+  } else if(kind==='hit'){        // damage — tense, dangerous impact (dissonant downward bite + sub)
+    sub(72,.2,.2); tone(330,.14,{type:'triangle',gain:.14,to:130,lp:1500,atk:.002}); tone(247,.16,{type:'sine',gain:.09,to:104,atk:.002}); whoosh(.1,.05,1500,320);
   } else if(kind==='shield'){     // energy field — airy shimmer, no buzz
     ping(1320,.26,.14); ping(1760,.22,.08,.03); whoosh(.22,.09,1800,3600);
-  } else if(kind==='die'){        // muffled explosion — sub boom + downward filtered noise
-    sub(80,.5,.22); whoosh(.42,.15,900,160); tone(140,.4,{type:'sine',gain:.11,to:50});
+  } else if(kind==='die'){        // kill — heavy ominous detonation, deeper & more menacing than damage
+    sub(52,.62,.3); tone(200,.5,{type:'triangle',gain:.16,to:42,lp:1600,lpTo:150,atk:.002}); tone(150,.55,{type:'sawtooth',gain:.07,to:38,lp:900,lpTo:120,delay:.02}); whoosh(.5,.18,1500,110); tone(110,.5,{type:'sine',gain:.10,to:33,delay:.04});
   } else if(kind==='direct'){     // heavy slam — deep sub + airy descending sweep
     sub(64,.55,.26); whoosh(.5,.16,1200,200); tone(180,.45,{type:'triangle',gain:.12,to:60,lp:2000,lpTo:300});
   } else if(kind==='ui'){         // generic UI blip — soft, short confirm for taps/cancels
@@ -3974,7 +3974,6 @@ el('logHeader').addEventListener('click', ()=>{
   el('logToggle').textContent = collapsed ? '▸' : '▾';
 });
 el('cancelBtn').addEventListener('click', ()=>{
-  sound('ui');
   if (G.mode==='action-step-target'){
     // Card already spent — auto-apply to first candidate so effect isn't lost
     const p=G.pending; G.mode='idle'; G.pending=null;
@@ -3989,23 +3988,29 @@ el('cancelBtn').addEventListener('click', ()=>{
 });
 el('rulesBtn').addEventListener('click', ()=>{
   if(G.over) return;                                   // game-over screen owns the overlay
-  sound('ui');
   el('startBtn').style.display='none';                 // mid-game: show rules, not the start button
   el('introText').style.display='none';
   el('backToBattleBtn').style.display='inline-block';
   el('overlay').classList.remove('hidden');
 });
-el('backToBattleBtn').addEventListener('click', ()=>{ sound('ui'); el('overlay').classList.add('hidden'); });
+el('backToBattleBtn').addEventListener('click', ()=>{ el('overlay').classList.add('hidden'); });
 // Unlock audio on the very first user interaction anywhere (covers the start button, deck-picker
 // taps, etc.) so SFX play during AI turns and timed effects on mobile.
 _UNLOCK_EVTS.forEach(ev=>document.addEventListener(ev, unlockAudio, true));
+// Generic click cue on EVERY button press (deck pick, mulligan, turn order, cancel, rules, block
+// choices, etc.). End Turn and the sound toggle opt out since they play their own sound.
+const _NOSOUND_BTN = { endTurnBtn:1, soundBtn:1 };
+document.addEventListener('click', (e)=>{
+  const b = e.target && e.target.closest && e.target.closest('button');
+  if (b && !_NOSOUND_BTN[b.id]) sound('ui');
+}, true);
 el('soundBtn').addEventListener('click', ()=>{ SOUND.on=!SOUND.on; el('soundBtn').textContent=SOUND.on?'🔊':'🔇'; if(SOUND.on){ unlockAudio(); const ac=audioCtx(); sound('deploy'); try{ log(`Audio: ${ac?ac.state:'unavailable'}${ac&&ac.state!=='running'?' — tap again to enable':''}.`, 'sys'); }catch(e){} } });
 el('startBtn').addEventListener('click', ()=>{ unlockAudio(); startGame(); });
 el('inspect').addEventListener('click', e=>{ if(e.target.id==='inspect') closeInspect(); });
-el('playerTrashRow').addEventListener('click', ()=>{ sound('ui'); showPileViewer((G.player&&G.player.trash)||[], 'Your Trash (Graveyard)'); });
-el('playerExileRow').addEventListener('click', ()=>{ sound('ui'); showPileViewer((G.player&&G.player.exile)||[], 'Your Exile'); });
-el('enemyTrashRow').addEventListener('click', ()=>{ sound('ui'); showPileViewer((G.enemy&&G.enemy.trash)||[], 'Enemy Trash (Graveyard)'); });
-el('enemyExileRow').addEventListener('click', ()=>{ sound('ui'); showPileViewer((G.enemy&&G.enemy.exile)||[], 'Enemy Exile'); });
+el('playerTrashRow').addEventListener('click', ()=>{ showPileViewer((G.player&&G.player.trash)||[], 'Your Trash (Graveyard)'); });
+el('playerExileRow').addEventListener('click', ()=>{ showPileViewer((G.player&&G.player.exile)||[], 'Your Exile'); });
+el('enemyTrashRow').addEventListener('click', ()=>{ showPileViewer((G.enemy&&G.enemy.trash)||[], 'Enemy Trash (Graveyard)'); });
+el('enemyExileRow').addEventListener('click', ()=>{ showPileViewer((G.enemy&&G.enemy.exile)||[], 'Enemy Exile'); });
 el('enemyShieldZone').addEventListener('click', attackDirect);
 el('enemyShieldCount').addEventListener('click', attackDirect);
 el('enemyField').addEventListener('click', e=>{ if(G.mode==='attack-target' && e.target.classList.contains('battlefield')) attackDirect(); });
