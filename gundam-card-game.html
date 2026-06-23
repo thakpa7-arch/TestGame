@@ -1795,6 +1795,7 @@ function resetUnit(u){
 function returnToHand(u, owner){
   if (u.token) return;                       // tokens vanish instead
   const pilot = u.pilotCard;                 // grab the paired Pilot before resetUnit() clears it
+  sound('bounce');
   resetUnit(u);
   const hand = owner.hand;
   if (hand.length<HAND_MAX) hand.push(u);
@@ -2176,7 +2177,7 @@ function revealCard(card, tag, variant){
 }
 function revealDraw(card, tag){ revealCard(card, tag||'DREW', null); }
 // Reveal a card milled from the top of YOUR deck into the trash (never the AI's).
-function revealMill(card, side){ if (side===G.player) revealCard(card, 'MILLED', 'milled'); }
+function revealMill(card, side){ if (side===G.player){ sound('mill'); revealCard(card, 'MILLED', 'milled'); } }
 function defaultPrompt(){ setPrompt(G.turn==='player' ? 'Your turn — deploy, attack, then End Turn.' : ''); }
 
 // ---- effective stats ----
@@ -2418,7 +2419,7 @@ function draw(side, silent){
   if (side.hand.length<HAND_MAX) side.hand.push(c);
   // Reveal the player's own draws (turn draw and effect draws) so you can see what you got — both
   // a log line and a card pop — but never reveal the AI's cards.
-  if (!silent && side===G.player && c){ log(`You draw <b>${c.name}</b>.`, 'me'); revealDraw(c); }
+  if (!silent && side===G.player && c){ log(`You draw <b>${c.name}</b>.`, 'me'); sound('draw'); revealDraw(c); }
   return c;
 }
 
@@ -3015,6 +3016,7 @@ function triggerBurst(card, side, done, allowChoice){
   done = done || function(){};
   const bz = card.burst; if (!bz){ done(); return; }
   const sideCls = side===G.player ? 'me' : 'ai';
+  sound('burst');
   flashCard(card, (side===G.player?'YOUR':'ENEMY')+' BURST');
   if (bz.kind==='tohand'){ if (side.hand.length<HAND_MAX){ side.hand.push(card); log(`Burst! <b>${card.name}</b> is added to ${who(side)} hand.`, sideCls); if (side===G.player) revealDraw(card, 'BURST'); } done(); return; }
   if (bz.kind==='deploy'){
@@ -3259,6 +3261,7 @@ function attachPilot(u, p, onDone){
     log(`Link established — <b>${u.name}</b> can attack this turn!`, u.owner==='player'?'me':'ai');
   }
   u.maxHp=effMaxHp(u); u.ap=effAp(u);
+  sound(justLinked ? 'link' : 'pair');
   // 【When Paired】 (pilot's then unit's) and 【When Linked】 fire now. For the player these are
   // resolved interactively (so you choose the target), one after another, via the sequencer.
   const trigs = [
@@ -3787,6 +3790,18 @@ function renderSound(ac, kind){
     ping(660,.1,.10); tone(440,.08,{type:'sine',gain:.07,atk:.004});
   } else if(kind==='endphase'){   // ending the turn — gentle two-note descending sweep
     tone(620,.16,{type:'triangle',gain:.12,to:440,lp:2600,lpTo:1200,atk:.006}); ping(880,.18,.08,.05); whoosh(.2,.05,1600,600);
+  } else if(kind==='bounce'){     // return to hand — a rising warp-out swish
+    tone(300,.22,{type:'triangle',gain:.13,to:920,lp:1400,lpTo:4200,atk:.005}); whoosh(.22,.07,400,2600); ping(1200,.12,.07,.13);
+  } else if(kind==='link'){       // Link established — bright rising "connection locked" confirm
+    tone(392,.16,{type:'triangle',gain:.10,to:588,atk:.005}); ping(784,.2,.13); ping(1175,.22,.11,.09);
+  } else if(kind==='pair'){       // Pilot paired — warm, softer confirm than Link
+    tone(440,.16,{type:'triangle',gain:.12,to:554,lp:2200,atk:.006}); ping(660,.15,.09,.05);
+  } else if(kind==='draw'){       // card draw — quick light upward slide
+    whoosh(.14,.05,1200,3200); ping(990,.1,.09,.02);
+  } else if(kind==='mill'){       // cards to trash — short darker descending slide
+    tone(520,.14,{type:'sine',gain:.10,to:280,lp:1800,lpTo:700,atk:.005}); whoosh(.16,.05,900,320);
+  } else if(kind==='burst'){      // shield Burst springs — dramatic bright zap + shimmer + sub
+    sub(120,.2,.12); ping(1320,.22,.13); ping(1980,.2,.09,.04); whoosh(.26,.09,800,3800); tone(660,.18,{type:'triangle',gain:.10,to:1320,lp:2000,lpTo:5200,atk:.004});
   } else if(kind==='win'){        // ascending shimmer arpeggio
     [523,659,784,1047,1319].forEach((f,i)=>ping(f,.5,.15,i*.12));
   } else if(kind==='lose'){       // power-down — smooth descending tones, filter closing
