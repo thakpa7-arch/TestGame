@@ -277,7 +277,7 @@
   .prompt { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); background: var(--panel-2); border: 1px solid var(--cyan); padding: 8px 18px; border-radius: 20px; font-size: 13px; z-index: 60; box-shadow: 0 4px 14px rgba(0,0,0,.5); max-width: 92vw; text-align: center; }
 
   /* Card inspector modal */
-  #inspect { position: fixed; inset: 0; background: rgba(4,7,14,.82); z-index: 90; display: none; align-items: center; justify-content: center; padding: 16px; }
+  #inspect { position: fixed; inset: 0; background: rgba(4,7,14,.82); z-index: 1000; display: none; align-items: center; justify-content: center; padding: 16px; }
   #inspect.show { display: flex; }
   #inspect .ins-box { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; max-width: 480px; width: 100%; max-height: 92vh; overflow-y: auto; padding: 16px; display: flex; gap: 14px; flex-direction: row; }
   #inspect img { width: 180px; border-radius: 10px; flex-shrink: 0; background: #0d1628; }
@@ -939,6 +939,7 @@ function showPileViewer(pile, title){
   });
   let html=`<h3 style="margin:0 0 8px;color:#d8b4ff">${title} (${pile.length})</h3>`;
   if(!pile.length) html+='<div style="color:#666;padding:8px 0">Empty</div>';
+  else html+='<div style="color:#7e8aa8;font-size:10.5px;margin:-4px 0 6px">Tap any card to view it full-size.</div>';
   for(const key of keys){
     const cards=groups.get(key);
     const byName=new Map();
@@ -947,11 +948,11 @@ function showPileViewer(pile, title){
     html+='<div style="display:flex;flex-wrap:wrap;gap:8px">';
     for(const {c,n} of byName.values()){
       const bg=c.img?`background-image:url('${c.img}');background-size:cover;background-position:center top`:'background:#0d1628';
-      html+=`<div title="${c.name} · Cost ${c.cost}" style="position:relative;width:74px;height:104px;border-radius:7px;border:1px solid #4a4a6a;overflow:hidden;${bg}">`;
-      if(!c.img) html+=`<div style="padding:14px 5px;font-size:9px;color:#cdd;text-align:center">${c.name}</div>`;
-      html+=`<div style="position:absolute;top:2px;left:2px;background:rgba(6,40,58,.92);color:#22d3ee;font-size:9px;font-weight:800;border-radius:7px;padding:0 4px">${c.cost}</div>`;
-      if(n>1) html+=`<div style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,.85);color:#fff;font-size:10px;font-weight:800;border-radius:7px;padding:0 5px">×${n}</div>`;
-      html+=`<div style="position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.62);color:#fff;font-size:8px;text-align:center;padding:1px 2px;line-height:1.05">${c.name}</div>`;
+      html+=`<div class="pv-card" data-uid="${c.uid}" title="${c.name} · Cost ${c.cost} — tap to view" style="position:relative;width:90px;height:126px;border-radius:7px;border:1px solid #4a4a6a;overflow:hidden;cursor:pointer;${bg}">`;
+      if(!c.img) html+=`<div style="padding:18px 5px;font-size:10px;color:#cdd;text-align:center">${c.name}</div>`;
+      html+=`<div style="position:absolute;top:2px;left:2px;background:rgba(6,40,58,.92);color:#22d3ee;font-size:10px;font-weight:800;border-radius:7px;padding:0 5px">${c.cost}</div>`;
+      if(n>1) html+=`<div style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,.85);color:#fff;font-size:11px;font-weight:800;border-radius:7px;padding:0 5px">×${n}</div>`;
+      html+=`<div style="position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.62);color:#fff;font-size:8.5px;text-align:center;padding:1px 2px;line-height:1.05">${c.name}</div>`;
       html+='</div>';
     }
     html+='</div>';
@@ -959,6 +960,10 @@ function showPileViewer(pile, title){
   html+=`<div style="text-align:center"><button style="margin-top:14px;padding:8px 22px;background:#333;color:#fff;border:none;border-radius:6px;cursor:pointer">Close</button></div>`;
   box.innerHTML=html;
   box.querySelector('button').onclick=()=>modal.remove();
+  // Tap a card thumbnail to open the full inspector (art + effect text).
+  box.querySelectorAll('.pv-card').forEach(node=>{
+    node.onclick=()=>{ const c=pile.find(x=>String(x.uid)===node.dataset.uid); if(c) inspect(c); };
+  });
   modal.appendChild(box);
   modal.addEventListener('click',e=>{ if(e.target===modal) modal.remove(); });
   document.body.appendChild(modal);
