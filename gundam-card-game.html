@@ -1492,7 +1492,11 @@ function runTrigger(card, side, act, label){
     const pc=card.pilotCard;
     if (pc){
       const ti=side.trash.indexOf(pc); if(ti>=0) side.trash.splice(ti,1);            // rescue from trash (Destroyed)…
-      if (card.pilot && side.field.includes(card)){ card.hp-=(pc.pHp||0); card.pilot=null; card.pilotCard=null; card.linked=false; card.pilotPairAp=0; card.pilotPairHp=0; card.pilotLinkAp=0; card.pilotLinkHp=0; if (card.baseLv!=null) card.lv=card.baseLv; card.ap=effAp(card); card.maxHp=effMaxHp(card); }  // …or detach from a living Unit
+      if (card.pilot && side.field.includes(card)){
+        card.hp-=(pc.pHp||0); card.pilot=null; card.pilotCard=null; card.linked=false; card.pilotPairAp=0; card.pilotPairHp=0; card.pilotLinkAp=0; card.pilotLinkHp=0; if (card.baseLv!=null) card.lv=card.baseLv; card.ap=effAp(card); card.maxHp=effMaxHp(card);  // …or detach from a living Unit
+        // Losing the Pilot's HP can reduce the Unit to 0 — that's a state-based destruction.
+        if (card.hp<=0){ const fi=side.field.indexOf(card); if(fi>=0) side.field.splice(fi,1); fx('die',card.uid); log(`<b>${card.name}</b> is destroyed.`, cls); sendToTrash(card, side); runTrigger(card, side, parseTrigger(card.effect,'Destroyed'), 'Destroyed'); }
+      }
       if (side.hand.length<HAND_MAX){ side.hand.push(pc); log(`${label}: <b>${name}</b> returns Pilot <b>${pc.name}</b> to hand.`, cls); }
     }
   } else if (act.kind==='setActive'){
@@ -3361,9 +3365,12 @@ function aiMainStep(){
   // deploy a base if it improves the guard
   const baseC = ai.hand.find(c=>c.type==='base' && canAfford(ai,c) && (!ai.base || c.hp>ai.base.hp));
   if (baseC){ const i=ai.hand.indexOf(baseC); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,baseC); baseC.rested=false; baseC.sick=false; ai.base=baseC; flashCard(baseC,'ENEMY BASE'); log(`${who(G.enemy)} deploys base <b>${baseC.name}</b>.`, 'ai'); runTrigger(baseC, ai, parseTrigger(baseC.effect,'Deploy'), 'Deploy'); return true; }
-  // deploy best affordable unit
+  // deploy a unit — on top of raw stats, prefer a body whose Link Pilot is already in hand (so it can
+  // pair + attack the same turn) and one that brings a Deploy effect (removal, tokens, etc.).
   if (ai.field.length<FIELD_MAX){
-    const dep = ai.hand.filter(c=>c.type==='unit' && canAfford(ai,c)).sort((a,b)=>(b.baseAp+b.baseHp)-(a.baseAp+a.baseHp))[0];
+    const linkPilotInHand = u => ai.hand.some(c=>c.type==='pilot' && linkMatches(u, c));
+    const depScore = u => (u.baseAp+u.baseHp) + (linkPilotInHand(u)?4:0) + (parseTrigger(u.effect,'Deploy')?2:0);
+    const dep = ai.hand.filter(c=>c.type==='unit' && canAfford(ai,c)).sort((a,b)=>depScore(b)-depScore(a))[0];
     if (dep){ const i=ai.hand.indexOf(dep); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,dep); dep.rested=false; dep.sick=!dep.blitz; ai.field.push(dep); flashCard(dep,'ENEMY DEPLOY'); log(`${who(G.enemy)} deploys <b>${dep.name}</b>.`, 'ai'); runTrigger(dep, ai, parseTrigger(dep.effect,'Deploy'), 'Deploy'); onUnitDeployed(dep, ai); return true; }
   }
   // pair a pilot — evaluate EVERY (pilot, unit) combination and take the best one. Forming a Link is
