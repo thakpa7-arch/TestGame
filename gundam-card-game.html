@@ -3729,6 +3729,17 @@ function cardFace(c, ctx){
 const SOUND = { on: true };
 let _actx = null;
 function audioCtx(){ if(!_actx){ try{ _actx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } return _actx; }
+// Mobile browsers (especially iOS Safari) start the AudioContext suspended and will only start it
+// from inside a user gesture. On the first interaction we create it and play a 1-sample silent buffer
+// (the classic iOS unlock); on every interaction we resume it if suspended, so audio keeps working
+// even after the OS re-suspends the context (e.g. after backgrounding the tab).
+const _UNLOCK_EVTS = ['touchstart','touchend','pointerdown','mousedown','keydown','click'];
+let _audioPrimed = false;
+function unlockAudio(){
+  const ac=audioCtx(); if(!ac) return;
+  if(!_audioPrimed){ try{ const b=ac.createBuffer(1,1,ac.sampleRate||22050); const s=ac.createBufferSource(); s.buffer=b; s.connect(ac.destination); s.start(0); _audioPrimed=true; }catch(e){} }
+  if(ac.state==='suspended'){ try{ ac.resume(); }catch(e){} }
+}
 // Synthesized SFX tuned for a Gundam feel: beam-weapon zaps (detuned saw+square), mobile-suit
 // thrusters (filtered noise) and heavy explosive booms, instead of plain beeps.
 function sound(kind){
@@ -3947,8 +3958,11 @@ el('rulesBtn').addEventListener('click', ()=>{
   el('overlay').classList.remove('hidden');
 });
 el('backToBattleBtn').addEventListener('click', ()=>{ el('overlay').classList.add('hidden'); });
-el('soundBtn').addEventListener('click', ()=>{ SOUND.on=!SOUND.on; el('soundBtn').textContent=SOUND.on?'🔊':'🔇'; if(SOUND.on){ audioCtx()?.resume?.(); sound('deploy'); } });
-el('startBtn').addEventListener('click', ()=>{ audioCtx()?.resume?.(); startGame(); });
+// Unlock audio on the very first user interaction anywhere (covers the start button, deck-picker
+// taps, etc.) so SFX play during AI turns and timed effects on mobile.
+_UNLOCK_EVTS.forEach(ev=>document.addEventListener(ev, unlockAudio, true));
+el('soundBtn').addEventListener('click', ()=>{ SOUND.on=!SOUND.on; el('soundBtn').textContent=SOUND.on?'🔊':'🔇'; if(SOUND.on){ unlockAudio(); sound('deploy'); } });
+el('startBtn').addEventListener('click', ()=>{ unlockAudio(); startGame(); });
 el('inspect').addEventListener('click', e=>{ if(e.target.id==='inspect') closeInspect(); });
 el('playerTrashRow').addEventListener('click', ()=>{ showPileViewer((G.player&&G.player.trash)||[], 'Your Trash (Graveyard)'); });
 el('playerExileRow').addEventListener('click', ()=>{ showPileViewer((G.player&&G.player.exile)||[], 'Your Exile'); });
