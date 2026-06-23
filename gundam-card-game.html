@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mobile Suit Clash — Gundam Card Game</title>
+<title>Tha Gundam TCG Sim</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   :root {
@@ -229,6 +229,9 @@
   @keyframes drPop { 0% { transform: translateY(20px) scale(.55); opacity: 0; } 100% { transform: translateY(0) scale(1); opacity: 1; } }
   #drawReveal .dr-tag { position: absolute; top: -9px; left: 50%; transform: translateX(-50%); background: var(--cyan); color: #04202a; font-size: 9px; font-weight: 800; padding: 1px 6px; border-radius: 6px; letter-spacing: 1px; white-space: nowrap; }
   #drawReveal .dr-name { position: absolute; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.62); color: #fff; font-size: 8px; text-align: center; padding: 2px; line-height: 1.05; }
+  /* A card milled from the top of your deck into the trash — purple "grave" styling. */
+  #drawReveal .dr-card.milled { border-color: var(--purple); box-shadow: 0 0 18px rgba(168,85,247,.6); }
+  #drawReveal .dr-tag.milled { background: var(--purple); color: #fff; }
   .card .ov-name { position: absolute; left: 0; right: 0; bottom: calc(var(--ov-pos) + var(--ov-sz)); font-size: calc(var(--ov-f) * .73); text-align: center; background: rgba(0,0,0,.6); padding: 1px 2px; line-height: 1.05; }
   .card.rested { transform: rotate(90deg) scale(.82); opacity: .85; }
   .card.rested:hover { transform: rotate(90deg) scale(.86); }
@@ -336,7 +339,7 @@
 <div id="app">
   <header>
     <div>
-      <h1>Mobile Suit Clash</h1>
+      <h1>Tha Gundam TCG Sim</h1>
       <div class="sub">GUNDAM CARD GAME · <span id="poolCount"></span> REAL CARDS</div>
     </div>
     <div class="turn-info" id="turnInfo"></div>
@@ -405,7 +408,7 @@
 </div></div>
 
 <div id="overlay">
-  <h2>MOBILE SUIT CLASH</h2>
+  <h2>THA GUNDAM TCG SIM</h2>
   <p id="introText">A tactical duel built on the real <b>Gundam Card Game</b> card pool. You <b>choose</b> one of
      seven <b>1st-place competitive decklists</b> (GD04 Phantom Aria era); the AI takes a different one.
      You then <b>roll for turn order</b>, may <b>mulligan</b> your opening hand, and may redraw your Shields.
@@ -1551,18 +1554,18 @@ function runTrigger(card, side, act, label){
     if (gotHM) card.highManeuver=true;
     log(`${label}: <b>${name}</b> gets AP+${act.amount} this turn${gotHM?' and &lt;High-Maneuver&gt;':''}.`, cls);
   } else if (act.kind==='mill'){
-    const milled=[]; for(let i=0;i<act.amount&&side.deck.length;i++){ const c=side.deck.pop(); sendToTrash(c,side); milled.push(c.name); }
+    const milled=[]; for(let i=0;i<act.amount&&side.deck.length;i++){ const c=side.deck.pop(); sendToTrash(c,side); milled.push(c.name); revealMill(c,side); }
     if(milled.length) log(`${label}: <b>${name}</b> mills ${milled.length} — ${milled.join(', ')}.`, cls);
   } else if (act.kind==='millCond'){
     const milled=[]; const cards=[];
-    for(let i=0;i<act.amount&&side.deck.length;i++){ const c=side.deck.pop(); sendToTrash(c,side); milled.push(c.name); cards.push(c); }
+    for(let i=0;i<act.amount&&side.deck.length;i++){ const c=side.deck.pop(); sendToTrash(c,side); milled.push(c.name); cards.push(c); revealMill(c,side); }
     if(milled.length) log(`${label}: <b>${name}</b> mills ${milled.length} — ${milled.join(', ')}.`, cls);
     if(cards.some(c=>matchTrashTrait(c,act.condTrait))&&act.inner) runTrigger(card,side,act.inner,label);
   } else if (act.kind==='scryMill'){
     if(side.deck.length>=2){
       const top=side.deck.splice(side.deck.length-2,2);
       top.sort((a,b)=>cardValue(b)-cardValue(a));
-      side.deck.push(top[0]); sendToTrash(top[1],side);
+      side.deck.push(top[0]); sendToTrash(top[1],side); revealMill(top[1],side);
       log(`${label}: <b>${name}</b> looks at top 2 — keeps <b>${top[0].name}</b>, mills <b>${top[1].name}</b>.`, cls);
     } else if(side.deck.length===1){
       log(`${label}: <b>${name}</b> looks at top — keeps it (only 1 card).`, cls);
@@ -1666,7 +1669,7 @@ function resolvePlayerTrigger(card, side, act, label, after){
   const cls0 = side===G.player?'me':'ai';
   if (act.kind==='millCond'){
     const milled=[], cards=[];
-    for(let i=0;i<act.amount&&side.deck.length;i++){ const c=side.deck.pop(); sendToTrash(c,side); milled.push(c.name); cards.push(c); }
+    for(let i=0;i<act.amount&&side.deck.length;i++){ const c=side.deck.pop(); sendToTrash(c,side); milled.push(c.name); cards.push(c); revealMill(c,side); }
     if(milled.length) log(`${label}: <b>${card.name}</b> mills ${milled.length} — ${milled.join(', ')}.`, cls0);
     if(cards.some(c=>matchTrashTrait(c,act.condTrait)) && act.inner) return resolvePlayerTrigger(card, side, act.inner, label, after);
     fin(); return;
@@ -2157,18 +2160,23 @@ function flashCard(card, tag){
 // Pop each card the player draws (turn draw + effect draws) into a brief center row so you SEE
 // every card you draw. Consecutive draws in the same burst stack into the row.
 let drawRevealTimer=null;
-function revealDraw(card, tag){
+// Pop a revealed card into the center row so the player sees what entered/left their deck.
+// `variant` styles the badge/border (null = a draw, 'milled' = sent to trash from the deck).
+function revealCard(card, tag, variant){
   if (!card) return;
   let host=document.getElementById('drawReveal');
   if (!host){ host=document.createElement('div'); host.id='drawReveal'; document.body.appendChild(host); }
-  const t=document.createElement('div'); t.className='dr-card';
+  const t=document.createElement('div'); t.className='dr-card'+(variant?' '+variant:'');
   if (card.img) t.style.backgroundImage=`url('${card.img}')`;
-  t.innerHTML=`<div class="dr-tag">${tag||'DREW'}</div><div class="dr-name">${card.name}</div>`;
+  t.innerHTML=`<div class="dr-tag${variant?' '+variant:''}">${tag}</div><div class="dr-name">${card.name}</div>`;
   host.appendChild(t);
   while (host.children.length>6) host.removeChild(host.firstChild);
   clearTimeout(drawRevealTimer);
-  drawRevealTimer=setTimeout(()=>{ if(host) host.innerHTML=''; }, 1600);
+  drawRevealTimer=setTimeout(()=>{ if(host) host.innerHTML=''; }, 1700);
 }
+function revealDraw(card, tag){ revealCard(card, tag||'DREW', null); }
+// Reveal a card milled from the top of YOUR deck into the trash (never the AI's).
+function revealMill(card, side){ if (side===G.player) revealCard(card, 'MILLED', 'milled'); }
 function defaultPrompt(){ setPrompt(G.turn==='player' ? 'Your turn — deploy, attack, then End Turn.' : ''); }
 
 // ---- effective stats ----
@@ -3721,19 +3729,37 @@ function cardFace(c, ctx){
 const SOUND = { on: true };
 let _actx = null;
 function audioCtx(){ if(!_actx){ try{ _actx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } return _actx; }
+// Synthesized SFX tuned for a Gundam feel: beam-weapon zaps (detuned saw+square), mobile-suit
+// thrusters (filtered noise) and heavy explosive booms, instead of plain beeps.
 function sound(kind){
   if(!SOUND.on) return; const ac=audioCtx(); if(!ac) return;
   if(ac.state==='suspended') ac.resume();
-  const t=ac.currentTime;
-  const beep=(freq,dur,type,gain,slideTo)=>{ const o=ac.createOscillator(),g=ac.createGain(); o.type=type||'sine'; o.frequency.setValueAtTime(freq,t); if(slideTo) o.frequency.exponentialRampToValueAtTime(slideTo,t+dur); g.gain.setValueAtTime(gain||.2,t); g.gain.exponentialRampToValueAtTime(.0008,t+dur); o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t+dur+.02); };
-  const noise=(dur,gain,filt)=>{ const n=Math.max(1,Math.floor(ac.sampleRate*dur)); const buf=ac.createBuffer(1,n,ac.sampleRate); const d=buf.getChannelData(0); for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*(1-i/n); const src=ac.createBufferSource(); src.buffer=buf; const g=ac.createGain(); g.gain.value=gain||.25; const f=ac.createBiquadFilter(); f.type='lowpass'; f.frequency.value=filt||1400; src.connect(f); f.connect(g); g.connect(ac.destination); src.start(t); };
-  if(kind==='hit'){ noise(.18,.28,1700); beep(190,.15,'square',.16,90); }
-  else if(kind==='die'){ noise(.32,.34,900); beep(130,.32,'sawtooth',.2,45); }
-  else if(kind==='shield'){ beep(950,.24,'square',.18,220); noise(.22,.3,2600); }
-  else if(kind==='direct'){ noise(.42,.4,520); beep(95,.42,'sawtooth',.28,40); }
-  else if(kind==='deploy'){ beep(320,.13,'triangle',.15,640); }
-  else if(kind==='win'){ [523,659,784,1047].forEach((f,i)=>setTimeout(()=>beep(f,.26,'triangle',.2),i*120)); }
-  else if(kind==='lose'){ [420,300,200].forEach((f,i)=>setTimeout(()=>beep(f,.3,'sawtooth',.2),i*170)); }
+  const t0=ac.currentTime;
+  // single oscillator: quick attack, exponential decay, optional pitch slide; `delay` staggers layers.
+  const tone=(freq,dur,type,gain,slideTo,delay)=>{ const t=t0+(delay||0); const o=ac.createOscillator(),g=ac.createGain();
+    o.type=type||'sine'; o.frequency.setValueAtTime(freq,t); if(slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(20,slideTo),t+dur);
+    g.gain.setValueAtTime(.0001,t); g.gain.exponentialRampToValueAtTime(gain||.2,t+.006); g.gain.exponentialRampToValueAtTime(.0006,t+dur);
+    o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t+dur+.03); };
+  // two slightly-detuned oscillators (saw + square) = the bright, electric "beam weapon" timbre.
+  const beam=(freq,dur,gain,slideTo,delay)=>{ tone(freq,dur,'sawtooth',gain,slideTo,delay); tone(freq*1.008,dur,'square',(gain||.2)*.55,slideTo?slideTo*1.008:0,delay); };
+  // filtered noise burst = thrusters / explosions / shield static.
+  const noise=(dur,gain,filt,delay)=>{ const t=t0+(delay||0); const n=Math.max(1,Math.floor(ac.sampleRate*dur)); const buf=ac.createBuffer(1,n,ac.sampleRate); const d=buf.getChannelData(0); for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*(1-i/n); const src=ac.createBufferSource(); src.buffer=buf; const g=ac.createGain(); g.gain.value=gain||.25; const f=ac.createBiquadFilter(); f.type='lowpass'; f.frequency.value=filt||1400; src.connect(f); f.connect(g); g.connect(ac.destination); src.start(t); };
+
+  if(kind==='deploy'){            // a mobile suit powers up and launches
+    tone(150,.07,'sawtooth',.12,360); beam(300,.2,.12,600,.04); noise(.14,.09,1100,.02);
+  } else if(kind==='hit'){        // beam graze / round impact
+    beam(700,.12,.17,150); noise(.1,.2,2200);
+  } else if(kind==='shield'){     // energy field deflects the shot — bright electric ring
+    beam(1150,.2,.16,430); noise(.16,.22,3200); tone(1700,.13,'sine',.08,820,.02);
+  } else if(kind==='die'){        // mobile suit explodes
+    noise(.42,.38,720); tone(120,.4,'sawtooth',.24,36); tone(64,.5,'sine',.22,30,.04);
+  } else if(kind==='direct'){     // a beam cannon slams the player's line
+    beam(430,.34,.22,62); noise(.5,.42,560); tone(58,.52,'sine',.3,26,.05);
+  } else if(kind==='win'){        // heroic anthem flourish
+    [392,523,659,784,1047].forEach((f,i)=>beam(f,.3,.16,0,i*.11));
+  } else if(kind==='lose'){       // reactor shutdown / power-down
+    [440,330,247,165].forEach((f,i)=>tone(f,.36,'sawtooth',.18,f*.9,i*.16)); noise(.5,.12,520,.22);
+  }
 }
 let fxQueue = [];
 function fx(kind, uid){ sound(kind); if(uid!=null) fxQueue.push({kind,uid}); if(kind==='direct'||kind==='shield'||kind==='die') screenShake(); }
