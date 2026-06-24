@@ -825,7 +825,7 @@ function pingFriendly(side, self, preferAttacker){
 }
 // Modal: reveal some deck cards face-up and let the player pick one (or none).
 function showLookAtTop(cards, title, canPick, allowSkip, onChoose){
-  const modal=document.createElement('div');
+  const modal=document.createElement('div'); modal.className='modal-overlay';
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.86);z-index:1000;display:flex;align-items:center;justify-content:center;padding:14px;';
   const box=document.createElement('div');
   box.style.cssText='background:#16162a;border:1px solid #6a4fb0;border-radius:12px;padding:16px;max-width:500px;width:100%;text-align:center;';
@@ -846,7 +846,7 @@ function showLookAtTop(cards, title, canPick, allowSkip, onChoose){
 // Multi-select trash cards to pay an "exile N cards" cost (e.g. Lupus), then continue activation.
 function pickExileCards(u, cands, n){
   const chosen=[];
-  const modal=document.createElement('div');
+  const modal=document.createElement('div'); modal.className='modal-overlay';
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.86);z-index:1000;display:flex;align-items:center;justify-content:center;padding:14px;';
   const box=document.createElement('div');
   box.style.cssText='background:#16162a;border:1px solid #6a4fb0;border-radius:12px;padding:16px;max-width:580px;width:100%;text-align:center;';
@@ -4157,7 +4157,16 @@ function inspect(c){
 function closeInspect(){ el('inspect').classList.remove('show'); }
 
 // ---- buttons / keys ----
-el('endTurnBtn').addEventListener('click', ()=>{ if(G.turn==='player'&&!G.over){ sound('endphase'); clearSel(); endTurn(); } });
+// A forced selection is in progress — a field-tap choice (anything but idle / the player's own
+// attack-target) or an open picker/target modal. Gameplay (End Turn, Enter) is paused until it's
+// resolved so an in-flight effect can't be abandoned mid-resolution.
+function midSelection(){
+  if (G.mode!=='idle' && G.mode!=='attack-target') return true;
+  if (el('blockModal') && el('blockModal').classList.contains('show')) return true;
+  if (document.querySelector('.modal-overlay')) return true;
+  return false;
+}
+el('endTurnBtn').addEventListener('click', ()=>{ if(G.turn==='player'&&!G.over){ if(midSelection()){ flashPrompt('Finish your current selection first.'); return; } sound('endphase'); clearSel(); endTurn(); } });
 // Battle-log tab: click the header to minimize/restore the log.
 el('logHeader').addEventListener('click', ()=>{
   const p=el('logPanel'); const collapsed=p.classList.toggle('collapsed');
@@ -4218,7 +4227,7 @@ document.addEventListener('keydown', e=>{
     else if (G.mode==='trigger-multi'){ finishMultiDamage(); }
     else { clearSel(); render(); }
   }
-  if(e.key==='Enter'&&G.turn==='player'){ clearSel(); endTurn(); }
+  if(e.key==='Enter'&&G.turn==='player'&&!midSelection()){ clearSel(); endTurn(); }
 });
 </script>
 </body>
