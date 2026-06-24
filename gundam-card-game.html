@@ -1533,6 +1533,36 @@ function gd05Sacrifice(side, sourceCard){
   }
   render();
 }
+// Player-interactive Sazabi sacrifice: you pick which of your Units to destroy (or decline). The AI's
+// own Sazabi stays auto-resolved (gd05Sacrifice via runTrigger).
+function gd05SacInteractive(side, sourceCard, after){
+  const fin=()=>{ if(after) after(); };
+  if (side!==G.player){ gd05Sacrifice(side, sourceCard); fin(); return; }
+  const ownCands=side.field.filter(u=>u!==sourceCard && u.hp>0);
+  const foeCands=G.enemy.field.filter(u=>u.hp>0);
+  if (!ownCands.length || !foeCands.length){ fin(); return; }   // nothing to gain — skip the "you may"
+  G.mode='gd05-sac-own';
+  G.pending={ sourceCard, after, cands: ownCands.map(u=>u.uid) };
+  setPrompt(`${sourceCard.name} 【Attack】: tap one of YOUR Units to destroy, or Cancel to decline.`);
+  render();
+}
+// Finish the player's Sazabi sacrifice: uid = chosen Unit, or null when declined.
+function gd05SacResolve(uid){
+  const p=G.pending; if(!p) return;
+  const after=p.after, src=p.sourceCard;
+  G.mode='idle'; G.pending=null; defaultPrompt();
+  if (uid!=null){
+    const sac=G.player.field.find(c=>c.uid===uid);
+    if (sac){
+      log(`<b>${src.name}</b>: you destroy your <b>${sac.name}</b>.`, 'me');
+      gd05DestroyUnit(sac, G.player, true);
+      const victim=[...G.enemy.field].filter(u=>u.hp>0).sort((a,b)=>((a.baseAp||0)+(a.baseHp||0))-((b.baseAp||0)+(b.baseHp||0)))[0];
+      if (victim){ log(`<b>${src.name}</b>: the AI destroys its <b>${victim.name}</b>.`, 'ai'); gd05DestroyUnit(victim, G.enemy, false); }
+    }
+  }
+  render(); checkEnd();
+  if (after && !G.over) after();
+}
 // Char (purple) 【When Linked】: deploy a (Neo Zeon) Base from your trash.
 function gd05DeployBaseFromTrash(side, sourceCard, label){
   const cls=side===G.player?'me':'ai';
@@ -1739,7 +1769,7 @@ function resolvePlayerTrigger(card, side, act, label, after){
   if (!act) act = gd05Custom(card, label);
   if (!act){ fin(); return; }
   act.source = card;
-  if (act.kind==='gd05Sac'){ gd05Sacrifice(side, card); fin(); return; }
+  if (act.kind==='gd05Sac'){ gd05SacInteractive(side, card, fin); return; }
   if (act.kind==='gd05BaseFromTrash'){ gd05DeployBaseFromTrash(side, card, label); fin(); return; }
   if (act.kind==='cond'){                       // gate, then resolve the inner interactively
     if (!condMet(act.cond, side, card, act.other)){
@@ -2963,6 +2993,11 @@ function fieldClick(uidv){
     if (p.after) p.after(); else { render(); checkEnd(); }
     return;
   }
+  if (G.mode==='gd05-sac-own'){
+    const p=G.pending;
+    if (!p.cands.includes(uidv)){ flashPrompt('Tap one of YOUR highlighted Units, or Cancel to decline.'); return; }
+    gd05SacResolve(uidv); return;
+  }
   if (G.mode==='self-rest-pick'){
     const p=G.pending;
     if (!p.cands.includes(uidv)){ flashPrompt('Tap a highlighted Unit of yours.'); return; }
@@ -3807,6 +3842,7 @@ function cardFace(c, ctx){
     if (G.mode==='activate-cost' && (!G.activateCands || G.activateCands.includes(c.uid))) cls.push('selectable');
     if (G.mode==='trigger-target' && (G.pending?.scope==='friendly'||G.pending?.scope==='self-ping'||G.pending?.scope==='rest-both-friendly') && G.pending.cands.includes(c.uid)) cls.push('selectable');
     if (G.mode==='self-rest-pick' && G.pending?.cands.includes(c.uid) && !G.pending.picked.includes(c.uid)) cls.push('selectable');
+    if (G.mode==='gd05-sac-own' && G.pending?.cands.includes(c.uid)) cls.push('selectable');
   }
   if (ctx==='field-enemy'){
     if (G.mode==='attack-target'){ const atkU=G.player.field.find(x=>x.uid===G.selected); if (c.rested || (atkU&&canHitActive(atkU,c))) cls.push('target'); else cls.push('dim'); }
@@ -4122,6 +4158,7 @@ el('cancelBtn').addEventListener('click', ()=>{
   }
   if (G.mode==='self-rest-pick'){ finishSelfRest(); return; }   // Cancel = "done choosing"
   if (G.mode==='trigger-multi'){ finishMultiDamage(); return; } // Cancel = "done choosing"
+  if (G.mode==='gd05-sac-own'){ gd05SacResolve(null); return; } // Cancel = decline Sazabi's sacrifice
   clearSel(); render();
 });
 el('rulesBtn').addEventListener('click', ()=>{
