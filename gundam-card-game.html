@@ -140,23 +140,27 @@
   .card.isbase { border-color: var(--gold) !important; box-shadow: inset 0 0 0 1px rgba(251,191,36,.4); }
 
   /* Base zone — held off to the side, separate from the battlefield */
-  .base-zone { width: calc(var(--card-w) * 0.82); flex-shrink: 0; align-self: stretch; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  /* Base + Shields share one vertical column on desktop: the Base sits on top, the row of Shields
+     sits directly below it. */
+  .bs-col { width: calc(var(--card-w) * 2.15); flex-shrink: 0; align-self: stretch; display: flex; flex-direction: column; justify-content: center; gap: 6px; }
+  .bs-col > .base-zone, .bs-col > .shield-zone { width: 100%; align-self: auto; }
+  .base-zone { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
     background: rgba(22,17,9,.7); border: 1px dashed rgba(251,191,36,.45); border-radius: 10px; padding: 6px 4px; }
   .base-zone.enemy { border-color: rgba(244,114,182,.4); }
   .base-zone .bz-label { font-size: 9px; letter-spacing: 2px; color: var(--gold); font-weight: 800; opacity: .8; }
   .base-zone.enemy .bz-label { color: #fda4af; }
   .base-zone .bz-slot { width: 100%; display: flex; justify-content: center; }
-  .base-zone .bz-slot .card { width: calc(var(--card-w) * 0.66); height: calc(var(--card-h) * 0.66); }
+  .base-zone .bz-slot .card { width: calc(var(--card-w) * 0.52); height: calc(var(--card-h) * 0.46); }
   .base-zone .bz-empty { color: var(--muted); font-size: 9px; text-align: center; opacity: .6; }
 
-  /* Shield area — face-down shields sitting on the battlefield, beside the base */
-  .shield-zone { width: calc(var(--card-w) * 0.68); flex-shrink: 0; align-self: stretch; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+  /* Shield area — a single row of face-down shields directly under the Base */
+  .shield-zone { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
     background: rgba(22,17,9,.55); border: 1px dashed rgba(251,191,36,.32); border-radius: 10px; padding: 6px 4px; }
   .shield-zone.enemy { border-color: rgba(244,114,182,.32); cursor: pointer; }
-  .shield-zone .sz-label { font-size: 9px; letter-spacing: 1px; color: var(--gold); font-weight: 800; opacity: .85; white-space: nowrap; }
+  .shield-zone .sz-label { font-size: 10px; letter-spacing: 1px; color: var(--gold); font-weight: 800; opacity: .85; white-space: nowrap; }
   .shield-zone.enemy .sz-label { color: #fda4af; }
-  .shield-zone .sz-grid { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; align-content: center; }
-  .shield-card { width: 24px; height: 33px; border-radius: 3px; background: var(--shield-img, linear-gradient(155deg, #2f4170, #15203a)) center/cover;
+  .shield-zone .sz-grid { display: flex; flex-wrap: nowrap; gap: 3px; justify-content: center; align-content: center; }
+  .shield-card { width: calc(var(--card-w) * 0.29); height: calc(var(--card-h) * 0.22); border-radius: 3px; background: var(--shield-img, linear-gradient(155deg, #2f4170, #15203a)) center/cover;
     border: 1px solid rgba(251,191,36,.6); box-shadow: 0 0 5px rgba(251,191,36,.28), inset 0 0 7px rgba(0,0,0,.55);
     display: flex; align-items: center; justify-content: center; font-size: 12px; line-height: 1; }
   .shield-card.gone { background: #14110a; border-color: #2a2418; box-shadow: none; opacity: .25; }
@@ -329,6 +333,7 @@
     #overlay { justify-content: flex-start; }
     #overlay h2 { font-size: 24px; }
     /* Compact the Base + Shield zones into thin horizontal strips so they don't eat vertical space */
+    .bs-col { width: 100%; gap: 6px; }
     .base-zone, .shield-zone { width: 100%; flex-direction: row; align-self: auto; justify-content: flex-start;
       gap: 8px; padding: 4px 8px; min-height: 0; }
     .base-zone .bz-slot { width: auto; }
@@ -361,8 +366,10 @@
       <div class="stat-line pile-link" id="enemyTrashRow" title="Tap to view the enemy Trash"><span>🗑 Trash <em>view</em></span><b id="enemyTrashCount"></b></div>
       <div class="stat-line pile-link" id="enemyExileRow" title="Tap to view the enemy Exile"><span>⛓ Exile <em>view</em></span><b id="enemyExileCount"></b></div>
     </div>
-    <div class="base-zone enemy" id="enemyBaseZone"><div class="bz-label">BASE</div><div class="bz-slot" id="enemyBase"></div></div>
-    <div class="shield-zone enemy" id="enemyShieldZone" title="Enemy Shields — attack here to strike directly"></div>
+    <div class="bs-col enemy">
+      <div class="base-zone enemy" id="enemyBaseZone"><div class="bz-label">BASE</div><div class="bz-slot" id="enemyBase"></div></div>
+      <div class="shield-zone enemy" id="enemyShieldZone" title="Enemy Shields — attack here to strike directly"></div>
+    </div>
     <div class="battlefield enemy" id="enemyField"></div>
   </div>
 
@@ -376,8 +383,10 @@
       <div class="stat-line pile-link" id="playerTrashRow" title="Tap to view your Trash (graveyard)"><span>🗑 Trash <em>view</em></span><b id="playerTrashCount"></b></div>
       <div class="stat-line pile-link" id="playerExileRow" title="Tap to view your Exile"><span>⛓ Exile <em>view</em></span><b id="playerExileCount"></b></div>
     </div>
-    <div class="base-zone player" id="playerBaseZone"><div class="bz-label">BASE</div><div class="bz-slot" id="playerBase"></div></div>
-    <div class="shield-zone player" id="playerShieldZone" title="Your Shields"></div>
+    <div class="bs-col player">
+      <div class="base-zone player" id="playerBaseZone"><div class="bz-label">BASE</div><div class="bz-slot" id="playerBase"></div></div>
+      <div class="shield-zone player" id="playerShieldZone" title="Your Shields"></div>
+    </div>
     <div class="battlefield player" id="playerField"></div>
   </div>
 
