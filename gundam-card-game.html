@@ -233,11 +233,11 @@
   #cardFlash .cf-name { font-size: 13px; font-weight: 800; margin-top: 6px; }
   #cardFlash .cf-eff { font-size: 9px; color: var(--muted); margin-top: 4px; line-height: 1.25; max-height: 44px; overflow: hidden; }
   /* Reveal of cards drawn by an effect / the turn draw — each drawn card pops into a center row. */
-  #drawReveal { position: fixed; bottom: 20%; left: 50%; transform: translateX(-50%); z-index: 121; display: flex; gap: 8px; pointer-events: none; }
-  #drawReveal .dr-card { width: 88px; height: 124px; border-radius: 8px; border: 2px solid var(--cyan); box-shadow: 0 0 18px rgba(34,211,238,.55); background-size: cover; background-position: center top; background-color: #0c1426; position: relative; animation: drPop .3s cubic-bezier(.2,1.4,.5,1) both; }
+  #drawReveal { position: fixed; bottom: 20%; left: 50%; transform: translateX(-50%); z-index: 121; display: flex; gap: 12px; pointer-events: none; max-width: 96vw; flex-wrap: wrap; justify-content: center; }
+  #drawReveal .dr-card { width: 132px; height: 184px; border-radius: 10px; border: 2px solid var(--cyan); box-shadow: 0 0 24px rgba(34,211,238,.6); background-size: cover; background-position: center top; background-color: #0c1426; position: relative; animation: drPop .3s cubic-bezier(.2,1.4,.5,1) both; }
   @keyframes drPop { 0% { transform: translateY(20px) scale(.55); opacity: 0; } 100% { transform: translateY(0) scale(1); opacity: 1; } }
-  #drawReveal .dr-tag { position: absolute; top: -9px; left: 50%; transform: translateX(-50%); background: var(--cyan); color: #04202a; font-size: 9px; font-weight: 800; padding: 1px 6px; border-radius: 6px; letter-spacing: 1px; white-space: nowrap; }
-  #drawReveal .dr-name { position: absolute; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.62); color: #fff; font-size: 8px; text-align: center; padding: 2px; line-height: 1.05; }
+  #drawReveal .dr-tag { position: absolute; top: -11px; left: 50%; transform: translateX(-50%); background: var(--cyan); color: #04202a; font-size: 12px; font-weight: 800; padding: 2px 9px; border-radius: 7px; letter-spacing: 1px; white-space: nowrap; }
+  #drawReveal .dr-name { position: absolute; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.62); color: #fff; font-size: 11px; text-align: center; padding: 3px; line-height: 1.1; }
   /* A card milled from the top of your deck into the trash — purple "grave" styling. */
   #drawReveal .dr-card.milled { border-color: var(--purple); box-shadow: 0 0 18px rgba(168,85,247,.6); }
   #drawReveal .dr-tag.milled { background: var(--purple); color: #fff; }
@@ -837,19 +837,19 @@ function showLookAtTop(cards, title, canPick, allowSkip, onChoose){
   const modal=document.createElement('div'); modal.className='modal-overlay';
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.86);z-index:1000;display:flex;align-items:center;justify-content:center;padding:14px;';
   const box=document.createElement('div');
-  box.style.cssText='background:#16162a;border:1px solid #6a4fb0;border-radius:12px;padding:16px;max-width:500px;width:100%;text-align:center;';
-  box.innerHTML=`<h3 style="margin:0 0 12px;color:#d8b4ff;font-size:14px">${title}</h3>`;
-  const row=document.createElement('div'); row.style.cssText='display:flex;gap:8px;flex-wrap:wrap;justify-content:center;';
+  box.style.cssText='background:#16162a;border:1px solid #6a4fb0;border-radius:12px;padding:20px;max-width:720px;width:100%;text-align:center;';
+  box.innerHTML=`<h3 style="margin:0 0 14px;color:#d8b4ff;font-size:17px">${title}</h3>`;
+  const row=document.createElement('div'); row.style.cssText='display:flex;gap:12px;flex-wrap:wrap;justify-content:center;max-height:62vh;overflow-y:auto;';
   cards.forEach(c=>{
     const pick=canPick(c);
     const card=document.createElement('div');
-    card.style.cssText=`width:94px;height:132px;border-radius:8px;border:2px solid ${pick?'#34d399':'#555'};overflow:hidden;cursor:${pick?'pointer':'default'};opacity:${pick?1:.5};position:relative;`+(c.img?`background:url('${c.img}') center/cover;`:'background:#0d1628;display:flex;align-items:center;justify-content:center;color:#cdd;font-size:11px;text-align:center;padding:6px;');
+    card.style.cssText=`width:130px;height:182px;border-radius:9px;border:2px solid ${pick?'#34d399':'#555'};overflow:hidden;cursor:${pick?'pointer':'default'};opacity:${pick?1:.5};position:relative;`+(c.img?`background:url('${c.img}') center/cover;`:'background:#0d1628;display:flex;align-items:center;justify-content:center;color:#cdd;font-size:13px;text-align:center;padding:8px;');
     if(!c.img) card.textContent=c.name;
     if(pick) card.onclick=()=>{ modal.remove(); onChoose(c); };
     row.appendChild(card);
   });
   box.appendChild(row);
-  if(allowSkip){ const sk=document.createElement('button'); sk.textContent='Take none'; sk.style.cssText='margin-top:12px;padding:8px 18px;background:#333;color:#fff;border:none;border-radius:6px;cursor:pointer'; sk.onclick=()=>{ modal.remove(); onChoose(null); }; box.appendChild(sk); }
+  if(allowSkip){ const sk=document.createElement('button'); sk.textContent='Take none'; sk.style.cssText='margin-top:16px;padding:11px 24px;background:#333;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600'; sk.onclick=()=>{ modal.remove(); onChoose(null); }; box.appendChild(sk); }
   modal.appendChild(box); document.body.appendChild(modal);
 }
 // Multi-select trash cards to pay an "exile N cards" cost (e.g. Lupus), then continue activation.
@@ -858,14 +858,14 @@ function pickExileCards(u, cands, n){
   const modal=document.createElement('div'); modal.className='modal-overlay';
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.86);z-index:1000;display:flex;align-items:center;justify-content:center;padding:14px;';
   const box=document.createElement('div');
-  box.style.cssText='background:#16162a;border:1px solid #6a4fb0;border-radius:12px;padding:16px;max-width:580px;width:100%;text-align:center;';
-  const row=document.createElement('div'); row.style.cssText='display:flex;gap:8px;flex-wrap:wrap;justify-content:center;max-height:52vh;overflow-y:auto;';
+  box.style.cssText='background:#16162a;border:1px solid #6a4fb0;border-radius:12px;padding:20px;max-width:760px;width:100%;text-align:center;';
+  const row=document.createElement('div'); row.style.cssText='display:flex;gap:12px;flex-wrap:wrap;justify-content:center;max-height:58vh;overflow-y:auto;';
   const confirm=document.createElement('button');
-  confirm.style.cssText='margin-top:12px;padding:8px 20px;background:#6a4fb0;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:700';
+  confirm.style.cssText='margin-top:16px;padding:11px 26px;background:#6a4fb0;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:700;font-size:14px';
   const upd=()=>{ confirm.textContent=`Exile (${chosen.length}/${n})`; confirm.disabled=chosen.length!==n; confirm.style.opacity=chosen.length===n?1:.5; };
   cands.forEach(c=>{
     const tile=document.createElement('div');
-    tile.style.cssText='width:84px;height:118px;border-radius:7px;border:2px solid #555;overflow:hidden;cursor:pointer;position:relative;'+(c.img?`background:url('${c.img}') center/cover;`:'background:#0d1628;display:flex;align-items:center;justify-content:center;color:#cdd;font-size:10px;text-align:center;padding:4px;');
+    tile.style.cssText='width:120px;height:168px;border-radius:9px;border:2px solid #555;overflow:hidden;cursor:pointer;position:relative;'+(c.img?`background:url('${c.img}') center/cover;`:'background:#0d1628;display:flex;align-items:center;justify-content:center;color:#cdd;font-size:12px;text-align:center;padding:6px;');
     if(!c.img) tile.textContent=c.name;
     tile.onclick=()=>{ const i=chosen.indexOf(c);
       if(i>=0){ chosen.splice(i,1); tile.style.borderColor='#555'; }
@@ -882,7 +882,7 @@ function pickExileCards(u, cands, n){
     G.activatePrepaid=true;
     activatePickTarget(u, null);
   };
-  box.innerHTML=`<h3 style="margin:0 0 10px;color:#d8b4ff;font-size:14px">${u.name}: choose ${n} card${n>1?'s':''} from your trash to exile</h3>`;
+  box.innerHTML=`<h3 style="margin:0 0 14px;color:#d8b4ff;font-size:17px">${u.name}: choose ${n} card${n>1?'s':''} from your trash to exile</h3>`;
   box.appendChild(row); box.appendChild(confirm); upd();
   modal.appendChild(box); document.body.appendChild(modal);
 }
