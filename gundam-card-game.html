@@ -1947,7 +1947,9 @@ function resolvePlayerTrigger(card, side, act, label, after){
     // 0–1 friendly: auto-pick the ping target, but still route the discard through the player.
     applySelfPingChosen(card, side, act, fcands[0]||null, null, fin); return;
   }
-  runTrigger(card, side, act, label);            // non-targeted (draw, tokens, mill, …)
+  // Token deploys are interactive when the field would overflow (choose which Units to replace).
+  if (act.kind==='token'){ deployTokensInteractive(card, side, act, label, fin); return; }
+  runTrigger(card, side, act, label);            // non-targeted (draw, mill, …)
   fin();
 }
 // Resolve a self-ping with a player-chosen friendly (and optional enemy) target.
@@ -2190,6 +2192,44 @@ function deployTokens(act, side, name, label, cls){
   // happen inside synchronous effect resolution.
   for (const tk of tokens) onUnitDeployed(tk, side, null, true);
   return tokens.length;
+}
+
+// Build the ordered list of token "makers" a token action would deploy (after resolving
+// board-count / choose / generic fallbacks the same way deployTokens does).
+function tokenMakerQueue(act, side){
+  let specs=act.specs;
+  if (specs && specs.length>1 && act.cond==='board') specs = [ specs[Math.min(side.field.length, specs.length-1)] ];
+  if (specs && specs.length>1 && act.choose)         specs = [ [...specs].sort((a,b)=>tokenScore(b)-tokenScore(a))[0] ];
+  const q=[];
+  if (specs && specs.length){ for (const sp of specs){ for (let k=0;k<(sp.count||1);k++) q.push(()=>makeToken(sp, side.who)); } }
+  else { for (let k=0;k<(act.count||1);k++) q.push(()=>genericToken(side.who)); }
+  return q;
+}
+// Player-interactive token deploy: deploy what fits, then (per the Gundam rule that deploying into a
+// full battle area replaces a Unit of YOUR choice) let the player trash Units to make room for any
+// overflow tokens — e.g. Zeong's 【When Paired】 deploying 2 [Wire-Guided Arm] with a full field.
+function deployTokensInteractive(card, side, act, label, after){
+  const cls=side===G.player?'me':'ai';
+  const fin=()=>{ if(after) after(); };
+  if (act.tokenLimit && hasTraitToken(side, act.tokenLimit)){
+    log(`${label}: <b>${card.name}</b> — you already have a (${act.tokenLimit}) Unit token in play.`, cls);
+    fin(); return;
+  }
+  const queue = tokenMakerQueue(act, side);
+  const placed=[];
+  while (queue.length && side.field.length<FIELD_MAX){ const tk=queue.shift()(); side.field.push(tk); placed.push(tk); }
+  if (placed.length){
+    const names=[...new Set(placed.map(t=>t.name))];
+    log(`${label}: <b>${card.name}</b> deploys ${placed.length} token${placed.length===1?'':'s'} (${names.join(', ')}).`, cls);
+    for (const tk of placed) onUnitDeployed(tk, side, null, true);
+  }
+  if (!queue.length){ fin(); return; }
+  // Overflow remains. The AI just loses the extras; the player chooses which Units to replace.
+  if (side!==G.player){ fin(); return; }
+  G.mode='token-replace';
+  G.pending={ card, side, queue, label, after, protect: new Set(side.field.filter(u=>placed.includes(u)).map(t=>t.uid)) };
+  setPrompt(`${card.name}: battle area full — tap one of YOUR Units to trash and deploy a token (${queue.length} left; Cancel to stop).`);
+  render();
 }
 
 function shuffle(a){ for (let i=a.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; [a[i],a[j]]=[a[j],a[i]]; } return a; }
@@ -3015,6 +3055,20 @@ function fieldClick(uidv){
     log(`You deploy <b>${card.name}</b>${card.blitz?' &lt;Blitz&gt;':''}.`, 'me');
     resolvePlayerTrigger(card, G.player, parseTrigger(card.effect,'Deploy'), 'Deploy', ()=>{ onUnitDeployed(card, G.player, ()=>{ clearSel(); render(); checkEnd(); }); });
     return;
+  }
+  if (G.mode==='token-replace'){
+    const p=G.pending; if(!p){ clearSel(); render(); return; }
+    const victim=G.player.field.find(c=>c.uid===uidv);
+    if(!victim || p.protect.has(victim.uid)){ flashPrompt('Tap one of YOUR existing Units to place in the trash.'); return; }
+    const i=G.player.field.indexOf(victim); if(i>=0) G.player.field.splice(i,1);
+    fx('die', victim.uid); sendToTrash(victim, G.player);
+    log(`<b>${victim.name}</b> is placed in the trash to make room.`, 'me');
+    const tk=p.queue.shift()(); G.player.field.push(tk); p.protect.add(tk.uid);
+    sound('deploy'); log(`<b>${p.card.name}</b> deploys <b>${tk.name}</b> token.`, 'me');
+    onUnitDeployed(tk, p.side, null, true);
+    if (!p.queue.length){ const after=p.after; G.mode='idle'; G.pending=null; if(after) after(); else { clearSel(); render(); checkEnd(); } return; }
+    setPrompt(`${p.card.name}: tap another Unit to replace (${p.queue.length} left; Cancel to stop).`);
+    render(); return;
   }
   if (G.mode==='pilot-target'){
     const u=G.player.field.find(c=>c.uid===uidv && c.type==='unit'); if(!u){ flashPrompt('Pick one of your units.'); return; }
@@ -3921,6 +3975,7 @@ function cardFace(c, ctx){
     if (G.mode==='idle' && isUnit && !c.rested && !c.sick && c.ap>0) cls.push('selectable');
     if (G.mode==='pilot-target' && c.type==='unit' && !c.pilot && !c.noPilot) cls.push('selectable');
     if (G.mode==='field-replace' && c.type==='unit') cls.push('selectable');
+    if (G.mode==='token-replace' && !(G.pending?.protect?.has(c.uid))) cls.push('selectable');
     if (G.mode==='command-target' && (G.pending?.action.kind==='heal'||G.pending?.action.kind==='buff')) cls.push('selectable');
     if (G.mode==='activate-target' && G.pending?.activate?.action.scope==='friendly' && (!G.activateCands || G.activateCands.includes(c.uid))) cls.push('selectable');
     if (G.mode==='activate-cost' && (!G.activateCands || G.activateCands.includes(c.uid))) cls.push('selectable');
@@ -4260,6 +4315,7 @@ el('cancelBtn').addEventListener('click', ()=>{
   if (G.mode==='self-rest-pick'){ finishSelfRest(); return; }   // Cancel = "done choosing"
   if (G.mode==='trigger-multi'){ finishMultiDamage(); return; } // Cancel = "done choosing"
   if (G.mode==='gd05-sac-own'){ gd05SacResolve(null); return; } // Cancel = decline Sazabi's sacrifice
+  if (G.mode==='token-replace'){ const p=G.pending; G.mode='idle'; G.pending=null; if(p&&p.after) p.after(); else { clearSel(); render(); } return; }
   clearSel(); render();
 });
 el('rulesBtn').addEventListener('click', ()=>{
