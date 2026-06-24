@@ -479,7 +479,9 @@ GUNDAM_CARDS.push(
   {"id":"GD05-002","name":"Force Impulse Gundam","type":"unit","color":"White","cost":2,"lv":3,"ap":3,"hp":2,"trait":"(Z.A.F.T.)","link":"Shinn Asuka","effect":"-","img":""},
   {"id":"GD05-020","name":"Freedom's Resolve","type":"command","color":"White","cost":1,"lv":3,"ap":0,"hp":1,"trait":"(Z.A.F.T.) (Clyne Faction)","link":"","effect":"【Main】Choose 1 rested enemy Unit. Deal 1 damage to it.<br>","img":""},
   {"id":"GD05-030","name":"Sazabi","type":"unit","color":"Green","cost":5,"lv":7,"ap":5,"hp":5,"trait":"(Neo Zeon)","link":"Char Aznable","effect":"&lt;Repair 2&gt; (At the end of your turn, this Unit recovers the specified number of HP.)<br>【When Linked】Choose 1 enemy Unit. Deal 3 damage to it.<br>","img":""},
-  {"id":"GD05-035","name":"Quess Paraya","type":"pilot","color":"Green","cost":1,"lv":5,"ap":1,"hp":1,"trait":"(Neo Zeon) (Newtype)","link":"","effect":"【Burst】Add this card to your hand.<br>【When Paired】Choose 1 enemy Unit with 5 or less HP. Rest it.<br>","img":""}
+  {"id":"GD05-035","name":"Quess Paraya","type":"pilot","color":"Green","cost":1,"lv":5,"ap":1,"hp":1,"trait":"(Neo Zeon) (Newtype)","link":"","effect":"【Burst】Add this card to your hand.<br>【When Paired】Choose 1 enemy Unit with 5 or less HP. Rest it.<br>","img":""},
+  {"id":"GD05-031","name":"α Azieru","type":"unit","color":"Green","cost":5,"lv":7,"ap":6,"hp":4,"trait":"(Neo Zeon)","link":"Quess Paraya","effect":"&lt;Repair 1&gt; (At the end of your turn, this Unit recovers the specified number of HP.)<br>【When Linked】Choose 1 enemy Unit. Deal 2 damage to it.<br>","img":""},
+  {"id":"GD05-036","name":"Char Aznable","type":"pilot","color":"Green","cost":2,"lv":7,"ap":2,"hp":1,"trait":"(Neo Zeon) (Newtype)","link":"","effect":"【Burst】Add this card to your hand.<br>【Attack】During this turn, this Unit gets AP+1 and, if it is a Link Unit, it gains &lt;High-Maneuver&gt;.<br>(This Unit can't be blocked.)<br>","img":""}
 );
 
 const SHIELD_MAX = 6, RES_MAX = 10, HAND_START = 5, HAND_MAX = 10, FIELD_MAX = 6;
@@ -2117,7 +2119,7 @@ const PRESET_DECKS = [
   { name:'RW Neo Zeong',  dg:'2nGD01-086a4nGD02-079a2nGD04-077a3nGD01-073a4nST04-001a4nGD04-068a4nGD01-066a4nGD04-033a4nST04-010a4nST03-010a4nST03-013a4nGD01-118a3nST04-012a4nGD01-128' },
   { name:'BW Norn',       dg:'4nGD04-016a4nGD01-086a3nGD04-011a3nST01-001a2nGD01-006a4nGD04-003a2nGD04-068a4nGD04-006a4nGD04-065a4nST01-010a4nGD04-081a4nGD04-098a4nGD01-118a4nGD04-121' },
   { name:'GW Wing',       dg:'4nST01-009a4nGD01-086a2nGD04-077a4nGD01-072a4nST04-001a4nGD04-068a4nST02-001a4nGD01-024a4nST04-010a4nST02-010a4nGD01-118a4nST04-012a4nGD01-126' },
-  { name:'GD05 Freedom✦Custom', dg:'4nGD05-001a4nGD05-005a4nGD05-010a4nGD05-002a3nGD05-020a4nGD05-030a3nGD05-035a4nST03-011a4nST01-010a4nST01-001a3nGD02-055a2nST05-014a2nGD01-100a3nST01-015a2nST05-015' },
+  { name:'GD05 Freedom✦Custom', dg:'4nGD05-001a4nGD05-005a4nGD05-010a4nGD05-002a3nGD05-020a4nGD05-030a3nGD05-035a4nGD05-031a4nGD05-036a4nST01-010a4nST01-001a3nGD02-055a2nST05-014a3nST01-015' },
 ];
 function parsePreset(dg){
   return dg.split('a').map(e=>{ const m=e.match(/^(\d+)n(.+)$/); return m?{n:+m[1],id:m[2]}:null; }).filter(Boolean);
