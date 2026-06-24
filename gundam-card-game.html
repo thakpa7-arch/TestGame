@@ -7,8 +7,8 @@
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   :root {
-    --bg: #0a0e1a; --panel: #121a2e; --panel-2: #1a2540; --line: #2a3a5e;
-    --txt: #e8eefb; --muted: #8aa0c8; --blue: #3b82f6; --cyan: #22d3ee;
+    --bg: #0a0805; --panel: #16110a; --panel-2: #20190d; --line: #4a3914;
+    --txt: #f1ead6; --muted: #b6a378; --blue: #3b82f6; --cyan: #22d3ee;
     --red: #ef4444; --gold: #fbbf24; --green: #34d399; --purple: #a855f7;
     /* Desktop scaling: the board grows with the viewport (height-driven so two rows + hand always
        fit 100vh), clamped so it never gets cramped or absurdly large. Card art is ~102:142 (0.718). */
@@ -113,7 +113,7 @@
   header .turn-info b { color: var(--gold); }
 
   .row { flex: 1; display: flex; align-items: center; gap: 10px; min-height: 0; }
-  .side-stats { width: var(--col); flex-shrink: 0; background: rgba(18,26,46,.9); backdrop-filter: blur(2px); border: 1px solid var(--line); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+  .side-stats { width: var(--col); flex-shrink: 0; background: rgba(22,17,9,.9); backdrop-filter: blur(2px); border: 1px solid var(--line); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
   .side-stats.enemy { border-color: #5a2a3a; }
   .side-stats.player { border-color: #2a4a5a; }
   .side-stats .name { font-size: clamp(13px, 0.95vw, 16px); font-weight: 700; letter-spacing: 1px; }
@@ -141,7 +141,7 @@
 
   /* Base zone — held off to the side, separate from the battlefield */
   .base-zone { width: calc(var(--card-w) * 0.82); flex-shrink: 0; align-self: stretch; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
-    background: rgba(18,26,46,.7); border: 1px dashed rgba(251,191,36,.45); border-radius: 10px; padding: 6px 4px; }
+    background: rgba(22,17,9,.7); border: 1px dashed rgba(251,191,36,.45); border-radius: 10px; padding: 6px 4px; }
   .base-zone.enemy { border-color: rgba(244,114,182,.4); }
   .base-zone .bz-label { font-size: 9px; letter-spacing: 2px; color: var(--gold); font-weight: 800; opacity: .8; }
   .base-zone.enemy .bz-label { color: #fda4af; }
@@ -151,7 +151,7 @@
 
   /* Shield area — face-down shields sitting on the battlefield, beside the base */
   .shield-zone { width: calc(var(--card-w) * 0.68); flex-shrink: 0; align-self: stretch; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
-    background: rgba(18,26,46,.55); border: 1px dashed rgba(251,191,36,.32); border-radius: 10px; padding: 6px 4px; }
+    background: rgba(22,17,9,.55); border: 1px dashed rgba(251,191,36,.32); border-radius: 10px; padding: 6px 4px; }
   .shield-zone.enemy { border-color: rgba(244,114,182,.32); cursor: pointer; }
   .shield-zone .sz-label { font-size: 9px; letter-spacing: 1px; color: var(--gold); font-weight: 800; opacity: .85; white-space: nowrap; }
   .shield-zone.enemy .sz-label { color: #fda4af; }
@@ -180,8 +180,8 @@
   @keyframes shieldPop { 0%{ transform: scale(1); box-shadow:0 0 6px rgba(251,191,36,.4);} 40%{ transform: scale(1.5); box-shadow:0 0 18px 6px rgba(255,120,60,.9);} 100%{ transform: scale(0); opacity:0; } }
   .shield.breaking { animation: shieldPop .45s ease-out forwards; }
 
-  .battlefield { flex: 1; align-self: stretch; background: linear-gradient(180deg, rgba(26,37,64,.82), rgba(18,26,46,.86)); backdrop-filter: blur(1.5px); border: 1px solid var(--line); border-radius: 10px; padding: 8px; display: flex; gap: 8px; align-items: center; overflow-x: auto; min-height: 0; box-shadow: inset 0 0 40px rgba(0,0,0,.35); }
-  .battlefield.enemy { background: linear-gradient(180deg, rgba(42,24,32,.82), rgba(18,26,46,.86)); }
+  .battlefield { flex: 1; align-self: stretch; background: linear-gradient(180deg, rgba(32,25,12,.82), rgba(22,17,9,.86)); backdrop-filter: blur(1.5px); border: 1px solid var(--line); border-radius: 10px; padding: 8px; display: flex; gap: 8px; align-items: center; overflow-x: auto; min-height: 0; box-shadow: inset 0 0 40px rgba(0,0,0,.35); }
+  .battlefield.enemy { background: linear-gradient(180deg, rgba(42,24,32,.82), rgba(22,17,9,.86)); }
   .empty-hint { color: var(--muted); font-size: 12px; margin: auto; }
 
   /* Cards (face = official art) */
@@ -256,7 +256,7 @@
   .card .pilot-strip .pp-img { width: calc(var(--card-w) * .176); height: calc(var(--card-w) * .245); border-radius: 2px; background: #0a0a14 center/cover no-repeat; flex-shrink: 0; box-shadow: 0 0 0 1px rgba(0,0,0,.5); }
   .card .pilot-strip .pp-txt { font-size: calc(var(--ov-f) * .64); font-weight: 700; color: #fff; line-height: 1.18; overflow: hidden; white-space: nowrap; text-shadow: 0 1px 1px #000; }
 
-  .hand-row { height: calc(var(--card-h) + 18px); display: flex; align-items: center; justify-content: center; gap: 7px; padding: 6px; background: rgba(18,26,46,.9); backdrop-filter: blur(2px); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; }
+  .hand-row { height: calc(var(--card-h) + 18px); display: flex; align-items: center; justify-content: center; gap: 7px; padding: 6px; background: rgba(22,17,9,.9); backdrop-filter: blur(2px); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; }
   .hand-row .card:hover { transform: translateY(-10px) scale(1.05); }
 
   .controls { display: flex; align-items: center; gap: 10px; justify-content: center; padding: 4px; flex-wrap: wrap; }
@@ -1384,7 +1384,7 @@ function applyToTarget(card, side, act, target, label){
   if (act.kind==='damage'){ log(`${label}: <b>${name}</b> deals ${act.amount} to <b>${target.name}</b>.`,cls); damage(target,act.amount,foe); }
   else if (act.kind==='rest'){ target.rested=true; log(`${label}: <b>${name}</b> rests <b>${target.name}</b>.`,cls); }
   else if (act.kind==='bounce'){ const i=foe.field.indexOf(target); if(i>=0)foe.field.splice(i,1); returnToHand(target,foe); log(`${label}: <b>${name}</b> returns <b>${target.name}</b> to hand.`,cls); }
-  else if (act.kind==='destroy'){ log(`${label}: <b>${name}</b> destroys <b>${target.name}</b>.`,cls); const i=foe.field.indexOf(target); if(i>=0)foe.field.splice(i,1); fx('die',target.uid); sendToTrash(target,foe); runTrigger(target,foe,parseTrigger(target.effect,'Destroyed'),'Destroyed'); firePilotDestroyed(target,foe); }
+  else if (act.kind==='destroy'){ log(`${label}: <b>${name}</b> destroys <b>${target.name}</b>.`,cls); const i=foe.field.indexOf(target); if(i>=0)foe.field.splice(i,1); fx('die',target.uid); sendToTrash(target,foe); runTrigger(target,foe,parseTrigger(target.effect,'Destroyed'),'Destroyed'); }
   else if (act.kind==='debuff'){ if(act.dur==='battle'){ target.battleAp=(target.battleAp||0)-act.amount; } else { target.tempAp=(target.tempAp||0)-act.amount; } target.ap=effAp(target); log(`${label}: <b>${target.name}</b> gets AP-${act.amount} this ${act.dur==='battle'?'battle':'turn'}.`,cls); }
   else if (act.kind==='buff'){ target.tempAp=(target.tempAp||0)+act.amount; target.ap=effAp(target); log(`${label}: <b>${target.name}</b> gets AP+${act.amount} this turn.`,cls); }
   else if (act.kind==='heal'){ target.hp=Math.min(effMaxHp(target), target.hp+(act.amount>=99?effMaxHp(target):act.amount)); log(`${label}: <b>${name}</b> repairs <b>${target.name}</b>.`,cls); }
@@ -1532,7 +1532,7 @@ function gd05DestroyUnit(u, owner, byOwnNeoZeon){
   if (owner===G.player && da && da.kind==='dig') playerDig(u, owner, da);
   else if (owner===G.player && da && da.kind==='scryMill') playerScryMill(u, owner);
   else runTrigger(u, owner, da, 'Destroyed');
-  firePilotDestroyed(u, owner);
+  if (byOwnNeoZeon) firePilotDestroyed(u, owner);   // Quess's 【Destroyed】 only fires when destroyed by your own (Neo Zeon) effect
   if (byOwnNeoZeon && gd05ReturnsOnSelfKill(u) && owner.hand.length<HAND_MAX){
     const ti=owner.trash.indexOf(u); if(ti>=0){ owner.trash.splice(ti,1); resetUnit(u); owner.hand.push(u); log(`<b>${u.name}</b> returns from trash to ${owner===G.player?'your':'its'} hand.`, cls); }
   }
@@ -3420,7 +3420,6 @@ function damage(u, dmg, side, kind){
     if (side===G.player && dact && dact.kind==='dig') playerDig(u, side, dact);
     else if (side===G.player && dact && dact.kind==='scryMill') playerScryMill(u, side);
     else runTrigger(u, side, dact, 'Destroyed');
-    firePilotDestroyed(u, side);
   }
   else fx(kind==='battle' ? 'hit' : 'ping', u.uid);   // combat = heavy hit; ability/self ping = sharp ping
 }
