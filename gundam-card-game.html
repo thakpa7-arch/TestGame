@@ -3231,7 +3231,7 @@ function damage(u, dmg, side, kind){
     else if (side===G.player && dact && dact.kind==='scryMill') playerScryMill(u, side);
     else runTrigger(u, side, dact, 'Destroyed');
   }
-  else fx('hit', u.uid);
+  else fx(kind==='battle' ? 'hit' : 'ping', u.uid);   // combat = heavy hit; ability/self ping = sharp ping
 }
 
 function attachPilot(u, p, onDone){
@@ -3780,6 +3780,8 @@ function renderSound(ac, kind){
     whoosh(.28,.10,300,1400); tone(420,.18,{type:'triangle',gain:.16,to:760,lp:1200,lpTo:3200}); ping(880,.16,.12,.06);
   } else if(kind==='hit'){        // damage — tense, dangerous impact (dissonant downward bite + sub)
     sub(72,.2,.2); tone(330,.14,{type:'triangle',gain:.14,to:130,lp:1500,atk:.002}); tone(247,.16,{type:'sine',gain:.09,to:104,atk:.002}); whoosh(.1,.05,1500,320);
+  } else if(kind==='ping'){        // effect/ability damage — sharp electronic targeting ping
+    tone(1320,.14,{type:'sine',gain:.14,to:600,atk:.002}); tone(1760,.1,{type:'triangle',gain:.07,to:880,delay:.02,atk:.002}); whoosh(.08,.04,2200,640);
   } else if(kind==='shield'){     // energy field — airy shimmer, no buzz
     ping(1320,.26,.14); ping(1760,.22,.08,.03); whoosh(.22,.09,1800,3600);
   } else if(kind==='die'){        // kill — heavy ominous detonation, deeper & more menacing than damage
