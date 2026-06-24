@@ -1375,7 +1375,16 @@ function rankTarget(cands, act){
   if (act.filter && act.filter.lowestHp) return arr.sort((a,b)=>a.hp-b.hp)[0];
   if (act.kind==='destroy') return arr.sort((a,b)=>(b.baseAp+b.baseHp)-(a.baseAp+a.baseHp))[0];
   if (act.kind==='heal')   return arr.sort((a,b)=>(effMaxHp(b)-b.hp)-(effMaxHp(a)-a.hp))[0];
-  return arr.sort((a,b)=>effAp(b)-effAp(a))[0];   // damage / rest / bounce / debuff / buff
+  if (act.kind==='damage'){
+    // Effect damage should buy board control: if this ping can KILL any Unit, finish the scariest one
+    // it can kill (so a free kill on a low-HP threat is never passed up to chip a healthy tank). Only
+    // when nothing is killable does it chip the biggest remaining threat (e.g. a blocker to soften).
+    const amt=(typeof act.amount==='number')?act.amount:0;
+    const kills=arr.filter(u=>u.hp<=amt);
+    const pool=kills.length?kills:arr;
+    return pool.sort((a,b)=>aiThreatScore(b)-aiThreatScore(a))[0];
+  }
+  return arr.sort((a,b)=>effAp(b)-effAp(a))[0];   // rest / bounce / debuff / buff
 }
 // Apply a single-target action to a specific chosen target.
 function applyToTarget(card, side, act, target, label){
