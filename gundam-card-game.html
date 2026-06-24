@@ -3542,11 +3542,19 @@ function aiTurn(){
   G._aiGuard = 0;
   aiMainLoop();
 }
+// The AI must not advance its turn while the player is resolving a forced choice — an open block/
+// action/target modal, or a field-tap selection (action-step / burst target, etc.). All such modes
+// are non-idle during the AI's turn (the AI never sets a player selection mode for itself).
+function aiPaused(){
+  if (el('blockModal') && el('blockModal').classList.contains('show')) return true;
+  return G.mode!=='idle';
+}
 // One main-phase action per tick, each followed by a render + short pause, so the player can
 // actually SEE the AI's deploys and command reveals. (A synchronous while-loop flashed every
 // card in a single frame, so the player never saw e.g. two Close Combats being played.)
 function aiMainLoop(){
   if (G.over) return;
+  if (aiPaused()){ setTimeout(aiMainLoop, 200); return; }   // wait for the player's choice
   if (G._aiGuard++ < 40 && aiMainStep()){ render(); setTimeout(aiMainLoop, FLASH_MS+150); return; }
   aiPostMain();
 }
@@ -3666,7 +3674,16 @@ function aiPostMain(){
   let i=0;
   (function next(){
     if (G.over) return;
-    if (i>=attackers.length){ G.aiForceFace=false; setTimeout(()=>{ if(!G.over){ log(`${who(G.enemy)} ends its turn.`, 'ai'); endTurn(); } }, 450); return; }
+    if (aiPaused()){ setTimeout(next, 200); return; }   // don't start the next attack mid-choice
+    if (i>=attackers.length){
+      G.aiForceFace=false;
+      (function endStep(){
+        if (G.over) return;
+        if (aiPaused()){ setTimeout(endStep, 200); return; }   // wait out any pending player choice
+        log(`${who(G.enemy)} ends its turn.`, 'ai'); endTurn();
+      })();
+      return;
+    }
     const atk=attackers[i++];
     if (atk.rested || atk.hp<=0){ next(); return; }
     resolveAiAttack(atk, ()=> setTimeout(next, 650), plan.get(atk.uid)||null);
