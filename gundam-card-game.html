@@ -2752,20 +2752,14 @@ function promptPlayMode(card, idx){
   el('blockModal').classList.add('show');
 }
 
-// Pair a 【Pilot】 command onto one of your Units as a Pilot.
+// Pair a 【Pilot】 command onto one of your Units as a Pilot. Never auto-pairs — the player always
+// taps the Unit to pair (and can Cancel to back out, leaving the card in hand to play as a Command).
 function playAsPilot(card, idx){
   const s=G.player, pm=card.pilotMode;
   const myUnits = s.field.filter(u=>u.type==='unit' && !u.pilot && !u.noPilot);
   if (myUnits.length===0){ flashPrompt(`No unpaired Unit available for pilot ${pm.name}.`); return; }
   const p = pilotFromMode(card);
-  if (myUnits.length===1){ // only one possible target: pair it straight away
-    s.hand.splice(idx,1); s.resAvail-=effectiveCost(s,card);
-    log(`<b>${pm.name}</b> pilots <b>${myUnits[0].name}</b>.`, 'me');
-    closeInspect();
-    attachPilot(myUnits[0], p, ()=>{ clearSel(); render(); checkEnd(); });
-    return;
-  }
-  // Multiple candidates — the pilot-target click handler removes the card (matched by uid) and pairs.
+  // The pilot-target click handler removes the card (matched by uid) and pairs it onto the tapped Unit.
   G.mode='pilot-target'; G.pending=p; setPrompt(`Tap a unit to pair pilot ${pm.name} (+${pm.pAp} AP / +${pm.pHp} HP).`);
   closeInspect(); render();
 }
