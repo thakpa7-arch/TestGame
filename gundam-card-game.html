@@ -3577,13 +3577,15 @@ function attachPilot(u, p, onDone){
   sound(justLinked ? 'link' : 'pair');
   // 【When Paired】 (pilot's then unit's) and 【When Linked】 fire now. For the player these are
   // resolved interactively (so you choose the target), one after another, via the sequencer.
+  // GD05 pilots (e.g. Char Aznable) carry custom 【When Linked】 effects that parseTrigger can't read,
+  // so fall back to gd05Custom — otherwise runTriggerSeq skips the null act and the effect never fires.
   const trigs = [
-    { card:p, act:parseTrigger(p.effect,'When Paired'), label:'Pair' },
-    { card:u, act:parseTrigger(u.effect,'When Paired'), label:'Pair' },
+    { card:p, act:parseTrigger(p.effect,'When Paired') || gd05Custom(p,'Pair'), label:'Pair' },
+    { card:u, act:parseTrigger(u.effect,'When Paired') || gd05Custom(u,'Pair'), label:'Pair' },
   ];
   if (justLinked){
-    trigs.push({ card:p, act:parseTrigger(p.effect,'When Linked'), label:'Link' });   // pilot's own 【When Linked】 (e.g. Nyaan)
-    trigs.push({ card:u, act:parseTrigger(u.effect,'When Linked'), label:'Link' });
+    trigs.push({ card:p, act:parseTrigger(p.effect,'When Linked') || gd05Custom(p,'Link'), label:'Link' });   // pilot's own 【When Linked】 (e.g. Nyaan, Char Aznable)
+    trigs.push({ card:u, act:parseTrigger(u.effect,'When Linked') || gd05Custom(u,'Link'), label:'Link' });
   }
   runTriggerSeq(trigs, side, onDone);
 }
