@@ -482,7 +482,10 @@ GUNDAM_CARDS.push(
   {"id":"GD05-093","name":"Char Aznable","type":"pilot","color":"Purple","cost":1,"lv":5,"ap":2,"hp":2,"trait":"(Neo Zeon) (Newtype)","link":"","effect":"【Burst】Add this card to your hand.<br>【When Linked】You may choose 1 (Neo Zeon) Base card from your trash. Deploy it.<br>","img":"https://images.weserv.nl/?url=www.gundam-gcg.com/en/images/cards/card/GD05-093.webp"},
   {"id":"GD05-094","name":"Quess Paraya","type":"pilot","color":"Purple","cost":1,"lv":3,"ap":1,"hp":1,"trait":"(Neo Zeon) (Newtype)","link":"","effect":"【Burst】Add this card to your hand.<br>【Destroyed】Choose 1 of your (Neo Zeon) Units. During this turn, when it receives enemy battle damage, reduce it by 2.<br>","img":"https://images.weserv.nl/?url=www.gundam-gcg.com/en/images/cards/card/GD05-094.webp"},
   {"id":"GD05-053","name":"Quess's Jagd Doga","type":"unit","color":"Purple","cost":2,"lv":3,"ap":3,"hp":2,"trait":"(Neo Zeon)","link":"Quess Paraya","effect":"If this Unit is destroyed by one of your (Neo Zeon) card's effects, add it from your trash to your hand.<br>","img":"https://images.weserv.nl/?url=www.gundam-gcg.com/en/images/cards/card/GD05-053.webp"},
-  {"id":"GD05-129","name":"Axis","type":"base","color":"Purple","cost":1,"lv":4,"ap":0,"hp":6,"trait":"(Neo Zeon) (Stronghold)","link":"","effect":"【Burst】Deploy this card.<br>【Deploy】Add 1 of your Shields to your hand.<br>【Activate･Main】Rest this Base. If one of your Units has been destroyed by one of your (Neo Zeon) card's effects during this turn, deploy 1 (Neo Zeon) Unit card that is Lv.3 or lower from your hand.<br>","img":"https://images.weserv.nl/?url=www.gundam-gcg.com/en/images/cards/card/GD05-129.webp"}
+  {"id":"GD05-129","name":"Axis","type":"base","color":"Purple","cost":1,"lv":4,"ap":0,"hp":6,"trait":"(Neo Zeon) (Stronghold)","link":"","effect":"【Burst】Deploy this card.<br>【Deploy】Add 1 of your Shields to your hand.<br>【Activate･Main】Rest this Base. If one of your Units has been destroyed by one of your (Neo Zeon) card's effects during this turn, deploy 1 (Neo Zeon) Unit card that is Lv.3 or lower from your hand.<br>","img":"https://images.weserv.nl/?url=www.gundam-gcg.com/en/images/cards/card/GD05-129.webp"},
+  // Dozle Zabi pilot isn't in the card pool (only Big Zam's link + Fortress Defense reference him),
+  // so this is a CUSTOM stand-in pilot — replace with real data if/when available.
+  {"id":"CUST-DOZLE","name":"Dozle Zabi","type":"pilot","color":"Green","cost":1,"lv":5,"ap":2,"hp":2,"trait":"(Zeon) (Zabi Family)","link":"","effect":"【Burst】Add this card to your hand.<br>【When Paired】Choose 1 enemy Unit with 3 or less HP. Rest it.<br>","img":""}
 );
 
 const SHIELD_MAX = 6, RES_MAX = 10, HAND_START = 5, HAND_MAX = 10, FIELD_MAX = 6;
@@ -2120,7 +2123,7 @@ const PRESET_DECKS = [
   { name:'RW Neo Zeong',  dg:'2nGD01-086a4nGD02-079a2nGD04-077a3nGD01-073a4nST04-001a4nGD04-068a4nGD01-066a4nGD04-033a4nST04-010a4nST03-010a4nST03-013a4nGD01-118a3nST04-012a4nGD01-128' },
   { name:'BW Norn',       dg:'4nGD04-016a4nGD01-086a3nGD04-011a3nST01-001a2nGD01-006a4nGD04-003a2nGD04-068a4nGD04-006a4nGD04-065a4nST01-010a4nGD04-081a4nGD04-098a4nGD01-118a4nGD04-121' },
   { name:'GW Wing',       dg:'4nST01-009a4nGD01-086a2nGD04-077a4nGD01-072a4nST04-001a4nGD04-068a4nST02-001a4nGD01-024a4nST04-010a4nST02-010a4nGD01-118a4nST04-012a4nGD01-126' },
-  { name:'GD05 Freedom✦Custom', dg:'4nGD05-001a4nGD05-005a4nGD05-010a4nGD05-002a3nGD05-020a4nGD05-049a3nGD05-094a4nGD05-053a4nGD05-093a4nST01-010a4nST01-001a3nGD02-055a3nST01-015a2nGD05-129' },
+  { name:'GD05 Neo Zeon✦Custom', dg:'4nGD01-035a4nST03-008a4nGD01-030a4nST03-006a3nGD01-026a2nGD01-031a4nGD04-017a4nST03-011a2nCUST-DOZLEa4nGD05-053a4nGD05-049a3nGD05-094a4nGD05-093a4nGD05-129' },
 ];
 function parsePreset(dg){
   return dg.split('a').map(e=>{ const m=e.match(/^(\d+)n(.+)$/); return m?{n:+m[1],id:m[2]}:null; }).filter(Boolean);
