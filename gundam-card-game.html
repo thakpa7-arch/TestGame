@@ -1076,8 +1076,16 @@ function linkMatches(u, p){
 function hpLimit(t){ const m=t.match(/(\d+)\s*or less hp/); return m?+m[1]:99; }
 function parseTrigger(effect, kw){
   const pl = plain(effect);
-  const m = pl.match(new RegExp('【\\s*'+kw+'[^】]*】\\s*([^【]*)','i'));
-  if (m) return parseClause(m[1]);
+  // Capture an optional gate bracket immediately before the trigger (e.g. 【During Pair】【Destroyed】)
+  // so a paired/linked-only trigger doesn't fire when the Unit isn't paired/linked.
+  const m = pl.match(new RegExp('(【[^】]*】)?\\s*【\\s*'+kw+'[^】]*】\\s*([^【]*)','i'));
+  if (m){
+    let act = parseClause(m[2]);
+    const gate = (m[1]||'').toLowerCase();
+    if (act && /during pair/.test(gate)) act = { kind:'cond', cond:{ type:'paired' }, inner:act };
+    else if (act && /during link/.test(gate)) act = { kind:'cond', cond:{ type:'linked' }, inner:act };
+    return act;
+  }
   // Some cards write a Deploy trigger without the bracket, e.g. Neo Zeong's
   // "When this Unit (or one of your … Units) is deployed, <effect>".
   if (kw==='Deploy'){
@@ -1463,6 +1471,8 @@ function condMet(cond, side, source, other){
       return n >= cond.min;
     }
     case 'selfDamaged':      return !!(source && source.hp < effMaxHp(source));
+    case 'paired':           return !!(source && source.pilot);    // 【During Pair】 gate (e.g. Char's Zaku Ⅱ)
+    case 'linked':           return !!(source && source.linked);   // 【During Link】 gate
     case 'attackingDamaged': return true;   // during an Attack trigger we are attacking something
     default: return true;
   }
@@ -2219,7 +2229,7 @@ const PRESET_DECKS = [
   { name:'RW Neo Zeong',  dg:'2nGD01-086a4nGD02-079a2nGD04-077a3nGD01-073a4nST04-001a4nGD04-068a4nGD01-066a4nGD04-033a4nST04-010a4nST03-010a4nST03-013a4nGD01-118a3nST04-012a4nGD01-128' },
   { name:'BW Norn',       dg:'4nGD04-016a4nGD01-086a3nGD04-011a3nST01-001a2nGD01-006a4nGD04-003a2nGD04-068a4nGD04-006a4nGD04-065a4nST01-010a4nGD04-081a4nGD04-098a4nGD01-118a4nGD04-121' },
   { name:'GW Wing',       dg:'4nST01-009a4nGD01-086a2nGD04-077a4nGD01-072a4nST04-001a4nGD04-068a4nST02-001a4nGD01-024a4nST04-010a4nST02-010a4nGD01-118a4nST04-012a4nGD01-126' },
-  { name:'P/G Char', dg:'4nGD01-035a4nST03-008a4nGD01-030a4nST03-006a3nGD01-026a2nGD01-031a4nGD04-017a4nST03-011a2nGD01-106a4nGD05-053a4nGD05-049a3nGD05-094a4nGD05-093a4nGD05-129' },
+  { name:'PG Sazabi', dg:'4nGD01-035a4nST03-008a4nGD01-030a4nST03-006a3nGD01-026a2nGD01-031a4nGD04-017a4nST03-011a2nGD01-106a4nGD05-053a4nGD05-049a3nGD05-094a4nGD05-093a4nGD05-129' },
 ];
 function parsePreset(dg){
   return dg.split('a').map(e=>{ const m=e.match(/^(\d+)n(.+)$/); return m?{n:+m[1],id:m[2]}:null; }).filter(Boolean);
