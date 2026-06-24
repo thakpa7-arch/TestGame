@@ -3905,7 +3905,7 @@ function cardFace(c, ctx){
   if (isBase || isUnit){
     const mx = isBase ? c.maxHp : effMaxHp(c), cur = c.hp;
     const dCls = cur<mx ? (cur/Math.max(1,mx)<=0.4 || cur<=1 ? 'crit' : 'dmg') : '';
-    if (isUnit){
+    if (c.type==='unit'){   // bases don't attack (always 0 AP) — no sword badge, only HP
       // Reference = the unit's inherent AP given its pairing/link state. Any extra from a team
       // aura, temp buff, or trash buff (or a debuff) shows gold (boosted) / grey (weakened).
       const apRef = c.baseAp + (c.pilot?c.pilot.pAp:0) + (c.pilot?(c.pairAp||0):0) + (c.linked?(c.linkAp||0):0);
