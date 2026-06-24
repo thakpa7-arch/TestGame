@@ -1097,6 +1097,14 @@ function parseTrigger(effect, kw){
 // Parse one effect clause (original-case `raw`) into an engine action.
 function parseClause(raw){
   const t = raw.toLowerCase(); let d;
+  // Leading "During your turn, <effect>" — gate the effect on it being your turn (e.g. Reineforce Jr.
+  // only deploys its Parts token when bursted/played on your own turn). The remainder may carry a
+  // further "if <cond>," which the recursive parse handles.
+  const dt = t.match(/^during your turn,\s*(.+)$/);
+  if (dt){
+    const inner = parseClause(raw.replace(/^[^,]*,\s*/,''));
+    return inner ? { kind:'cond', cond:{ type:'yourTurn' }, inner } : null;
+  }
   // Leading condition: "If <cond>, <effect>" — gate the inner effect on a board/turn/trash state.
   const cm = t.match(/^if (.+?),\s*(.+)$/);
   if (cm && !/you placed|you place /.test(cm[1])){
@@ -1563,19 +1571,25 @@ function gd05SacResolve(uid){
   render(); checkEnd();
   if (after && !G.over) after();
 }
-// Char (purple) 【When Linked】: deploy a (Neo Zeon) Base from your trash.
-function gd05DeployBaseFromTrash(side, sourceCard, label){
+// Char (purple) 【When Linked】: you may deploy a (Neo Zeon) Base from your trash. The player picks
+// which Base (or declines) via a modal; the AI auto-picks the sturdiest. `after` continues the chain.
+function gd05DeployBaseFromTrash(side, sourceCard, label, after){
+  const fin=()=>{ if(after) after(); };
   const cls=side===G.player?'me':'ai';
   const cands=side.trash.filter(c=>c.type==='base' && (c.trait||'').toLowerCase().includes('(neo zeon)'));
-  if (!cands.length) return;
-  const base=[...cands].sort((a,b)=>((b.baseHp||b.hp||0))-((a.baseHp||a.hp||0)))[0];
-  const ti=side.trash.indexOf(base); if(ti>=0) side.trash.splice(ti,1);
-  if (side.base && !side.base.token) sendToTrash(side.base, side);
-  base.rested=false; base.activatedThisTurn=false; if(base.baseHp!=null){ base.hp=base.baseHp; base.maxHp=base.baseHp; }
-  side.base=base; sound('deploy');
-  log(`${label}: <b>${sourceCard.name}</b> deploys <b>${base.name}</b> from trash.`, cls);
-  if (side===G.player) resolvePlayerTrigger(base, side, parseTrigger(base.effect,'Deploy'), 'Deploy', ()=>render());
-  else runTrigger(base, side, parseTrigger(base.effect,'Deploy'), 'Deploy');
+  if (!cands.length){ fin(); return; }
+  const deploy=(base)=>{
+    if(!base){ fin(); return; }
+    const ti=side.trash.indexOf(base); if(ti>=0) side.trash.splice(ti,1);
+    if (side.base && !side.base.token) sendToTrash(side.base, side);
+    base.rested=false; base.activatedThisTurn=false; if(base.baseHp!=null){ base.hp=base.baseHp; base.maxHp=base.baseHp; }
+    side.base=base; sound('deploy');
+    log(`${label}: <b>${sourceCard.name}</b> deploys <b>${base.name}</b> from trash.`, cls);
+    if (side===G.player) resolvePlayerTrigger(base, side, parseTrigger(base.effect,'Deploy'), 'Deploy', ()=>{ render(); fin(); });
+    else { runTrigger(base, side, parseTrigger(base.effect,'Deploy'), 'Deploy'); fin(); }
+  };
+  if (side===G.player) showLookAtTop(cands, `${sourceCard.name} 【When Linked】: choose a (Neo Zeon) Base to deploy from your trash`, ()=>true, true, (chosen)=>{ deploy(chosen); render(); });
+  else deploy([...cands].sort((a,b)=>((b.baseHp||b.hp||0))-((a.baseHp||a.hp||0)))[0]);
 }
 // Axis 【Activate･Main】: if one of your Units was destroyed by your own (Neo Zeon) effect this turn,
 // deploy a (Neo Zeon) Unit Lv.3 or lower from your hand.
@@ -1770,7 +1784,7 @@ function resolvePlayerTrigger(card, side, act, label, after){
   if (!act){ fin(); return; }
   act.source = card;
   if (act.kind==='gd05Sac'){ gd05SacInteractive(side, card, fin); return; }
-  if (act.kind==='gd05BaseFromTrash'){ gd05DeployBaseFromTrash(side, card, label); fin(); return; }
+  if (act.kind==='gd05BaseFromTrash'){ gd05DeployBaseFromTrash(side, card, label, fin); return; }
   if (act.kind==='cond'){                       // gate, then resolve the inner interactively
     if (!condMet(act.cond, side, card, act.other)){
       if (act.elseInner) return resolvePlayerTrigger(card, side, act.elseInner, label, after);
