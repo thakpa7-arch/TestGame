@@ -4018,8 +4018,10 @@ function cardFace(c, ctx){
   const style = c.img ? `background-image:url('${c.img}')` : '';
   let overlays = `<div class="ov-cost">${c.cost}</div>`;
   if (!c.token && (c.lv||0)>0) overlays += `<div class="ov-lv">L${c.lv}</div>`;
-  // Tap-to-view magnifier on field cards (a single tap opens the inspector, no hold needed).
-  if (ctx==='field-player' || ctx==='field-enemy') overlays += `<div class="ov-view" data-view="${c.uid}" title="View card">🔍</div>`;
+  // Tap-to-view magnifier on field Units (a single tap opens the inspector, no hold needed). Bases
+  // are excluded — they aren't in the field arrays the magnifier handler searches, so its tap did
+  // nothing; the whole base card already opens the inspector on click.
+  if ((ctx==='field-player' || ctx==='field-enemy') && c.type!=='base') overlays += `<div class="ov-view" data-view="${c.uid}" title="View card">🔍</div>`;
   // Combat preview: on an attackable enemy Unit, show how the trade resolves for your attacker.
   if (ctx==='field-enemy' && G.mode==='attack-target' && c.rested && c.hp>0){
     const atk=G.player.field.find(u=>u.uid===G.selected);
