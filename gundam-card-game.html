@@ -1363,7 +1363,7 @@ function applyToTarget(card, side, act, target, label){
   if (act.kind==='damage'){ log(`${label}: <b>${name}</b> deals ${act.amount} to <b>${target.name}</b>.`,cls); damage(target,act.amount,foe); }
   else if (act.kind==='rest'){ target.rested=true; log(`${label}: <b>${name}</b> rests <b>${target.name}</b>.`,cls); }
   else if (act.kind==='bounce'){ const i=foe.field.indexOf(target); if(i>=0)foe.field.splice(i,1); returnToHand(target,foe); log(`${label}: <b>${name}</b> returns <b>${target.name}</b> to hand.`,cls); }
-  else if (act.kind==='destroy'){ log(`${label}: <b>${name}</b> destroys <b>${target.name}</b>.`,cls); const i=foe.field.indexOf(target); if(i>=0)foe.field.splice(i,1); fx('die',target.uid); sendToTrash(target,foe); runTrigger(target,foe,parseTrigger(target.effect,'Destroyed'),'Destroyed'); }
+  else if (act.kind==='destroy'){ log(`${label}: <b>${name}</b> destroys <b>${target.name}</b>.`,cls); const i=foe.field.indexOf(target); if(i>=0)foe.field.splice(i,1); fx('die',target.uid); sendToTrash(target,foe); runTrigger(target,foe,parseTrigger(target.effect,'Destroyed'),'Destroyed'); firePilotDestroyed(target,foe); }
   else if (act.kind==='debuff'){ if(act.dur==='battle'){ target.battleAp=(target.battleAp||0)-act.amount; } else { target.tempAp=(target.tempAp||0)-act.amount; } target.ap=effAp(target); log(`${label}: <b>${target.name}</b> gets AP-${act.amount} this ${act.dur==='battle'?'battle':'turn'}.`,cls); }
   else if (act.kind==='buff'){ target.tempAp=(target.tempAp||0)+act.amount; target.ap=effAp(target); log(`${label}: <b>${target.name}</b> gets AP+${act.amount} this turn.`,cls); }
   else if (act.kind==='heal'){ target.hp=Math.min(effMaxHp(target), target.hp+(act.amount>=99?effMaxHp(target):act.amount)); log(`${label}: <b>${name}</b> repairs <b>${target.name}</b>.`,cls); }
@@ -1467,10 +1467,101 @@ function condMet(cond, side, source, other){
     default: return true;
   }
 }
+// ---- GD05 custom card effects (Sazabi / Char / Quess / Jagd Doga / Axis) ----
+// These cards use wording the generic parser can't express, so they're resolved explicitly.
+function gd05Custom(card, label){
+  if (!card) return null;
+  if (card.def==='GD05-093' && (label==='Link' || label==='When Linked')) return { kind:'gd05BaseFromTrash' };
+  if (card.def==='GD05-094' && label==='Destroyed') return { kind:'grantReduce', amount:2, scope:'friendly', filter:{ traits:['(neo zeon)'] } };
+  return null;
+}
+function gd05ReturnsOnSelfKill(u){
+  const e=(plain(u.effect||'')).toLowerCase();
+  return e.includes('destroyed by one of your (neo zeon)') && e.includes('from your trash to your hand');
+}
+// Fire a destroyed Unit's paired Pilot 【Destroyed】 (e.g. Quess Paraya). No stock pilot has one,
+// so this only affects the GD05 pilots.
+function firePilotDestroyed(u, side){
+  const pc=u && u.pilotCard; if(!pc) return;
+  const pa=gd05Custom(pc,'Destroyed') || parseTrigger(pc.effect,'Destroyed');
+  if (pa) runTrigger(pc, side, pa, 'Destroyed');
+}
+// Destroy a Unit as the result of a card effect; when by your own (Neo Zeon) effect, set the turn
+// flag (for Axis) and apply Jagd-Doga-style trash-return.
+function gd05DestroyUnit(u, owner, byOwnNeoZeon){
+  const i=owner.field.indexOf(u); if(i<0) return; owner.field.splice(i,1);
+  const cls=owner===G.player?'me':'ai';
+  fx('die', u.uid); log(`<b>${u.name}</b> is destroyed.`, cls);
+  sendToTrash(u, owner);
+  if (byOwnNeoZeon) owner.neoZeonSelfKill=true;
+  const da=parseTrigger(u.effect,'Destroyed');
+  if (owner===G.player && da && da.kind==='dig') playerDig(u, owner, da);
+  else if (owner===G.player && da && da.kind==='scryMill') playerScryMill(u, owner);
+  else runTrigger(u, owner, da, 'Destroyed');
+  firePilotDestroyed(u, owner);
+  if (byOwnNeoZeon && gd05ReturnsOnSelfKill(u) && owner.hand.length<HAND_MAX){
+    const ti=owner.trash.indexOf(u); if(ti>=0){ owner.trash.splice(ti,1); resetUnit(u); owner.hand.push(u); log(`<b>${u.name}</b> returns from trash to ${owner===G.player?'your':'its'} hand.`, cls); }
+  }
+}
+// Sazabi 【Attack】: you MAY destroy 1 of your own Units; if you do, each opponent destroys 1 of their
+// own non-battling Units. Auto-resolved for both sides (sac only when worthwhile / free via Jagd Doga).
+function gd05Sacrifice(side, sourceCard){
+  const foe=side===G.player?G.enemy:G.player, cls=side===G.player?'me':'ai';
+  const ownCands=side.field.filter(u=>u!==sourceCard && u.hp>0);
+  const foeCands=foe.field.filter(u=>u.hp>0);                 // attack triggers resolve before any block — nothing "in battle" yet
+  if (!ownCands.length || !foeCands.length) return;
+  const free=ownCands.find(u=>gd05ReturnsOnSelfKill(u) && !u.token);
+  const val=u=>((u.baseAp||0)+(u.baseHp||0));
+  const sac=free || [...ownCands].sort((a,b)=>val(a)-val(b))[0];
+  const victim=[...foeCands].sort((a,b)=>val(a)-val(b))[0];   // the opponent loses their weakest
+  if (!free && val(sac) > val(victim)) return;                // don't sacrifice a better Unit than you remove
+  log(`<b>${sourceCard.name}</b>: ${side===G.player?'you destroy your':'the AI destroys its'} <b>${sac.name}</b>.`, cls);
+  gd05DestroyUnit(sac, side, true);
+  if (foe.field.includes(victim) && victim.hp>0){
+    log(`<b>${sourceCard.name}</b>: ${foe===G.player?'you':'the AI'} must destroy <b>${victim.name}</b>.`, foe===G.player?'me':'ai');
+    gd05DestroyUnit(victim, foe, false);
+  }
+  render();
+}
+// Char (purple) 【When Linked】: deploy a (Neo Zeon) Base from your trash.
+function gd05DeployBaseFromTrash(side, sourceCard, label){
+  const cls=side===G.player?'me':'ai';
+  const cands=side.trash.filter(c=>c.type==='base' && (c.trait||'').toLowerCase().includes('(neo zeon)'));
+  if (!cands.length) return;
+  const base=[...cands].sort((a,b)=>((b.baseHp||b.hp||0))-((a.baseHp||a.hp||0)))[0];
+  const ti=side.trash.indexOf(base); if(ti>=0) side.trash.splice(ti,1);
+  if (side.base && !side.base.token) sendToTrash(side.base, side);
+  base.rested=false; base.activatedThisTurn=false; if(base.baseHp!=null){ base.hp=base.baseHp; base.maxHp=base.baseHp; }
+  side.base=base; sound('deploy');
+  log(`${label}: <b>${sourceCard.name}</b> deploys <b>${base.name}</b> from trash.`, cls);
+  if (side===G.player) resolvePlayerTrigger(base, side, parseTrigger(base.effect,'Deploy'), 'Deploy', ()=>render());
+  else runTrigger(base, side, parseTrigger(base.effect,'Deploy'), 'Deploy');
+}
+// Axis 【Activate･Main】: if one of your Units was destroyed by your own (Neo Zeon) effect this turn,
+// deploy a (Neo Zeon) Unit Lv.3 or lower from your hand.
+function gd05AxisDeployable(side){
+  return side.hand.some(c=>c.type==='unit' && (c.lv||0)<=3 && (c.trait||'').toLowerCase().includes('(neo zeon)'));
+}
+function gd05AxisDeploy(side, base){
+  const cls=side===G.player?'me':'ai';
+  if (!side.neoZeonSelfKill){ log(`<b>${base.name}</b>: no Unit was destroyed by your effect this turn.`, cls); return; }
+  if (side.field.length>=FIELD_MAX) return;
+  const cands=side.hand.filter(c=>c.type==='unit' && (c.lv||0)<=3 && (c.trait||'').toLowerCase().includes('(neo zeon)'));
+  if (!cands.length) return;
+  const c=[...cands].sort((a,b)=>((b.baseAp||0)+(b.baseHp||0))-((a.baseAp||0)+(a.baseHp||0)))[0];
+  side.hand.splice(side.hand.indexOf(c),1); c.rested=false; c.sick=!c.blitz; side.field.push(c);
+  sound('deploy'); log(`<b>${base.name}</b>: deploys <b>${c.name}</b> from hand.`, cls);
+  if (side===G.player) resolvePlayerTrigger(c, side, parseTrigger(c.effect,'Deploy'), 'Deploy', ()=>render());
+  else runTrigger(c, side, parseTrigger(c.effect,'Deploy'), 'Deploy');
+}
 // Resolve a triggered action for `side`, auto-targeting sensibly. `label` is 'Deploy' / 'Pair'.
 function runTrigger(card, side, act, label){
+  if (!act) act = gd05Custom(card, label);
   if (!act) return;
   act.source = card;
+  if (act.kind==='gd05Sac'){ gd05Sacrifice(side, card); return; }
+  if (act.kind==='gd05BaseFromTrash'){ gd05DeployBaseFromTrash(side, card, label); return; }
+  if (act.kind==='gd05AxisDeploy'){ gd05AxisDeploy(side, card); return; }
   // Conditional effect: only resolve the inner effect when the board condition holds.
   if (act.kind==='cond'){ const ok=condMet(act.cond, side, card, act.other); if (ok) runTrigger(card, side, act.inner, label); else if (act.elseInner) runTrigger(card, side, act.elseInner, label); return; }
   const cls = side===G.player?'me':'ai';
@@ -1635,8 +1726,11 @@ function runTrigger(card, side, act, label){
 // `after` runs once the whole effect (including any chained "Then,…") is fully resolved.
 function resolvePlayerTrigger(card, side, act, label, after){
   const fin = ()=>{ if (after) after(); };
+  if (!act) act = gd05Custom(card, label);
   if (!act){ fin(); return; }
   act.source = card;
+  if (act.kind==='gd05Sac'){ gd05Sacrifice(side, card); fin(); return; }
+  if (act.kind==='gd05BaseFromTrash'){ gd05DeployBaseFromTrash(side, card, label); fin(); return; }
   if (act.kind==='cond'){                       // gate, then resolve the inner interactively
     if (!condMet(act.cond, side, card, act.other)){
       if (act.elseInner) return resolvePlayerTrigger(card, side, act.elseInner, label, after);
@@ -1904,6 +1998,7 @@ function makeCard(def, owner){
     c.allyDeploy = parseAllyDeploy(def.effect);   // "when one of your (Trait) Units is deployed, …"
     // player-activated ability (cost：effect); used at most once per turn
     c.activate = parseActivate(def.effect); c.activatedThisTurn = false;
+    if (def.id==='GD05-129'){ c.activate = { cost:{type:'rest'}, phase:'main', oncePerTurn:true, action:{ kind:'gd05AxisDeploy', scope:'self' }, customReady:(uu,sd)=>uu.hp>0 && sd.neoZeonSelfKill && sd.field.length<FIELD_MAX && gd05AxisDeployable(sd) }; }
     // trash-conditional effects
     c.trashBuff = parseTrashBuff(def.effect);
     c.trashKeyword = parseTrashKeyword(def.effect);
@@ -2455,6 +2550,7 @@ function beginTurn(turn){
   // 1) Start Phase — Active Step: ready all rested cards; refresh per-turn abilities.
   for (const u of s.field){ if(u.stunned){ u.stunned=false; } else if(!u.noActive){ u.rested=false; } u.sick=false; u.tempAp=0; u.battleAp=0; u.activatedThisTurn=false; u.canAttackActive=false; u.noDirectTurn=false; u.dmgReduce=0; resetTurnKeywords(u); u.ap=effAp(u); }
   if (s.base){ s.base.rested=false; s.base.activatedThisTurn=false; }
+  s.neoZeonSelfKill=false;   // "destroyed by your own (Neo Zeon) effect this turn" resets each turn
   // 2) Draw Phase — draw 1 (whoever goes first skips their very first draw).
   G.phase='draw';
   if (G.skipDrawSide===turn) G.skipDrawSide=null;   // first player's opening turn: no draw
@@ -2673,6 +2769,7 @@ function activateReady(u){
   const side = u.owner==='player' ? G.player : G.enemy;
   if (u.activate.requireLink && !u.linked) return false;
   if (u.activate.requirePair && !u.pilot)  return false;
+  if (u.activate.customReady && !u.activate.customReady(u, side)) return false;
   return activateCostPayable(u, side);
 }
 // Begin activation: pay nothing yet if a target is needed, else resolve immediately.
@@ -3134,7 +3231,7 @@ function gatedAttackAction(effect, atk){
   if (/during pair/i.test(gate) && !atk.pilot)  return null;
   // Self-sacrifice attack effects ("destroy 1 of your own Units…") aren't modelled by the generic
   // enemy-removal parser — skip them so they don't misfire as enemy destruction (e.g. Sazabi GD05-049).
-  if (/your own Units?/i.test(m[2]) && /destroy/i.test(m[2])) return null;
+  if (/your own Units?/i.test(m[2]) && /destroy/i.test(m[2])) return atk.def==='GD05-049' ? { kind:'gd05Sac' } : null;
   return parseClause(m[2]);
 }
 function pilotAttackAction(atk){
@@ -3258,6 +3355,7 @@ function damage(u, dmg, side, kind){
     if (side===G.player && dact && dact.kind==='dig') playerDig(u, side, dact);
     else if (side===G.player && dact && dact.kind==='scryMill') playerScryMill(u, side);
     else runTrigger(u, side, dact, 'Destroyed');
+    firePilotDestroyed(u, side);
   }
   else fx(kind==='battle' ? 'hit' : 'ping', u.uid);   // combat = heavy hit; ability/self ping = sharp ping
 }
