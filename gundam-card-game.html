@@ -2081,6 +2081,10 @@ function makeCard(def, owner){
   } else { // command
     c.action = inferCommand(def.effect);
     c.trashCostReduce = parseTrashCostReduce(def.effect);
+    // 【Pilot】[Name] — this "Pilot" Command may alternatively be paired onto one of your Units as a
+    // Pilot (using the card's printed AP/HP as the +AP/+HP bonus). e.g. Fortress Defense / Dozle Zabi.
+    const pm = (def.effect||'').match(/【\s*Pilot\s*】\s*\[([^\]]+)\]/i);
+    if (pm) c.pilotMode = { name: pm[1].trim(), pAp: def.ap||0, pHp: def.hp||0, trait: def.trait||'' };
   }
   return c;
 }
@@ -2713,8 +2717,57 @@ function playFromHand(uidv){
     G.mode='pilot-target'; G.pending=card; setPrompt(`Tap a unit to pair pilot ${card.name} (+${card.pAp} AP / +${card.pHp} HP).`);
     closeInspect(); render();
   } else { // command
-    startCommand(card, idx);
+    // A "Pilot" command (Dozle Zabi) can be played as a Command OR paired as a Pilot — let the
+    // player choose, but only when there's actually an unpaired Unit to pilot.
+    if (card.pilotMode && s.field.some(u=>u.type==='unit' && !u.pilot && !u.noPilot)){
+      promptPlayMode(card, idx);
+    } else {
+      startCommand(card, idx);
+    }
   }
+}
+
+// Build a one-shot Pilot card from a 【Pilot】 command's pilotMode. Keeps the same uid so the
+// pilot-target click handler still finds (and removes) the original card in hand.
+function pilotFromMode(card){
+  const pm=card.pilotMode;
+  return { uid: card.uid, owner: card.owner, def: card.def, name: pm.name, type:'pilot',
+           color: card.color, cost: card.cost, lv: card.lv, trait: pm.trait||card.trait,
+           effect:'', img: card.img, pAp: pm.pAp, pHp: pm.pHp, trashCostReduce:null };
+}
+
+// Choose how to play a dual-mode (Command / Pilot) card.
+function promptPlayMode(card, idx){
+  const pm=card.pilotMode;
+  el('blockMsg').innerHTML = `Play <b>${card.name}</b> as:`;
+  const wrap=el('blockBtns'); wrap.innerHTML='';
+  const cmdBtn=document.createElement('button');
+  cmdBtn.innerHTML = `🎴 Command effect`;
+  cmdBtn.onclick=()=>{ el('blockModal').classList.remove('show'); startCommand(card, idx); };
+  wrap.appendChild(cmdBtn);
+  const pBtn=document.createElement('button');
+  pBtn.innerHTML = `🎖 Pilot ${pm.name} (+${pm.pAp} AP / +${pm.pHp} HP)`;
+  pBtn.onclick=()=>{ el('blockModal').classList.remove('show'); playAsPilot(card, idx); };
+  wrap.appendChild(pBtn);
+  el('blockModal').classList.add('show');
+}
+
+// Pair a 【Pilot】 command onto one of your Units as a Pilot.
+function playAsPilot(card, idx){
+  const s=G.player, pm=card.pilotMode;
+  const myUnits = s.field.filter(u=>u.type==='unit' && !u.pilot && !u.noPilot);
+  if (myUnits.length===0){ flashPrompt(`No unpaired Unit available for pilot ${pm.name}.`); return; }
+  const p = pilotFromMode(card);
+  if (myUnits.length===1){ // only one possible target: pair it straight away
+    s.hand.splice(idx,1); s.resAvail-=effectiveCost(s,card);
+    log(`<b>${pm.name}</b> pilots <b>${myUnits[0].name}</b>.`, 'me');
+    closeInspect();
+    attachPilot(myUnits[0], p, ()=>{ clearSel(); render(); checkEnd(); });
+    return;
+  }
+  // Multiple candidates — the pilot-target click handler removes the card (matched by uid) and pairs.
+  G.mode='pilot-target'; G.pending=p; setPrompt(`Tap a unit to pair pilot ${pm.name} (+${pm.pAp} AP / +${pm.pHp} HP).`);
+  closeInspect(); render();
 }
 
 function startCommand(card, handIdx){
