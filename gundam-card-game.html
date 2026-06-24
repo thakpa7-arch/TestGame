@@ -3548,6 +3548,7 @@ function aiTurn(){
 // are non-idle during the AI's turn (the AI never sets a player selection mode for itself).
 function aiPaused(){
   if (el('blockModal') && el('blockModal').classList.contains('show')) return true;
+  if (document.querySelector('.modal-overlay')) return true;   // a deck-look / exile picker is open
   return G.mode!=='idle';
 }
 // One main-phase action per tick, each followed by a render + short pause, so the player can
