@@ -1507,7 +1507,18 @@ function gd05ReturnsOnSelfKill(u){
 function firePilotDestroyed(u, side){
   const pc=u && u.pilotCard; if(!pc) return;
   const pa=gd05Custom(pc,'Destroyed') || parseTrigger(pc.effect,'Destroyed');
-  if (pa) runTrigger(pc, side, pa, 'Destroyed');
+  if (!pa) return;
+  // Quess Paraya 【Destroyed】: "Choose 1 of your (Neo Zeon) Units" — let the PLAYER pick which one
+  // (a modal, so it also works when she dies on the opponent's turn). Every Neo Zeon Unit is eligible.
+  if (pc.def==='GD05-094' && side===G.player && pa.kind==='grantReduce'){
+    const cands=friendlyTargets(side, pa);
+    if (cands.length>=2){
+      promptTargetChoice(cands, `<b>${pc.name} — 【Destroyed】</b><br>Choose a (Neo Zeon) Unit to reduce its enemy battle damage by ${pa.amount} this turn.`,
+        t=>{ t.dmgReduce=(t.dmgReduce||0)+pa.amount; log(`<b>${t.name}</b> reduces battle damage by ${pa.amount} this turn.`, 'me'); render(); });
+      return;
+    }
+  }
+  runTrigger(pc, side, pa, 'Destroyed');
 }
 // Destroy a Unit as the result of a card effect; when by your own (Neo Zeon) effect, set the turn
 // flag (for Axis) and apply Jagd-Doga-style trash-return.
