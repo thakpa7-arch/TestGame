@@ -39,6 +39,8 @@ canvas { display: block; border: 2px solid #4a2a7a; image-rendering: pixelated; 
 #bQ { right: 18px;  bottom: 192px; width: 50px; height: 50px; font-size: 12px; }
 #bE { right: 78px;  bottom: 214px; width: 50px; height: 50px; font-size: 12px; }
 #bR { right: 138px; bottom: 192px; width: 50px; height: 50px; font-size: 12px; }
+/* Inventory toggle */
+#bInv { right: 18px; bottom: 252px; width: 50px; height: 50px; font-size: 11px; background: rgba(55,30,100,0.55); border-color: rgba(170,130,230,0.8); }
 </style>
 </head>
 <body>
@@ -52,6 +54,7 @@ canvas { display: block; border: 2px solid #4a2a7a; image-rendering: pixelated; 
   <div class="tbtn" id="bQ" data-code="KeyQ">Q</div>
   <div class="tbtn" id="bE" data-code="KeyE">E</div>
   <div class="tbtn" id="bR" data-code="KeyR">R</div>
+  <div class="tbtn" id="bInv" data-code="KeyI">INV<br><small>I</small></div>
 </div>
 <script>
 const canvas = document.getElementById('canvas');
@@ -117,6 +120,7 @@ function canvasPoint(clientX, clientY) {
   return { x: (clientX - r.left) * (W / r.width), y: (clientY - r.top) * (H / r.height) };
 }
 function handleCanvasTap(cx, cy) {
+  if (inventoryOpen) { handleInventoryTap(cx, cy); return; }
   if (gameState === 'classselect') {
     const cardW = 250, gap = 30;
     const total = CLASSES.length * cardW + (CLASSES.length - 1) * gap;
@@ -128,6 +132,41 @@ function handleCanvasTap(cx, cy) {
         return;
       }
     }
+  }
+}
+
+function handleInventoryTap(cx, cy) {
+  const PW = 480, PH = 340, PX = W / 2 - 240, PY = H / 2 - 170;
+  // Close button
+  if (cx >= PX + PW - 32 && cx <= PX + PW - 8 && cy >= PY + 7 && cy <= PY + 29) {
+    inventoryOpen = false; inventorySelectedSlot = -1; return;
+  }
+  // Tap outside panel — close
+  if (cx < PX || cx > PX + PW || cy < PY || cy > PY + PH) {
+    inventoryOpen = false; inventorySelectedSlot = -1; return;
+  }
+  // Item slots (5 cols × 4 rows)
+  const SLOT = 52, GAP = 4, GX = PX + 16, GY = PY + 44;
+  for (let idx = 0; idx < 20; idx++) {
+    const c = idx % 5, r = Math.floor(idx / 5);
+    const sx = GX + c * (SLOT + GAP), sy = GY + r * (SLOT + GAP);
+    if (cx >= sx && cx <= sx + SLOT && cy >= sy && cy <= sy + SLOT) {
+      if (idx < player.inventory.length) {
+        if (inventorySelectedSlot === idx) {
+          useInventoryItem(idx); // second tap: use/equip
+        } else {
+          inventorySelectedSlot = idx;
+        }
+      }
+      return;
+    }
+  }
+  // USE/EQUIP action button
+  const INFO_Y = PY + 276;
+  if (inventorySelectedSlot >= 0 &&
+      cx >= PX + PW - 120 && cx <= PX + PW - 32 &&
+      cy >= INFO_Y + 12 && cy <= INFO_Y + 40) {
+    useInventoryItem(inventorySelectedSlot); return;
   }
 }
 canvas.addEventListener('click', e => { const p = canvasPoint(e.clientX, e.clientY); handleCanvasTap(p.x, p.y); });
@@ -385,6 +424,7 @@ const player = {
   buffAtk: 1, buffTimer: 0,
   skills: CLASSES[0].skills,
   inventory: [],
+  equip: { weapon: null, shoes: null },
 };
 
 function applyClass(cls) {
@@ -415,12 +455,17 @@ let levelUpTimer = 0;
 let nextMapTimer = 0;
 let totalMobsKilled = 0;
 let classHover = 0;
+let inventoryOpen = false;
+let inventorySelectedSlot = -1;
 
 function startGame(classIdx) {
   applyClass(CLASSES[classIdx]);
   player.level = 1; player.exp = 0; player.expNeeded = 100;
   player.meso = 0; totalMobsKilled = 0;
   player.buffTimer = 0; player.buffAtk = 1;
+  player.inventory = [];
+  player.equip = { weapon: null, shoes: null };
+  inventoryOpen = false; inventorySelectedSlot = -1;
   loadMap(0);
   gameState = 'playing';
 }
@@ -437,6 +482,8 @@ function loadMap(idx) {
   player.vx = 0;
   player.vy = 0;
   camera.x = 0;
+  inventoryOpen = false;
+  inventorySelectedSlot = -1;
 }
 
 loadMap(0);
@@ -456,6 +503,20 @@ function handleKeyPress(code) {
     if (code === 'Space' || code === 'Enter') respawn();
     return;
   }
+
+  // Inventory toggle works in any active state
+  if (code === 'KeyI') {
+    inventoryOpen = !inventoryOpen;
+    if (!inventoryOpen) inventorySelectedSlot = -1;
+    return;
+  }
+  if (code === 'Escape' && inventoryOpen) {
+    inventoryOpen = false;
+    inventorySelectedSlot = -1;
+    return;
+  }
+  if (inventoryOpen) return; // block all other input while inventory is open
+
   if (gameState !== 'playing') return;
 
   if (code === 'ArrowUp' || code === 'KeyW' || code === 'Space') {
@@ -636,18 +697,50 @@ function applyItem(item) {
   if (item.isMeso) {
     player.meso += item.value;
     spawnParticles(player.x + 15, player.y + 10, '#FFD700', 4);
-  } else if (item.healHp) {
-    player.hp = Math.min(player.maxHp, player.hp + item.healHp);
-    spawnParticles(player.x + 15, player.y + 10, '#FF4466', 4);
-    if (item.healMp) player.mp = Math.min(player.maxMp, player.mp + item.healMp);
-  } else if (item.healMp) {
-    player.mp = Math.min(player.maxMp, player.mp + item.healMp);
-    spawnParticles(player.x + 15, player.y + 10, '#4466FF', 4);
-  } else if (item.isEquip) {
-    if (item.stat === 'atk') player.atk += item.statVal;
-    if (item.stat === 'spd') player.spd += item.statVal;
-    spawnParticles(player.x + 15, player.y + 10, '#88AAFF', 6);
+  } else {
+    if (player.inventory.length < 20) {
+      player.inventory.push({ ...item });
+      spawnDamageNumber(player.x + player.w / 2, player.y - 14, item.name, item.color);
+      spawnParticles(player.x + 15, player.y + 10, item.color, 3);
+    } else {
+      spawnDamageNumber(player.x + player.w / 2, player.y - 14, 'INV FULL!', '#ff4444');
+    }
   }
+}
+
+function useInventoryItem(idx) {
+  if (idx < 0 || idx >= player.inventory.length) return;
+  const item = player.inventory[idx];
+  if (item.isEquip) {
+    equipItem(item, idx);
+  } else {
+    if (item.healHp) player.hp = Math.min(player.maxHp, player.hp + item.healHp);
+    if (item.healMp) player.mp = Math.min(player.maxMp, player.mp + item.healMp);
+    const parts = [];
+    if (item.healHp) parts.push(`HP+${item.healHp}`);
+    if (item.healMp) parts.push(`MP+${item.healMp}`);
+    spawnDamageNumber(player.x + player.w / 2, player.y - 18, parts.join(' ') || 'Used!', item.color);
+    spawnParticles(player.x + player.w / 2, player.y + player.h / 2, item.color, 6);
+    player.inventory.splice(idx, 1);
+  }
+  inventorySelectedSlot = -1;
+}
+
+function equipItem(item, idx) {
+  const slot = item.stat === 'atk' ? 'weapon' : 'shoes';
+  const old = player.equip[slot];
+  if (old) {
+    if (old.stat === 'atk') player.atk -= old.statVal;
+    if (old.stat === 'spd') player.spd -= old.statVal;
+    player.inventory[idx] = { ...old }; // swap old into inventory slot
+  } else {
+    player.inventory.splice(idx, 1);
+  }
+  player.equip[slot] = { ...item };
+  if (item.stat === 'atk') player.atk += item.statVal;
+  if (item.stat === 'spd') player.spd += item.statVal;
+  spawnDamageNumber(player.x + player.w / 2, player.y - 18, 'EQUIPPED!', item.color);
+  spawnParticles(player.x + player.w / 2, player.y + player.h / 2, item.color, 8);
 }
 
 // ─── Collision Helpers ────────────────────────────────────────────────────────
@@ -747,6 +840,7 @@ function update(ts) {
 }
 
 function updatePlayer(dt) {
+  if (inventoryOpen) { player.vx = 0; return; }
   const spd = MOVE_SPEED + player.spd;
   let moving = false;
 
@@ -840,6 +934,7 @@ function updateEnemies(dt) {
       if (player.hp <= 0) {
         player.hp = 0;
         gameState = 'dead';
+        inventoryOpen = false; inventorySelectedSlot = -1;
       }
     }
   }
@@ -907,6 +1002,7 @@ function updateCamera() {
 function autoPickup() {
   for (let i = drops.length - 1; i >= 0; i--) {
     const d = drops[i];
+    if (!d.isMeso) continue; // only meso auto-picks; other items need F key
     if (d.vy !== 0 && Math.abs(d.vy) > 0.5) continue;
     const dist = Math.hypot(d.x - (player.x + player.w / 2), d.y - (player.y + player.h));
     if (dist < 35) {
@@ -977,6 +1073,7 @@ function draw() {
   if (gameState === 'dead') drawDeadScreen();
   if (gameState === 'levelup') drawLevelUp();
   if (gameState === 'nextmap') drawNextMap();
+  drawInventory();
 }
 
 function drawProjectile(p) {
@@ -1651,6 +1748,168 @@ function drawParticles() {
   }
 }
 
+function drawItemIcon(item, x, y, size) {
+  const cx = x + size / 2, cy = y + size / 2;
+  ctx.save();
+  ctx.shadowBlur = 6; ctx.shadowColor = item.color;
+  if (item.healHp || item.healMp) {
+    // Potion bottle
+    const bw = Math.max(4, Math.round(size * 0.34)), bh = Math.max(5, Math.round(size * 0.52));
+    const bx = cx - bw / 2, by = cy - bh / 2 + 3;
+    ctx.fillStyle = item.color;
+    roundRect(ctx, bx, by, bw, bh, 2); ctx.fill();
+    ctx.fillStyle = shadeColor(item.color, -30);
+    ctx.fillRect(cx - bw * 0.22, by - bh * 0.18, bw * 0.44, bh * 0.18);
+    ctx.fillStyle = '#c87a30';
+    ctx.fillRect(cx - bw * 0.18, by - bh * 0.26, bw * 0.36, Math.max(2, bh * 0.1));
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.fillRect(bx + 2, by + 3, Math.max(2, Math.round(bw * 0.28)), Math.max(2, Math.round(bh * 0.36)));
+  } else if (item.stat === 'atk') {
+    // Sword
+    const sh = Math.round(size * 0.68);
+    ctx.fillStyle = '#c8d0e0';
+    ctx.fillRect(cx - 2, cy - sh * 0.55, 4, sh);
+    ctx.fillStyle = item.color;
+    ctx.fillRect(cx - size * 0.25, cy - 1, size * 0.5, 4);
+    ctx.fillStyle = '#6a3a18';
+    ctx.fillRect(cx - 2, cy + 3, 4, Math.round(size * 0.2));
+    ctx.fillStyle = '#e8f0ff';
+    ctx.beginPath();
+    ctx.moveTo(cx - 2, cy - sh * 0.55);
+    ctx.lineTo(cx + 2, cy - sh * 0.55);
+    ctx.lineTo(cx, cy - sh * 0.55 - 5);
+    ctx.fill();
+  } else if (item.stat === 'spd') {
+    // Shoe
+    const sw = Math.round(size * 0.52);
+    ctx.fillStyle = item.color;
+    ctx.fillRect(cx - sw * 0.5, cy + size * 0.06, sw, Math.round(size * 0.26));
+    ctx.beginPath();
+    ctx.arc(cx - sw * 0.07, cy + size * 0.06, sw * 0.44, Math.PI, 0);
+    ctx.fill();
+    ctx.fillStyle = shadeColor(item.color, 30);
+    ctx.fillRect(cx - sw * 0.28, cy - size * 0.15, sw * 0.26, Math.round(size * 0.18));
+  }
+  ctx.restore();
+}
+
+function drawEquipSlot(label, item, x, y, w, h) {
+  ctx.fillStyle = item ? 'rgba(50,28,95,0.75)' : 'rgba(18,8,42,0.75)';
+  roundRect(ctx, x, y, w, h, 4); ctx.fill();
+  ctx.strokeStyle = item ? '#9060dd' : '#3a2060';
+  ctx.lineWidth = 1;
+  roundRect(ctx, x, y, w, h, 4); ctx.stroke();
+  ctx.fillStyle = '#888'; ctx.font = '9px monospace'; ctx.textAlign = 'center';
+  ctx.fillText(label, x + w / 2, y + 12);
+  if (item) {
+    drawItemIcon(item, x + w / 2 - 20, y + 14, 40);
+    ctx.fillStyle = item.color; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center';
+    ctx.fillText(`+${item.statVal} ${item.stat.toUpperCase()}`, x + w / 2, y + h - 5);
+  } else {
+    ctx.fillStyle = '#444'; ctx.font = '11px monospace'; ctx.textAlign = 'center';
+    ctx.fillText('[ Empty ]', x + w / 2, y + h / 2 + 4);
+  }
+}
+
+function drawInventory() {
+  if (!inventoryOpen) return;
+  const PW = 480, PH = 340, PX = W / 2 - 240, PY = H / 2 - 170;
+
+  // Dim overlay
+  ctx.fillStyle = 'rgba(0,0,0,0.58)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Panel
+  ctx.fillStyle = 'rgba(12,5,28,0.97)';
+  roundRect(ctx, PX, PY, PW, PH, 10); ctx.fill();
+  ctx.strokeStyle = '#6030a0'; ctx.lineWidth = 2;
+  roundRect(ctx, PX, PY, PW, PH, 10); ctx.stroke();
+
+  // Title bar
+  ctx.fillStyle = 'rgba(45,18,90,0.92)';
+  roundRect(ctx, PX + 2, PY + 2, PW - 4, 34, 8); ctx.fill();
+  ctx.fillStyle = '#FFD700'; ctx.font = 'bold 14px monospace'; ctx.textAlign = 'left';
+  ctx.fillText('INVENTORY', PX + 14, PY + 23);
+  ctx.fillStyle = '#aaa'; ctx.font = '11px monospace'; ctx.textAlign = 'right';
+  ctx.fillText(`${player.inventory.length}/20`, PX + PW - 42, PY + 23);
+
+  // Close ✕
+  ctx.fillStyle = '#7a2020';
+  roundRect(ctx, PX + PW - 32, PY + 7, 24, 22, 4); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 16px monospace'; ctx.textAlign = 'center';
+  ctx.fillText('✕', PX + PW - 20, PY + 22);
+
+  // Item grid (5 cols × 4 rows)
+  const SLOT = 52, GAP = 4, GX = PX + 16, GY = PY + 44;
+  for (let row = 0; row < 4; row++) {
+    for (let col = 0; col < 5; col++) {
+      const idx = row * 5 + col;
+      const sx = GX + col * (SLOT + GAP), sy = GY + row * (SLOT + GAP);
+      const item = player.inventory[idx];
+      const sel = idx === inventorySelectedSlot;
+      ctx.fillStyle = sel ? 'rgba(90,50,180,0.55)' : 'rgba(22,10,48,0.85)';
+      roundRect(ctx, sx, sy, SLOT, SLOT, 4); ctx.fill();
+      ctx.strokeStyle = sel ? '#c090ff' : (item ? '#5a3a9a' : '#2e1660');
+      ctx.lineWidth = sel ? 2 : 1;
+      roundRect(ctx, sx, sy, SLOT, SLOT, 4); ctx.stroke();
+      if (item) drawItemIcon(item, sx + 3, sy + 3, SLOT - 6);
+    }
+  }
+
+  // Equipment panel (right side)
+  const EQX = PX + 300, EQY = PY + 44;
+  ctx.fillStyle = 'rgba(16,7,38,0.93)';
+  roundRect(ctx, EQX, EQY, 164, 220, 6); ctx.fill();
+  ctx.strokeStyle = '#4828a0'; ctx.lineWidth = 1;
+  roundRect(ctx, EQX, EQY, 164, 220, 6); ctx.stroke();
+  ctx.fillStyle = '#bb88ff'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center';
+  ctx.fillText('EQUIPMENT', EQX + 82, EQY + 16);
+
+  drawEquipSlot('Weapon', player.equip.weapon, EQX + 10, EQY + 24, 144, 72);
+  drawEquipSlot('Shoes', player.equip.shoes, EQX + 10, EQY + 106, 144, 72);
+
+  const bAtk = player.equip.weapon ? player.equip.weapon.statVal : 0;
+  const bSpd = player.equip.shoes ? player.equip.shoes.statVal : 0;
+  ctx.fillStyle = '#888'; ctx.font = '10px monospace'; ctx.textAlign = 'center';
+  ctx.fillText(`Bonus ATK: +${bAtk}`, EQX + 82, EQY + 192);
+  ctx.fillText(`Bonus SPD: +${bSpd}`, EQX + 82, EQY + 208);
+
+  // Selected item info strip
+  const INFO_Y = PY + 276;
+  ctx.fillStyle = 'rgba(16,7,38,0.88)';
+  roundRect(ctx, PX + 16, INFO_Y, PW - 32, 52, 4); ctx.fill();
+  ctx.strokeStyle = '#3a1880'; ctx.lineWidth = 1;
+  roundRect(ctx, PX + 16, INFO_Y, PW - 32, 52, 4); ctx.stroke();
+
+  const sit = inventorySelectedSlot >= 0 ? player.inventory[inventorySelectedSlot] : null;
+  if (sit) {
+    ctx.fillStyle = sit.color; ctx.font = 'bold 12px monospace'; ctx.textAlign = 'left';
+    ctx.fillText(sit.name, PX + 26, INFO_Y + 16);
+    ctx.fillStyle = '#bbb'; ctx.font = '10px monospace';
+    let desc;
+    if (sit.isEquip) {
+      desc = `${sit.stat === 'atk' ? 'ATK' : 'SPD'} +${sit.statVal}  ·  tap slot again to equip`;
+    } else {
+      const parts = [];
+      if (sit.healHp) parts.push(`HP+${sit.healHp}`);
+      if (sit.healMp) parts.push(`MP+${sit.healMp}`);
+      desc = parts.join('  ') + '  ·  tap slot again to use';
+    }
+    ctx.fillText(desc, PX + 26, INFO_Y + 32);
+    // Action button
+    ctx.fillStyle = sit.isEquip ? '#4828a0' : '#8a2020';
+    roundRect(ctx, PX + PW - 120, INFO_Y + 12, 88, 28, 4); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center';
+    ctx.fillText(sit.isEquip ? 'EQUIP' : 'USE', PX + PW - 76, INFO_Y + 30);
+  } else {
+    ctx.fillStyle = '#555'; ctx.font = '10px monospace'; ctx.textAlign = 'center';
+    ctx.fillText('Tap a slot to select  ·  tap again or press USE to use/equip  ·  F to pick up drops', PX + PW / 2, INFO_Y + 28);
+  }
+
+  ctx.fillStyle = '#444'; ctx.font = '9px monospace'; ctx.textAlign = 'center';
+  ctx.fillText('[I] or [✕] to close', PX + PW / 2, PY + PH - 7);
+}
+
 function drawHUD() {
   // Background panel
   ctx.fillStyle = 'rgba(0,0,0,0.7)';
@@ -1747,7 +2006,7 @@ function drawHUD() {
   ctx.fillStyle = '#888';
   ctx.font = '10px monospace';
   ctx.textAlign = 'center';
-  ctx.fillText('←→ Move  ↑/Space Jump (×2)  Z Attack  Q/E/R ' + player.cls.name + ' skills  F Pickup  ↓ Drop', W / 2, H - 8);
+  ctx.fillText('←→ Move  Space Jump  Z Atk  Q/E/R Skills  F Pick  I Inv  ↓ Drop thru', W / 2, H - 8);
 }
 
 function drawSkillBar() {
