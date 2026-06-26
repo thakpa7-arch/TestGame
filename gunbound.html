@@ -88,9 +88,9 @@
       <h1>GUNBOUND</h1>
       <p>Turn-based artillery duel. Aim with angle &amp; power, mind the wind, and blast your opponent's mobile off the map. Two players take turns — or face the CPU.</p>
       <div class="legend">
-        <div><kbd>←</kbd><kbd>→</kbd> Aim angle</div>
-        <div>Hold <kbd>Space</kbd> Charge power</div>
-        <div>Release <kbd>Space</kbd> Fire</div>
+        <div><kbd>←</kbd><kbd>→</kbd> Drive mobile</div>
+        <div><kbd>↑</kbd><kbd>↓</kbd> Aim angle</div>
+        <div>Hold <kbd>Space</kbd> Charge &amp; fire</div>
         <div><kbd>1</kbd><kbd>2</kbd> Switch weapon</div>
       </div>
       <button class="btn" id="startBtn">START — vs CPU</button>
@@ -98,7 +98,7 @@
     </div>
   </div>
   <div id="hud">
-    <span><kbd>←</kbd><kbd>→</kbd> aim &nbsp; hold <kbd>Space</kbd> to charge &amp; release to fire &nbsp; <kbd>1</kbd>/<kbd>2</kbd> weapon</span><br>
+    <span><kbd>←</kbd><kbd>→</kbd> drive &nbsp; <kbd>↑</kbd><kbd>↓</kbd> aim &nbsp; hold <kbd>Space</kbd> to charge &amp; release to fire &nbsp; <kbd>1</kbd>/<kbd>2</kbd> weapon</span><br>
     <span id="status">Press START to play</span>
   </div>
 </div>
@@ -361,6 +361,10 @@ const WEAPONS = [
   { name: 'Triple Split', radius: 22, damage: 16, color: '#9fe8ff', trail: '#5bc0ff', shots: 3 },
 ];
 
+const MOVE_BUDGET = 130;   // pixels of travel allowed per turn
+const MOVE_SPEED  = 1.1;   // px per frame while driving
+const MAX_SLOPE   = 9;     // max ground-height change per step (can't climb cliffs)
+
 // ---------------------------------------------------------------------------
 //  GAME STATE
 // ---------------------------------------------------------------------------
@@ -377,8 +381,8 @@ function newGame(vsCpu) {
     power: 0,
     powerDir: 1,
     players: [
-      { x: p0x, angle: 45, hp: 100, art: 0, name: 'BLUE' },
-      { x: p1x, angle: 135, hp: 100, art: 1, name: 'RED' },
+      { x: p0x, angle: 45, hp: 100, art: 0, name: 'BLUE', move: MOVE_BUDGET, facing: 1, aimDir: 1 },
+      { x: p1x, angle: 135, hp: 100, art: 1, name: 'RED', move: MOVE_BUDGET, facing: -1, aimDir: -1 },
     ],
     weapon: 0,
     projectiles: [],
@@ -399,6 +403,23 @@ function newGame(vsCpu) {
 
 function settlePlayers() {
   for (const p of state.players) p.y = terrain.heightAt(p.x) - 16;
+}
+
+// Drive the mobile along the terrain. Costs movement budget; blocked by the
+// map edges, the other mobile, and cliffs too steep to climb.
+function moveMobile(p, dir) {
+  if (p.move <= 0) return;
+  const nx = p.x + dir * MOVE_SPEED;
+  if (nx < 26 || nx > W - 26) return;
+  const other = state.players[1 - state.players.indexOf(p)];
+  if (Math.abs(nx - other.x) < 40) return;                 // don't bump into foe
+  const curGround = terrain.heightAt(p.x);
+  const newGround = terrain.heightAt(nx);
+  if (Math.abs(newGround - curGround) > MAX_SLOPE) return; // too steep
+  p.x = nx;
+  p.y = newGround - 16;
+  p.facing = dir;
+  p.move -= MOVE_SPEED;
 }
 
 // ---------------------------------------------------------------------------
@@ -544,8 +565,14 @@ function update() {
   // aim input
   if (state.phase === 'aim' && !isCpuTurn()) {
     const p = state.players[state.turn];
-    if (keys['ArrowLeft'])  p.angle = Math.min(175, p.angle + 1.4);
-    if (keys['ArrowRight']) p.angle = Math.max(5, p.angle - 1.4);
+    // Up/Down raise/lower the barrel (per-side, so Up always raises elevation)
+    if (keys['ArrowUp'])   p.angle = Math.max(5, Math.min(175, p.angle + 1.4 * p.aimDir));
+    if (keys['ArrowDown']) p.angle = Math.max(5, Math.min(175, p.angle - 1.4 * p.aimDir));
+    // Left/Right drive the mobile (only while not charging a shot)
+    if (!state.charging) {
+      if (keys['ArrowLeft'])  moveMobile(p, -1);
+      if (keys['ArrowRight']) moveMobile(p, 1);
+    }
     if (state.charging) {
       state.power += state.powerDir * 1.5;
       if (state.power >= 100) { state.power = 100; state.powerDir = -1; }
@@ -623,6 +650,7 @@ function update() {
       state.turn = 1 - state.turn;
       state.wind = (Math.random()*2 - 1) * 0.10;
       state.power = 0; state.powerDir = 1; state.charging = false;
+      state.players[state.turn].move = MOVE_BUDGET; // refill movement
       state.phase = 'aim';
       updateStatus();
     }
@@ -763,6 +791,17 @@ function drawAimUI() {
   roundRect(ctx, px, py, pw, ph, 5); ctx.stroke();
   ctx.fillStyle = '#fff'; ctx.font = 'bold 11px monospace';
   ctx.fillText('POWER', px, py - 6);
+
+  // movement / fuel bar
+  const mx = px + pw + 24, mw = 150;
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  roundRect(ctx, mx-2, py-2, mw+4, ph+4, 5); ctx.fill();
+  ctx.fillStyle = p.move > 0 ? '#6bd3ff' : '#55607a';
+  roundRect(ctx, mx, py, mw*(p.move/MOVE_BUDGET), ph, 5); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 1;
+  roundRect(ctx, mx, py, mw, ph, 5); ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 11px monospace';
+  ctx.fillText('MOVE  ' + (keys['ArrowLeft']||keys['ArrowRight'] ? '' : '◄ ►'), mx, py - 6);
 }
 
 function drawWind() {
