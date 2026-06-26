@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GunBound — Artillery Battle</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    background: #0b1020;
+    font-family: "Trebuchet MS", Verdana, sans-serif;
+    color: #fff;
+    overflow: hidden;
+  }
+  #wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 10px;
+  }
+  #title {
+    font-size: 26px;
+    font-weight: bold;
+    letter-spacing: 3px;
+    text-shadow: 0 2px 0 #1a2a6c, 0 0 18px #3a6cff;
+    color: #ffd86b;
+  }
+  #title span { color: #6bd3ff; }
+  #game {
+    position: relative;
+    border: 3px solid #2a3a6c;
+    border-radius: 8px;
+    box-shadow: 0 0 40px rgba(60,120,255,.35), inset 0 0 60px rgba(0,0,0,.4);
+    background: #000;
+  }
+  canvas { display: block; border-radius: 6px; }
+  #hud {
+    font-size: 13px;
+    color: #9fb3d8;
+    text-align: center;
+    line-height: 1.6;
+  }
+  #hud b { color: #ffd86b; }
+  kbd {
+    background: #1a2747;
+    border: 1px solid #2f456f;
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-family: monospace;
+    color: #cfe0ff;
+    font-size: 12px;
+  }
+  #overlay {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 16px;
+    background: rgba(6,10,28,.78);
+    backdrop-filter: blur(2px);
+    text-align: center;
+    border-radius: 6px;
+  }
+  #overlay h1 { font-size: 40px; color: #ffd86b; text-shadow: 0 3px 0 #1a2a6c; letter-spacing: 2px; }
+  #overlay p { color: #b9c8e8; max-width: 480px; line-height: 1.7; font-size: 14px; }
+  .btn {
+    background: linear-gradient(#3a7bff, #2a4cff);
+    border: none; color: #fff; font-weight: bold;
+    padding: 12px 30px; border-radius: 24px; cursor: pointer;
+    font-size: 16px; letter-spacing: 1px;
+    box-shadow: 0 4px 0 #1a2a8c, 0 6px 18px rgba(40,80,255,.5);
+    transition: transform .08s;
+  }
+  .btn:active { transform: translateY(3px); box-shadow: 0 1px 0 #1a2a8c; }
+  .legend { display:flex; gap:18px; flex-wrap:wrap; justify-content:center; }
+  .legend div { color:#9fb3d8; font-size:13px; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="title">GUN<span>BOUND</span></div>
+  <div id="game">
+    <canvas id="canvas" width="900" height="540"></canvas>
+    <div id="overlay">
+      <h1>GUNBOUND</h1>
+      <p>Turn-based artillery duel. Aim with angle &amp; power, mind the wind, and blast your opponent's mobile off the map. Two players take turns — or face the CPU.</p>
+      <div class="legend">
+        <div><kbd>←</kbd><kbd>→</kbd> Aim angle</div>
+        <div>Hold <kbd>Space</kbd> Charge power</div>
+        <div>Release <kbd>Space</kbd> Fire</div>
+        <div><kbd>1</kbd><kbd>2</kbd> Switch weapon</div>
+      </div>
+      <button class="btn" id="startBtn">START — vs CPU</button>
+      <button class="btn" id="start2pBtn" style="background:linear-gradient(#ff7b3a,#ff4c2a);box-shadow:0 4px 0 #8c2a1a,0 6px 18px rgba(255,80,40,.5);">2 PLAYERS</button>
+    </div>
+  </div>
+  <div id="hud">
+    <span><kbd>←</kbd><kbd>→</kbd> aim &nbsp; hold <kbd>Space</kbd> to charge &amp; release to fire &nbsp; <kbd>1</kbd>/<kbd>2</kbd> weapon</span><br>
+    <span id="status">Press START to play</span>
+  </div>
+</div>
+
+<script>
+// ============================================================================
+//  GUNBOUND — single-file artillery game.  All art is drawn procedurally to
+//  offscreen canvases at load time ("art assets"), then blitted each frame.
+// ============================================================================
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+const GRAVITY = 0.32;
+
+// ---------------------------------------------------------------------------
+//  ART ASSET FACTORY  — build reusable sprite canvases once.
+// ---------------------------------------------------------------------------
+function makeCanvas(w, h) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  return c;
+}
+
+// Sky gradient with sun glow + soft mountains, painted to a full-size layer.
+function buildSky() {
+  const c = makeCanvas(W, H), g = c.getContext('2d');
+  const sky = g.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, '#2b1f5c');
+  sky.addColorStop(0.35, '#5b3f8f');
+  sky.addColorStop(0.6, '#c2627e');
+  sky.addColorStop(0.8, '#f7a25a');
+  sky.addColorStop(1, '#ffd27a');
+  g.fillStyle = sky;
+  g.fillRect(0, 0, W, H);
+
+  // sun glow
+  const sun = g.createRadialGradient(W*0.78, H*0.32, 10, W*0.78, H*0.32, 220);
+  sun.addColorStop(0, 'rgba(255,245,200,0.95)');
+  sun.addColorStop(0.2, 'rgba(255,210,140,0.55)');
+  sun.addColorStop(1, 'rgba(255,180,120,0)');
+  g.fillStyle = sun;
+  g.fillRect(0, 0, W, H);
+  g.beginPath();
+  g.arc(W*0.78, H*0.32, 46, 0, Math.PI*2);
+  g.fillStyle = '#fff4d0';
+  g.fill();
+
+  // stars in the upper-left dark area
+  g.fillStyle = 'rgba(255,255,255,0.8)';
+  for (let i = 0; i < 60; i++) {
+    const x = Math.random()*W, y = Math.random()*H*0.4;
+    const r = Math.random()*1.4;
+    g.globalAlpha = 0.3 + Math.random()*0.6;
+    g.fillRect(x, y, r, r);
+  }
+  g.globalAlpha = 1;
+
+  // layered silhouette mountains
+  const ranges = [
+    { y: H*0.62, h: 120, color: 'rgba(60,40,90,0.55)' },
+    { y: H*0.70, h: 150, color: 'rgba(40,28,70,0.65)' },
+  ];
+  for (const r of ranges) {
+    g.fillStyle = r.color;
+    g.beginPath();
+    g.moveTo(0, H);
+    let x = 0;
+    g.lineTo(0, r.y);
+    while (x < W) {
+      const peak = r.y - Math.random()*r.h;
+      x += 60 + Math.random()*80;
+      g.lineTo(x, peak);
+    }
+    g.lineTo(W, r.y);
+    g.lineTo(W, H);
+    g.closePath();
+    g.fill();
+  }
+  return c;
+}
+
+// A fluffy cloud sprite.
+function buildCloud(scale) {
+  const w = 140*scale, h = 70*scale;
+  const c = makeCanvas(w, h), g = c.getContext('2d');
+  g.fillStyle = 'rgba(255,255,255,0.85)';
+  const blobs = [[0.30,0.65,0.30],[0.50,0.5,0.40],[0.70,0.62,0.32],[0.45,0.7,0.34]];
+  for (const [bx,by,br] of blobs) {
+    g.beginPath();
+    g.arc(w*bx, h*by, h*br, 0, Math.PI*2);
+    g.fill();
+  }
+  return c;
+}
+
+// Draw a cute Gunbound-style mobile (tank) sprite facing right by default.
+// hue lets us recolor per player.
+function buildMobile(bodyColor, accent, trim) {
+  const w = 64, h = 48;
+  const c = makeCanvas(w, h), g = c.getContext('2d');
+  g.translate(2, 0);
+
+  // shadow
+  g.fillStyle = 'rgba(0,0,0,0.25)';
+  g.beginPath();
+  g.ellipse(30, 44, 26, 5, 0, 0, Math.PI*2);
+  g.fill();
+
+  // tracks
+  g.fillStyle = '#2a2f3a';
+  roundRect(g, 4, 30, 52, 14, 7); g.fill();
+  g.fillStyle = '#454c5c';
+  for (let i = 0; i < 6; i++) {
+    g.beginPath();
+    g.arc(11 + i*8, 37, 3.4, 0, Math.PI*2);
+    g.fill();
+  }
+
+  // body — rounded dome with gradient
+  const grad = g.createLinearGradient(0, 8, 0, 34);
+  grad.addColorStop(0, accent);
+  grad.addColorStop(1, bodyColor);
+  g.fillStyle = grad;
+  roundRect(g, 10, 12, 40, 22, 11); g.fill();
+
+  // body highlight
+  g.fillStyle = 'rgba(255,255,255,0.35)';
+  roundRect(g, 15, 15, 18, 6, 3); g.fill();
+
+  // trim stripe
+  g.fillStyle = trim;
+  roundRect(g, 12, 28, 36, 4, 2); g.fill();
+
+  // cockpit / eye
+  g.fillStyle = '#16263f';
+  g.beginPath(); g.arc(34, 22, 6.5, 0, Math.PI*2); g.fill();
+  g.fillStyle = '#7fd0ff';
+  g.beginPath(); g.arc(35.5, 20.5, 3, 0, Math.PI*2); g.fill();
+  g.fillStyle = '#fff';
+  g.beginPath(); g.arc(36.5, 19.5, 1.1, 0, Math.PI*2); g.fill();
+
+  // little antenna
+  g.strokeStyle = trim; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(18, 13); g.lineTo(15, 5); g.stroke();
+  g.fillStyle = '#ff5b6e';
+  g.beginPath(); g.arc(15, 4, 2.2, 0, Math.PI*2); g.fill();
+
+  return c;
+}
+
+// Cannon barrel sprite (drawn separately so it can rotate).
+function buildBarrel(color) {
+  const w = 34, h = 12;
+  const c = makeCanvas(w, h), g = c.getContext('2d');
+  const grad = g.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, '#dfe6f5');
+  grad.addColorStop(0.5, color);
+  grad.addColorStop(1, '#2a3550');
+  g.fillStyle = grad;
+  roundRect(g, 0, 2, 30, 8, 4); g.fill();
+  g.fillStyle = '#1b2740';
+  roundRect(g, 26, 0, 8, 12, 3); g.fill(); // muzzle
+  return c;
+}
+
+function roundRect(g, x, y, w, h, r) {
+  g.beginPath();
+  g.moveTo(x+r, y);
+  g.arcTo(x+w, y, x+w, y+h, r);
+  g.arcTo(x+w, y+h, x, y+h, r);
+  g.arcTo(x, y+h, x, y, r);
+  g.arcTo(x, y, x+w, y, r);
+  g.closePath();
+}
+
+// Build the asset library.
+const ART = {
+  sky: buildSky(),
+  clouds: [buildCloud(1), buildCloud(0.7), buildCloud(1.3)],
+  mobiles: [
+    { body: buildMobile('#2f6bd6', '#5b9bff', '#ffd86b'), barrel: buildBarrel('#5b9bff') },
+    { body: buildMobile('#d64f3f', '#ff8a6b', '#9fe86b'), barrel: buildBarrel('#ff8a6b') },
+  ],
+};
+
+// ---------------------------------------------------------------------------
+//  TERRAIN — heightmap, destructible.
+// ---------------------------------------------------------------------------
+const terrain = {
+  heights: new Float32Array(W),
+  surface: makeCanvas(W, H),
+  generate() {
+    // layered sine hills + noise
+    const base = H * 0.66;
+    const seedA = Math.random()*Math.PI*2;
+    const seedB = Math.random()*Math.PI*2;
+    for (let x = 0; x < W; x++) {
+      let y = base;
+      y += Math.sin(x*0.006 + seedA) * 60;
+      y += Math.sin(x*0.013 + seedB) * 28;
+      y += Math.sin(x*0.03 + seedA*2) * 12;
+      this.heights[x] = Math.min(H - 30, Math.max(H*0.4, y));
+    }
+    this.repaint();
+  },
+  repaint() {
+    const g = this.surface.getContext('2d');
+    g.clearRect(0, 0, W, H);
+    // dirt gradient body
+    const grad = g.createLinearGradient(0, H*0.4, 0, H);
+    grad.addColorStop(0, '#6b9c3a');
+    grad.addColorStop(0.04, '#4f7a2a');
+    grad.addColorStop(0.12, '#7a5230');
+    grad.addColorStop(1, '#3a2415');
+    g.fillStyle = grad;
+    g.beginPath();
+    g.moveTo(0, H);
+    for (let x = 0; x < W; x++) g.lineTo(x, this.heights[x]);
+    g.lineTo(W, H);
+    g.closePath();
+    g.fill();
+
+    // grass cap
+    g.strokeStyle = '#9cd14a';
+    g.lineWidth = 4;
+    g.beginPath();
+    g.moveTo(0, this.heights[0]);
+    for (let x = 1; x < W; x++) g.lineTo(x, this.heights[x]);
+    g.stroke();
+  },
+  // carve a crater at (cx,cy) radius r
+  carve(cx, cy, r) {
+    for (let x = Math.max(0, cx-r|0); x < Math.min(W, cx+r); x++) {
+      const dx = x - cx;
+      const dy = Math.sqrt(Math.max(0, r*r - dx*dx));
+      const top = cy - dy;
+      const bottom = cy + dy;
+      if (this.heights[x] < bottom) {
+        // lower terrain where crater bites in from above
+        this.heights[x] = Math.max(this.heights[x], bottom);
+        if (this.heights[x] > H) this.heights[x] = H;
+      }
+      if (top < this.heights[x] && bottom > this.heights[x]) {
+        this.heights[x] = Math.max(this.heights[x], bottom);
+      }
+    }
+    this.repaint();
+  },
+  heightAt(x) {
+    x = Math.max(0, Math.min(W-1, Math.round(x)));
+    return this.heights[x];
+  }
+};
+
+// ---------------------------------------------------------------------------
+//  WEAPONS
+// ---------------------------------------------------------------------------
+const WEAPONS = [
+  { name: 'Single Shot', radius: 30, damage: 28, color: '#ffe27a', trail: '#ffb14a', shots: 1 },
+  { name: 'Triple Split', radius: 22, damage: 16, color: '#9fe8ff', trail: '#5bc0ff', shots: 3 },
+];
+
+// ---------------------------------------------------------------------------
+//  GAME STATE
+// ---------------------------------------------------------------------------
+let state;
+function newGame(vsCpu) {
+  terrain.generate();
+  const p0x = 110, p1x = W - 110;
+  state = {
+    phase: 'aim',            // 'aim' | 'fire' | 'impact' | 'over'
+    vsCpu,
+    turn: 0,
+    wind: (Math.random()*2 - 1) * 0.10,
+    charging: false,
+    power: 0,
+    powerDir: 1,
+    players: [
+      { x: p0x, angle: 45, hp: 100, art: 0, name: 'BLUE' },
+      { x: p1x, angle: 135, hp: 100, art: 1, name: 'RED' },
+    ],
+    weapon: 0,
+    projectiles: [],
+    particles: [],
+    clouds: Array.from({length: 5}, () => ({
+      x: Math.random()*W, y: 40 + Math.random()*140,
+      spr: ART.clouds[(Math.random()*ART.clouds.length)|0],
+      vx: 0.15 + Math.random()*0.25,
+    })),
+    shake: 0,
+    cpuPlan: null,
+  };
+  settlePlayers();
+  window.__s = state; // debug/test hook
+  document.getElementById('overlay').classList.add('hidden');
+  updateStatus();
+}
+
+function settlePlayers() {
+  for (const p of state.players) p.y = terrain.heightAt(p.x) - 16;
+}
+
+// ---------------------------------------------------------------------------
+//  INPUT
+// ---------------------------------------------------------------------------
+const keys = {};
+document.addEventListener('keydown', e => {
+  if (!state || state.phase === 'over') return;
+  if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' '].includes(e.key)) e.preventDefault();
+  if (e.key === '1') state.weapon = 0;
+  if (e.key === '2') state.weapon = 1;
+  if (e.key === ' ' && state.phase === 'aim' && !isCpuTurn()) {
+    if (!state.charging) { state.charging = true; state.power = 0; state.powerDir = 1; }
+  }
+  keys[e.key] = true;
+  updateStatus();
+});
+document.addEventListener('keyup', e => {
+  keys[e.key] = false;
+  if (e.key === ' ' && state && state.charging && state.phase === 'aim' && !isCpuTurn()) {
+    state.charging = false;
+    fire(state.players[state.turn], state.power);
+  }
+});
+
+document.getElementById('startBtn').onclick = () => newGame(true);
+document.getElementById('start2pBtn').onclick = () => newGame(false);
+
+function isCpuTurn() { return state.vsCpu && state.turn === 1; }
+
+// ---------------------------------------------------------------------------
+//  FIRING
+// ---------------------------------------------------------------------------
+function barrelTip(p) {
+  const rad = p.angle * Math.PI / 180;
+  // angle measured so 0 = right, 90 = up, 180 = left
+  const len = 26;
+  return {
+    x: p.x + Math.cos(rad) * len,
+    y: p.y - Math.sin(rad) * len,
+    rad,
+  };
+}
+
+function fire(p, power) {
+  const tip = barrelTip(p);
+  const speed = 4 + power * 0.16;             // power 0..100
+  const w = WEAPONS[state.weapon];
+  const spread = w.shots > 1 ? 0.12 : 0;
+  for (let i = 0; i < w.shots; i++) {
+    const off = (i - (w.shots-1)/2) * spread;
+    state.projectiles.push({
+      x: tip.x, y: tip.y,
+      vx: Math.cos(tip.rad + off) * speed,
+      vy: -Math.sin(tip.rad + off) * speed,
+      w,
+    });
+  }
+  state.phase = 'fire';
+  updateStatus();
+}
+
+function explode(x, y, w) {
+  terrain.carve(x, y, w.radius);
+  state.shake = Math.min(18, w.radius * 0.5);
+  // damage players
+  for (const p of state.players) {
+    const d = Math.hypot(p.x - x, p.y - y);
+    if (d < w.radius + 18) {
+      const dmg = w.damage * (1 - d / (w.radius + 18));
+      p.hp = Math.max(0, p.hp - dmg);
+    }
+  }
+  // particles
+  for (let i = 0; i < 28; i++) {
+    const a = Math.random()*Math.PI*2;
+    const sp = 1 + Math.random()*5;
+    state.particles.push({
+      x, y,
+      vx: Math.cos(a)*sp, vy: Math.sin(a)*sp - 1,
+      life: 1, r: 2 + Math.random()*4,
+      color: Math.random() < 0.5 ? '#ffd86b' : (Math.random()<0.5?'#ff7b3a':'#fff2b0'),
+    });
+  }
+  // smoke
+  for (let i = 0; i < 10; i++) {
+    state.particles.push({
+      x: x + (Math.random()*20-10), y: y + (Math.random()*20-10),
+      vx: (Math.random()*2-1)*0.5, vy: -0.5 - Math.random(),
+      life: 1.4, r: 6 + Math.random()*8, smoke: true,
+      color: 'rgba(80,80,90,0.5)',
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+//  CPU AI — pick a power that roughly lands near the target, with some error.
+// ---------------------------------------------------------------------------
+function cpuTakeTurn() {
+  const me = state.players[1], foe = state.players[0];
+  // aim roughly toward target (mirror: barrel points left)
+  let bestPower = 60, bestAngle = 130, bestErr = Infinity;
+  for (let ang = 100; ang <= 160; ang += 5) {
+    for (let pw = 30; pw <= 100; pw += 5) {
+      const err = simulateLanding(me, ang, pw, foe.x);
+      if (err < bestErr) { bestErr = err; bestPower = pw; bestAngle = ang; }
+    }
+  }
+  // add human-ish imperfection
+  me.angle = bestAngle + (Math.random()*8 - 4);
+  const aimPower = bestPower + (Math.random()*14 - 7);
+  state.cpuPlan = { power: Math.max(20, Math.min(100, aimPower)), t: 0, charge: 0 };
+}
+
+function simulateLanding(p, angle, power, targetX) {
+  const rad = angle * Math.PI / 180;
+  const speed = 4 + power * 0.16;
+  let x = p.x + Math.cos(rad)*26;
+  let y = p.y - Math.sin(rad)*26;
+  let vx = Math.cos(rad)*speed, vy = -Math.sin(rad)*speed;
+  for (let t = 0; t < 600; t++) {
+    vx += state.wind; vy += GRAVITY;
+    x += vx; y += vy;
+    if (x < 0 || x > W) return Math.abs(x - targetX) + 200;
+    if (y >= terrain.heightAt(x)) return Math.abs(x - targetX);
+  }
+  return Math.abs(x - targetX) + 500;
+}
+
+// ---------------------------------------------------------------------------
+//  UPDATE
+// ---------------------------------------------------------------------------
+function update() {
+  if (!state || state.phase === 'over') return;
+
+  // clouds drift
+  for (const cl of state.clouds) {
+    cl.x += cl.vx + state.wind*4;
+    if (cl.x > W + 80) cl.x = -160;
+    if (cl.x < -160) cl.x = W + 80;
+  }
+
+  // aim input
+  if (state.phase === 'aim' && !isCpuTurn()) {
+    const p = state.players[state.turn];
+    if (keys['ArrowLeft'])  p.angle = Math.min(175, p.angle + 1.4);
+    if (keys['ArrowRight']) p.angle = Math.max(5, p.angle - 1.4);
+    if (state.charging) {
+      state.power += state.powerDir * 1.5;
+      if (state.power >= 100) { state.power = 100; state.powerDir = -1; }
+      if (state.power <= 0)   { state.power = 0; state.powerDir = 1; }
+    }
+  }
+
+  // CPU turn handling
+  if (state.phase === 'aim' && isCpuTurn()) {
+    if (!state.cpuPlan) { cpuTakeTurn(); }
+    else {
+      state.cpuPlan.t++;
+      if (state.cpuPlan.t > 40) {
+        // charge visibly then fire
+        state.charging = true;
+        state.power = Math.min(state.cpuPlan.power, state.power + 1.6);
+        if (state.power >= state.cpuPlan.power) {
+          state.charging = false;
+          fire(state.players[1], state.power);
+          state.cpuPlan = null;
+        }
+      }
+    }
+  }
+
+  // projectiles
+  for (const pr of state.projectiles) {
+    pr.vx += state.wind;
+    pr.vy += GRAVITY;
+    pr.x += pr.vx;
+    pr.y += pr.vy;
+    pr.trail = pr.trail || [];
+    pr.trail.push({x: pr.x, y: pr.y});
+    if (pr.trail.length > 12) pr.trail.shift();
+
+    let hit = false;
+    if (pr.y >= terrain.heightAt(pr.x)) hit = true;
+    if (pr.x < -40 || pr.x > W+40 || pr.y > H+40) pr.dead = true;
+    for (const p of state.players) {
+      if (Math.hypot(p.x - pr.x, p.y - pr.y) < 16) hit = true;
+    }
+    if (hit) { explode(pr.x, pr.y, pr.w); pr.dead = true; }
+  }
+  state.projectiles = state.projectiles.filter(p => !p.dead);
+
+  // particles
+  for (const pt of state.particles) {
+    pt.x += pt.vx; pt.y += pt.vy;
+    if (!pt.smoke) pt.vy += 0.12;
+    else { pt.vy -= 0.01; pt.r += 0.3; }
+    pt.life -= pt.smoke ? 0.018 : 0.03;
+  }
+  state.particles = state.particles.filter(p => p.life > 0);
+
+  // shake decays
+  if (state.shake > 0) state.shake *= 0.86;
+
+  // phase transitions
+  if (state.phase === 'fire' && state.projectiles.length === 0) {
+    state.phase = 'impact';
+    state.impactTimer = 30;
+  }
+  if (state.phase === 'impact') {
+    settlePlayers(); // mobiles fall onto reshaped terrain
+    if (--state.impactTimer <= 0 && state.particles.length < 4) {
+      // check win
+      const dead = state.players.filter(p => p.hp <= 0);
+      if (dead.length > 0) {
+        state.phase = 'over';
+        state.winner = state.players.find(p => p.hp > 0);
+        updateStatus();
+        return;
+      }
+      // next turn
+      state.turn = 1 - state.turn;
+      state.wind = (Math.random()*2 - 1) * 0.10;
+      state.power = 0; state.powerDir = 1; state.charging = false;
+      state.phase = 'aim';
+      updateStatus();
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+//  DRAW
+// ---------------------------------------------------------------------------
+function draw() {
+  ctx.save();
+  if (state && state.shake > 0.5) {
+    ctx.translate((Math.random()*2-1)*state.shake, (Math.random()*2-1)*state.shake);
+  }
+
+  // sky
+  ctx.drawImage(ART.sky, 0, 0);
+
+  if (state) {
+    // clouds
+    for (const cl of state.clouds) ctx.drawImage(cl.spr, cl.x, cl.y);
+
+    // terrain
+    ctx.drawImage(terrain.surface, 0, 0);
+
+    // players
+    for (let i = 0; i < state.players.length; i++) drawMobile(state.players[i], i === state.turn);
+
+    // projectiles
+    for (const pr of state.projectiles) {
+      ctx.strokeStyle = pr.w.trail;
+      ctx.lineWidth = 3; ctx.lineCap = 'round';
+      ctx.beginPath();
+      for (let i = 0; i < pr.trail.length; i++) {
+        const t = pr.trail[i];
+        if (i===0) ctx.moveTo(t.x, t.y); else ctx.lineTo(t.x, t.y);
+      }
+      ctx.stroke();
+      ctx.fillStyle = pr.w.color;
+      ctx.beginPath(); ctx.arc(pr.x, pr.y, 5, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(pr.x-1, pr.y-1, 1.8, 0, Math.PI*2); ctx.fill();
+    }
+
+    // particles
+    for (const pt of state.particles) {
+      ctx.globalAlpha = Math.max(0, Math.min(1, pt.life));
+      ctx.fillStyle = pt.color;
+      ctx.beginPath(); ctx.arc(pt.x, pt.y, pt.r, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // aim guide + power bar for current human player
+    if (state.phase === 'aim') drawAimUI();
+
+    drawWind();
+  }
+  ctx.restore();
+}
+
+function drawMobile(p, active) {
+  const art = ART.mobiles[p.art];
+  // barrel (rotated)
+  ctx.save();
+  ctx.translate(p.x, p.y - 4);
+  ctx.rotate(-p.angle * Math.PI / 180);
+  ctx.drawImage(art.barrel, 4, -6);
+  ctx.restore();
+
+  // body
+  ctx.drawImage(art.body, p.x - 32, p.y - 28);
+
+  // health bar
+  const bw = 46, bh = 6, bx = p.x - bw/2, by = p.y - 40;
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  roundRect(ctx, bx-1, by-1, bw+2, bh+2, 3); ctx.fill();
+  const hpFrac = p.hp/100;
+  ctx.fillStyle = hpFrac > 0.5 ? '#6be86b' : hpFrac > 0.25 ? '#ffd86b' : '#ff5b5b';
+  roundRect(ctx, bx, by, bw*hpFrac, bh, 3); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 10px Verdana';
+  ctx.textAlign = 'center';
+  ctx.fillText(p.name, p.x, by - 4);
+
+  // active turn indicator (bouncing arrow)
+  if (active && state.phase === 'aim') {
+    const yo = Math.sin(Date.now()/200)*4;
+    ctx.fillStyle = '#ffd86b';
+    ctx.beginPath();
+    ctx.moveTo(p.x, by - 16 + yo);
+    ctx.lineTo(p.x - 7, by - 26 + yo);
+    ctx.lineTo(p.x + 7, by - 26 + yo);
+    ctx.closePath(); ctx.fill();
+  }
+}
+
+function drawAimUI() {
+  const p = state.players[state.turn];
+  const tip = barrelTip(p);
+  // dotted trajectory preview
+  ctx.save();
+  ctx.setLineDash([2, 8]);
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  let x = tip.x, y = tip.y;
+  const previewPower = state.charging ? state.power : 55;
+  const speed = 4 + previewPower * 0.16;
+  let vx = Math.cos(tip.rad)*speed, vy = -Math.sin(tip.rad)*speed;
+  ctx.moveTo(x, y);
+  for (let i = 0; i < 60; i++) {
+    vx += state.wind; vy += GRAVITY;
+    x += vx; y += vy;
+    ctx.lineTo(x, y);
+    if (y > terrain.heightAt(x) || x < 0 || x > W) break;
+  }
+  ctx.stroke();
+  ctx.restore();
+
+  // angle readout
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 12px monospace';
+  ctx.textAlign = 'left';
+  const dispAngle = p.angle > 90 ? 180 - p.angle : p.angle;
+  ctx.fillText(`ANG ${Math.round(dispAngle)}°`, p.x + 20, p.y - 44);
+
+  // power bar
+  const px = 20, py = H - 26, pw = 220, ph = 14;
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  roundRect(ctx, px-2, py-2, pw+4, ph+4, 5); ctx.fill();
+  const grad = ctx.createLinearGradient(px, 0, px+pw, 0);
+  grad.addColorStop(0, '#6be86b');
+  grad.addColorStop(0.5, '#ffd86b');
+  grad.addColorStop(1, '#ff4c4c');
+  ctx.fillStyle = grad;
+  roundRect(ctx, px, py, pw*(state.power/100), ph, 5); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 1;
+  roundRect(ctx, px, py, pw, ph, 5); ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 11px monospace';
+  ctx.fillText('POWER', px, py - 6);
+}
+
+function drawWind() {
+  const cx = W - 90, cy = 34;
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  roundRect(ctx, cx-44, cy-18, 122, 34, 8); ctx.fill();
+  ctx.fillStyle = '#cfe0ff';
+  ctx.font = 'bold 11px monospace'; ctx.textAlign = 'left';
+  ctx.fillText('WIND', cx-38, cy+4);
+  const mag = Math.abs(state.wind) * 100;
+  const dir = state.wind >= 0 ? 1 : -1;
+  // arrow
+  const ax = cx + 8, ay = cy;
+  const len = 6 + mag * 2.6;
+  ctx.strokeStyle = mag > 6 ? '#ff8a6b' : '#9fe8ff';
+  ctx.lineWidth = 3; ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(ax - dir*len/2, ay);
+  ctx.lineTo(ax + dir*len/2, ay);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(ax + dir*len/2, ay);
+  ctx.lineTo(ax + dir*len/2 - dir*6, ay-5);
+  ctx.lineTo(ax + dir*len/2 - dir*6, ay+5);
+  ctx.closePath();
+  ctx.fillStyle = ctx.strokeStyle; ctx.fill();
+}
+
+// ---------------------------------------------------------------------------
+//  STATUS / OVERLAY
+// ---------------------------------------------------------------------------
+function updateStatus() {
+  const el = document.getElementById('status');
+  if (!state) return;
+  if (state.phase === 'over') {
+    el.innerHTML = `<b>${state.winner.name} WINS!</b> — Press START to play again`;
+    const ov = document.getElementById('overlay');
+    ov.classList.remove('hidden');
+    ov.querySelector('h1').textContent = state.winner.name + ' WINS!';
+    ov.querySelector('p').textContent = 'A glorious victory. Rematch?';
+    document.getElementById('startBtn').textContent = 'REMATCH — vs CPU';
+    return;
+  }
+  const p = state.players[state.turn];
+  const who = isCpuTurn() ? 'CPU (RED)' : `${p.name} (P${state.turn+1})`;
+  el.innerHTML = `Turn: <b>${who}</b> &nbsp;|&nbsp; Weapon: <b>${WEAPONS[state.weapon].name}</b> &nbsp;|&nbsp; ${state.players[0].name} ${Math.round(state.players[0].hp)}hp · ${state.players[1].name} ${Math.round(state.players[1].hp)}hp`;
+}
+
+// ---------------------------------------------------------------------------
+//  LOOP
+// ---------------------------------------------------------------------------
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// initial idle backdrop
+terrain.generate();
+loop();
+</script>
+</body>
+</html>
