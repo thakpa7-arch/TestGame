@@ -2,17 +2,57 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>MapleStory Clone</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { background: #1a0a2e; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: 'Courier New', monospace; overflow: hidden; }
-canvas { display: block; border: 2px solid #4a2a7a; image-rendering: pixelated; }
-#ui { position: absolute; top: 0; left: 0; width: 100%; pointer-events: none; }
+html, body { width: 100%; height: 100%; }
+body { background: #1a0a2e; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: 'Courier New', monospace; overflow: hidden; touch-action: none; -webkit-user-select: none; user-select: none; }
+canvas { display: block; border: 2px solid #4a2a7a; image-rendering: pixelated; max-width: 100vw; max-height: 100vh; max-height: 100dvh; }
+
+/* ─── Touch controls ─── */
+#touch { position: fixed; inset: 0; z-index: 10; pointer-events: none; display: none; }
+#touch.active { display: block; }
+.tbtn {
+  position: fixed;
+  pointer-events: auto;
+  display: flex; align-items: center; justify-content: center;
+  font-family: monospace; font-weight: bold; color: #fff; text-align: center; line-height: 1.1;
+  background: rgba(40, 20, 70, 0.5);
+  border: 2px solid rgba(150, 110, 210, 0.7);
+  border-radius: 50%;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none; user-select: none;
+  touch-action: none;
+  text-shadow: 0 1px 2px #000;
+}
+.tbtn small { font-size: 0.62em; opacity: 0.85; font-weight: normal; }
+.tbtn.held { background: rgba(130, 90, 210, 0.85); border-color: #cbb0ff; }
+/* Movement cluster — bottom left */
+#bLeft  { left: 16px;  bottom: 96px; width: 66px; height: 66px; font-size: 26px; }
+#bRight { left: 92px;  bottom: 96px; width: 66px; height: 66px; font-size: 26px; }
+#bDown  { left: 54px;  bottom: 22px; width: 66px; height: 66px; font-size: 13px; }
+/* Action cluster — bottom right */
+#bJump  { right: 16px; bottom: 96px; width: 78px; height: 78px; font-size: 13px; background: rgba(30,80,120,0.5); border-color: rgba(90,180,230,0.8); }
+#bAtk   { right: 104px; bottom: 116px; width: 66px; height: 66px; font-size: 13px; background: rgba(120,60,30,0.5); border-color: rgba(230,150,90,0.8); }
+/* Skills — right edge column */
+#bQ { right: 18px;  bottom: 192px; width: 50px; height: 50px; font-size: 12px; }
+#bE { right: 78px;  bottom: 214px; width: 50px; height: 50px; font-size: 12px; }
+#bR { right: 138px; bottom: 192px; width: 50px; height: 50px; font-size: 12px; }
 </style>
 </head>
 <body>
 <canvas id="canvas"></canvas>
+<div id="touch">
+  <div class="tbtn" id="bLeft"  data-code="ArrowLeft">◀</div>
+  <div class="tbtn" id="bRight" data-code="ArrowRight">▶</div>
+  <div class="tbtn" id="bDown"  data-code="ArrowDown">DROP<br><small>▼</small></div>
+  <div class="tbtn" id="bJump"  data-code="Space">JUMP<br><small>▲ ×2</small></div>
+  <div class="tbtn" id="bAtk"   data-code="KeyZ">ATK<br><small>Z</small></div>
+  <div class="tbtn" id="bQ" data-code="KeyQ">Q</div>
+  <div class="tbtn" id="bE" data-code="KeyE">E</div>
+  <div class="tbtn" id="bR" data-code="KeyR">R</div>
+</div>
 <script>
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
@@ -39,6 +79,35 @@ document.addEventListener('keydown', e => {
   e.preventDefault();
 });
 document.addEventListener('keyup', e => { keys[e.code] = false; });
+
+// ─── Touch controls ───────────────────────────────────────────────────────────
+// Reuse the keyboard model: held buttons set keys[code], presses fire handleKeyPress.
+(function setupTouch() {
+  const touchEl = document.getElementById('touch');
+  const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+  if (isTouch) touchEl.classList.add('active');
+
+  function pressCode(code) {
+    if (!keys[code]) {            // mirror the keydown debounce
+      keys[code] = true;
+      handleKeyPress(code);
+    }
+  }
+  function releaseCode(code) { keys[code] = false; }
+
+  document.querySelectorAll('.tbtn').forEach(btn => {
+    const code = btn.dataset.code;
+    const down = e => { e.preventDefault(); btn.classList.add('held'); pressCode(code); };
+    const up   = e => { e.preventDefault(); btn.classList.remove('held'); releaseCode(code); };
+    btn.addEventListener('touchstart', down, { passive: false });
+    btn.addEventListener('touchend', up, { passive: false });
+    btn.addEventListener('touchcancel', up, { passive: false });
+    // Mouse fallback for desktop testing
+    btn.addEventListener('mousedown', down);
+    btn.addEventListener('mouseup', up);
+    btn.addEventListener('mouseleave', e => { if (btn.classList.contains('held')) up(e); });
+  });
+})();
 
 // ─── Particle System ──────────────────────────────────────────────────────────
 const particles = [];
