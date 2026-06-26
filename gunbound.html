@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>GunBound — Artillery Battle</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -31,12 +31,14 @@
   #title span { color: #6bd3ff; }
   #game {
     position: relative;
+    /* scale to fit width AND height while keeping the 900:540 aspect ratio */
+    width: min(900px, 96vw, 125vh);
     border: 3px solid #2a3a6c;
     border-radius: 8px;
     box-shadow: 0 0 40px rgba(60,120,255,.35), inset 0 0 60px rgba(0,0,0,.4);
     background: #000;
   }
-  canvas { display: block; border-radius: 6px; }
+  canvas { display: block; width: 100%; height: auto; border-radius: 6px; }
   #hud {
     font-size: 13px;
     color: #9fb3d8;
@@ -77,6 +79,40 @@
   .legend { display:flex; gap:18px; flex-wrap:wrap; justify-content:center; }
   .legend div { color:#9fb3d8; font-size:13px; }
   .hidden { display: none !important; }
+
+  /* ---- Touch controls (shown only on touch devices) ---- */
+  #touch { position:absolute; inset:0; display:none; pointer-events:none;
+           user-select:none; -webkit-user-select:none; }
+  body.touch.playing #touch { display:block; }
+  .tbtn {
+    pointer-events:auto; touch-action:none;
+    display:flex; align-items:center; justify-content:center;
+    background:rgba(20,32,60,.55); border:2px solid rgba(140,180,255,.5);
+    color:#dce8ff; font-weight:bold; border-radius:14px;
+    backdrop-filter:blur(2px); cursor:pointer;
+    -webkit-tap-highlight-color:transparent; user-select:none;
+  }
+  .tbtn:active { background:rgba(90,140,255,.75); transform:scale(.94); }
+  #dpad {
+    position:absolute; left:3%; bottom:5%;
+    width:38%; max-width:170px; aspect-ratio:1;
+    display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr); gap:5%;
+  }
+  #dpad .tbtn { font-size:clamp(16px,4.4vw,26px); }
+  #dpUp{grid-area:1/2} #dpLeft{grid-area:2/1} #dpRight{grid-area:2/3} #dpDown{grid-area:3/2}
+  #actions {
+    position:absolute; right:3%; bottom:5%;
+    display:flex; flex-direction:column; align-items:center; gap:4%;
+  }
+  #fireBtn {
+    width:clamp(64px,15vw,96px); aspect-ratio:1; border-radius:50%;
+    font-size:clamp(13px,2.6vw,16px); letter-spacing:1px;
+    background:rgba(255,90,60,.7); border-color:rgba(255,180,150,.7);
+    box-shadow:0 0 22px rgba(255,80,40,.5);
+  }
+  #fireBtn:active { background:rgba(255,130,90,.95); }
+  #wpnBtn { width:clamp(52px,11vw,66px); height:clamp(30px,6vw,40px);
+            font-size:clamp(11px,2.2vw,14px); }
 </style>
 </head>
 <body>
@@ -84,6 +120,18 @@
   <div id="title">GUN<span>BOUND</span></div>
   <div id="game">
     <canvas id="canvas" width="900" height="540"></canvas>
+    <div id="touch">
+      <div id="dpad">
+        <div class="tbtn" id="dpUp">▲</div>
+        <div class="tbtn" id="dpLeft">◄</div>
+        <div class="tbtn" id="dpRight">►</div>
+        <div class="tbtn" id="dpDown">▼</div>
+      </div>
+      <div id="actions">
+        <div class="tbtn" id="wpnBtn">WPN</div>
+        <div class="tbtn" id="fireBtn">FIRE</div>
+      </div>
+    </div>
     <div id="overlay">
       <h1>GUNBOUND</h1>
       <p>Turn-based artillery duel. Aim with angle &amp; power, mind the wind, and blast your opponent's mobile off the map. Two players take turns — or face the CPU.</p>
@@ -398,6 +446,7 @@ function newGame(vsCpu) {
   settlePlayers();
   window.__s = state; // debug/test hook
   document.getElementById('overlay').classList.add('hidden');
+  document.body.classList.add('playing');
   updateStatus();
 }
 
@@ -449,6 +498,56 @@ document.getElementById('startBtn').onclick = () => newGame(true);
 document.getElementById('start2pBtn').onclick = () => newGame(false);
 
 function isCpuTurn() { return state.vsCpu && state.turn === 1; }
+
+// --- Touch / pointer controls -------------------------------------------------
+// Reuse the same `keys` map and charge/fire logic the keyboard drives, so the
+// game loop needs no special-casing for touch.
+if (('ontouchstart' in window) || navigator.maxTouchPoints > 0) {
+  document.body.classList.add('touch');
+}
+function capture(el, e) {
+  try { el.setPointerCapture && el.setPointerCapture(e.pointerId); } catch (_) {}
+}
+function bindHold(id, key) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    capture(el, e);
+    keys[key] = true;
+  });
+  const release = e => { e.preventDefault(); keys[key] = false; };
+  el.addEventListener('pointerup', release);
+  el.addEventListener('pointercancel', release);
+}
+bindHold('dpUp', 'ArrowUp');
+bindHold('dpDown', 'ArrowDown');
+bindHold('dpLeft', 'ArrowLeft');
+bindHold('dpRight', 'ArrowRight');
+
+const fireBtn = document.getElementById('fireBtn');
+if (fireBtn) {
+  fireBtn.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    capture(fireBtn, e);
+    if (!state || state.phase !== 'aim' || isCpuTurn()) return;
+    if (!state.charging) { state.charging = true; state.power = 0; state.powerDir = 1; }
+  });
+  const fireRelease = e => {
+    e.preventDefault();
+    if (!state || !state.charging || state.phase !== 'aim' || isCpuTurn()) return;
+    state.charging = false;
+    fire(state.players[state.turn], state.power);
+  };
+  fireBtn.addEventListener('pointerup', fireRelease);
+  fireBtn.addEventListener('pointercancel', fireRelease);
+}
+
+const wpnBtn = document.getElementById('wpnBtn');
+if (wpnBtn) wpnBtn.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  if (state) { state.weapon = (state.weapon + 1) % WEAPONS.length; updateStatus(); }
+});
 
 // ---------------------------------------------------------------------------
 //  FIRING
@@ -838,6 +937,7 @@ function updateStatus() {
   if (!state) return;
   if (state.phase === 'over') {
     el.innerHTML = `<b>${state.winner.name} WINS!</b> — Press START to play again`;
+    document.body.classList.remove('playing');
     const ov = document.getElementById('overlay');
     ov.classList.remove('hidden');
     ov.querySelector('h1').textContent = state.winner.name + ' WINS!';
