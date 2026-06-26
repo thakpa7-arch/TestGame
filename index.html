@@ -82,9 +82,11 @@ document.addEventListener('keyup', e => { keys[e.code] = false; });
 
 // ─── Touch controls ───────────────────────────────────────────────────────────
 // Reuse the keyboard model: held buttons set keys[code], presses fire handleKeyPress.
+let touchEl = null;
+const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
 (function setupTouch() {
-  const touchEl = document.getElementById('touch');
-  const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+  touchEl = document.getElementById('touch');
+  const isTouch = isTouchDevice;
   if (isTouch) touchEl.classList.add('active');
 
   function pressCode(code) {
@@ -108,6 +110,34 @@ document.addEventListener('keyup', e => { keys[e.code] = false; });
     btn.addEventListener('mouseleave', e => { if (btn.classList.contains('held')) up(e); });
   });
 })();
+
+// Tap directly on a class card to pick it (in addition to ◀ ▶ + confirm button).
+function canvasPoint(clientX, clientY) {
+  const r = canvas.getBoundingClientRect();
+  return { x: (clientX - r.left) * (W / r.width), y: (clientY - r.top) * (H / r.height) };
+}
+function handleCanvasTap(cx, cy) {
+  if (gameState === 'classselect') {
+    const cardW = 250, gap = 30;
+    const total = CLASSES.length * cardW + (CLASSES.length - 1) * gap;
+    const startX = W / 2 - total / 2;
+    for (let i = 0; i < CLASSES.length; i++) {
+      const x = startX + i * (cardW + gap);
+      if (cx >= x && cx <= x + cardW && cy >= 150 && cy <= 430) {
+        if (classHover === i) startGame(i); else classHover = i;
+        return;
+      }
+    }
+  }
+}
+canvas.addEventListener('click', e => { const p = canvasPoint(e.clientX, e.clientY); handleCanvasTap(p.x, p.y); });
+canvas.addEventListener('touchstart', e => {
+  if (gameState !== 'classselect') return;
+  e.preventDefault();
+  const t = e.changedTouches[0];
+  const p = canvasPoint(t.clientX, t.clientY);
+  handleCanvasTap(p.x, p.y);
+}, { passive: false });
 
 // ─── Particle System ──────────────────────────────────────────────────────────
 const particles = [];
@@ -151,18 +181,18 @@ const MAPS = [
       { x: 2050, y: 170, w: 200 },
     ],
     spawnEnemies: () => [
-      makeEnemy(500, 420, 'Slime', 30, 15, '#44cc44', 80),
-      makeEnemy(750, 420, 'Slime', 30, 15, '#44cc44', 80),
-      makeEnemy(1000, 420, 'Snail', 50, 25, '#ff9944', 100),
-      makeEnemy(1200, 420, 'Snail', 50, 25, '#ff9944', 100),
-      makeEnemy(1500, 420, 'Orange Mushroom', 80, 40, '#ff6622', 120),
-      makeEnemy(1700, 420, 'Orange Mushroom', 80, 40, '#ff6622', 120),
-      makeEnemy(1900, 420, 'Horned Mushroom', 130, 60, '#cc2244', 150),
-      makeEnemy(2100, 420, 'Horned Mushroom', 130, 60, '#cc2244', 150),
-      makeEnemy(480, 270, 'Slime', 30, 15, '#44cc44', 60),
-      makeEnemy(720, 210, 'Snail', 50, 25, '#ff9944', 80),
-      makeEnemy(1150, 230, 'Orange Mushroom', 80, 40, '#ff6622', 100),
-      makeEnemy(1600, 190, 'Horned Mushroom', 130, 60, '#cc2244', 110),
+      makeEnemy(500, 420, 'Snail', 30, 12, '#c08a3a', 70),
+      makeEnemy(750, 420, 'Blue Snail', 45, 18, '#5a7ad0', 90),
+      makeEnemy(1000, 420, 'Green Mushroom', 70, 30, '#5ac060', 110),
+      makeEnemy(1200, 420, 'Slime', 60, 28, '#7ad060', 100),
+      makeEnemy(1500, 420, 'Orange Mushroom', 90, 42, '#ff7a22', 130),
+      makeEnemy(1700, 420, 'Orange Mushroom', 90, 42, '#ff7a22', 130),
+      makeEnemy(1900, 420, 'Ribbon Pig', 130, 55, '#f0a0c0', 160),
+      makeEnemy(2100, 420, 'Pig', 110, 48, '#f0b8b0', 150),
+      makeEnemy(480, 270, 'Snail', 30, 12, '#c08a3a', 60),
+      makeEnemy(720, 210, 'Blue Snail', 45, 18, '#5a7ad0', 80),
+      makeEnemy(1150, 230, 'Orange Mushroom', 90, 42, '#ff7a22', 100),
+      makeEnemy(1600, 190, 'Stump', 120, 50, '#9a6a3a', 140),
     ],
     portal: { x: 2320, y: 390 },
     trees: [100,300,600,900,1100,1300,1600,1900,2200].map(x => ({ x })),
@@ -185,16 +215,16 @@ const MAPS = [
       { x: 2280, y: 280, w: 180 },
     ],
     spawnEnemies: () => [
-      makeEnemy(400, 420, 'Stone Golem', 200, 80, '#888877', 140),
-      makeEnemy(700, 420, 'Stone Golem', 200, 80, '#888877', 140),
-      makeEnemy(1000, 420, 'Iron Boar', 280, 110, '#996633', 160),
-      makeEnemy(1300, 420, 'Iron Boar', 280, 110, '#996633', 160),
-      makeEnemy(1600, 420, 'Drake', 400, 150, '#446688', 200),
-      makeEnemy(1900, 420, 'Drake', 400, 150, '#446688', 200),
-      makeEnemy(2200, 420, 'Drake', 400, 150, '#446688', 200),
-      makeEnemy(400, 260, 'Stone Golem', 200, 80, '#888877', 110),
-      makeEnemy(900, 290, 'Iron Boar', 280, 110, '#996633', 130),
-      makeEnemy(1580, 170, 'Drake', 400, 150, '#446688', 170),
+      makeEnemy(400, 420, 'Axe Stump', 200, 75, '#a07040', 150),
+      makeEnemy(700, 420, 'Dark Stump', 240, 90, '#6a4a6a', 170),
+      makeEnemy(1000, 420, 'Wild Boar', 280, 110, '#a07050', 180),
+      makeEnemy(1300, 420, 'Wild Boar', 280, 110, '#a07050', 180),
+      makeEnemy(1600, 420, 'Fire Boar', 360, 140, '#d05530', 220),
+      makeEnemy(1900, 420, 'Fire Boar', 360, 140, '#d05530', 220),
+      makeEnemy(2200, 420, 'Stone Golem', 480, 160, '#8a8a7a', 280),
+      makeEnemy(400, 260, 'Axe Stump', 200, 75, '#a07040', 120),
+      makeEnemy(900, 290, 'Wild Boar', 280, 110, '#a07050', 140),
+      makeEnemy(1580, 170, 'Fire Boar', 360, 140, '#d05530', 190),
     ],
     portal: { x: 2520, y: 390 },
     trees: [200,500,800,1100,1400,1700,2000,2300].map(x => ({ x, isRock: true })),
@@ -218,17 +248,17 @@ const MAPS = [
       { x: 2550, y: 150, w: 200 },
     ],
     spawnEnemies: () => [
-      makeEnemy(400, 420, 'Curse Eye', 350, 130, '#9933cc', 180),
-      makeEnemy(700, 420, 'Curse Eye', 350, 130, '#9933cc', 180),
-      makeEnemy(1000, 420, 'Dark Axe Stump', 550, 180, '#5533aa', 220),
-      makeEnemy(1300, 420, 'Dark Axe Stump', 550, 180, '#5533aa', 220),
-      makeEnemy(1600, 420, 'Zombie Mushroom', 700, 220, '#33aa66', 260),
-      makeEnemy(1900, 420, 'Zombie Mushroom', 700, 220, '#33aa66', 260),
-      makeEnemy(2200, 420, 'Jr. Balrog', 1000, 300, '#cc1133', 350),
-      makeEnemy(2500, 420, 'Jr. Balrog', 1000, 300, '#cc1133', 350),
-      makeEnemy(580, 170, 'Curse Eye', 350, 130, '#9933cc', 160),
-      makeEnemy(1300, 220, 'Dark Axe Stump', 550, 180, '#5533aa', 190),
-      makeEnemy(1800, 210, 'Zombie Mushroom', 700, 220, '#33aa66', 230),
+      makeEnemy(400, 420, 'Jr. Necki', 350, 120, '#5aa040', 200),
+      makeEnemy(700, 420, 'Curse Eye', 380, 135, '#c03040', 220),
+      makeEnemy(1000, 420, 'Evil Eye', 420, 150, '#9933cc', 240),
+      makeEnemy(1300, 420, 'Evil Eye', 420, 150, '#9933cc', 240),
+      makeEnemy(1600, 420, 'Zombie Mushroom', 600, 200, '#5a8a5a', 290),
+      makeEnemy(1900, 420, 'Zombie Mushroom', 600, 200, '#5a8a5a', 290),
+      makeEnemy(2200, 420, 'Wraith', 800, 250, '#5a5a8a', 340),
+      makeEnemy(2500, 420, 'Jr. Balrog', 1100, 320, '#cc1133', 420),
+      makeEnemy(580, 170, 'Curse Eye', 380, 135, '#c03040', 180),
+      makeEnemy(1300, 220, 'Jr. Necki', 350, 120, '#5aa040', 200),
+      makeEnemy(1800, 210, 'Wraith', 800, 250, '#5a5a8a', 280),
     ],
     portal: { x: 2720, y: 390 },
     trees: [150,400,650,900,1150,1400,1700,2000,2300,2600].map(x => ({ x, isGlow: true })),
@@ -287,19 +317,62 @@ function spawnDrop(x, y, mapId) {
   });
 }
 
+// ─── Classes (MapleStory job branches) ─────────────────────────────────────────
+// fx tags drive both behaviour and the visual effect rendered for each skill.
+const CLASSES = [
+  {
+    id: 'warrior', name: 'Warrior', weapon: 'sword',
+    color: '#c0303a', trim: '#f0d060', hair: '#5a2a10',
+    maxHp: 280, maxMp: 60, atk: 24, spd: 0,
+    hpPerLv: 50, mpPerLv: 10, atkPerLv: 6,
+    blurb: 'Tanky melee. Big swings, self-buff Rage.',
+    skills: [
+      { name: 'Power Strike', key: 'KeyQ', mpCost: 8,  dmgMult: 2.8, range: 90,  cooldown: 0, maxCd: 600,  color: '#ffd23a', fx: 'slash' },
+      { name: 'Slash Blast',  key: 'KeyE', mpCost: 16, dmgMult: 1.8, range: 150, cooldown: 0, maxCd: 1500, color: '#ff8a1e', fx: 'cleave', aoe: true },
+      { name: 'Rage',         key: 'KeyR', mpCost: 24, cooldown: 0, maxCd: 9000, color: '#ff3030', fx: 'buff', buffAtk: 1.5, buffDur: 6500 },
+    ],
+  },
+  {
+    id: 'magician', name: 'Magician', weapon: 'staff',
+    color: '#2f49c0', trim: '#86c8ff', hair: '#2a2a3a',
+    maxHp: 150, maxMp: 220, atk: 18, spd: 0,
+    hpPerLv: 24, mpPerLv: 42, atkPerLv: 5,
+    blurb: 'Glass cannon. Ranged bolts + Thunder AoE.',
+    skills: [
+      { name: 'Energy Bolt', key: 'KeyQ', mpCost: 6,  dmgMult: 2.4, cooldown: 0, maxCd: 380,  color: '#6fe0ff', fx: 'bolt',    projectile: true },
+      { name: 'Magic Claw',  key: 'KeyE', mpCost: 14, dmgMult: 1.6, cooldown: 0, maxCd: 800,  color: '#b070ff', fx: 'claw',    projectile: true, multi: 2 },
+      { name: 'Thunder Bolt',key: 'KeyR', mpCost: 28, dmgMult: 2.1, cooldown: 0, maxCd: 2400, color: '#ffe84a', fx: 'thunder', aoeFull: true },
+    ],
+  },
+  {
+    id: 'bowman', name: 'Bowman', weapon: 'bow',
+    color: '#2f9b46', trim: '#cfe96a', hair: '#caa030',
+    maxHp: 190, maxMp: 130, atk: 22, spd: 1,
+    hpPerLv: 34, mpPerLv: 24, atkPerLv: 6,
+    blurb: 'Fast & ranged. Multi-arrows + Arrow Rain.',
+    skills: [
+      { name: 'Arrow Blow',  key: 'KeyQ', mpCost: 6,  dmgMult: 2.5, cooldown: 0, maxCd: 420,  color: '#ffd46a', fx: 'arrow', projectile: true },
+      { name: 'Double Shot', key: 'KeyE', mpCost: 14, dmgMult: 1.5, cooldown: 0, maxCd: 760,  color: '#8effa0', fx: 'arrow', projectile: true, multi: 2 },
+      { name: 'Arrow Rain',  key: 'KeyR', mpCost: 30, dmgMult: 1.3, cooldown: 0, maxCd: 2800, color: '#7cc8ff', fx: 'rain', aoeFull: true },
+    ],
+  },
+];
+
 // ─── Player ───────────────────────────────────────────────────────────────────
 const player = {
   x: 120, y: 380,
-  w: 30, h: 40,
+  w: 30, h: 42,
   vx: 0, vy: 0,
   dir: 1,
   onGround: false,
   jumpsLeft: 2,
+  // Class
+  cls: CLASSES[0],
   // Stats
   level: 1, exp: 0, expNeeded: 100,
-  hp: 200, maxHp: 200,
-  mp: 100, maxMp: 100,
-  atk: 20, spd: 0,
+  hp: 280, maxHp: 280,
+  mp: 60, maxMp: 60,
+  atk: 24, baseAtk: 24, spd: 0,
   meso: 0,
   // State
   attacking: false,
@@ -309,27 +382,48 @@ const player = {
   animFrame: 0,
   animTimer: 0,
   state: 'idle',
-  // Skills
-  skills: [
-    { name: 'Power Strike', key: 'KeyQ', mpCost: 10, dmgMult: 2.5, cooldown: 0, maxCd: 1000, color: '#FFaa00' },
-    { name: 'Slash Blast', key: 'KeyE', mpCost: 20, dmgMult: 1.5, range: 120, cooldown: 0, maxCd: 2000, color: '#00aaFF', aoe: true },
-    { name: 'Magic Arrow', key: 'KeyR', mpCost: 15, dmgMult: 2.0, cooldown: 0, maxCd: 1500, color: '#FF44FF', projectile: true },
-  ],
+  buffAtk: 1, buffTimer: 0,
+  skills: CLASSES[0].skills,
   inventory: [],
 };
 
-// ─── Projectiles ──────────────────────────────────────────────────────────────
+function applyClass(cls) {
+  player.cls = cls;
+  player.maxHp = cls.maxHp; player.hp = cls.maxHp;
+  player.maxMp = cls.maxMp; player.mp = cls.maxMp;
+  player.atk = cls.atk; player.baseAtk = cls.atk;
+  player.spd = cls.spd;
+  // Fresh skill objects so cooldowns don't leak between classes
+  player.skills = cls.skills.map(s => ({ ...s, cooldown: 0 }));
+}
+
+// Effective attack including Rage buff
+function playerAtk() { return player.atk * (player.buffTimer > 0 ? player.buffAtk : 1); }
+
+// ─── Projectiles & skill effects ───────────────────────────────────────────────
 const projectiles = [];
+const effects = [];
+function spawnEffect(o) { o.maxLife = o.life; effects.push(o); }
 
 // ─── Game state ───────────────────────────────────────────────────────────────
 let currentMapIdx = 0;
 let map = MAPS[0];
 let enemies = [];
 let camera = { x: 0, y: 0 };
-let gameState = 'playing'; // 'playing' | 'dead' | 'levelup' | 'nextmap'
+let gameState = 'classselect'; // 'classselect' | 'playing' | 'dead' | 'levelup' | 'nextmap'
 let levelUpTimer = 0;
 let nextMapTimer = 0;
 let totalMobsKilled = 0;
+let classHover = 0;
+
+function startGame(classIdx) {
+  applyClass(CLASSES[classIdx]);
+  player.level = 1; player.exp = 0; player.expNeeded = 100;
+  player.meso = 0; totalMobsKilled = 0;
+  player.buffTimer = 0; player.buffAtk = 1;
+  loadMap(0);
+  gameState = 'playing';
+}
 
 function loadMap(idx) {
   currentMapIdx = idx;
@@ -349,6 +443,15 @@ loadMap(0);
 
 // ─── Input handler ────────────────────────────────────────────────────────────
 function handleKeyPress(code) {
+  if (gameState === 'classselect') {
+    if (code === 'ArrowLeft' || code === 'KeyA') classHover = (classHover + CLASSES.length - 1) % CLASSES.length;
+    if (code === 'ArrowRight' || code === 'KeyD') classHover = (classHover + 1) % CLASSES.length;
+    if (code === 'Digit1') { classHover = 0; }
+    if (code === 'Digit2') { classHover = 1; }
+    if (code === 'Digit3') { classHover = 2; }
+    if (code === 'Space' || code === 'Enter' || code === 'KeyZ') startGame(classHover);
+    return;
+  }
   if (gameState === 'dead') {
     if (code === 'Space' || code === 'Enter') respawn();
     return;
@@ -389,47 +492,92 @@ function respawn() {
 function doBasicAttack() {
   if (player.attackCooldown > 0) return;
   player.attacking = true;
-  player.attackTimer = 300;
+  player.attackTimer = 260;
   player.attackCooldown = ATTACK_COOLDOWN;
-  const px = player.x + (player.dir > 0 ? player.w : -ATTACK_RANGE);
-  const py = player.y;
-  for (const e of enemies) {
-    if (!e.alive) continue;
-    if (rectsOverlap(px, py, ATTACK_RANGE, player.h + 10, e.x, e.y, e.w, e.h)) {
-      const dmg = Math.floor(player.atk * (0.9 + Math.random() * 0.2));
-      hitEnemy(e, dmg, '#fff');
-    }
-  }
-  spawnParticles(player.x + player.dir * 40, player.y + 15, '#ffdd44', 5);
-}
+  const weapon = player.cls.weapon;
+  const cx = player.x + player.w / 2, cy = player.y + player.h / 2;
 
-function useSkill(skill) {
-  if (skill.cooldown > 0 || player.mp < skill.mpCost) return;
-  player.mp -= skill.mpCost;
-  skill.cooldown = skill.maxCd;
-  spawnParticles(player.x + player.w / 2, player.y + 20, skill.color, 10);
-
-  if (skill.projectile) {
+  if (weapon === 'bow' || weapon === 'staff') {
+    // Ranged classes fire a weak basic shot
     projectiles.push({
-      x: player.x + player.w / 2,
-      y: player.y + player.h / 2,
-      vx: player.dir * 10,
-      vy: 0,
-      dmg: Math.floor(player.atk * skill.dmgMult),
-      color: skill.color,
-      life: 60,
+      x: cx + player.dir * 16, y: cy,
+      vx: player.dir * 9, vy: 0,
+      dmg: Math.floor(playerAtk() * (0.9 + Math.random() * 0.2)),
+      color: weapon === 'bow' ? '#e8d090' : '#9fd0ff',
+      life: 65, fx: weapon === 'bow' ? 'arrow' : 'bolt', dir: player.dir,
     });
     return;
   }
-
-  const range = skill.range || ATTACK_RANGE;
-  const px = player.x + (player.dir > 0 ? player.w : -range);
-  const py = player.y - 10;
+  // Melee swing
+  const px = player.x + (player.dir > 0 ? player.w : -ATTACK_RANGE);
+  spawnEffect({ type: 'slash', x: player.x + (player.dir > 0 ? player.w : 0), y: player.y, dir: player.dir, color: '#ffffff', life: 8, range: ATTACK_RANGE });
   for (const e of enemies) {
     if (!e.alive) continue;
-    if (rectsOverlap(px, py, range, player.h + 20, e.x, e.y, e.w, e.h)) {
-      const dmg = Math.floor(player.atk * skill.dmgMult * (0.9 + Math.random() * 0.2));
-      hitEnemy(e, dmg, skill.color);
+    if (rectsOverlap(px, player.y, ATTACK_RANGE, player.h + 10, e.x, e.y, e.w, e.h)) {
+      hitEnemy(e, Math.floor(playerAtk() * (0.9 + Math.random() * 0.2)), '#fff');
+    }
+  }
+}
+
+function useSkill(skill) {
+  if (gameState !== 'playing') return;
+  if (skill.cooldown > 0 || player.mp < skill.mpCost) return;
+  player.mp -= skill.mpCost;
+  skill.cooldown = skill.maxCd;
+  player.attacking = true;
+  player.attackTimer = 240;
+  const cx = player.x + player.w / 2, cy = player.y + player.h / 2;
+
+  // ── Self-buff (Rage) ──
+  if (skill.fx === 'buff') {
+    player.buffAtk = skill.buffAtk;
+    player.buffTimer = skill.buffDur;
+    spawnEffect({ type: 'buff', x: cx, y: player.y + 20, color: skill.color, life: 36 });
+    spawnParticles(cx, cy, skill.color, 26);
+    spawnDamageNumber(cx, player.y - 12, 'RAGE!', skill.color);
+    return;
+  }
+
+  // ── Projectile skills (Energy Bolt, Magic Claw, Arrow Blow, Double Shot) ──
+  if (skill.projectile) {
+    const n = skill.multi || 1;
+    for (let i = 0; i < n; i++) {
+      const spread = (i - (n - 1) / 2);
+      projectiles.push({
+        x: cx + player.dir * 16,
+        y: cy + spread * 8,
+        vx: player.dir * (skill.fx === 'arrow' ? 13 : 10),
+        vy: skill.fx === 'claw' ? spread * 1.4 : 0,
+        dmg: Math.floor(playerAtk() * skill.dmgMult),
+        color: skill.color, life: 80, fx: skill.fx, dir: player.dir,
+      });
+    }
+    spawnParticles(cx + player.dir * 14, cy, skill.color, 8);
+    return;
+  }
+
+  // ── Full-area burst (Thunder Bolt, Arrow Rain) ──
+  if (skill.aoeFull) {
+    const R = 210;
+    spawnEffect({ type: skill.fx, x: cx, y: player.y, color: skill.color, life: skill.fx === 'rain' ? 26 : 18, r: R });
+    for (const e of enemies) {
+      if (!e.alive) continue;
+      const ex = e.x + e.w / 2, ey = e.y + e.h / 2;
+      if (Math.abs(ex - cx) < R && Math.abs(ey - cy) < 170) {
+        hitEnemy(e, Math.floor(playerAtk() * skill.dmgMult * (0.85 + Math.random() * 0.3)), skill.color);
+      }
+    }
+    return;
+  }
+
+  // ── Melee arcs (Power Strike, Slash Blast) ──
+  const range = skill.range || ATTACK_RANGE;
+  spawnEffect({ type: skill.fx, x: player.x + (player.dir > 0 ? player.w : 0), y: player.y, dir: player.dir, color: skill.color, life: 14, range });
+  const px = player.x + (player.dir > 0 ? player.w : -range);
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    if (rectsOverlap(px, player.y - 15, range, player.h + 30, e.x, e.y, e.w, e.h)) {
+      hitEnemy(e, Math.floor(playerAtk() * skill.dmgMult * (0.9 + Math.random() * 0.2)), skill.color);
     }
   }
 }
@@ -459,13 +607,15 @@ function gainExp(amount) {
 }
 
 function levelUp() {
+  const c = player.cls;
   player.level++;
   player.expNeeded = Math.floor(100 * Math.pow(1.3, player.level - 1));
-  player.maxHp += 40;
-  player.maxMp += 20;
+  player.maxHp += c.hpPerLv;
+  player.maxMp += c.mpPerLv;
   player.hp = player.maxHp;
   player.mp = player.maxMp;
-  player.atk += 5;
+  player.atk += c.atkPerLv;
+  player.baseAtk += c.atkPerLv;
   gameState = 'levelup';
   levelUpTimer = 120;
   spawnParticles(player.x + player.w / 2, player.y, '#FFD700', 20);
@@ -563,6 +713,15 @@ function update(ts) {
   const dt = Math.min(ts - lastTime, 50);
   lastTime = ts;
 
+  // Show the on-screen pad only during active play
+  if (touchEl && isTouchDevice) {
+    touchEl.classList.toggle('active', gameState === 'playing' || gameState === 'levelup');
+  }
+
+  updateEffects(dt);
+
+  if (gameState === 'classselect') return;
+
   if (gameState === 'levelup') {
     levelUpTimer--;
     if (levelUpTimer <= 0) gameState = 'playing';
@@ -615,6 +774,10 @@ function updatePlayer(dt) {
   if (player.attackTimer > 0) { player.attackTimer -= dt; if (player.attackTimer <= 0) player.attacking = false; }
   if (player.attackCooldown > 0) player.attackCooldown -= dt;
   if (player.invincible > 0) player.invincible -= dt;
+  if (player.buffTimer > 0) {
+    player.buffTimer -= dt;
+    if (Math.random() < 0.25) spawnParticles(player.x + player.w / 2, player.y + 30, '#ff4040', 1);
+  }
   for (const s of player.skills) if (s.cooldown > 0) s.cooldown -= dt;
 
   // Animation
@@ -715,6 +878,15 @@ function updateProjectiles() {
   }
 }
 
+function updateEffects(dt) {
+  for (let i = effects.length - 1; i >= 0; i--) {
+    const f = effects[i];
+    f.life--;
+    if (f.fall) { f.y += f.vy; f.vy += 0.6; }
+    if (f.life <= 0) effects.splice(i, 1);
+  }
+}
+
 function updateParticles() {
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i];
@@ -785,17 +957,10 @@ function draw() {
   for (const e of enemies) if (e.alive) drawEnemy(e);
 
   // Projectiles
-  for (const p of projectiles) {
-    ctx.save();
-    ctx.globalAlpha = 0.9;
-    ctx.fillStyle = p.color;
-    ctx.shadowBlur = 10;
-    ctx.shadowColor = p.color;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  }
+  for (const p of projectiles) drawProjectile(p);
+
+  // Skill effects (slashes, thunder, rain, buff rings)
+  drawEffects();
 
   // Player
   drawPlayer();
@@ -808,9 +973,113 @@ function draw() {
   // HUD (fixed position)
   drawHUD();
   drawSkillBar();
+  if (gameState === 'classselect') { drawClassSelect(); return; }
   if (gameState === 'dead') drawDeadScreen();
   if (gameState === 'levelup') drawLevelUp();
   if (gameState === 'nextmap') drawNextMap();
+}
+
+function drawProjectile(p) {
+  ctx.save();
+  ctx.shadowBlur = 12;
+  ctx.shadowColor = p.color;
+  if (p.fx === 'arrow') {
+    ctx.strokeStyle = p.color;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(p.x - p.dir * 12, p.y);
+    ctx.lineTo(p.x + p.dir * 8, p.y);
+    ctx.stroke();
+    // arrowhead
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.moveTo(p.x + p.dir * 12, p.y);
+    ctx.lineTo(p.x + p.dir * 4, p.y - 4);
+    ctx.lineTo(p.x + p.dir * 4, p.y + 4);
+    ctx.fill();
+  } else if (p.fx === 'claw') {
+    ctx.fillStyle = p.color;
+    for (let k = 0; k < 3; k++) {
+      ctx.globalAlpha = 0.8 - k * 0.2;
+      ctx.fillRect(p.x - p.dir * k * 6 - 3, p.y - 2, 5, 4);
+    }
+  } else {
+    // bolt / generic orb with core
+    const r = 6 + Math.sin(Date.now() / 60) * 1;
+    ctx.fillStyle = p.color;
+    ctx.globalAlpha = 0.9;
+    ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.globalAlpha = 0.8;
+    ctx.beginPath(); ctx.arc(p.x, p.y, r * 0.45, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawEffects() {
+  for (const f of effects) {
+    const t = 1 - f.life / f.maxLife; // 0→1 progress
+    ctx.save();
+    if (f.type === 'slash' || f.type === 'cleave') {
+      // Sweeping crescent arc in front of the player
+      const reach = f.range || ATTACK_RANGE;
+      const ox = f.x, oy = f.y + 21;
+      const big = f.type === 'cleave';
+      ctx.globalAlpha = 0.85 * (1 - t);
+      ctx.strokeStyle = f.color;
+      ctx.lineWidth = big ? 8 : 5;
+      ctx.shadowBlur = 12; ctx.shadowColor = f.color;
+      ctx.beginPath();
+      const a0 = -1.1, a1 = 1.1;
+      ctx.arc(ox, oy, reach * (0.6 + 0.4 * t), f.dir > 0 ? a0 : Math.PI - a0, f.dir > 0 ? a1 : Math.PI - a1, f.dir < 0);
+      ctx.stroke();
+      ctx.globalAlpha = 0.5 * (1 - t);
+      ctx.lineWidth = big ? 3 : 2;
+      ctx.strokeStyle = '#fff';
+      ctx.stroke();
+    } else if (f.type === 'thunder') {
+      // Jagged lightning bolts striking down around the player
+      ctx.globalAlpha = 1 - t;
+      ctx.strokeStyle = f.color;
+      ctx.lineWidth = 3;
+      ctx.shadowBlur = 16; ctx.shadowColor = f.color;
+      for (let b = 0; b < 5; b++) {
+        const bx = f.x + (b - 2) * (f.r / 2.5);
+        ctx.beginPath();
+        ctx.moveTo(bx, f.y - 120);
+        let yy = f.y - 120, xx = bx;
+        while (yy < f.y + 60) { yy += 18; xx += (Math.random() - 0.5) * 22; ctx.lineTo(xx, yy); }
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 0.25 * (1 - t);
+      ctx.fillStyle = f.color;
+      ctx.fillRect(f.x - f.r, f.y - 130, f.r * 2, 200);
+    } else if (f.type === 'rain') {
+      // Volley of arrows raining down
+      ctx.globalAlpha = 1 - t * 0.7;
+      ctx.strokeStyle = f.color;
+      ctx.lineWidth = 2;
+      ctx.shadowBlur = 6; ctx.shadowColor = f.color;
+      for (let a = 0; a < 14; a++) {
+        const ax = f.x - f.r + (a / 13) * f.r * 2;
+        const ay = f.y - 120 + ((t * 200 + a * 30) % 200);
+        ctx.beginPath();
+        ctx.moveTo(ax, ay);
+        ctx.lineTo(ax - 4, ay - 12);
+        ctx.stroke();
+      }
+    } else if (f.type === 'buff') {
+      // Expanding power ring
+      ctx.globalAlpha = 1 - t;
+      ctx.strokeStyle = f.color;
+      ctx.lineWidth = 4;
+      ctx.shadowBlur = 14; ctx.shadowColor = f.color;
+      ctx.beginPath();
+      ctx.arc(f.x, f.y, 10 + t * 36, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
 }
 
 function drawBackground() {
@@ -909,77 +1178,194 @@ function drawPortal() {
 }
 
 function drawPlayer() {
-  const px = player.x, py = player.y;
-  const d = player.dir;
+  const px = player.x, py = player.y, d = player.dir;
   const blink = player.invincible > 0 && Math.floor(Date.now() / 80) % 2 === 0;
   if (blink) return;
+  const c = player.cls;
+  const skin = '#ffdfc4';
+  const atk = player.attacking;
 
   ctx.save();
   if (d < 0) {
-    ctx.translate(px + player.w / 2, py);
+    ctx.translate(px + player.w / 2, 0);
     ctx.scale(-1, 1);
-    ctx.translate(-(px + player.w / 2), -py);
+    ctx.translate(-(px + player.w / 2), 0);
   }
 
-  const anim = player.animFrame;
-  const legOffset = player.state === 'walk' ? Math.sin(anim * Math.PI / 2) * 4 : 0;
+  const walk = player.state === 'walk';
+  const f = player.animFrame;
+  const legOff = walk ? Math.sin(f * Math.PI / 2) * 4 : 0;
 
   // Shadow
-  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.fillStyle = 'rgba(0,0,0,0.28)';
   ctx.beginPath();
-  ctx.ellipse(px + player.w / 2, map.ground + 2, 14, 4, 0, 0, Math.PI * 2);
+  ctx.ellipse(px + 15, map.ground + 2, 15, 4, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // Legs
-  ctx.fillStyle = '#2244aa';
-  ctx.fillRect(px + 5, py + 26, 8, 14 + legOffset);
-  ctx.fillRect(px + 17, py + 26, 8, 14 - legOffset);
-
-  // Shoes
-  ctx.fillStyle = '#111';
-  ctx.fillRect(px + 4, py + 38 + legOffset, 10, 4);
-  ctx.fillRect(px + 16, py + 38 - legOffset, 10, 4);
-
-  // Body
-  const bodyColor = player.attacking ? '#FF8844' : '#cc2233';
-  ctx.fillStyle = bodyColor;
-  ctx.fillRect(px + 4, py + 12, 22, 16);
-
-  // Belt
-  ctx.fillStyle = '#8B4513';
-  ctx.fillRect(px + 4, py + 25, 22, 3);
-
-  // Arm (attacking pose)
-  if (player.attacking) {
-    ctx.fillStyle = '#FFCCAA';
-    ctx.fillRect(px + 26, py + 13, 14, 7);
-    // Sword
-    ctx.fillStyle = '#CCCCCC';
-    ctx.fillRect(px + 38, py + 10, 20, 4);
-    ctx.fillStyle = '#FFDD44';
-    ctx.fillRect(px + 36, py + 8, 4, 8);
-  } else {
-    ctx.fillStyle = '#FFCCAA';
-    ctx.fillRect(px + 24, py + 14, 8, 10);
-    ctx.fillRect(px + 2, py + 14, 8, 10);
+  // Rage aura
+  if (player.buffTimer > 0) {
+    ctx.save();
+    ctx.globalAlpha = 0.3 + Math.sin(Date.now() / 100) * 0.15;
+    ctx.shadowBlur = 16; ctx.shadowColor = '#ff3030';
+    ctx.fillStyle = 'rgba(255,60,40,0.25)';
+    ctx.beginPath();
+    ctx.ellipse(px + 15, py + 24, 21, 27, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 
+  // Legs
+  ctx.fillStyle = '#3a3550';
+  ctx.fillRect(px + 8, py + 33, 6, 7 + legOff);
+  ctx.fillRect(px + 16, py + 33, 6, 7 - legOff);
+  // Shoes
+  ctx.fillStyle = '#7a4420';
+  ctx.fillRect(px + 7, py + 39 + legOff, 8, 3);
+  ctx.fillRect(px + 15, py + 39 - legOff, 8, 3);
+
+  // Back arm
+  ctx.fillStyle = skin;
+  ctx.fillRect(px + 5, py + 23, 5, 9);
+
+  // Body / robe
+  ctx.fillStyle = c.color;
+  if (c.id === 'magician') {
+    ctx.beginPath();
+    ctx.moveTo(px + 8, py + 22);
+    ctx.lineTo(px + 22, py + 22);
+    ctx.lineTo(px + 25, py + 35);
+    ctx.lineTo(px + 5, py + 35);
+    ctx.closePath();
+    ctx.fill();
+  } else {
+    ctx.fillRect(px + 8, py + 22, 14, 12);
+    if (c.id === 'warrior') {
+      ctx.fillStyle = shadeColor(c.color, 25);
+      ctx.fillRect(px + 6, py + 22, 4, 5);
+      ctx.fillRect(px + 20, py + 22, 4, 5);
+    }
+  }
+  // Trim + belt
+  ctx.fillStyle = c.trim;
+  ctx.fillRect(px + 14, py + 22, 2, 12);
+  ctx.fillStyle = '#5a3a1a';
+  ctx.fillRect(px + 8, py + 31, 14, 2);
+
   // Head
-  ctx.fillStyle = '#FFCCAA';
-  ctx.fillRect(px + 7, py + 2, 18, 16);
+  ctx.fillStyle = skin;
+  ctx.fillRect(px + 6, py + 4, 18, 17);
+  ctx.fillRect(px + 5, py + 12, 2, 4); // ear
+  // Eyes (big MapleStory eyes)
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(px + 11, py + 10, 3, 5);
+  ctx.fillRect(px + 18, py + 10, 3, 5);
+  ctx.fillStyle = '#3a2a4a';
+  ctx.fillRect(px + 12, py + 11, 2, 4);
+  ctx.fillRect(px + 19, py + 11, 2, 4);
+  ctx.fillStyle = '#c06050';
+  ctx.fillRect(px + 14, py + 17, 4, 1);
 
-  // Eyes
-  ctx.fillStyle = '#000';
-  ctx.fillRect(px + 11, py + 7, 3, 3);
-  ctx.fillRect(px + 18, py + 7, 3, 3);
+  // Hair base
+  ctx.fillStyle = c.hair;
+  ctx.fillRect(px + 5, py + 2, 20, 6);
+  ctx.fillRect(px + 5, py + 4, 4, 8);
 
-  // Hat / hair
-  ctx.fillStyle = '#331a00';
-  ctx.fillRect(px + 5, py, 22, 8);
-  ctx.fillStyle = '#553300';
-  ctx.fillRect(px + 5, py + 6, 6, 4);
+  // Class headgear
+  if (c.id === 'warrior') {
+    ctx.fillStyle = '#b8b8c0';
+    ctx.fillRect(px + 5, py, 20, 7);
+    ctx.fillStyle = c.trim;
+    ctx.fillRect(px + 5, py + 6, 20, 2);
+    ctx.fillStyle = '#d04040';
+    ctx.fillRect(px + 13, py - 4, 4, 6);
+  } else if (c.id === 'magician') {
+    ctx.fillStyle = c.color;
+    ctx.beginPath();
+    ctx.moveTo(px + 3, py + 4);
+    ctx.lineTo(px + 27, py + 4);
+    ctx.lineTo(px + 17, py - 12);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = c.trim;
+    ctx.fillRect(px + 3, py + 3, 24, 3);
+    ctx.fillStyle = '#ffe84a';
+    ctx.fillRect(px + 14, py - 6, 3, 3);
+  } else {
+    ctx.fillStyle = c.color;
+    ctx.fillRect(px + 5, py, 20, 6);
+    ctx.fillStyle = c.trim;
+    ctx.fillRect(px + 5, py + 5, 20, 2);
+    ctx.fillStyle = '#e0e060';
+    ctx.beginPath();
+    ctx.moveTo(px + 22, py + 1);
+    ctx.lineTo(px + 34, py - 6);
+    ctx.lineTo(px + 24, py + 4);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Front arm + weapon
+  drawWeapon(px, py, c, atk, skin);
 
   ctx.restore();
+}
+
+function drawWeapon(px, py, c, atk, skin) {
+  const armY = py + 23;
+  if (c.weapon === 'sword') {
+    if (atk) {
+      ctx.fillStyle = skin;
+      ctx.fillRect(px + 22, py + 20, 12, 5);
+      ctx.save();
+      ctx.translate(px + 32, py + 14);
+      ctx.fillStyle = '#dfe6ef';
+      ctx.fillRect(0, -2, 22, 5);
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, -2, 22, 2);
+      ctx.fillStyle = c.trim;
+      ctx.fillRect(-4, -4, 4, 9);
+      ctx.fillStyle = '#5a3a1a';
+      ctx.fillRect(-8, -2, 5, 5);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = skin;
+      ctx.fillRect(px + 21, armY, 6, 9);
+      ctx.fillStyle = '#dfe6ef';
+      ctx.fillRect(px + 24, py + 4, 4, 22);
+      ctx.fillStyle = c.trim;
+      ctx.fillRect(px + 22, py + 24, 8, 3);
+    }
+  } else if (c.weapon === 'staff') {
+    ctx.fillStyle = skin;
+    ctx.fillRect(px + 21, armY, 6, 9);
+    ctx.fillStyle = '#7a5a2a';
+    ctx.fillRect(px + 25, py + 2, 3, 30);
+    const t = Date.now() / 200;
+    ctx.save();
+    ctx.shadowBlur = 10; ctx.shadowColor = c.trim;
+    ctx.fillStyle = c.trim;
+    ctx.beginPath();
+    ctx.arc(px + 26, py + 1, 4 + Math.sin(t) * 0.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    if (atk) { ctx.fillStyle = skin; ctx.fillRect(px + 24, py + 21, 10, 5); }
+  } else { // bow
+    ctx.fillStyle = skin;
+    ctx.fillRect(px + 21, armY, 6, 9);
+    ctx.strokeStyle = '#8a5a2a';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(px + 30, py + 18, 13, -Math.PI / 2.2, Math.PI / 2.2);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+    ctx.lineWidth = 1;
+    const a1 = -Math.PI / 2.2, a2 = Math.PI / 2.2;
+    ctx.beginPath();
+    ctx.moveTo(px + 30 + 13 * Math.cos(a1), py + 18 + 13 * Math.sin(a1));
+    ctx.lineTo(px + 30 + 13 * Math.cos(a2), py + 18 + 13 * Math.sin(a2));
+    ctx.stroke();
+    if (atk) { ctx.fillStyle = skin; ctx.fillRect(px + 22, py + 20, 10, 5); }
+  }
 }
 
 function drawEnemy(e) {
@@ -1007,76 +1393,192 @@ function drawEnemy(e) {
 
   // Body (distinct per enemy type)
   const baseColor = e.color;
-  const darkColor = shadeColor(baseColor, -30);
+  const darkColor = shadeColor(baseColor, -35);
+  const liteColor = shadeColor(baseColor, 30);
+  const n = e.name;
+  const ex = e.x, ey = e.y, cx = e.x + e.w / 2;
 
-  if (e.name.includes('Slime')) {
-    // Slime - blob shape
-    ctx.fillStyle = baseColor;
-    ctx.beginPath();
-    ctx.ellipse(e.x + e.w / 2, e.y + e.h / 2 + 4, 18, 14 + legOff, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = darkColor;
-    ctx.beginPath();
-    ctx.ellipse(e.x + e.w / 2, e.y + e.h / 2 + 6, 12, 8, 0, 0, Math.PI * 2);
-    ctx.fill();
-    // Eyes
+  function eyes(lx, rx, yy, sz) {
     ctx.fillStyle = '#fff';
-    ctx.fillRect(e.x + 8, e.y + 10, 5, 5);
-    ctx.fillRect(e.x + 22, e.y + 10, 5, 5);
+    ctx.fillRect(ex + lx, ey + yy, sz, sz + 1);
+    ctx.fillRect(ex + rx, ey + yy, sz, sz + 1);
     ctx.fillStyle = '#000';
-    ctx.fillRect(e.x + 10, e.y + 11, 3, 3);
-    ctx.fillRect(e.x + 24, e.y + 11, 3, 3);
-  } else if (e.name.includes('Mushroom')) {
-    // Mushroom
-    ctx.fillStyle = '#ddaa88';
-    ctx.fillRect(e.x + 10, e.y + 18, 16, 18);
+    ctx.fillRect(ex + lx + 1, ey + yy + 1, 2, 3);
+    ctx.fillRect(ex + rx + 1, ey + yy + 1, 2, 3);
+  }
+
+  if (n.includes('Snail')) {
+    // Foot
+    ctx.fillStyle = '#f0e0b0';
+    ctx.fillRect(ex + 2, ey + 24, 30, 10 + legOff);
+    ctx.fillRect(ex, ey + 28, 4, 4); // tail
+    // Shell
     ctx.fillStyle = baseColor;
-    ctx.beginPath();
-    ctx.arc(e.x + e.w / 2, e.y + 18, 18, Math.PI, 0);
-    ctx.fill();
-    ctx.fillStyle = '#fff';
-    for (let s = 0; s < 3; s++) ctx.fillRect(e.x + 5 + s * 9, e.y + 8, 5, 5);
-    ctx.fillStyle = '#000';
-    ctx.fillRect(e.x + 10, e.y + 22, 4, 4);
-    ctx.fillRect(e.x + 22, e.y + 22, 4, 4);
-  } else if (e.name.includes('Snail')) {
-    // Snail
-    ctx.fillStyle = '#ddcc88';
-    ctx.fillRect(e.x + 4, e.y + 22, 28, 12);
-    ctx.fillStyle = baseColor;
-    ctx.beginPath();
-    ctx.arc(e.x + 22, e.y + 20, 14, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(ex + 22, ey + 18, 13, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = darkColor;
-    ctx.beginPath();
-    ctx.arc(e.x + 22, e.y + 20, 8, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#FFCCAA';
-    ctx.fillRect(e.x + 2, e.y + 22, 12, 10);
+    ctx.beginPath(); ctx.arc(ex + 24, ey + 19, 8, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = liteColor;
+    ctx.beginPath(); ctx.arc(ex + 26, ey + 20, 3, 0, Math.PI * 2); ctx.fill();
+    // Head + eyestalks
+    ctx.fillStyle = '#f0e0b0';
+    ctx.fillRect(ex + 2, ey + 20, 10, 12);
+    ctx.fillRect(ex + 3, ey + 14, 2, 7);
+    ctx.fillRect(ex + 9, ey + 14, 2, 7);
     ctx.fillStyle = '#000';
-    ctx.fillRect(e.x + 4, e.y + 24, 3, 3);
-  } else {
-    // Generic monster
-    ctx.fillStyle = darkColor;
-    ctx.fillRect(e.x + 2, e.y + 20, 32, 16);
+    ctx.fillRect(ex + 2, ey + 12, 4, 4);
+    ctx.fillRect(ex + 8, ey + 12, 4, 4);
+  } else if (n.includes('Mushroom') || n.includes('Shroom')) {
+    const zombie = n.includes('Zombie');
+    // Stem
+    ctx.fillStyle = zombie ? '#cfe0c0' : '#f2e2c2';
+    ctx.fillRect(ex + 9, ey + 18, 18, 18);
+    // Cap
     ctx.fillStyle = baseColor;
-    ctx.fillRect(e.x + 4, e.y + 6, 28, 18);
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(e.x + 7, e.y + 10, 6, 6);
-    ctx.fillRect(e.x + 23, e.y + 10, 6, 6);
+    ctx.beginPath(); ctx.arc(cx, ey + 18, 18, Math.PI, 0); ctx.fill();
+    ctx.fillRect(ex + 0, ey + 16, 36, 4);
+    // Spots
+    ctx.fillStyle = zombie ? '#2a3a2a' : '#fff';
+    ctx.fillRect(ex + 6, ey + 8, 5, 5);
+    ctx.fillRect(ex + 16, ey + 4, 6, 6);
+    ctx.fillRect(ex + 26, ey + 9, 5, 5);
+    // Face
+    eyes(10, 22, 22, 4);
+    ctx.fillStyle = zombie ? '#702020' : '#a05030';
+    ctx.fillRect(ex + 15, ey + 30, 6, 2);
+    if (zombie) { ctx.fillStyle = '#3a5a3a'; ctx.fillRect(ex + 12, ey + 33, 3, 4); ctx.fillRect(ex + 21, ey + 33, 3, 4); }
+  } else if (n.includes('Slime')) {
+    ctx.fillStyle = baseColor;
+    ctx.beginPath(); ctx.ellipse(cx, ey + 22, 17, 15 + legOff, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = liteColor;
+    ctx.beginPath(); ctx.ellipse(cx - 4, ey + 16, 5, 6, 0, 0, Math.PI * 2); ctx.fill();
+    eyes(9, 21, 16, 5);
     ctx.fillStyle = '#000';
-    ctx.fillRect(e.x + 9, e.y + 11, 3, 3);
-    ctx.fillRect(e.x + 25, e.y + 11, 3, 3);
-    // Horns for bossy monsters
-    if (e.name.includes('Horned') || e.name.includes('Jr.') || e.name.includes('Drake')) {
-      ctx.fillStyle = '#222';
-      ctx.fillRect(e.x + 8, e.y, 5, 10);
-      ctx.fillRect(e.x + 23, e.y, 5, 10);
-    }
+    ctx.fillRect(ex + 13, ey + 26, 10, 2);
+  } else if (n.includes('Boar') || n.includes('Pig')) {
+    const fire = n.includes('Fire');
+    // Body
+    ctx.fillStyle = baseColor;
+    ctx.beginPath(); ctx.ellipse(cx, ey + 22, 17, 12, 0, 0, Math.PI * 2); ctx.fill();
+    // Snout
+    ctx.fillStyle = liteColor;
+    ctx.fillRect(ex + 26, ey + 18, 9, 8);
+    ctx.fillStyle = darkColor;
+    ctx.fillRect(ex + 28, ey + 20, 2, 4);
+    ctx.fillRect(ex + 32, ey + 20, 2, 4);
+    // Ear
+    ctx.fillStyle = baseColor;
+    ctx.beginPath(); ctx.moveTo(ex + 18, ey + 10); ctx.lineTo(ex + 24, ey + 16); ctx.lineTo(ex + 14, ey + 16); ctx.fill();
+    // Eye
+    ctx.fillStyle = '#fff'; ctx.fillRect(ex + 22, ey + 14, 4, 4);
+    ctx.fillStyle = '#000'; ctx.fillRect(ex + 23, ey + 15, 2, 2);
+    // Tusk
+    ctx.fillStyle = '#fff'; ctx.fillRect(ex + 27, ey + 25, 4, 2);
     // Legs
     ctx.fillStyle = darkColor;
-    ctx.fillRect(e.x + 6, e.y + 30 + legOff, 10, 8);
-    ctx.fillRect(e.x + 20, e.y + 30 - legOff, 10, 8);
+    ctx.fillRect(ex + 8, ey + 30 + legOff, 5, 7);
+    ctx.fillRect(ex + 22, ey + 30 - legOff, 5, 7);
+    if (fire) { // flame mane
+      ctx.fillStyle = 'rgba(255,140,40,0.8)';
+      for (let i = 0; i < 4; i++) ctx.fillRect(ex + 4 + i * 6, ey + 8 - (i % 2) * 3, 4, 8);
+    }
+  } else if (n.includes('Stump')) {
+    const dark = n.includes('Dark');
+    // Trunk
+    ctx.fillStyle = baseColor;
+    ctx.fillRect(ex + 6, ey + 12, 24, 24);
+    ctx.fillStyle = darkColor;
+    ctx.fillRect(ex + 6, ey + 12, 24, 4); // top rim
+    // Rings
+    ctx.fillStyle = liteColor;
+    ctx.fillRect(ex + 12, ey + 13, 12, 2);
+    // Bark lines
+    ctx.fillStyle = darkColor;
+    ctx.fillRect(ex + 12, ey + 18, 2, 16);
+    ctx.fillRect(ex + 22, ey + 18, 2, 16);
+    // Angry face
+    ctx.fillStyle = '#000';
+    ctx.fillRect(ex + 11, ey + 22, 4, 3);
+    ctx.fillRect(ex + 21, ey + 22, 4, 3);
+    ctx.fillRect(ex + 13, ey + 29, 10, 2);
+    if (!dark) { // little legs
+      ctx.fillStyle = darkColor;
+      ctx.fillRect(ex + 9, ey + 35 + legOff, 5, 5);
+      ctx.fillRect(ex + 22, ey + 35 - legOff, 5, 5);
+    } else { // axe
+      ctx.fillStyle = '#aaa'; ctx.fillRect(ex + 28, ey + 6, 8, 4);
+      ctx.fillStyle = '#7a5a2a'; ctx.fillRect(ex + 30, ey + 8, 2, 14);
+    }
+  } else if (n.includes('Eye')) {
+    const curse = n.includes('Curse');
+    // Floating body
+    ctx.fillStyle = baseColor;
+    ctx.beginPath(); ctx.ellipse(cx, ey + 20 + Math.sin(Date.now() / 300) * 2, 15, 16, 0, 0, Math.PI * 2); ctx.fill();
+    // Big eye
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(cx, ey + 20, 9, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = curse ? '#cc2020' : '#9020c0';
+    ctx.beginPath(); ctx.arc(cx + e.dir * 2, ey + 20, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.arc(cx + e.dir * 2, ey + 20, 2, 0, Math.PI * 2); ctx.fill();
+    // Tendrils
+    ctx.strokeStyle = darkColor; ctx.lineWidth = 2;
+    for (let i = -1; i <= 1; i++) { ctx.beginPath(); ctx.moveTo(cx + i * 8, ey + 33); ctx.lineTo(cx + i * 10, ey + 38); ctx.stroke(); }
+  } else if (n.includes('Necki')) {
+    // Snake
+    ctx.fillStyle = baseColor;
+    ctx.fillRect(ex + 6, ey + 22, 24, 14); // coil base
+    ctx.beginPath(); ctx.arc(ex + 24, ey + 14, 10, 0, Math.PI * 2); ctx.fill(); // head
+    ctx.fillStyle = liteColor;
+    ctx.fillRect(ex + 8, ey + 26, 20, 3);
+    ctx.fillStyle = '#fff'; ctx.fillRect(ex + 24, ey + 11, 4, 4);
+    ctx.fillStyle = '#000'; ctx.fillRect(ex + 25, ey + 12, 2, 2);
+    ctx.fillStyle = '#c02020'; ctx.fillRect(ex + 30, ey + 16, 5, 2); // tongue
+  } else if (n.includes('Golem')) {
+    ctx.fillStyle = baseColor;
+    ctx.fillRect(ex + 4, ey + 8, 28, 28);
+    ctx.fillStyle = darkColor;
+    ctx.fillRect(ex + 4, ey + 8, 28, 3);
+    ctx.fillRect(ex + 16, ey + 8, 3, 28);
+    ctx.fillRect(ex + 4, ey + 22, 28, 3);
+    ctx.fillStyle = liteColor; ctx.fillRect(ex + 7, ey + 11, 6, 6);
+    eyes(9, 21, 14, 5);
+    ctx.fillStyle = darkColor;
+    ctx.fillRect(ex + 0, ey + 14, 6, 12); // arms
+    ctx.fillRect(ex + 30, ey + 14, 6, 12);
+  } else if (n.includes('Wraith') || n.includes('Balrog')) {
+    const balrog = n.includes('Balrog');
+    // Ghostly cloak
+    ctx.globalAlpha = alpha * (balrog ? 1 : 0.85);
+    ctx.fillStyle = baseColor;
+    ctx.beginPath();
+    ctx.moveTo(ex + 4, ey + 8);
+    ctx.lineTo(ex + 32, ey + 8);
+    ctx.lineTo(ex + 30, ey + 36);
+    ctx.lineTo(ex + 24, ey + 30);
+    ctx.lineTo(ex + 18, ey + 36);
+    ctx.lineTo(ex + 12, ey + 30);
+    ctx.lineTo(ex + 6, ey + 36);
+    ctx.closePath(); ctx.fill();
+    // Hood face
+    ctx.fillStyle = '#000';
+    ctx.fillRect(ex + 10, ey + 10, 16, 12);
+    ctx.fillStyle = balrog ? '#ff3020' : '#90e0ff';
+    ctx.fillRect(ex + 13, ey + 14, 4, 4);
+    ctx.fillRect(ex + 19, ey + 14, 4, 4);
+    ctx.globalAlpha = alpha;
+    if (balrog) { // horns
+      ctx.fillStyle = '#1a1a1a';
+      ctx.beginPath(); ctx.moveTo(ex + 6, ey + 8); ctx.lineTo(ex + 2, ey - 4); ctx.lineTo(ex + 12, ey + 6); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(ex + 30, ey + 8); ctx.lineTo(ex + 34, ey - 4); ctx.lineTo(ex + 24, ey + 6); ctx.fill();
+    }
+  } else {
+    // Generic critter
+    ctx.fillStyle = baseColor;
+    ctx.fillRect(ex + 4, ey + 8, 28, 24);
+    eyes(9, 21, 14, 5);
+    ctx.fillStyle = darkColor;
+    ctx.fillRect(ex + 6, ey + 30 + legOff, 8, 7);
+    ctx.fillRect(ex + 22, ey + 30 - legOff, 8, 7);
   }
 
   ctx.restore();
@@ -1163,7 +1665,7 @@ function drawHUD() {
   ctx.fillStyle = '#FFD700';
   ctx.font = 'bold 14px monospace';
   ctx.textAlign = 'left';
-  ctx.fillText(`Lv.${player.level} Warrior`, 18, 28);
+  ctx.fillText(`Lv.${player.level} ${player.cls.name}`, 18, 28);
 
   // HP bar
   const hpPct = player.hp / player.maxHp;
@@ -1245,7 +1747,7 @@ function drawHUD() {
   ctx.fillStyle = '#888';
   ctx.font = '10px monospace';
   ctx.textAlign = 'center';
-  ctx.fillText('←→ Move  ↑/Space Jump (×2)  Z Attack  Q/E/R Skills  F Pickup  ↓ Drop through platform', W / 2, H - 8);
+  ctx.fillText('←→ Move  ↑/Space Jump (×2)  Z Attack  Q/E/R ' + player.cls.name + ' skills  F Pickup  ↓ Drop', W / 2, H - 8);
 }
 
 function drawSkillBar() {
@@ -1313,8 +1815,131 @@ function drawLevelUp() {
   ctx.fillText(`LEVEL UP! → ${player.level}`, W / 2, H / 2 - 60);
   ctx.font = '18px monospace';
   ctx.fillStyle = '#fff';
-  ctx.fillText(`HP+40  MP+20  ATK+5`, W / 2, H / 2 - 20);
+  const c = player.cls;
+  ctx.fillText(`HP+${c.hpPerLv}  MP+${c.mpPerLv}  ATK+${c.atkPerLv}`, W / 2, H / 2 - 20);
   ctx.restore();
+}
+
+function drawClassSelect() {
+  ctx.fillStyle = 'rgba(10,5,25,0.92)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Title
+  ctx.fillStyle = '#ffcf3a';
+  ctx.font = 'bold 42px monospace';
+  ctx.textAlign = 'center';
+  ctx.shadowBlur = 18; ctx.shadowColor = '#ff9a1e';
+  ctx.fillText('MapleStory', W / 2, 70);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#9fd0ff';
+  ctx.font = '16px monospace';
+  ctx.fillText('Choose your job', W / 2, 100);
+
+  const cardW = 250, gap = 30, cardH = 280, cardY = 150;
+  const total = CLASSES.length * cardW + (CLASSES.length - 1) * gap;
+  const startX = W / 2 - total / 2;
+
+  for (let i = 0; i < CLASSES.length; i++) {
+    const c = CLASSES[i];
+    const x = startX + i * (cardW + gap);
+    const sel = i === classHover;
+
+    ctx.fillStyle = sel ? 'rgba(60,40,100,0.95)' : 'rgba(30,20,55,0.9)';
+    roundRect(ctx, x, cardY, cardW, cardH, 12);
+    ctx.fill();
+    ctx.lineWidth = sel ? 4 : 2;
+    ctx.strokeStyle = sel ? c.trim : '#4a2a7a';
+    if (sel) { ctx.shadowBlur = 18; ctx.shadowColor = c.trim; }
+    roundRect(ctx, x, cardY, cardW, cardH, 12);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Emblem figure
+    drawClassEmblem(x + cardW / 2, cardY + 95, c);
+
+    // Name
+    ctx.fillStyle = c.trim;
+    ctx.font = 'bold 24px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(c.name, x + cardW / 2, cardY + 150);
+
+    // Stats
+    ctx.font = '13px monospace';
+    ctx.fillStyle = '#ddd';
+    ctx.fillText(`HP ${c.maxHp}   MP ${c.maxMp}   ATK ${c.atk}`, x + cardW / 2, cardY + 176);
+    ctx.fillStyle = '#aaa';
+    ctx.font = '12px monospace';
+    wrapText(c.blurb, x + cardW / 2, cardY + 200, cardW - 30, 16);
+
+    // Skills
+    ctx.fillStyle = c.trim;
+    ctx.font = '11px monospace';
+    for (let s = 0; s < c.skills.length; s++) {
+      ctx.fillText(`[${c.skills[s].key.replace('Key', '')}] ${c.skills[s].name}`, x + cardW / 2, cardY + 234 + s * 15);
+    }
+
+    if (sel) {
+      ctx.fillStyle = '#ffcf3a';
+      ctx.font = 'bold 13px monospace';
+      const pulse = Math.floor(Date.now() / 400) % 2 === 0;
+      if (pulse) ctx.fillText('▶ TAP / PRESS Z ◀', x + cardW / 2, cardY + cardH - 8);
+    }
+  }
+
+  ctx.fillStyle = '#888';
+  ctx.font = '12px monospace';
+  ctx.fillText(isTouchDevice ? 'Tap a card to highlight, tap again to start' : '◀ ▶ or 1/2/3 to choose   ·   Z / Space to start', W / 2, H - 24);
+}
+
+function drawClassEmblem(cx, cy, c) {
+  // Mini chibi preview
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.beginPath(); ctx.ellipse(cx, cy + 36, 22, 6, 0, 0, Math.PI * 2); ctx.fill();
+  // body
+  ctx.fillStyle = c.color;
+  ctx.fillRect(cx - 14, cy + 4, 28, 24);
+  ctx.fillStyle = c.trim;
+  ctx.fillRect(cx - 3, cy + 4, 4, 24);
+  // head
+  ctx.fillStyle = '#ffdfc4';
+  ctx.fillRect(cx - 16, cy - 28, 32, 30);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(cx - 9, cy - 16, 5, 8); ctx.fillRect(cx + 4, cy - 16, 5, 8);
+  ctx.fillStyle = '#3a2a4a';
+  ctx.fillRect(cx - 7, cy - 14, 3, 5); ctx.fillRect(cx + 6, cy - 14, 3, 5);
+  // headgear
+  ctx.fillStyle = c.hair;
+  ctx.fillRect(cx - 16, cy - 30, 32, 8);
+  if (c.id === 'warrior') {
+    ctx.fillStyle = '#b8b8c0'; ctx.fillRect(cx - 16, cy - 32, 32, 8);
+    ctx.fillStyle = '#d04040'; ctx.fillRect(cx - 3, cy - 40, 6, 9);
+  } else if (c.id === 'magician') {
+    ctx.fillStyle = c.color;
+    ctx.beginPath(); ctx.moveTo(cx - 18, cy - 28); ctx.lineTo(cx + 18, cy - 28); ctx.lineTo(cx, cy - 52); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#ffe84a'; ctx.fillRect(cx - 2, cy - 44, 4, 4);
+  } else {
+    ctx.fillStyle = c.color; ctx.fillRect(cx - 16, cy - 32, 32, 8);
+    ctx.fillStyle = '#e0e060';
+    ctx.beginPath(); ctx.moveTo(cx + 12, cy - 30); ctx.lineTo(cx + 30, cy - 40); ctx.lineTo(cx + 14, cy - 24); ctx.fill();
+  }
+  // weapon hint
+  ctx.fillStyle = '#dfe6ef';
+  if (c.weapon === 'sword') ctx.fillRect(cx + 16, cy - 20, 5, 40);
+  else if (c.weapon === 'staff') { ctx.fillStyle = '#7a5a2a'; ctx.fillRect(cx + 17, cy - 24, 4, 48); ctx.fillStyle = c.trim; ctx.beginPath(); ctx.arc(cx + 19, cy - 26, 6, 0, Math.PI * 2); ctx.fill(); }
+  else { ctx.strokeStyle = '#8a5a2a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(cx + 20, cy + 2, 18, -1.2, 1.2); ctx.stroke(); }
+  ctx.restore();
+}
+
+function wrapText(text, cx, y, maxW, lh) {
+  const words = text.split(' ');
+  let line = '', yy = y;
+  for (const w of words) {
+    const test = line + w + ' ';
+    if (ctx.measureText(test).width > maxW && line) { ctx.fillText(line.trim(), cx, yy); line = w + ' '; yy += lh; }
+    else line = test;
+  }
+  ctx.fillText(line.trim(), cx, yy);
 }
 
 function drawNextMap() {
