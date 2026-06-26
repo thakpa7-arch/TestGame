@@ -574,7 +574,7 @@ function update() {
       if (keys['ArrowRight']) moveMobile(p, 1);
     }
     if (state.charging) {
-      state.power += state.powerDir * 1.5;
+      state.power += state.powerDir * 0.75;
       if (state.power >= 100) { state.power = 100; state.powerDir = -1; }
       if (state.power <= 0)   { state.power = 0; state.powerDir = 1; }
     }
