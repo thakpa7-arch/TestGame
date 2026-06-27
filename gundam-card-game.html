@@ -2864,9 +2864,11 @@ function startCommand(card, handIdx){
   const noEnemyTgt = needEnemy && enemyTargets(G.enemy, a).length===0;
   const noAllyTgt  = needAlly && G.player.field.length===0;
   if (noEnemyTgt || noAllyTgt){ flashPrompt(`${card.name}: no legal target — can't play it now.`); return; }
-  // Everything else resolves through the same interactive resolver as triggered effects.
+  // Everything else resolves through the same interactive resolver as triggered effects. Track it as
+  // in-flight so a Cancel while picking a target returns the Command to hand instead of losing it.
+  G.cmdInFlight = { card, cost: effectiveCost(s, card) };
   commit(card,handIdx); closeInspect();
-  resolvePlayerTrigger(card, G.player, a, card.name, ()=>{ clearSel(); render(); checkEnd(); });
+  resolvePlayerTrigger(card, G.player, a, card.name, ()=>{ G.cmdInFlight=null; clearSel(); render(); checkEnd(); });
 }
 
 function commit(card, handIdx){ G.player.hand.splice(handIdx,1); G.player.resAvail-=effectiveCost(G.player,card); sendToTrash(card, G.player); }
@@ -3606,7 +3608,19 @@ function runTriggerSeq(list, side, done){
   })();
 }
 
-function clearSel(){ G.selected=null; G.mode='idle'; G.pending=null; G.pendingHandIdx=-1; G.activateCands=null; G.activateCostUnit=null; G.activatePrepaid=false; defaultPrompt(); }
+function clearSel(){ G.selected=null; G.mode='idle'; G.pending=null; G.pendingHandIdx=-1; G.activateCands=null; G.activateCostUnit=null; G.activatePrepaid=false; G.cmdInFlight=null; defaultPrompt(); }
+// A Command commits to the trash (and pays its cost) before the player picks a target, so cancelling
+// mid-targeting would lose it. This pulls the in-flight Command back to hand and refunds its cost.
+function refundCommandInFlight(){
+  const ci=G.cmdInFlight; if(!ci) return false;
+  G.cmdInFlight=null;
+  const ti=G.player.trash.indexOf(ci.card); if(ti>=0) G.player.trash.splice(ti,1);
+  refreshTrashStats(G.player);
+  G.player.hand.push(ci.card);
+  G.player.resAvail += ci.cost;
+  log(`<b>${ci.card.name}</b> — cancelled; returned to your hand.`, 'me');
+  return true;
+}
 // Finish an Eins-style self-rest selection (from a unit tap reaching the max, or Cancel to stop early).
 function finishSelfRest(){
   const p=G.pending; if (!p) return;
@@ -4339,8 +4353,16 @@ el('cancelBtn').addEventListener('click', ()=>{
     if (p.after) p.after(); else { render(); checkEnd(); }
     return;
   }
-  if (G.mode==='self-rest-pick'){ finishSelfRest(); return; }   // Cancel = "done choosing"
-  if (G.mode==='trigger-multi'){ finishMultiDamage(); return; } // Cancel = "done choosing"
+  // Cancelling a Command mid-targeting returns it to hand (refunding cost) rather than losing it.
+  if (G.cmdInFlight && G.mode==='trigger-target'){ refundCommandInFlight(); clearSel(); render(); return; }
+  if (G.mode==='self-rest-pick'){
+    if (G.cmdInFlight && !(G.pending&&G.pending.picked&&G.pending.picked.length)){ refundCommandInFlight(); clearSel(); render(); return; }
+    finishSelfRest(); return;   // Cancel = "done choosing"
+  }
+  if (G.mode==='trigger-multi'){
+    if (G.cmdInFlight && !(G.pending&&G.pending.picked&&G.pending.picked.length)){ refundCommandInFlight(); clearSel(); render(); return; }
+    finishMultiDamage(); return; // Cancel = "done choosing"
+  }
   if (G.mode==='gd05-sac-own'){ gd05SacResolve(null); return; } // Cancel = decline Sazabi's sacrifice
   if (G.mode==='token-replace'){ const p=G.pending; G.mode='idle'; G.pending=null; if(p&&p.after) p.after(); else { clearSel(); render(); } return; }
   clearSel(); render();
