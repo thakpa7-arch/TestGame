@@ -1583,10 +1583,16 @@ function gd05SacInteractive(side, sourceCard, after){
   const ownCands=side.field.filter(u=>u!==sourceCard && u.hp>0);
   const foeCands=G.enemy.field.filter(u=>u.hp>0);
   if (!ownCands.length || !foeCands.length){ fin(); return; }   // nothing to gain — skip the "you may"
-  G.mode='gd05-sac-own';
+  // Modal chooser: a button per Unit you may sacrifice, plus an explicit "No target" to decline
+  // (clearer than relying on Cancel). Picking a Unit destroys it, then the AI destroys one of its own.
   G.pending={ sourceCard, after, cands: ownCands.map(u=>u.uid) };
-  setPrompt(`${sourceCard.name} 【Attack】: tap one of YOUR Units to destroy, or Cancel to decline.`);
-  render();
+  el('blockMsg').innerHTML = `<b>${sourceCard.name}</b> 【Attack】 — destroy one of YOUR Units (then the AI destroys one of its Units), or choose No target.`;
+  const wrap=el('blockBtns'); wrap.innerHTML='';
+  ownCands.forEach(u=>{ const b=document.createElement('button'); b.innerHTML=`💥 ${u.name} <span style="opacity:.6;font-size:10px">⚔${effAp(u)}/❤${u.hp}</span>`;
+    b.onclick=()=>{ el('blockModal').classList.remove('show'); gd05SacResolve(u.uid); }; wrap.appendChild(b); });
+  const none=document.createElement('button'); none.className='ghost'; none.textContent='No target (don’t sacrifice)';
+  none.onclick=()=>{ el('blockModal').classList.remove('show'); gd05SacResolve(null); }; wrap.appendChild(none);
+  el('blockModal').classList.add('show');
 }
 // Finish the player's Sazabi sacrifice: uid = chosen Unit, or null when declined.
 function gd05SacResolve(uid){
