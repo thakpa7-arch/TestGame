@@ -2,8 +2,17 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Tha Gundam TCG Sim</title>
+<!-- Installable web app (iPhone "Add to Home Screen" → offline play). Card art is remote, but the
+     game shell is cached by the service worker; offline, cards fall back to text faces. -->
+<meta name="theme-color" content="#0a0805">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Gundam TCG">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="manifest" href="manifest.json">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   :root {
@@ -4434,6 +4443,14 @@ document.addEventListener('keydown', e=>{
   }
   if(e.key==='Enter'&&G.turn==='player'&&!midSelection()){ clearSel(); endTurn(); }
 });
+</script>
+<script>
+// Register the offline service worker (no-op on browsers without support, e.g. a local file:// open).
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('sw.js').catch(function () {});
+  });
+}
 </script>
 </body>
 </html>
