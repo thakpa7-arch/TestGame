@@ -1402,7 +1402,7 @@ function applyToTarget(card, side, act, target, label){
   if (act.kind==='damage'){ log(`${label}: <b>${name}</b> deals ${act.amount} to <b>${target.name}</b>.`,cls); damage(target,act.amount,foe); }
   else if (act.kind==='rest'){ target.rested=true; log(`${label}: <b>${name}</b> rests <b>${target.name}</b>.`,cls); }
   else if (act.kind==='bounce'){ const i=foe.field.indexOf(target); if(i>=0)foe.field.splice(i,1); returnToHand(target,foe); log(`${label}: <b>${name}</b> returns <b>${target.name}</b> to hand.`,cls); }
-  else if (act.kind==='destroy'){ log(`${label}: <b>${name}</b> destroys <b>${target.name}</b>.`,cls); const i=foe.field.indexOf(target); if(i>=0)foe.field.splice(i,1); fx('die',target.uid); sendToTrash(target,foe); runTrigger(target,foe,parseTrigger(target.effect,'Destroyed'),'Destroyed'); }
+  else if (act.kind==='destroy'){ log(`${label}: <b>${name}</b> destroys <b>${target.name}</b>.`,cls); const i=foe.field.indexOf(target); if(i>=0)foe.field.splice(i,1); fx('die',target.uid); sendToTrash(target,foe); fireDestroyed(target, foe); }
   else if (act.kind==='debuff'){ if(act.dur==='battle'){ target.battleAp=(target.battleAp||0)-act.amount; } else { target.tempAp=(target.tempAp||0)-act.amount; } target.ap=effAp(target); log(`${label}: <b>${target.name}</b> gets AP-${act.amount} this ${act.dur==='battle'?'battle':'turn'}.`,cls); }
   else if (act.kind==='buff'){ target.tempAp=(target.tempAp||0)+act.amount; target.ap=effAp(target); log(`${label}: <b>${target.name}</b> gets AP+${act.amount} this turn.`,cls); }
   else if (act.kind==='heal'){ target.hp=Math.min(effMaxHp(target), target.hp+(act.amount>=99?effMaxHp(target):act.amount)); log(`${label}: <b>${name}</b> repairs <b>${target.name}</b>.`,cls); }
@@ -2697,9 +2697,9 @@ function beginTurn(turn){
 
 function endTurn(){
   if (G.over) return;
-  // 5) End Phase — Action Step first: on your own turn, use Action abilities/commands before Repair.
-  if (me()===G.player){ offerPlayerActionStep(null, finishEndPhase); return; }
-  finishEndPhase();
+  // 5) End Phase — Action Step: EITHER player may use Action abilities/commands before the Repair
+  // Step, so offer the human their Action window whether it's their own End Phase or the AI's.
+  offerPlayerActionStep(null, finishEndPhase);
 }
 function finishEndPhase(){
   if (G.over) return;
@@ -3525,6 +3525,24 @@ function pickAiBlocker(atk, blockers){
   })[0];
 }
 
+// Fire a Unit's 【Destroyed】 as it leaves play. For the player, deck-look effects use their own modal,
+// and a single-target enemy effect (e.g. Geara Doga (Sleeves)'s "Choose 1 enemy Unit, deal 1 damage")
+// opens a modal chooser so the player actually picks the target — a modal survives the post-combat
+// clearSel(), unlike a G.mode selection. The AI (and player effects with 0–1 legal targets) auto-resolve.
+function fireDestroyed(u, side){
+  const dact = parseTrigger(u.effect,'Destroyed');
+  if (side===G.player && dact && dact.kind==='dig'){ playerDig(u, side, dact); return; }
+  if (side===G.player && dact && dact.kind==='scryMill'){ playerScryMill(u, side); return; }
+  if (side===G.player && dact){
+    const enemyKinds = (dact.kind==='damage' && dact.scope!=='all-enemy' && dact.scope!=='all-both') || ['rest','destroy','bounce','debuff','stun'].includes(dact.kind);
+    if (enemyKinds){
+      const cands = enemyTargets(G.enemy, dact);
+      if (cands.length>=2){ promptTargetChoice(cands, `<b>${u.name}</b> 【Destroyed】 — choose an enemy Unit`, (t)=>{ applyToTarget(u, side, dact, t, 'Destroyed'); render(); checkEnd(); }); return; }
+      applyToTarget(u, side, dact, cands[0]||null, 'Destroyed'); return;
+    }
+  }
+  runTrigger(u, side, dact, 'Destroyed');   // AI side, non-targeted, or null (gd05Custom fallback)
+}
 // kind: 'battle' = combat damage, 'self' = friendly self-inflicted, else = enemy effect damage.
 function damage(u, dmg, side, kind){
   if (u.hp<=0) return;
@@ -3540,12 +3558,9 @@ function damage(u, dmg, side, kind){
     const i=side.field.indexOf(u); if(i>=0) side.field.splice(i,1);
     fx('die', u.uid); log(`<b>${u.name}</b> is destroyed.`, side===G.player?'me':'ai');
     sendToTrash(u, side);
-    // 【Destroyed】: fires as the Unit leaves play (its controller resolves it). A player-side
-    // deck-look (dig/scry) uses its own modal, so it can be interactive even mid-combat.
-    const dact = parseTrigger(u.effect,'Destroyed');
-    if (side===G.player && dact && dact.kind==='dig') playerDig(u, side, dact);
-    else if (side===G.player && dact && dact.kind==='scryMill') playerScryMill(u, side);
-    else runTrigger(u, side, dact, 'Destroyed');
+    // 【Destroyed】: fires as the Unit leaves play (its controller resolves it). Player-side targeted
+    // effects open a modal chooser, which stays up through the post-combat clearSel().
+    fireDestroyed(u, side);
   }
   else fx(kind==='battle' ? 'hit' : 'ping', u.uid);   // combat = heavy hit; ability/self ping = sharp ping
 }
