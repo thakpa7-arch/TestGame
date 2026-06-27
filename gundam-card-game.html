@@ -1570,15 +1570,16 @@ function gd05Sacrifice(side, sourceCard){
   const foe=side===G.player?G.enemy:G.player, cls=side===G.player?'me':'ai';
   const ownCands=side.field.filter(u=>u!==sourceCard && u.hp>0);
   const foeCands=foe.field.filter(u=>u.hp>0);                 // attack triggers resolve before any block — nothing "in battle" yet
-  if (!ownCands.length || !foeCands.length) return;
+  if (!ownCands.length) return;
   const free=ownCands.find(u=>gd05ReturnsOnSelfKill(u) && !u.token);
+  if (!foeCands.length && !free) return;                      // no enemy to hit and no free-value sacrifice → skip
   const val=u=>((u.baseAp||0)+(u.baseHp||0));
   const sac=free || [...ownCands].sort((a,b)=>val(a)-val(b))[0];
-  const victim=[...foeCands].sort((a,b)=>val(a)-val(b))[0];   // the opponent loses their weakest
-  if (!free && val(sac) > val(victim)) return;                // don't sacrifice a better Unit than you remove
+  const victim=foeCands.length ? [...foeCands].sort((a,b)=>val(a)-val(b))[0] : null;   // the opponent loses their weakest, if any
+  if (!free && victim && val(sac) > val(victim)) return;      // don't sacrifice a better Unit than you remove
   log(`<b>${sourceCard.name}</b>: ${side===G.player?'you destroy your':'the AI destroys its'} <b>${sac.name}</b>.`, cls);
   gd05DestroyUnit(sac, side, true);
-  if (foe.field.includes(victim) && victim.hp>0){
+  if (victim && foe.field.includes(victim) && victim.hp>0){
     log(`<b>${sourceCard.name}</b>: ${foe===G.player?'you':'the AI'} must destroy <b>${victim.name}</b>.`, foe===G.player?'me':'ai');
     gd05DestroyUnit(victim, foe, false);
   }
@@ -1590,12 +1591,13 @@ function gd05SacInteractive(side, sourceCard, after){
   const fin=()=>{ if(after) after(); };
   if (side!==G.player){ gd05Sacrifice(side, sourceCard); fin(); return; }
   const ownCands=side.field.filter(u=>u!==sourceCard && u.hp>0);
+  if (!ownCands.length){ fin(); return; }   // nothing of yours to sacrifice
+  // The opponent having no Units does NOT block the sacrifice — "you MAY destroy 1 of your Units" is
+  // worth taking for its 【Destroyed】 / trash-return value (e.g. Zeong's token); the AI just destroys
+  // nothing if it has no Units. Modal chooser with an explicit "No target" to decline.
   const foeCands=G.enemy.field.filter(u=>u.hp>0);
-  if (!ownCands.length || !foeCands.length){ fin(); return; }   // nothing to gain — skip the "you may"
-  // Modal chooser: a button per Unit you may sacrifice, plus an explicit "No target" to decline
-  // (clearer than relying on Cancel). Picking a Unit destroys it, then the AI destroys one of its own.
   G.pending={ sourceCard, after, cands: ownCands.map(u=>u.uid) };
-  el('blockMsg').innerHTML = `<b>${sourceCard.name}</b> 【Attack】 — destroy one of YOUR Units (then the AI destroys one of its Units), or choose No target.`;
+  el('blockMsg').innerHTML = `<b>${sourceCard.name}</b> 【Attack】 — destroy one of YOUR Units${foeCands.length?' (then the AI destroys one of its Units)':''}, or choose No target.`;
   const wrap=el('blockBtns'); wrap.innerHTML='';
   ownCands.forEach(u=>{ const b=document.createElement('button'); b.innerHTML=`💥 ${u.name} <span style="opacity:.6;font-size:10px">⚔${effAp(u)}/❤${u.hp}</span>`;
     b.onclick=()=>{ el('blockModal').classList.remove('show'); gd05SacResolve(u.uid); }; wrap.appendChild(b); });
