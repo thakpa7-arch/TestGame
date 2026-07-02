@@ -188,6 +188,48 @@
   @keyframes fxDie { 0%{ filter: brightness(3); } 100%{ opacity:0; transform: scale(.5) rotate(12deg); filter: brightness(0); } }
   @keyframes fxDieRested { 0%{ filter: brightness(3); transform: rotate(90deg) scale(.82); } 100%{ opacity:0; transform: rotate(90deg) scale(.4); filter: brightness(0); } }
   .card.rested.fx-die { animation: fxDieRested .4s ease-in forwards; }
+
+  /* Attacker lunge — the card nudges toward the opposing row when it strikes. Rested variants keep
+     the 90° tap rotation (translateX in the rotated frame moves the card up/down on screen). */
+  @keyframes lungeUp   { 0%{ transform:none; } 35%{ transform: translateY(-24px) scale(1.06); } 100%{ transform:none; } }
+  @keyframes lungeDown { 0%{ transform:none; } 35%{ transform: translateY(24px) scale(1.06); } 100%{ transform:none; } }
+  @keyframes lungeUpRested   { 0%{ transform: rotate(90deg) scale(.82); } 35%{ transform: rotate(90deg) scale(.88) translateX(-24px); } 100%{ transform: rotate(90deg) scale(.82); } }
+  @keyframes lungeDownRested { 0%{ transform: rotate(90deg) scale(.82); } 35%{ transform: rotate(90deg) scale(.88) translateX(24px); } 100%{ transform: rotate(90deg) scale(.82); } }
+  .card.fx-lunge-up   { animation: lungeUp .42s ease-out; z-index: 5; }
+  .card.fx-lunge-down { animation: lungeDown .42s ease-out; z-index: 5; }
+  .card.rested.fx-lunge-up   { animation: lungeUpRested .42s ease-out; }
+  .card.rested.fx-lunge-down { animation: lungeDownRested .42s ease-out; }
+
+  /* Floating combat numbers (damage red / heal green) */
+  .float-num { position: fixed; z-index: 140; transform: translate(-50%,-50%); font-size: 26px; font-weight: 900;
+    text-shadow: 0 2px 6px #000, 0 0 14px currentColor; pointer-events: none; animation: floatUp 1.05s ease-out forwards; }
+  @keyframes floatUp { 0%{ opacity:0; transform: translate(-50%,-30%) scale(.6); } 12%{ opacity:1; transform: translate(-50%,-50%) scale(1.18); }
+    28%{ transform: translate(-50%,-58%) scale(1); } 100%{ opacity:0; transform: translate(-50%,-170%) scale(.95); } }
+
+  /* Turn banner sweep */
+  #turnBanner { position: fixed; left: 0; right: 0; top: 38%; z-index: 130; text-align: center; pointer-events: none; opacity: 0; }
+  #turnBanner.show { animation: tbSweep 1.5s ease both; }
+  #turnBanner .tb-inner { display: inline-block; padding: 10px 52px; font-size: 30px; font-weight: 900; letter-spacing: 7px; color: var(--gold);
+    background: linear-gradient(90deg, transparent, rgba(10,8,5,.94) 16%, rgba(10,8,5,.94) 84%, transparent);
+    border-top: 1px solid rgba(251,191,36,.55); border-bottom: 1px solid rgba(251,191,36,.55); text-shadow: 0 2px 12px #000; }
+  #turnBanner .tb-inner.enemy { color: #fda4af; border-color: rgba(244,114,182,.5); }
+  @keyframes tbSweep { 0%{ opacity:0; transform: translateX(-46px); } 16%{ opacity:1; transform:none; } 78%{ opacity:1; }
+    100%{ opacity:0; transform: translateX(46px); } }
+
+  /* Deck builder */
+  .db-tile { position: relative; width: 92px; height: 128px; border-radius: 8px; border: 2px solid #3d3d55; overflow: hidden; cursor: pointer;
+    background-size: cover; background-position: center top; background-color: #10101e; flex: 0 0 auto; padding: 0; }
+  .db-tile:hover { border-color: #8b6ee0; }
+  .db-tile.inDeck { border-color: #34d399; }
+  .db-tile.maxed { border-color: var(--gold); }
+  .db-tile .db-cost { position: absolute; top: 2px; left: 3px; background: rgba(0,0,0,.72); color: #8ad; font-size: 11px; font-weight: 800; padding: 0 5px; border-radius: 5px; }
+  .db-tile .db-n { position: absolute; top: 2px; right: 3px; background: #34d399; color: #052; font-size: 11px; font-weight: 900; padding: 0 5px; border-radius: 5px; }
+  .db-tile .db-name { position: absolute; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.72); color: #fff; font-size: 9px; padding: 2px; line-height: 1.1; }
+  .db-filter { background: #22203a; color: #cfd0e8; border: 1px solid #3d3d55; border-radius: 7px; padding: 5px 11px; cursor: pointer; font-size: 12px; }
+  .db-filter.on { background: #6a4fb0; color: #fff; border-color: #8b6ee0; }
+  .db-row { display: flex; align-items: center; gap: 6px; background: #1a1930; border: 1px solid #32304e; border-radius: 7px; padding: 3px 6px; font-size: 12px; color: #e6e6f2; }
+  .db-row b { flex: 1; text-align: left; font-weight: 600; }
+  .db-row button { background: #32304e; color: #fff; border: none; border-radius: 5px; width: 22px; height: 22px; cursor: pointer; font-weight: 800; }
   @keyframes shakeScreen { 0%,100%{ transform: translate(0,0);} 15%{ transform: translate(-7px,4px);} 30%{ transform: translate(8px,-5px);} 45%{ transform: translate(-6px,3px);} 60%{ transform: translate(5px,4px);} 75%{ transform: translate(-3px,-2px);} }
   .shake { animation: shakeScreen .4s ease-in-out; }
   @keyframes shieldPop { 0%{ transform: scale(1); box-shadow:0 0 6px rgba(251,191,36,.4);} 40%{ transform: scale(1.5); box-shadow:0 0 18px 6px rgba(255,120,60,.9);} 100%{ transform: scale(0); opacity:0; } }
@@ -349,6 +391,12 @@
     .base-zone .bz-slot .card { width: 46px; height: 64px; }
     .shield-zone .sz-grid { flex-wrap: nowrap; }
     .shield-card { width: 18px; height: 25px; font-size: 10px; }
+    /* Deck builder stacks vertically on phones */
+    #dbLayout { flex-wrap: wrap; }
+    #dbGrid { max-height: 38vh; }
+    #dbSide { width: 100%; max-height: 24vh; }
+    #turnBanner .tb-inner { font-size: 20px; padding: 8px 26px; letter-spacing: 4px; }
+    .float-num { font-size: 19px; }
   }
 </style>
 </head>
@@ -1417,7 +1465,7 @@ function applyToTarget(card, side, act, target, label){
   else if (act.kind==='destroy'){ log(`${label}: <b>${name}</b> destroys <b>${target.name}</b>.`,cls); const i=foe.field.indexOf(target); if(i>=0)foe.field.splice(i,1); fx('die',target.uid); sendToTrash(target,foe); fireDestroyed(target, foe); }
   else if (act.kind==='debuff'){ if(act.dur==='battle'){ target.battleAp=(target.battleAp||0)-act.amount; } else { target.tempAp=(target.tempAp||0)-act.amount; } target.ap=effAp(target); log(`${label}: <b>${target.name}</b> gets AP-${act.amount} this ${act.dur==='battle'?'battle':'turn'}.`,cls); }
   else if (act.kind==='buff'){ target.tempAp=(target.tempAp||0)+act.amount; target.ap=effAp(target); log(`${label}: <b>${target.name}</b> gets AP+${act.amount} this turn.`,cls); }
-  else if (act.kind==='heal'){ target.hp=Math.min(effMaxHp(target), target.hp+(act.amount>=99?effMaxHp(target):act.amount)); log(`${label}: <b>${name}</b> repairs <b>${target.name}</b>.`,cls); }
+  else if (act.kind==='heal'){ const _b=target.hp; target.hp=Math.min(effMaxHp(target), target.hp+(act.amount>=99?effMaxHp(target):act.amount)); if(target.hp>_b) floatNum(target.uid,'+'+(target.hp-_b),'#7ee29a'); log(`${label}: <b>${name}</b> repairs <b>${target.name}</b>.`,cls); }
   else if (act.kind==='grantKw'){ grantKeyword(target, act.kw, act.amount); target.ap=effAp(target); log(`${label}: <b>${target.name}</b> gains &lt;${kwLabel(act.kw)}${act.kw==='breach'?' '+act.amount:''}&gt; this turn.`,cls); }
   else if (act.kind==='grantAttackActive'){ target.canAttackActive=true; log(`${label}: <b>${target.name}</b> may attack active enemy Units this turn.`,cls); }
   else if (act.kind==='stun'){ target.rested=true; target.stunned=true; log(`${label}: <b>${name}</b> rests <b>${target.name}</b> — it won't ready next turn.`,cls); }
@@ -2439,6 +2487,37 @@ function flashPrompt(t){ setPrompt(t); clearTimeout(promptTimer); promptTimer=se
 // FLASH_MS is shared by the reveal duration, the player's input lock, and the AI's pacing so a
 // card's animation always finishes before the next action begins.
 const FLASH_MS = 1000;
+
+// ---- persistence (localStorage; guarded so the Node test harness — which has none — is unaffected) ----
+function lsGet(k, d){ try{ const v=localStorage.getItem(k); return v!=null ? JSON.parse(v) : d; }catch(e){ return d; } }
+function lsSet(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+// Per-deck lifetime W/L record, shown on the deck-picker tiles.
+function deckStats(name){ const s=lsGet('gtcg_stats',{}); return s[name]||{w:0,l:0}; }
+function recordResult(name, win){ const s=lsGet('gtcg_stats',{}); const e=s[name]||(s[name]={w:0,l:0}); if(win)e.w++; else e.l++; lsSet('gtcg_stats',s); }
+// AI difficulty (easy / normal / hard) — chosen on the deck screen, persisted across sessions.
+let AI_LVL = lsGet('gtcg_ai','normal');
+
+// Floating combat number over a card on the field (damage red, heal green). Positions are read from
+// the live DOM, and the float lives in its own fixed layer so re-renders don't kill the animation.
+function floatNum(uid, text, color){
+  try{
+    const node=document.querySelector(`.card[data-uid="${uid}"]`); if(!node) return;
+    const r=node.getBoundingClientRect(); if(!r || !r.width) return;
+    const f=document.createElement('div'); f.className='float-num'; f.textContent=text; f.style.color=color;
+    f.style.left=(r.left+r.width/2)+'px'; f.style.top=(r.top+r.height*0.32)+'px';
+    document.body.appendChild(f);
+    setTimeout(()=>{ try{ f.remove(); }catch(e){} }, 1100);
+  }catch(e){}
+}
+// Full-width "YOUR TURN / ENEMY TURN" sweep at the start of each turn.
+function showTurnBanner(turn){
+  try{
+    let b=document.getElementById('turnBanner');
+    if(!b){ b=document.createElement('div'); b.id='turnBanner'; document.body.appendChild(b); }
+    b.innerHTML=`<div class="tb-inner ${turn==='enemy'?'enemy':''}">${turn==='player'?'YOUR TURN':'ENEMY TURN'}</div>`;
+    b.classList.remove('show'); void b.offsetWidth; b.classList.add('show');
+  }catch(e){}
+}
 let flashCardTimer=null;
 function flashCard(card, tag){
   if (!card) return;
@@ -2575,12 +2654,12 @@ function startGame(){
   setupChooseDeck();
 }
 // ---- pre-game setup: deck choice → dice roll for turn order → hand mulligan → shield mulligan ----
-function setupModal(html){
+function setupModal(html, maxW){
   let m=el('setupModal');
   if(!m){ m=document.createElement('div'); m.id='setupModal';
     m.style.cssText='position:fixed;inset:0;background:radial-gradient(circle at 50% 30%,#1a1638,#0a0a18);z-index:1200;display:flex;align-items:center;justify-content:center;padding:18px;';
     document.body.appendChild(m); }
-  m.innerHTML=`<div style="background:#12122a;border:1px solid #6a4fb0;border-radius:14px;padding:22px;max-width:720px;width:100%;text-align:center;max-height:92vh;overflow-y:auto;box-shadow:0 10px 50px rgba(0,0,0,.6)">${html}</div>`;
+  m.innerHTML=`<div style="background:#12122a;border:1px solid #6a4fb0;border-radius:14px;padding:22px;max-width:${maxW||720}px;width:100%;text-align:center;max-height:92vh;overflow-y:auto;box-shadow:0 10px 50px rgba(0,0,0,.6)">${html}</div>`;
   m.style.display='flex';
   return m;
 }
@@ -2610,26 +2689,145 @@ function presetArt(preset, used){
   if (pick && used) used.add(pick.img);
   return pick ? pick.img : '';
 }
+function customDecks(){ return lsGet('gtcg_customDecks', []); }
 function setupChooseDeck(){
   const used=new Set();
-  const cards=PRESET_DECKS.map((d,i)=>{
-    const art=presetArt(d, used);
-    const bg = art ? `background-image:url('${art}');background-size:cover;background-position:center top` : 'background:linear-gradient(160deg,#23204a,#191636)';
-    return `<button class="setup-deck" data-i="${i}"
-      style="position:relative;width:150px;height:200px;border-radius:12px;border:1px solid #6a4fb0;cursor:pointer;overflow:hidden;padding:0;${bg}">
-      <div style="position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,0) 45%,rgba(8,6,20,.92) 88%)"></div>
-      <div style="position:absolute;bottom:0;left:0;right:0;padding:8px 6px;color:#fff;font-size:14px;font-weight:700;text-shadow:0 1px 3px #000">${d.name}</div>
-    </button>`;
-  }).join('');
+  const wl=(name)=>{ const s=deckStats(name); return (s.w||s.l)?`<div style="font-size:11px;color:#9be29a;font-weight:600">${s.w}W · <span style="color:#f0a3a3">${s.l}L</span></div>`:''; };
+  const tileStyle=(art,border)=>`position:relative;width:150px;height:200px;border-radius:12px;border:1px solid ${border};cursor:pointer;overflow:hidden;padding:0;`+
+    (art ? `background-image:url('${art}');background-size:cover;background-position:center top` : 'background:linear-gradient(160deg,#23204a,#191636)');
+  const shade=`<div style="position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,0) 45%,rgba(8,6,20,.92) 88%)"></div>`;
+  const cards=PRESET_DECKS.map((d,i)=>
+    `<button class="setup-deck" data-i="${i}" style="${tileStyle(presetArt(d,used),'#6a4fb0')}">${shade}
+      <div style="position:absolute;bottom:0;left:0;right:0;padding:8px 6px;color:#fff;font-size:14px;font-weight:700;text-shadow:0 1px 3px #000">${d.name}${wl(d.name)}</div>
+    </button>`).join('');
+  const customs=customDecks().map((d,i)=>
+    `<div class="setup-custom" data-c="${i}" style="${tileStyle(presetArt(d,used),'#34d399')}">${shade}
+      <div style="position:absolute;top:4px;right:4px;display:flex;gap:4px">
+        <button class="db-edit" data-c="${i}" title="Edit deck" style="background:rgba(0,0,0,.7);color:#fff;border:1px solid #555;border-radius:6px;padding:2px 7px;cursor:pointer;font-size:12px">✏️</button>
+        <button class="db-del" data-c="${i}" title="Delete deck" style="background:rgba(0,0,0,.7);color:#fff;border:1px solid #555;border-radius:6px;padding:2px 7px;cursor:pointer;font-size:12px">🗑</button>
+      </div>
+      <div style="position:absolute;bottom:0;left:0;right:0;padding:8px 6px;color:#fff;font-size:14px;font-weight:700;text-shadow:0 1px 3px #000">${d.name}<div style="font-size:10px;color:#7ee29a;font-weight:600">CUSTOM</div>${wl(d.name)}</div>
+    </div>`).join('');
+  const newTile=`<button id="dbNew" style="${tileStyle('','#6a4fb0')};border-style:dashed;color:#b8a8e8;font-size:15px;font-weight:700">＋<br>DECK<br>BUILDER</button>`;
+  const aiBtn=(lvl,label)=>`<button class="db-filter dbAi ${AI_LVL===lvl?'on':''}" data-lvl="${lvl}">${label}</button>`;
   const m=setupModal(`<h2 style="color:#d8b4ff;margin:0 0 6px">Choose your deck</h2>
-    <p style="color:#9aa;margin:0 0 16px;font-size:13px">Seven 1st-place competitive decklists (GD04 Phantom Aria). The AI takes a different one at random.</p>
-    <div style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center">${cards}</div>`);
-  m.querySelectorAll('.setup-deck').forEach(b=>b.onclick=()=>setupDeckChosen(+b.dataset.i));
+    <p style="color:#9aa;margin:0 0 10px;font-size:13px">Pick a competitive preset, one of your custom decks, or build your own. The AI plays a random preset.</p>
+    <div style="margin:0 0 14px;display:flex;gap:8px;justify-content:center;align-items:center">
+      <span style="color:#9aa;font-size:12px">AI difficulty:</span>${aiBtn('easy','Easy')}${aiBtn('normal','Normal')}${aiBtn('hard','Hard')}
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center">${cards}${customs}${newTile}</div>`);
+  m.querySelectorAll('.setup-deck').forEach(b=>b.onclick=()=>setupDeckChosen(PRESET_DECKS[+b.dataset.i]));
+  m.querySelectorAll('.setup-custom').forEach(t=>t.onclick=()=>setupDeckChosen(customDecks()[+t.dataset.c]));
+  m.querySelectorAll('.db-edit').forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); openDeckBuilder(+b.dataset.c); });
+  m.querySelectorAll('.db-del').forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); const ds=customDecks(); if(confirm(`Delete deck "${ds[+b.dataset.c].name}"?`)){ ds.splice(+b.dataset.c,1); lsSet('gtcg_customDecks',ds); setupChooseDeck(); } });
+  m.querySelectorAll('.dbAi').forEach(b=>b.onclick=()=>{ AI_LVL=b.dataset.lvl; lsSet('gtcg_ai',AI_LVL); setupChooseDeck(); });
+  const nb=m.querySelector('#dbNew'); if(nb) nb.onclick=()=>openDeckBuilder(-1);
 }
-function setupDeckChosen(i){
-  G.setup.playerPreset = PRESET_DECKS[i];
-  G.setup.enemyPreset  = shuffle(PRESET_DECKS.filter((_,j)=>j!==i))[0];
+function setupDeckChosen(preset){
+  if (!preset) return;
+  G.setup.playerPreset = preset;
+  G.setup.enemyPreset  = shuffle(PRESET_DECKS.filter(p=>p.name!==preset.name))[0];
   setupDiceRoll();
+}
+
+// ---- Deck Builder: build a 50-card deck from the full pool (max 4 copies per name), saved locally ----
+const DB={ pool:null, deck:{}, name:'', editIdx:-1, fColor:'All', fType:'All', fText:'' };
+function dbPool(){
+  if (!DB.pool){
+    DB.pool = GUNDAM_CARDS.filter(c=>!/-p\d+$/i.test(c.id));   // hide promo reprints (same card, same name)
+    const order={unit:0,pilot:1,command:2,base:3};
+    DB.pool.sort((a,b)=>(a.color||'').localeCompare(b.color||'') || (order[a.type]-order[b.type]) || ((a.lv||0)-(b.lv||0)) || a.name.localeCompare(b.name));
+  }
+  return DB.pool;
+}
+function dbCount(){ return Object.values(DB.deck).reduce((a,b)=>a+b,0); }
+function dbNameCount(name){ let n=0; for(const [id,k] of Object.entries(DB.deck)){ const d=CARD_BY_ID.get(id); if(d && d.name===name) n+=k; } return n; }
+function openDeckBuilder(editIdx){
+  DB.editIdx=editIdx; DB.deck={}; DB.fColor='All'; DB.fType='All'; DB.fText='';
+  if (editIdx>=0){ const d=customDecks()[editIdx]; DB.name=d.name; for(const e of parsePreset(d.dg)) DB.deck[e.id]=e.n; }
+  else DB.name='My Deck '+(customDecks().length+1);
+  renderDeckBuilder();
+}
+function renderDeckBuilder(){
+  const colors=[...new Set(dbPool().map(c=>c.color).filter(c=>c&&c!=='-'))].sort();
+  const fBtn=(group,val,label)=>`<button class="db-filter dbF ${DB['f'+group]===val?'on':''}" data-g="${group}" data-v="${val}">${label}</button>`;
+  const m=setupModal(`
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+      <input id="dbName" value="${DB.name.replace(/"/g,'&quot;')}" maxlength="24" style="background:#1a1930;border:1px solid #3d3d55;border-radius:7px;color:#fff;padding:7px 10px;font-size:14px;font-weight:700;width:170px">
+      <span id="dbCount" style="font-weight:800;font-size:15px"></span>
+      <span style="flex:1"></span>
+      <button id="dbSave" style="background:#2e6b3a;color:#fff;border:none;border-radius:8px;padding:9px 18px;cursor:pointer;font-weight:700">Save deck</button>
+      <button id="dbBack" style="background:#333;color:#fff;border:none;border-radius:8px;padding:9px 14px;cursor:pointer">Back</button>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;justify-content:center">
+      ${fBtn('Color','All','All colors')}${colors.map(c=>fBtn('Color',c,c)).join('')}
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;justify-content:center;align-items:center">
+      ${fBtn('Type','All','All types')}${['unit','pilot','command','base'].map(t=>fBtn('Type',t,t[0].toUpperCase()+t.slice(1)+'s')).join('')}
+      <input id="dbSearch" placeholder="Search name/trait…" value="${DB.fText.replace(/"/g,'&quot;')}" style="background:#1a1930;border:1px solid #3d3d55;border-radius:7px;color:#fff;padding:6px 10px;font-size:12px;width:150px">
+    </div>
+    <div id="dbLayout" style="display:flex;gap:12px;align-items:flex-start">
+      <div id="dbGrid" style="flex:1;display:flex;flex-wrap:wrap;gap:7px;justify-content:center;max-height:52vh;overflow-y:auto;padding:4px"></div>
+      <div id="dbSide" style="width:230px;flex-shrink:0;max-height:52vh;overflow-y:auto;display:flex;flex-direction:column;gap:4px"></div>
+    </div>
+    <p style="color:#778;font-size:11px;margin:10px 0 0">Tap a card to add it (max 4 per name) · exactly 50 cards to save · tap rows on the right to inspect. Decks are saved on this device.</p>`, 1060);
+  el('dbName').oninput=e=>{ DB.name=e.target.value; };
+  el('dbSearch').oninput=e=>{ DB.fText=e.target.value; renderDBGrid(); };
+  m.querySelectorAll('.dbF').forEach(b=>b.onclick=()=>{ DB['f'+b.dataset.g]=b.dataset.v; renderDeckBuilder(); });
+  el('dbBack').onclick=()=>setupChooseDeck();
+  el('dbSave').onclick=()=>{
+    if (dbCount()!==50){ alert('A deck must be exactly 50 cards (currently '+dbCount()+').'); return; }
+    const name=(DB.name||'Custom Deck').trim()||'Custom Deck';
+    const dg=Object.entries(DB.deck).filter(([,n])=>n>0).map(([id,n])=>`${n}n${id}`).join('a');
+    const ds=customDecks();
+    if (DB.editIdx>=0) ds[DB.editIdx]={name,dg}; else ds.push({name,dg});
+    lsSet('gtcg_customDecks',ds); setupChooseDeck();
+  };
+  renderDBGrid(); renderDBSide();
+}
+function dbFiltered(){
+  const q=DB.fText.trim().toLowerCase();
+  return dbPool().filter(c=>
+    (DB.fColor==='All'||c.color===DB.fColor) && (DB.fType==='All'||c.type===DB.fType) &&
+    (!q || c.name.toLowerCase().includes(q) || (c.trait||'').toLowerCase().includes(q)));
+}
+function renderDBGrid(){
+  const g=el('dbGrid'); if(!g) return;
+  g.innerHTML=dbFiltered().map(c=>{
+    const n=DB.deck[c.id]||0, nameMax=dbNameCount(c.name)>=4;
+    const art=c.img?`background-image:url('${c.img}')`:'';
+    return `<button class="db-tile ${n?'inDeck':''} ${nameMax?'maxed':''}" data-db="${c.id}" style="${art}" title="${c.name} — ${c.type} · Lv${c.lv} · Cost ${c.cost}">
+      <div class="db-cost">${c.cost}</div>${n?`<div class="db-n">×${n}</div>`:''}
+      <div class="db-name">${c.name}</div></button>`;
+  }).join('');
+  g.querySelectorAll('.db-tile').forEach(t=>{
+    t.onclick=()=>dbAdd(t.dataset.db);
+    t.oncontextmenu=(e)=>{ e.preventDefault(); const d=CARD_BY_ID.get(t.dataset.db); if(d) inspect(makeCard(d,'player')); };
+  });
+}
+function renderDBSide(){
+  const s=el('dbSide'); if(!s) return;
+  const rows=Object.entries(DB.deck).filter(([,n])=>n>0).map(([id,n])=>({d:CARD_BY_ID.get(id),n})).filter(r=>r.d)
+    .sort((a,b)=>(a.d.cost-b.d.cost)||a.d.name.localeCompare(b.d.name));
+  s.innerHTML = rows.length ? rows.map(r=>
+    `<div class="db-row" data-db="${r.d.id}"><span style="color:#8ad;font-weight:800">${r.d.cost}</span><b>${r.d.name}</b>
+     <span style="opacity:.6">×${r.n}</span><button class="db-minus" data-db="${r.d.id}">−</button><button class="db-plus" data-db="${r.d.id}">＋</button></div>`).join('')
+    : '<div style="color:#667;font-size:12px;padding:20px 6px;text-align:center">Tap cards on the left to add them.</div>';
+  s.querySelectorAll('.db-minus').forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); dbRemove(b.dataset.db); });
+  s.querySelectorAll('.db-plus').forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); dbAdd(b.dataset.db); });
+  s.querySelectorAll('.db-row').forEach(r=>r.onclick=()=>{ const d=CARD_BY_ID.get(r.dataset.db); if(d) inspect(makeCard(d,'player')); });
+  const cnt=el('dbCount'); if(cnt){ const n=dbCount(); cnt.textContent=`${n}/50`; cnt.style.color = n===50?'#7ee29a':(n>50?'#f88':'#e8d48b'); }
+}
+function dbAdd(id){
+  const d=CARD_BY_ID.get(id); if(!d) return;
+  if (dbCount()>=50){ flashPrompt('Deck is full (50 cards).'); return; }
+  if (dbNameCount(d.name)>=4){ flashPrompt(`Max 4 copies of "${d.name}".`); return; }
+  DB.deck[id]=(DB.deck[id]||0)+1; renderDBGrid(); renderDBSide();
+}
+function dbRemove(id){
+  if (!DB.deck[id]) return;
+  DB.deck[id]--; if(DB.deck[id]<=0) delete DB.deck[id];
+  renderDBGrid(); renderDBSide();
 }
 function setupDiceRoll(){
   let pr,er; do{ pr=1+Math.floor(Math.random()*6); er=1+Math.floor(Math.random()*6); } while(pr===er);
@@ -2664,6 +2862,7 @@ function setupDealHands(){
   G.player.deck=shuffle(buildPresetDeck('player',pp));
   G.enemy.deck=shuffle(buildPresetDeck('enemy',ep));
   for (let i=0;i<HAND_START;i++){ draw(G.player,true); draw(G.enemy,true); }
+  if (AI_LVL==='hard') draw(G.enemy,true);   // hard AI opens with a 6-card hand
   aiMulligan(G.enemy);                     // AI decides its own redraw silently
   setupHandMulligan(true);
 }
@@ -2702,8 +2901,9 @@ function setupFinalize(){
 }
 // AI opening-hand redraw: mulligan a hand with too few early plays (no Lv≤3 cards).
 function aiMulligan(side){
+  if (AI_LVL==='easy') return;                               // easy AI keeps whatever it drew
   const cheap = side.hand.filter(c=>(c.lv||0)<=3).length;
-  if (cheap>=2) return;
+  if (cheap >= (AI_LVL==='hard'?3:2)) return;                // hard AI demands a stronger curve
   side.deck.push(...side.hand); side.hand.length=0; shuffle(side.deck);
   for (let i=0;i<HAND_START;i++) draw(side,true);
 }
@@ -2741,6 +2941,7 @@ function beginTurn(turn){
   // 4) Main Phase — deploy, pair, activate, play commands, attack.
   G.phase='main';
   log(`— ${who(s)}'s turn ${G.turnNumber} —`, 'sys');
+  showTurnBanner(turn);
   render();
   if (turn==='enemy'){ setPrompt(`${who(G.enemy)} is deploying...`); setTimeout(aiTurn, 700); }
   else defaultPrompt();
@@ -2757,7 +2958,7 @@ function finishEndPhase(){
   const s=me();
   // Repair Step (regen), then Hand Step (discard down to the hand limit).
   G.phase='end';
-  for (const u of s.field){ if (u.repair>0 && u.hp>0 && u.hp<effMaxHp(u)){ u.hp=Math.min(effMaxHp(u), u.hp+u.repair); } u.tempAp=0; u.battleAp=0; u.canAttackActive=false; u.noDirectTurn=false; u.dmgReduce=0; resetTurnKeywords(u); u.ap=effAp(u); }
+  for (const u of s.field){ if (u.repair>0 && u.hp>0 && u.hp<effMaxHp(u)){ const _b=u.hp; u.hp=Math.min(effMaxHp(u), u.hp+u.repair); if(u.hp>_b) floatNum(u.uid,'+'+(u.hp-_b),'#7ee29a'); } u.tempAp=0; u.battleAp=0; u.canAttackActive=false; u.noDirectTurn=false; u.dmgReduce=0; resetTurnKeywords(u); u.ap=effAp(u); }
   while (s.hand.length>HAND_MAX){
     const worst=[...s.hand].sort((a,b)=>cardValue(a)-cardValue(b))[0];
     s.hand.splice(s.hand.indexOf(worst),1); sendToTrash(worst, s);
@@ -2955,7 +3156,7 @@ function applyCommand(card, side, target){
     if (a.scope==='all-enemy' || a.scope==='all-both'){ damageAll(card, side, a, card.name); }
     else if (target){ log(`<b>${card.name}</b> deals ${a.amount} to <b>${target.name}</b>.`, side===G.player?'me':'ai'); damage(target,a.amount,foe); }
   }
-  else if (a.kind==='heal'){ if (target){ target.hp=Math.min(effMaxHp(target), target.hp + (a.amount>=99?effMaxHp(target):a.amount)); log(`<b>${card.name}</b> repairs <b>${target.name}</b>.`, side===G.player?'me':'ai'); } }
+  else if (a.kind==='heal'){ if (target){ const _b=target.hp; target.hp=Math.min(effMaxHp(target), target.hp + (a.amount>=99?effMaxHp(target):a.amount)); if(target.hp>_b) floatNum(target.uid,'+'+(target.hp-_b),'#7ee29a'); log(`<b>${card.name}</b> repairs <b>${target.name}</b>.`, side===G.player?'me':'ai'); } }
   else if (a.kind==='buff'){ if (target){ target.tempAp=(target.tempAp||0)+a.amount; target.ap=effAp(target); log(`<b>${card.name}</b>: <b>${target.name}</b> gets +${a.amount} AP.`, side===G.player?'me':'ai'); } }
   else if (a.kind==='debuff' && a.scope==='all-enemy'){ debuffAllEnemy(card, side, a, card.name); }
   else if (a.kind==='rest' || a.kind==='destroy' || a.kind==='bounce' || a.kind==='debuff' || a.kind==='stun' || a.kind==='grantKw' || a.kind==='grantReduce' || a.kind==='grantAttackActive'){ applyToTarget(card, side, a, target||rankTarget(a.scope==='friendly'||['grantKw','grantReduce','grantAttackActive'].includes(a.kind)?friendlyTargets(side,a):enemyTargets(foe,a),a), card.name); }
@@ -3079,7 +3280,7 @@ function applyActivateEffect(u, target, side, costUnit){
   } else if (a.kind==='debuff'){
     if (target){ target.tempAp=(target.tempAp||0)-a.amount; target.ap=effAp(target); log(`<b>${u.name}</b>: <b>${target.name}</b> gets AP-${a.amount} this turn.`, cls); }
   } else if (a.kind==='heal'){
-    if (target){ target.hp=Math.min(effMaxHp(target), target.hp+a.amount); log(`<b>${u.name}</b> repairs <b>${target.name}</b> (+${a.amount} HP).`, cls); }
+    if (target){ const _b=target.hp; target.hp=Math.min(effMaxHp(target), target.hp+a.amount); if(target.hp>_b) floatNum(target.uid,'+'+(target.hp-_b),'#7ee29a'); log(`<b>${u.name}</b> repairs <b>${target.name}</b> (+${a.amount} HP).`, cls); }
   } else if (a.kind==='damage' && (a.scope==='all-enemy' || a.scope==='all-both')){
     damageAll(u, side, a, u.name);
   } else if (a.kind==='damage'){
@@ -3094,6 +3295,7 @@ function applyActivateEffect(u, target, side, costUnit){
 }
 // AI: pick a sensible target for a ready activated ability and use it (before attacking).
 function aiActivate(u){
+  if (AI_LVL==='easy' && Math.random()<0.4) return false;    // easy AI sometimes forgets its abilities
   let a=u.activate.action; const ai=G.enemy, pl=G.player;
   // Conditional ability: don't waste it when the condition is currently false.
   if (a.kind==='cond'){ if(!condMet(a.cond, ai, u, a.other)) return false; a=a.inner; }
@@ -3327,8 +3529,9 @@ function attackDirect(){
 function strikePlayer(atk, defSide, done){
   done = done || function(){};
   const side = defSide===G.player ? 'ai' : 'me';
+  fxLunge(atk);
   if (defSide.base){
-    const b=defSide.base; b.hp-=atk.ap;
+    const b=defSide.base; b.hp-=atk.ap; floatNum(b.uid,'-'+atk.ap,'#ff6b5e');
     log(`<b>${atk.name}</b> hits ${who(defSide)}'s <b>${b.name}</b> base for ${atk.ap}.`, side);
     if (b.hp<=0){
       defSide.base=null; fx('die', b.uid); log(`${who(defSide)}'s ${b.name} base is destroyed.`, side); sendToTrash(b, defSide);
@@ -3509,6 +3712,7 @@ function resolveAttackTriggers(atk, atkSide, done){
 // Simultaneous battle, modified by First Strike (striker hits first; if foe dies, no return).
 function battle(atk, def, atkSide, defSide){
   atk.rested=true;
+  fxLunge(atk);
   // <Support N>: an active friendly Unit may rest to give the attacker +N AP this turn.
   applySupport(atk, atkSide, def);
   // First Strike only triggers on this Unit's attack — i.e. on its owner's turn. The
@@ -3549,7 +3753,7 @@ function applySupport(atk, atkSide, def){
 function breachShield(atk, defSide){
   const side = defSide===G.player ? 'ai' : 'me';
   if (defSide.base){
-    const b=defSide.base; b.hp-=atk.breach;
+    const b=defSide.base; b.hp-=atk.breach; floatNum(b.uid,'-'+atk.breach,'#ff6b5e');
     log(`<b>${atk.name}</b> &lt;Breach ${atk.breach}&gt; hits ${who(defSide)}'s <b>${b.name}</b> base for ${atk.breach}.`, side);
     if (b.hp<=0){ defSide.base=null; fx('die', b.uid); sendToTrash(b, defSide); log(`${who(defSide)}'s ${b.name} base is destroyed by Breach.`, side); }
     else fx('hit', b.uid);
@@ -3563,6 +3767,7 @@ function breachShield(atk, defSide){
 
 // ---- Blocker decision helpers (AI as defender) ----
 function aiWantsBlock(atk){
+  if (AI_LVL==='easy' && Math.random()<0.5) return false;    // easy AI often forgets to block
   // Decide whether to spend a <Blocker> intercepting this attack. Shields are the AI's life total,
   // so it protects dwindling shields aggressively; otherwise it blocks for a favourable trade.
   const blockers = G.enemy.field.filter(b=>effBlocker(b) && !b.rested && b.hp>0);
@@ -3616,6 +3821,7 @@ function damage(u, dmg, side, kind){
   }
   if (dmg<=0) return;   // ignore hits on an already-destroyed Unit / fully-reduced damage
   u.hp-=dmg;
+  floatNum(u.uid, '-'+dmg, '#ff6b5e');
   if (u.hp<=0){
     const i=side.field.indexOf(u); if(i>=0) side.field.splice(i,1);
     fx('die', u.uid); log(`<b>${u.name}</b> is destroyed.`, side===G.player?'me':'ai');
@@ -3725,6 +3931,7 @@ function checkEnd(){ /* direct hits handle the actual win in attackDirect / aiDi
 function endGame(winnerSide){
   G.over=true; setPrompt(''); render();
   const win = winnerSide===G.player;
+  recordResult(G.playerDeckName, win);   // lifetime W/L per deck, shown on the deck picker
   fx('direct'); setTimeout(()=>sound(win?'win':'lose'), 250);
   const ov=el('overlay'); ov.classList.remove('hidden');
   ov.innerHTML = `<h2>${win?'VICTORY':'DEFEAT'}</h2>
@@ -4247,10 +4454,13 @@ let fxQueue = [];
 function fx(kind, uid){ sound(kind); if(uid!=null) fxQueue.push({kind,uid}); if(kind==='direct'||kind==='shield'||kind==='die') screenShake(); }
 function screenShake(){ const r=el('app'); if(!r) return; r.classList.remove('shake'); void r.offsetWidth; r.classList.add('shake'); setTimeout(()=>r.classList.remove('shake'),420); }
 function applyVisualFx(){
-  for(const f of fxQueue){ const node=document.querySelector(`.card[data-uid="${f.uid}"]`); if(node){ const cls=f.kind==='die'?'fx-die':'fx-hit'; node.classList.remove(cls); void node.offsetWidth; node.classList.add(cls); } }
+  const CLS={ die:'fx-die', lungeUp:'fx-lunge-up', lungeDown:'fx-lunge-down' };
+  for(const f of fxQueue){ const node=document.querySelector(`.card[data-uid="${f.uid}"]`); if(node){ const cls=CLS[f.kind]||'fx-hit'; node.classList.remove(cls); void node.offsetWidth; node.classList.add(cls); } }
   fxQueue=[];
   G.player.breakingShield=false; G.enemy.breakingShield=false;   // one-shot
 }
+// Queue the attacker's lunge toward the opposing row (visual only, no sound).
+function fxLunge(atk){ fxQueue.push({ kind: atk.owner==='player'?'lungeUp':'lungeDown', uid: atk.uid }); }
 
 function render(){
   // Refresh cached AP/HP for every Unit so turn-conditional team auras (e.g. Gundam's
@@ -4359,6 +4569,26 @@ function bind(){
 }
 
 // ---- inspector ----
+// Keyword glossary: rule reminders for every keyword printed on the inspected card.
+const KW_GLOSSARY=[
+  [/blocker/i,        'Blocker',       'Rest this Unit to change the attack target to it.'],
+  [/breach\s*(\d+)/i, 'Breach',        'When this Unit destroys an enemy Unit with battle damage, deal that much damage to the first card in the enemy shield area.'],
+  [/first\s*strike/i, 'First Strike',  'Deals its battle damage first — if that destroys the enemy Unit, this Unit takes none back.'],
+  [/high-?maneuver/i, 'High-Maneuver', "This Unit's attacks can't be blocked."],
+  [/repair\s*(\d+)/i, 'Repair',        'At the end of your turn, this Unit recovers that much HP.'],
+  [/blitz/i,          'Blitz',         "This Unit can attack the turn it's deployed."],
+  [/support\s*(\d+)/i,'Support',       'Rest this Unit to give another attacking friendly Unit that much AP for the battle.'],
+  [/suppression/i,    'Suppression',   "This Unit's attack damages the first 2 cards of the shield area simultaneously."],
+];
+function kwGlossaryHTML(effect){
+  const t=plain(effect||''); if(!t) return '';
+  const rows=[];
+  for (const [re,name,desc] of KW_GLOSSARY){
+    const m=t.match(new RegExp('<\\s*'+re.source,'i'));
+    if (m) rows.push(`<div style="margin-top:4px"><b style="color:var(--gold)">&lt;${name}${m[1]?' '+m[1]:''}&gt;</b> — ${desc}</div>`);
+  }
+  return rows.length ? `<div style="margin-top:10px;padding-top:8px;border-top:1px dashed var(--line);font-size:11px;color:var(--muted)">${rows.join('')}</div>` : '';
+}
 function inspect(c){
   if(!c) return;
   // Hide the art if it can't load (e.g. playing offline — the remote card art won't fetch); the
@@ -4376,7 +4606,7 @@ function inspect(c){
                                     : ` · AP ${c.baseAp} / HP ${c.baseHp}`))
                  : c.type==='pilot' ? ` · +${c.pAp} AP / +${c.pHp} HP` : '';
   el('insMeta').textContent = `${c.color} ${c.type.toUpperCase()} · Lv${c.lv} · Cost ${c.cost}${stat}  ${c.trait||''}`;
-  el('insEff').innerHTML = c.effect || '(no printed effect)';
+  el('insEff').innerHTML = (c.effect || '(no printed effect)') + kwGlossaryHTML(c.effect);
   const btns=el('insBtns'); btns.innerHTML='';
   const inHand = G.player.hand.some(x=>x.uid===c.uid);
   if (inHand && G.turn==='player' && G.mode==='idle' && !G.actionLock){
