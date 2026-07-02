@@ -205,6 +205,10 @@
   /* Deck + trash (right column) */
   .zone.deckz { flex: 1.1; flex-direction: column; }
   .zone.trashz { flex: 1; flex-direction: column; cursor: pointer; }
+  .zone.exilez { flex: 0 0 30px; cursor: pointer; }
+  .zone.exilez .z-count { font-size: 13px; font-weight: 800; color: #2c3a5c; margin-right: 30px; }
+  .zone.exilez .z-label { font-size: 7.5px; }
+  .mat.enemy .zone.exilez .z-count { margin-right: 0; margin-left: 30px; }
   .deck-stack .deck-card, .trash-body .trash-card { width: calc(var(--card-w) * 0.5); height: calc(var(--card-h) * 0.44); border-radius: 5px;
     background: var(--shield-img, linear-gradient(155deg, #2f4170, #15203a)) center/cover; border: 1.5px solid #c8322b;
     box-shadow: 2px 2px 0 rgba(90,110,150,.55), 4px 4px 0 rgba(90,110,150,.3); position: relative; }
@@ -527,7 +531,6 @@
     <div class="side-stats enemy">
       <div class="name enemy" id="enemyName">ZEON (AI)</div>
       <div class="stat-line"><span>Hand</span><b id="enemyHandCount"></b></div>
-      <div class="stat-line pile-link" id="enemyExileRow" title="Tap to view the enemy Exile"><span>⛓ Exile <em>view</em></span><b id="enemyExileCount"></b></div>
     </div>
     <div class="mat enemy">
       <div class="mat-col">
@@ -544,6 +547,7 @@
       <div class="mat-col">
         <div class="zone deckz"><div class="deck-stack" id="enemyDeckZone"></div><div class="z-label">DECK<br>AREA</div></div>
         <div class="zone trashz pile-link" id="enemyTrashRow" title="Tap to view the enemy Trash"><div class="trash-body" id="enemyTrashTop"></div><div class="z-label">TRASH</div></div>
+        <div class="zone exilez pile-link" id="enemyExileRow" title="Tap to view the enemy Exile"><b class="z-count" id="enemyExileCount"></b><div class="z-label">EXILE</div></div>
       </div>
     </div>
   </div>
@@ -551,7 +555,6 @@
   <div class="row">
     <div class="side-stats player">
       <div class="name player" id="playerName">E.F.S.F. (YOU)</div>
-      <div class="stat-line pile-link" id="playerExileRow" title="Tap to view your Exile"><span>⛓ Exile <em>view</em></span><b id="playerExileCount"></b></div>
     </div>
     <div class="mat player">
       <div class="mat-col">
@@ -568,6 +571,7 @@
       <div class="mat-col">
         <div class="zone deckz"><div class="deck-stack" id="playerDeckZone"></div><div class="z-label">DECK<br>AREA</div></div>
         <div class="zone trashz pile-link" id="playerTrashRow" title="Tap to view your Trash (graveyard)"><div class="trash-body" id="playerTrashTop"></div><div class="z-label">TRASH</div></div>
+        <div class="zone exilez pile-link" id="playerExileRow" title="Tap to view your Exile"><b class="z-count" id="playerExileCount"></b><div class="z-label">EXILE</div></div>
       </div>
     </div>
   </div>
