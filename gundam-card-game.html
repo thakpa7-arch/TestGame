@@ -106,6 +106,16 @@
   @keyframes scan { 0% { transform: translateY(-40vh); opacity: 0; } 12%,78% { opacity: 1; } 100% { transform: translateY(120vh); opacity: 0; } }
   /* Cockpit targeting-frame corner brackets */
   #gundam-bg .frame { position: absolute; inset: 14px; }
+  /* Hangar dressing: mobile-suit silhouettes standing watch + gunpla runner sprues laying around */
+  #gundam-bg .mecha, #gundam-bg .sprue { position: absolute; background-repeat: no-repeat; background-size: contain; pointer-events: none; }
+  #gundam-bg .mecha { background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 380' fill='none' stroke='%23d4a017' stroke-width='2.5' stroke-linejoin='round'%3E%3Cpath d='M100 26 L64 4 M100 26 L136 4 M96 10 h8 v10 h-8 Z'/%3E%3Crect x='86' y='22' width='28' height='22' rx='3'/%3E%3Cpath d='M90 34 h20'/%3E%3Cpath d='M74 48 h52 l12 42 -18 12 h-40 l-18 -12 Z'/%3E%3Cpath d='M100 60 l11 15 -11 15 -11 -15 Z'/%3E%3Cpath d='M80 56 l12 6 M120 56 l-12 6'/%3E%3Crect x='34' y='50' width='34' height='34' rx='5'/%3E%3Crect x='132' y='50' width='34' height='34' rx='5'/%3E%3Cpath d='M48 84 v34 h18 v40 h-20 v-38 M152 84 v34 h-18 v40 h20 v-38'/%3E%3Cpath d='M18 96 h30 l6 14 v64 l-21 18 -21 -18 v-64 Z'/%3E%3Cpath d='M82 102 h36 l10 34 h-56 Z M66 112 l-14 30 14 8 M134 112 l14 30 -14 8'/%3E%3Cpath d='M80 136 v54 h14 v-54 M106 136 v54 h14 v-54'/%3E%3Cpath d='M78 196 l-8 66 10 22 h20 l4 -20 v-64 M122 196 l8 66 -10 22 h-20'/%3E%3Cpath d='M66 288 l-14 20 h38 v-18 M134 288 l14 20 h-38 v-18'/%3E%3Cpath d='M84 44 l-16 -26 M116 44 l16 -26'/%3E%3C/svg%3E"); }
+  #gundam-bg .sprue { background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 320 220' fill='none' stroke='%23d4a017' stroke-width='2'%3E%3Crect x='6' y='6' width='308' height='208' rx='10'/%3E%3Cpath d='M160 6 v208 M6 110 h308'/%3E%3Crect x='18' y='16' width='44' height='22' rx='4'/%3E%3Ctext x='40' y='32' font-size='14' fill='%23d4a017' stroke='none' text-anchor='middle'%3EA1%3C/text%3E%3Crect x='96' y='34' width='30' height='24' rx='4'/%3E%3Cpath d='M111 34 l-10 -8 M111 34 l10 -8 M111 58 v14 M111 72 h49 v38'/%3E%3Cpath d='M196 30 h64 l10 30 -20 14 h-44 l-10 -14 Z M228 44 l8 10 -8 10 -8 -10 Z M228 6 v24'/%3E%3Cpath d='M40 130 v50 h20 v-50 Z M60 155 h20 M100 130 v50 h20 v-50 Z M110 110 v20'/%3E%3Ccircle cx='210' cy='150' r='16'/%3E%3Ccircle cx='258' cy='150' r='16'/%3E%3Cpath d='M210 134 v-24 M258 134 v-24 M226 150 h16'/%3E%3Cpath d='M286 180 l16 16 M286 196 l16 -16'/%3E%3C/svg%3E"); }
+  #gundam-bg .mecha.m1 { right: 2vw; bottom: 3vh; width: 26vh; height: 66vh; opacity: .085; animation: mechaBob 14s ease-in-out infinite alternate; }
+  #gundam-bg .mecha.m2 { left: 1.5vw; top: 7vh; width: 17vh; height: 46vh; opacity: .055; }
+  #gundam-bg .sprue.s1 { left: 5vw; bottom: 3vh; width: 36vh; height: 25vh; transform: rotate(-11deg); opacity: .06; }
+  #gundam-bg .sprue.s2 { right: 22vw; top: 5vh; width: 27vh; height: 19vh; transform: rotate(8deg); opacity: .045; }
+  @keyframes mechaBob { 0%{ transform: translateY(0); } 100%{ transform: translateY(-16px); } }
+  @media (max-width: 820px) { #gundam-bg .mecha.m2, #gundam-bg .sprue.s2 { display: none; } }
   #gundam-bg .frame span { position: absolute; width: 34px; height: 34px; border: 2px solid rgba(251,191,36,.30); }
   #gundam-bg .frame span:nth-child(1){ top: 0; left: 0; border-right: 0; border-bottom: 0; }
   #gundam-bg .frame span:nth-child(2){ top: 0; right: 0; border-left: 0; border-bottom: 0; }
@@ -455,7 +465,7 @@
 </style>
 </head>
 <body>
-<div id="gundam-bg"><div class="grid"></div><div class="radar"></div><div class="scan"></div><div class="earth"></div><div class="frame"><span></span><span></span><span></span><span></span></div></div>
+<div id="gundam-bg"><div class="grid"></div><div class="radar"></div><div class="scan"></div><div class="earth"></div><div class="mecha m1"></div><div class="mecha m2"></div><div class="sprue s1"></div><div class="sprue s2"></div><div class="frame"><span></span><span></span><span></span><span></span></div></div>
 <div id="starfx"><i></i><i></i><i></i></div>
 <div id="app">
   <header>
@@ -2756,12 +2766,30 @@ function startGame(){
   setupChooseDeck();
 }
 // ---- pre-game setup: deck choice → dice roll for turn order → hand mulligan → shield mulligan ----
+// Every setup step can navigate back: deck screen → title; later steps → deck screen (fully
+// resetting both sides, so re-dealing is always clean).
+function setupBackBtn(label, fn){
+  window['_sb_'+(setupBackBtn._n=(setupBackBtn._n||0)+1)]=fn;
+  return `<button onclick="window._sb_${setupBackBtn._n}()" style="position:absolute;top:10px;left:12px;background:#252242;color:#cfd0e8;border:1px solid #4a4670;border-radius:8px;padding:7px 14px;cursor:pointer;font-size:12px">← ${label}</button>`;
+}
+function setupBackToTitle(){
+  closeSetupModal();
+  el('overlay').classList.remove('hidden');
+  el('startBtn').style.display='inline-block';
+  el('introText').style.display='block';
+  el('backToBattleBtn').style.display='none';
+}
+function setupBackToDecks(){
+  G.player=makeSide('player'); G.enemy=makeSide('enemy');   // wipe any dealt hands/shields
+  G.firstPlayer='player'; G.skipDrawSide=null; G.setup={};
+  setupChooseDeck();
+}
 function setupModal(html, maxW){
   let m=el('setupModal');
   if(!m){ m=document.createElement('div'); m.id='setupModal';
     m.style.cssText='position:fixed;inset:0;background:radial-gradient(circle at 50% 30%,#1a1638,#0a0a18);z-index:1200;display:flex;align-items:center;justify-content:center;padding:18px;';
     document.body.appendChild(m); }
-  m.innerHTML=`<div style="background:#12122a;border:1px solid #6a4fb0;border-radius:14px;padding:22px;max-width:${maxW||720}px;width:100%;text-align:center;max-height:92vh;overflow-y:auto;box-shadow:0 10px 50px rgba(0,0,0,.6)">${html}</div>`;
+  m.innerHTML=`<div style="position:relative;background:#12122a;border:1px solid #6a4fb0;border-radius:14px;padding:22px;max-width:${maxW||720}px;width:100%;text-align:center;max-height:92vh;overflow-y:auto;box-shadow:0 10px 50px rgba(0,0,0,.6)">${html}</div>`;
   m.style.display='flex';
   return m;
 }
@@ -2812,7 +2840,7 @@ function setupChooseDeck(){
     </div>`).join('');
   const newTile=`<button id="dbNew" style="${tileStyle('','#6a4fb0')};border-style:dashed;color:#b8a8e8;font-size:15px;font-weight:700">＋<br>DECK<br>BUILDER</button>`;
   const aiBtn=(lvl,label)=>`<button class="db-filter dbAi ${AI_LVL===lvl?'on':''}" data-lvl="${lvl}">${label}</button>`;
-  const m=setupModal(`<h2 style="color:#d8b4ff;margin:0 0 6px">Choose your deck</h2>
+  const m=setupModal(`${setupBackBtn('Title', setupBackToTitle)}<h2 style="color:#d8b4ff;margin:14px 0 6px">Choose your deck</h2>
     <p style="color:#9aa;margin:0 0 10px;font-size:13px">Pick a competitive preset, one of your custom decks, or build your own. The AI plays a random preset.</p>
     <div style="margin:0 0 14px;display:flex;gap:8px;justify-content:center;align-items:center">
       <span style="color:#9aa;font-size:12px">AI difficulty:</span>${aiBtn('easy','Easy')}${aiBtn('normal','Normal')}${aiBtn('hard','Hard')}
@@ -2934,7 +2962,7 @@ function dbRemove(id){
 function setupDiceRoll(){
   let pr,er; do{ pr=1+Math.floor(Math.random()*6); er=1+Math.floor(Math.random()*6); } while(pr===er);
   const playerWon = pr>er;
-  const m=setupModal(`<h2 style="color:#d8b4ff;margin:0 0 10px">Roll for turn order</h2>
+  const m=setupModal(`${setupBackBtn('Decks', setupBackToDecks)}<h2 style="color:#d8b4ff;margin:14px 0 10px">Roll for turn order</h2>
     <div style="font-size:34px;margin:14px 0">🎲 You <b style="color:#86efac">${pr}</b> &nbsp;vs&nbsp; AI <b style="color:#fca5a5">${er}</b> 🎲</div>
     <p style="color:${playerWon?'#86efac':'#fca5a5'};font-size:14px">${playerWon?'You won the roll — choose who takes the first turn.':'The AI won the roll.'}</p>
     <div id="orderBtns" style="margin-top:8px"></div>`);
@@ -2970,7 +2998,7 @@ function setupDealHands(){
 }
 function setupHandMulligan(allowRedraw){
   const hand=G.player.hand.map(setupMiniCard).join('');
-  const m=setupModal(`<h2 style="color:#d8b4ff;margin:0 0 10px">Your opening hand</h2>
+  const m=setupModal(`${setupBackBtn('Decks', setupBackToDecks)}<h2 style="color:#d8b4ff;margin:14px 0 10px">Your opening hand</h2>
     <div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:14px 0">${hand}</div>
     <p style="color:#9aa;font-size:13px">${allowRedraw?'You may redraw your whole hand once — shuffle all 5 back and draw 5 new.':'Mulligan used — this is your hand.'}</p>
     <div>${allowRedraw?'<button id="keepHand" style="background:#2e6b3a;color:#fff;border:none;border-radius:8px;padding:11px 20px;margin:4px;cursor:pointer;font-weight:600">Keep</button> <button id="mullHand" style="background:#7a3a3a;color:#fff;border:none;border-radius:8px;padding:11px 20px;margin:4px;cursor:pointer;font-weight:600">Mulligan</button>':'<button id="keepHand" style="background:#2e6b3a;color:#fff;border:none;border-radius:8px;padding:11px 20px;margin:4px;cursor:pointer;font-weight:600">Continue</button>'}</div>`);
@@ -2984,7 +3012,7 @@ function setupHandMulligan(allowRedraw){
 function setupShieldsStep(){
   // Place the top 6 cards of each deck face-down as Shields (no shield redraw — not a real rule).
   for (const s of [G.player, G.enemy]){ s.shields.length=0; for (let i=0;i<SHIELD_MAX && s.deck.length;i++) s.shields.push(s.deck.pop()); s.base=exBaseToken(s.who); }
-  const m=setupModal(`<h2 style="color:#d8b4ff;margin:0 0 10px">Ready to battle</h2>
+  const m=setupModal(`${setupBackBtn('Decks', setupBackToDecks)}<h2 style="color:#d8b4ff;margin:14px 0 10px">Ready to battle</h2>
     <div style="font-size:30px;letter-spacing:4px;margin:8px 0">${'🛡'.repeat(SHIELD_MAX)}</div>
     <p style="color:#9aa;font-size:13px">6 face-down Shields and an EX Base are set for each side.</p>
     <div><button id="beginBtl" style="background:#2e6b3a;color:#fff;border:none;border-radius:8px;padding:11px 24px;margin:4px;cursor:pointer;font-weight:600">Begin Battle</button></div>`);
@@ -4517,39 +4545,56 @@ function renderSound(ac, kind){
   const whoosh=(dur,gain,f0,f1,delay)=>{ const t=t0+(delay||0); const n=Math.max(1,Math.floor(ac.sampleRate*dur)); const buf=ac.createBuffer(1,n,ac.sampleRate); const d=buf.getChannelData(0); for(let i=0;i<n;i++) d[i]=(Math.random()*2-1); const src=ac.createBufferSource(); src.buffer=buf; const f=ac.createBiquadFilter(); f.type='bandpass'; f.Q.value=.8; f.frequency.setValueAtTime(f0,t); f.frequency.exponentialRampToValueAtTime(Math.max(80,f1),t+dur); const g=ac.createGain(); g.gain.setValueAtTime(.0001,t); g.gain.exponentialRampToValueAtTime(gain||.12,t+dur*.3); g.gain.exponentialRampToValueAtTime(.0004,t+dur); src.connect(f); f.connect(g); g.connect(out); src.start(t); };
   // soft sub-bass body for impacts.
   const sub=(freq,dur,gain,delay)=>tone(freq,dur,{type:'sine',gain:gain||.2,to:freq*.5,delay,atk:.006});
+  // beam-weapon zap: fast pitch-swept square with a noise crack — the classic beam-rifle "pshew".
+  const zap=(f0,f1,dur,gain,delay)=>{ tone(f0,dur,{type:'square',gain:(gain||.12)*.8,to:f1,lp:3800,lpTo:900,delay,atk:.002}); whoosh(dur*.7,(gain||.12)*.45,3200,700,delay); };
+  // mecha servo whir: a quick up-then-down saw gliss, quiet and mechanical.
+  const servo=(f0,f1,dur,gain,delay)=>{ tone(f0,dur*.55,{type:'sawtooth',gain:(gain||.06),to:f1,lp:1400,delay,atk:.008}); tone(f1,dur*.5,{type:'sawtooth',gain:(gain||.06)*.8,to:Math.max(60,f0*.9),lp:1100,delay:(delay||0)+dur*.5,atk:.006}); };
+  // bridge alarm klaxon: alternating two-tone square blare.
+  const klaxon=(gain,delay,reps)=>{ for(let i=0;i<(reps||2);i++){ tone(784,.11,{type:'square',gain:gain||.07,lp:2200,delay:(delay||0)+i*.24,atk:.004}); tone(587,.11,{type:'square',gain:(gain||.07)*.9,lp:2000,delay:(delay||0)+i*.24+.12,atk:.004}); } };
+  // Newtype "kiin": a high crystalline shimmer with slow vibrato (LFO on the carrier pitch).
+  const kiin=(delay)=>{ const t=t0+(delay||0);
+    const o=ac.createOscillator(), g=ac.createGain(), lfo=ac.createOscillator(), lg=ac.createGain();
+    o.type='sine'; o.frequency.setValueAtTime(2093,t); o.frequency.exponentialRampToValueAtTime(1976,t+.9);
+    lfo.type='sine'; lfo.frequency.setValueAtTime(7,t); lg.gain.setValueAtTime(18,t); lfo.connect(lg); lg.connect(o.frequency);
+    g.gain.setValueAtTime(.0001,t); g.gain.exponentialRampToValueAtTime(.10,t+.05); g.gain.exponentialRampToValueAtTime(.0004,t+.95);
+    o.connect(g); g.connect(out); o.start(t); o.stop(t+1); lfo.start(t); lfo.stop(t+1);
+    tone(2637,.7,{type:'sine',gain:.045,delay:(delay||0)+.05,atk:.01}); };
 
-  if(kind==='deploy'){            // systems online — gentle rising sweep + confirm ping
-    whoosh(.28,.10,300,1400); tone(420,.18,{type:'triangle',gain:.16,to:760,lp:1200,lpTo:3200}); ping(880,.16,.12,.06);
-  } else if(kind==='hit'){        // damage — tense, dangerous impact (dissonant downward bite + sub)
-    sub(72,.2,.2); tone(330,.14,{type:'triangle',gain:.14,to:130,lp:1500,atk:.002}); tone(247,.16,{type:'sine',gain:.09,to:104,atk:.002}); whoosh(.1,.05,1500,320);
-  } else if(kind==='ping'){        // effect/ability damage — sharp electronic targeting ping
-    tone(1320,.14,{type:'sine',gain:.14,to:600,atk:.002}); tone(1760,.1,{type:'triangle',gain:.07,to:880,delay:.02,atk:.002}); whoosh(.08,.04,2200,640);
-  } else if(kind==='shield'){     // energy field — airy shimmer, no buzz
-    ping(1320,.26,.14); ping(1760,.22,.08,.03); whoosh(.22,.09,1800,3600);
-  } else if(kind==='die'){        // kill — heavy ominous detonation, deeper & more menacing than damage
-    sub(52,.62,.3); tone(200,.5,{type:'triangle',gain:.16,to:42,lp:1600,lpTo:150,atk:.002}); tone(150,.55,{type:'sawtooth',gain:.07,to:38,lp:900,lpTo:120,delay:.02}); whoosh(.5,.18,1500,110); tone(110,.5,{type:'sine',gain:.10,to:33,delay:.04});
-  } else if(kind==='direct'){     // heavy slam — deep sub + airy descending sweep
-    sub(64,.55,.26); whoosh(.5,.16,1200,200); tone(180,.45,{type:'triangle',gain:.12,to:60,lp:2000,lpTo:300});
-  } else if(kind==='ui'){         // generic UI blip — soft, short confirm for taps/cancels
-    ping(660,.1,.10); tone(440,.08,{type:'sine',gain:.07,atk:.004});
-  } else if(kind==='endphase'){   // ending the turn — gentle two-note descending sweep
-    tone(620,.16,{type:'triangle',gain:.12,to:440,lp:2600,lpTo:1200,atk:.006}); ping(880,.18,.08,.05); whoosh(.2,.05,1600,600);
-  } else if(kind==='bounce'){     // return to hand — a rising warp-out swish
-    tone(300,.22,{type:'triangle',gain:.13,to:920,lp:1400,lpTo:4200,atk:.005}); whoosh(.22,.07,400,2600); ping(1200,.12,.07,.13);
-  } else if(kind==='link'){       // Link established — bright rising "connection locked" confirm
-    tone(392,.16,{type:'triangle',gain:.10,to:588,atk:.005}); ping(784,.2,.13); ping(1175,.22,.11,.09);
-  } else if(kind==='pair'){       // Pilot paired — warm, softer confirm than Link
-    tone(440,.16,{type:'triangle',gain:.12,to:554,lp:2200,atk:.006}); ping(660,.15,.09,.05);
+  if(kind==='deploy'){            // mobile suit sortie — servo whir, thruster burst, landing thud
+    servo(320,860,.3,.07); whoosh(.34,.12,260,1600,.05); sub(90,.16,.14,.26); ping(880,.14,.09,.3);
+  } else if(kind==='hit'){        // beam clash — zap bite + metallic ring + detonation body
+    zap(1900,240,.16,.13); tone(523,.2,{type:'triangle',gain:.10,to:392,delay:.02,atk:.002}); tone(370,.22,{type:'triangle',gain:.08,to:180,delay:.03,atk:.002}); sub(78,.24,.22,.02); whoosh(.2,.10,1800,300,.04);
+  } else if(kind==='ping'){       // beam rifle shot — the classic descending "pshew"
+    zap(2400,300,.14,.15); zap(1800,260,.12,.08,.05);
+  } else if(kind==='shield'){     // beam deflected off the shield — electric bzzt + glassy shimmer
+    tone(1180,.16,{type:'sawtooth',gain:.08,to:880,lp:5200,lpTo:2400,atk:.002}); ping(1568,.24,.12,.03); whoosh(.22,.09,2600,4200,.02); sub(140,.12,.08);
+  } else if(kind==='die'){        // mobile suit explodes — layered anime detonation with crackle
+    sub(50,.7,.32); tone(190,.55,{type:'triangle',gain:.16,to:40,lp:1500,lpTo:140,atk:.002});
+    whoosh(.5,.2,1400,100); whoosh(.3,.12,3000,400,.08); whoosh(.25,.08,2400,300,.2);
+    tone(120,.6,{type:'sawtooth',gain:.06,to:34,lp:800,lpTo:100,delay:.03});
+  } else if(kind==='direct'){     // hit on the mothership — bridge klaxon + heavy boom
+    klaxon(.08,0,2); sub(60,.6,.28,.05); whoosh(.55,.16,1200,160,.05); tone(170,.5,{type:'triangle',gain:.12,to:55,lp:1800,lpTo:250,delay:.05});
+  } else if(kind==='ui'){         // cockpit console beep
+    tone(1245,.07,{type:'square',gain:.07,lp:3200,atk:.003}); tone(1660,.05,{type:'square',gain:.04,lp:3600,delay:.06,atk:.003});
+  } else if(kind==='endphase'){   // comms sign-off — descending double beep + vernier hiss
+    tone(988,.1,{type:'square',gain:.07,lp:2600,atk:.004}); tone(740,.12,{type:'square',gain:.06,lp:2200,delay:.12,atk:.004}); whoosh(.25,.05,1500,500,.2);
+  } else if(kind==='bounce'){     // emergency retreat — vernier thrusters flare and doppler away
+    whoosh(.3,.1,500,3400); tone(340,.26,{type:'triangle',gain:.11,to:1100,lp:1600,lpTo:4200,atk:.004}); servo(700,380,.2,.05,.12);
+  } else if(kind==='link'){       // Newtype flash — the crystalline "kiin" shimmer
+    kiin(); tone(392,.14,{type:'triangle',gain:.08,to:588,atk:.005});
+  } else if(kind==='pair'){       // pilot boards — hatch servo + cockpit confirm
+    servo(280,620,.24,.06); ping(660,.14,.1,.18); tone(880,.1,{type:'sine',gain:.05,delay:.26,atk:.004});
   } else if(kind==='draw'){       // card draw — quick light upward slide
-    whoosh(.14,.05,1200,3200); ping(990,.1,.09,.02);
-  } else if(kind==='mill'){       // cards to trash — short darker descending slide
-    tone(520,.14,{type:'sine',gain:.10,to:280,lp:1800,lpTo:700,atk:.005}); whoosh(.16,.05,900,320);
-  } else if(kind==='burst'){      // shield Burst springs — dramatic bright zap + shimmer + sub
-    sub(120,.2,.12); ping(1320,.22,.13); ping(1980,.2,.09,.04); whoosh(.26,.09,800,3800); tone(660,.18,{type:'triangle',gain:.10,to:1320,lp:2000,lpTo:5200,atk:.004});
-  } else if(kind==='win'){        // ascending shimmer arpeggio
-    [523,659,784,1047,1319].forEach((f,i)=>ping(f,.5,.15,i*.12));
-  } else if(kind==='lose'){       // power-down — smooth descending tones, filter closing
-    [392,294,196].forEach((f,i)=>tone(f,.5,{type:'triangle',gain:.16,to:f*.86,lp:2400,lpTo:500,delay:i*.18})); whoosh(.6,.10,1400,200,.2);
+    whoosh(.13,.06,1400,3600); ping(1046,.09,.08,.02);
+  } else if(kind==='mill'){       // cards to trash — darker slide with a static tail
+    tone(520,.14,{type:'sine',gain:.10,to:280,lp:1800,lpTo:700,atk:.005}); whoosh(.2,.06,900,260); whoosh(.12,.03,2600,1400,.08);
+  } else if(kind==='burst'){      // shield Burst — alert klaxon into an energy release
+    klaxon(.06,0,1); zap(900,2600,.18,.1,.2); ping(1980,.22,.1,.24); sub(110,.2,.12,.2); whoosh(.3,.1,900,3800,.2);
+  } else if(kind==='win'){        // triumphant fanfare — brassy rising arpeggio
+    [523,659,784,1047,1319].forEach((f,i)=>tone(f,.5,{type:'sawtooth',gain:.11,lp:2200,lpTo:3200,delay:i*.12,atk:.02}));
+    ping(2093,.6,.08,.62); whoosh(.5,.06,800,3000,.5);
+  } else if(kind==='lose'){       // power-down — the reactor dying, filter closing
+    [392,294,196].forEach((f,i)=>tone(f,.5,{type:'triangle',gain:.16,to:f*.86,lp:2400,lpTo:500,delay:i*.18})); whoosh(.6,.10,1400,200,.2); servo(300,120,.5,.05,.3);
   }
 }
 let fxQueue = [];
