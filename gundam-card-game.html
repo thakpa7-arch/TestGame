@@ -181,10 +181,10 @@
       url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 380' fill='none' stroke='rgba(64,88,140,0.38)' stroke-width='3' stroke-linejoin='round'%3E%3Cpath d='M100 26 L64 4 M100 26 L136 4 M96 10 h8 v10 h-8 Z'/%3E%3Crect x='86' y='22' width='28' height='22' rx='3'/%3E%3Cpath d='M90 34 h20'/%3E%3Cpath d='M74 48 h52 l12 42 -18 12 h-40 l-18 -12 Z'/%3E%3Cpath d='M100 60 l11 15 -11 15 -11 -15 Z'/%3E%3Cpath d='M80 56 l12 6 M120 56 l-12 6'/%3E%3Crect x='34' y='50' width='34' height='34' rx='5'/%3E%3Crect x='132' y='50' width='34' height='34' rx='5'/%3E%3Cpath d='M48 84 v34 h18 v40 h-20 v-38 M152 84 v34 h-18 v40 h20 v-38'/%3E%3Cpath d='M18 96 h30 l6 14 v64 l-21 18 -21 -18 v-64 Z'/%3E%3Cpath d='M82 102 h36 l10 34 h-56 Z M66 112 l-14 30 14 8 M134 112 l14 30 -14 8'/%3E%3Cpath d='M80 136 v54 h14 v-54 M106 136 v54 h14 v-54'/%3E%3Cpath d='M78 196 l-8 66 10 22 h20 l4 -20 v-64 M122 196 l8 66 -10 22 h-20'/%3E%3Cpath d='M66 288 l-14 20 h38 v-18 M134 288 l14 20 h-38 v-18'/%3E%3Cpath d='M84 44 l-16 -26 M116 44 l16 -26'/%3E%3C/svg%3E") left 8% center / auto 94% no-repeat,
       radial-gradient(80% 110% at 70% 80%, rgba(255,255,255,.5), transparent 55%),
       linear-gradient(340deg, #e3eaf7 0%, #c6d3ea 45%, #a3b6d8 100%); }
-  .mat-col { display: flex; flex-direction: column; gap: 6px; width: calc(var(--card-w) * 0.62); flex-shrink: 0; }
+  .mat-col { display: flex; flex-direction: column; gap: 5px; width: calc(var(--card-w) * 0.72); flex-shrink: 0; }
   .mat.enemy .mat-col, .mat.enemy .mat-mid { flex-direction: column-reverse; }
   .mat-mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-  .mat-bottom { display: flex; gap: 6px; height: 40px; flex-shrink: 0; }
+  .mat-bottom { display: flex; gap: 6px; height: 38px; flex-shrink: 0; }
   .mat.enemy .mat-bottom { flex-direction: row-reverse; }
   /* Red HUD zone frame with its label plate (photo-style: label sits inside the frame edge) */
   .zone { position: relative; border: 2px solid #c8322b; border-radius: 6px; background: rgba(255,255,255,.07);
@@ -198,17 +198,17 @@
   /* Base + shields (left column) */
   .zone.base-zone { flex: 1.1; flex-direction: column; }
   .base-zone .bz-slot { display: flex; justify-content: center; }
-  .base-zone .bz-slot .card { width: calc(var(--card-w) * 0.5); height: calc(var(--card-h) * 0.44); }
+  .base-zone .bz-slot .card { width: calc(var(--card-w) * 0.58); height: calc(var(--card-h) * 0.51); }
   .base-zone .bz-empty { color: rgba(50,70,110,.5); font-size: 9px; text-align: center; }
   .zone.shield-zone { flex: 1.6; flex-direction: column; padding: 4px 2px; }
   .shield-zone.enemy, #enemyShieldZone { cursor: pointer; }
   .shield-zone .sz-label { font-size: 9px; letter-spacing: 1px; color: #c8322b; font-weight: 800; opacity: .95; white-space: nowrap; }
   .shield-zone .sz-grid { display: flex; flex-direction: column; align-items: center; margin-top: 2px; }
-  .shield-card { width: calc(var(--card-w) * 0.46); height: calc(var(--card-h) * 0.30); border-radius: 4px;
+  .shield-card { width: calc(var(--card-w) * 0.54); height: calc(var(--card-h) * 0.34); border-radius: 4px;
     background: var(--shield-img, linear-gradient(155deg, #2f4170, #15203a)) center/cover;
     border: 1.5px solid #c8322b; box-shadow: 0 2px 5px rgba(20,30,60,.45);
     display: flex; align-items: center; justify-content: center; font-size: 12px; line-height: 1; }
-  .shield-card + .shield-card { margin-top: calc(var(--card-h) * -0.21); }
+  .shield-card + .shield-card { margin-top: calc(var(--card-h) * -0.235); }
   .shield-card.gone { background: rgba(235,240,250,.35); border-color: rgba(200,50,43,.45); border-style: dashed; box-shadow: none; opacity: .55; }
   /* Deck + trash (right column) */
   .zone.deckz { flex: 1.1; flex-direction: column; }
@@ -217,7 +217,7 @@
   .zone.exilez .z-count { font-size: 13px; font-weight: 800; color: #2c3a5c; margin-right: 30px; }
   .zone.exilez .z-label { font-size: 7.5px; }
   .mat.enemy .zone.exilez .z-count { margin-right: 0; margin-left: 30px; }
-  .deck-stack .deck-card, .trash-body .trash-card { width: calc(var(--card-w) * 0.5); height: calc(var(--card-h) * 0.44); border-radius: 5px;
+  .deck-stack .deck-card, .trash-body .trash-card { width: calc(var(--card-w) * 0.58); height: calc(var(--card-h) * 0.51); border-radius: 5px;
     background: var(--shield-img, linear-gradient(155deg, #2f4170, #15203a)) center/cover; border: 1.5px solid #c8322b;
     box-shadow: 2px 2px 0 rgba(90,110,150,.55), 4px 4px 0 rgba(90,110,150,.3); position: relative; }
   .trash-body .trash-card { background-size: cover; background-position: center top; background-color: #10141f; filter: grayscale(.35) brightness(.85); box-shadow: none; }
@@ -225,13 +225,9 @@
   .dk-n { position: absolute; bottom: 2px; right: 3px; background: rgba(0,0,0,.78); color: #ffe9a8; font-size: 10px; font-weight: 800;
     padding: 0 5px; border-radius: 6px; }
   /* Resource strip (mat bottom) */
-  .zone.resdeck { width: 76px; flex-shrink: 0; }
-  .zone.resdeck .z-count { position: absolute; top: 3px; left: 7px; font-size: 15px; color: #2c3a5c; font-weight: 800; }
-  .mat.enemy .zone.resdeck .z-count { top: auto; bottom: 3px; left: auto; right: 7px; }
-  .zone.resdeck .z-label { font-size: 6.5px; }
   .zone.resarea { flex: 1; justify-content: flex-start; padding-left: 10px; }
-  .zone.resarea .resources { display: flex; gap: 4px; align-items: center; flex-wrap: nowrap; overflow: hidden; padding-right: 6px; margin-bottom: 7px; }
-  .mat.enemy .zone.resarea .resources { margin-bottom: 0; margin-top: 7px; }
+  .zone.resarea .resources { display: flex; gap: 5px; align-items: center; flex-wrap: nowrap; overflow: hidden; padding-right: 96px; }
+  .zone.resarea .res { width: 22px; height: 30px; }
   .zone.resarea .z-label span { color: #8f2620; margin-right: 5px; }
   .shield-card.gone { background: rgba(10,10,16,.55); border-color: rgba(80,70,50,.5); box-shadow: none; opacity: .3; }
   .shield-card.breaking { animation: shieldPop .45s ease-out forwards; }
@@ -510,8 +506,6 @@
     .shield-card + .shield-card { margin-top: -9px; }
     .deck-stack .deck-card, .trash-body .trash-card { width: 40px; height: 56px; }
     .mat-bottom { height: 32px; }
-    .zone.resdeck { width: 50px; }
-    .zone.resdeck .z-count { font-size: 12px; }
     .zone .z-label { font-size: 7px; }
     .battlefield { min-height: 150px; }
     /* Deck builder stacks vertically on phones */
@@ -548,7 +542,6 @@
       <div class="mat-mid">
         <div class="battlefield enemy" id="enemyField"></div>
         <div class="mat-bottom">
-          <div class="zone resdeck"><b class="z-count" id="enemyResDeckCount"></b><div class="z-label">RESOURCE<br>DECK</div></div>
           <div class="zone resarea"><div class="resources" id="enemyResources"></div><div class="z-label"><span id="enemyResText"></span> RESOURCE AREA</div></div>
         </div>
       </div>
@@ -572,7 +565,6 @@
       <div class="mat-mid">
         <div class="battlefield player" id="playerField"></div>
         <div class="mat-bottom">
-          <div class="zone resdeck"><b class="z-count" id="playerResDeckCount"></b><div class="z-label">RESOURCE<br>DECK</div></div>
           <div class="zone resarea"><div class="resources" id="playerResources"></div><div class="z-label"><span id="playerResText"></span> RESOURCE AREA</div></div>
         </div>
       </div>
@@ -4714,8 +4706,6 @@ function render(){
   el('playerDeckZone').innerHTML = deckStackHTML(G.player);
   el('enemyTrashTop').innerHTML = trashTopHTML(G.enemy);
   el('playerTrashTop').innerHTML = trashTopHTML(G.player);
-  el('enemyResDeckCount').textContent = G.enemy.resourceDeck;
-  el('playerResDeckCount').textContent = G.player.resourceDeck;
   if (el('enemyExileCount')) el('enemyExileCount').textContent=G.enemy.exile.length;
   if (el('playerExileCount')) el('playerExileCount').textContent=G.player.exile.length;
 
