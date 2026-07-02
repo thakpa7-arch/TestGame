@@ -267,6 +267,12 @@ const MAPS = [
   {
     name: 'Henesys — Beginner Forest',
     bgColors: ['#87CEEB', '#98D8B4'],
+    theme: {
+      groundTop: '#7ab84a', ground: '#5a8a3a', groundDeep: '#3a6a2a',
+      platTop: '#bfa06a', platBase: '#7a5a3a', platEdge: '#6a4a2a',
+      hillFar: '#aedcc4', hillNear: '#84c890',
+      ambient: 'leaf',
+    },
     width: 2400,
     ground: 420,
     platforms: [
@@ -307,6 +313,12 @@ const MAPS = [
   {
     name: 'Perion — Rocky Mountain',
     bgColors: ['#c0956a', '#8B5E3C'],
+    theme: {
+      groundTop: '#c09a60', ground: '#9a7448', groundDeep: '#7a5a38',
+      platTop: '#b4a48e', platBase: '#8a7a66', platEdge: '#6a5a48',
+      hillFar: '#a17c58', hillNear: '#7d5c40',
+      ambient: 'dust',
+    },
     width: 2600,
     ground: 420,
     platforms: [
@@ -345,6 +357,12 @@ const MAPS = [
   {
     name: 'Ellinia — Enchanted Forest',
     bgColors: ['#1a2a4a', '#0d1a2e'],
+    theme: {
+      groundTop: '#4c3c74', ground: '#332a4e', groundDeep: '#241c3a',
+      platTop: '#8a6ad0', platBase: '#4a3a7a', platEdge: '#332a5a',
+      hillFar: '#20164a', hillNear: '#170f38',
+      ambient: 'firefly',
+    },
     width: 2800,
     ground: 420,
     platforms: [
@@ -532,6 +550,15 @@ const effects = [];
 function spawnEffect(o) { o.maxLife = o.life; effects.push(o); }
 let shake = 0;
 
+// Ambient atmosphere particles (screen space): leaves / dust / fireflies
+const ambient = [];
+
+// Deterministic 0..1 hash for stable per-x terrain detail
+function hash01(n) {
+  const s = Math.sin(n * 127.1) * 43758.545;
+  return s - Math.floor(s);
+}
+
 // ─── Game state ───────────────────────────────────────────────────────────────
 let currentMapIdx = 0;
 let map = MAPS[0];
@@ -607,6 +634,7 @@ function loadMap(idx) {
   projectiles.length = 0;
   enemyProjectiles.length = 0;
   particles.length = 0;
+  ambient.length = 0;
   enemies = map.spawnEnemies();
   player.x = 120;
   player.y = map.ground - player.h;
@@ -840,6 +868,7 @@ function killEnemy(e) {
   e.respawnTimer = 9000 + Math.random() * 5000;
   totalMobsKilled++;
   spawnParticles(e.x + e.w / 2, e.y + e.h / 2, e.color, 12);
+  spawnEffect({ type: 'poof', x: e.x + e.w / 2, y: e.y + e.h / 2, color: e.color, life: 16 });
   spawnDrop(e.x + e.w / 2, e.y + e.h, currentMapIdx);
   sfx('kill');
   gainExp(e.exp);
@@ -1019,6 +1048,8 @@ function update(ts) {
   updateEffects(dt);
 
   if (gameState === 'classselect') return;
+
+  updateAmbient(dt);
 
   if (gameState === 'levelup') {
     levelUpTimer--;
@@ -1346,14 +1377,7 @@ function draw() {
   ctx.translate(-camera.x, 0);
 
   // Ground
-  ctx.fillStyle = '#5a8a3a';
-  ctx.fillRect(0, map.ground, map.width, H - map.ground);
-  ctx.fillStyle = '#3a6a2a';
-  ctx.fillRect(0, map.ground + 15, map.width, H - map.ground - 15);
-
-  // Ground top stripe
-  ctx.fillStyle = '#7ab84a';
-  ctx.fillRect(0, map.ground - 4, map.width, 8);
+  drawGround();
 
   // Platforms
   for (const p of map.platforms) {
@@ -1386,6 +1410,10 @@ function draw() {
   drawParticles();
 
   ctx.restore();
+
+  // Atmosphere overlays (screen space)
+  drawAmbient();
+  drawLighting();
 
   // HUD (fixed position)
   drawHUD();
@@ -1540,12 +1568,194 @@ function drawEffects() {
       ctx.beginPath();
       ctx.arc(f.x, f.y, 10 + t * 36, 0, Math.PI * 2);
       ctx.stroke();
+    } else if (f.type === 'poof') {
+      // Defeat puff: expanding double ring + drifting smoke balls
+      ctx.globalAlpha = 0.8 * (1 - t);
+      ctx.strokeStyle = f.color;
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(f.x, f.y, 6 + t * 26, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = 0.4 * (1 - t);
+      ctx.strokeStyle = '#fff';
+      ctx.beginPath(); ctx.arc(f.x, f.y, 3 + t * 34, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = 'rgba(240,240,240,0.7)';
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2 + t;
+        const rr = 8 + t * 18;
+        ctx.globalAlpha = 0.5 * (1 - t);
+        ctx.beginPath();
+        ctx.arc(f.x + Math.cos(a) * rr, f.y + Math.sin(a) * rr - t * 8, 5 * (1 - t * 0.5), 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
     ctx.restore();
   }
 }
 
+function drawGround() {
+  const th = map.theme;
+  ctx.fillStyle = th.ground;
+  ctx.fillRect(0, map.ground, map.width, H - map.ground);
+  ctx.fillStyle = th.groundDeep;
+  ctx.fillRect(0, map.ground + 16, map.width, H - map.ground - 16);
+  ctx.fillStyle = th.groundTop;
+  ctx.fillRect(0, map.ground - 4, map.width, 8);
+
+  // Stable per-x terrain detail across the visible strip
+  const x0 = Math.floor((camera.x - 30) / 20) * 20;
+  const x1 = camera.x + W + 30;
+  for (let x = x0; x < x1; x += 20) {
+    const r = hash01(x);
+    if (currentMapIdx === 0) {
+      // Grass tufts + occasional flowers, dirt speckles below
+      const gh = 3 + r * 5;
+      ctx.fillStyle = r > 0.5 ? '#93d45e' : '#84c452';
+      ctx.fillRect(x + r * 12, map.ground - 4 - gh, 2, gh);
+      ctx.fillRect(x + r * 12 + 3, map.ground - 4 - gh * 0.6, 2, gh * 0.6);
+      if (r > 0.72) {
+        ctx.fillStyle = r > 0.88 ? '#ff9ad0' : '#ffe870';
+        ctx.fillRect(x + r * 12 + 1, map.ground - 9 - gh, 3, 3);
+      }
+      ctx.fillStyle = 'rgba(0,0,0,0.12)';
+      ctx.fillRect(x + ((r * 37) % 14), map.ground + 22 + r * 70, 4 + r * 5, 3);
+    } else if (currentMapIdx === 1) {
+      // Embedded stones + cracks
+      ctx.fillStyle = 'rgba(255,255,255,0.10)';
+      ctx.fillRect(x + r * 10, map.ground + 10 + r * 70, 6 + r * 9, 4);
+      ctx.fillStyle = 'rgba(0,0,0,0.16)';
+      ctx.fillRect(x + ((r * 53) % 15), map.ground + 34 + ((r * 91) % 55), 6, 3);
+      if (r > 0.8) { ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(x + 4, map.ground - 2, 1.5, 7 + r * 6); }
+    } else {
+      // Glowing moss + faint mushroom clusters
+      if (r > 0.5) {
+        ctx.fillStyle = 'rgba(150,100,255,0.30)';
+        ctx.fillRect(x, map.ground - 4, 9 + r * 9, 4);
+      }
+      if (r > 0.82) {
+        ctx.save();
+        ctx.shadowBlur = 7; ctx.shadowColor = '#b080ff';
+        ctx.fillStyle = '#8a5ae0';
+        ctx.fillRect(x + 4, map.ground - 10, 5, 7);
+        ctx.fillStyle = '#c8a0ff';
+        ctx.fillRect(x + 2, map.ground - 12, 9, 3);
+        ctx.restore();
+      }
+      ctx.fillStyle = 'rgba(160,120,255,0.07)';
+      ctx.fillRect(x + r * 8, map.ground + 14 + r * 55, 9, 4);
+    }
+  }
+}
+
+function updateAmbient(dt) {
+  const type = map.theme.ambient;
+  const step = dt / 16.7;
+  if (ambient.length < 24 && Math.random() < 0.25) {
+    if (type === 'leaf') {
+      ambient.push({ t: 'leaf', x: Math.random() * W, y: -10, vy: 0.5 + Math.random() * 0.6,
+        sway: Math.random() * Math.PI * 2, color: ['#7ec850', '#a8d060', '#e8a840', '#d0e070'][Math.floor(Math.random() * 4)] });
+    } else if (type === 'dust') {
+      ambient.push({ t: 'dust', x: -10, y: 60 + Math.random() * 320, vx: 0.7 + Math.random() * 1.1 });
+    } else {
+      ambient.push({ t: 'fly', x: Math.random() * W, y: 50 + Math.random() * 330, ph: Math.random() * Math.PI * 2 });
+    }
+  }
+  for (let i = ambient.length - 1; i >= 0; i--) {
+    const a = ambient[i];
+    if (a.t === 'leaf') {
+      a.y += a.vy * step;
+      a.sway += 0.035 * step;
+      a.x += Math.sin(a.sway) * 0.9;
+      if (a.y > H + 12) ambient.splice(i, 1);
+    } else if (a.t === 'dust') {
+      a.x += a.vx * step;
+      a.y += Math.sin(a.x / 40) * 0.35;
+      if (a.x > W + 12) ambient.splice(i, 1);
+    } else {
+      a.ph += 0.02 * step;
+      a.x += Math.cos(a.ph) * 0.6;
+      a.y += Math.sin(a.ph * 1.7) * 0.4;
+      if (a.x < -12 || a.x > W + 12 || a.y < -12) ambient.splice(i, 1);
+    }
+  }
+}
+
+function drawAmbient() {
+  for (const a of ambient) {
+    ctx.save();
+    if (a.t === 'leaf') {
+      ctx.translate(a.x, a.y);
+      ctx.rotate(Math.sin(a.sway) * 0.9);
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle = a.color;
+      ctx.fillRect(-3, -2, 6, 4);
+    } else if (a.t === 'dust') {
+      ctx.globalAlpha = 0.28;
+      ctx.fillStyle = '#ecd8a8';
+      ctx.fillRect(a.x, a.y, 3, 2);
+    } else {
+      const pulse = 0.35 + 0.65 * Math.abs(Math.sin(a.ph * 2.3));
+      ctx.globalAlpha = pulse * 0.9;
+      ctx.shadowBlur = 9; ctx.shadowColor = '#c8ff70';
+      ctx.fillStyle = '#e4ff96';
+      ctx.beginPath(); ctx.arc(a.x, a.y, 2, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+
+function drawLighting() {
+  // Deep-forest darkness with a pool of light around the player (Ellinia only)
+  if (currentMapIdx === 2 && gameState !== 'classselect') {
+    const lx = player.x + player.w / 2 - camera.x;
+    const ly = player.y + player.h / 2;
+    const g = ctx.createRadialGradient(lx, ly, 70, lx, ly, 430);
+    g.addColorStop(0, 'rgba(8,4,26,0)');
+    g.addColorStop(1, 'rgba(8,4,26,0.55)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+  }
+  // Soft vignette on every map
+  const v = ctx.createRadialGradient(W / 2, H / 2, H * 0.45, W / 2, H / 2, H * 0.95);
+  v.addColorStop(0, 'rgba(0,0,0,0)');
+  v.addColorStop(1, 'rgba(10,5,25,0.22)');
+  ctx.fillStyle = v;
+  ctx.fillRect(0, 0, W, H);
+}
+
 function drawBackground() {
+  // Sun over Henesys
+  if (currentMapIdx === 0) {
+    ctx.save();
+    ctx.shadowBlur = 34; ctx.shadowColor = '#fff2b0';
+    ctx.fillStyle = '#fff0a0';
+    ctx.beginPath(); ctx.arc(110, 74, 26, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  // Rolling hill silhouettes at two parallax depths
+  const th = map.theme;
+  const drawHillRow = (color, par, ry, spacing, phase) => {
+    ctx.fillStyle = color;
+    const off = (camera.x * par) % spacing;
+    for (let i = -1; i <= Math.ceil(W / spacing) + 1; i++) {
+      const hx = i * spacing - off + phase;
+      ctx.beginPath();
+      if (currentMapIdx === 1) {
+        // Flat-topped mesas for Perion
+        ctx.moveTo(hx - spacing * 0.55, map.ground + 2);
+        ctx.lineTo(hx - spacing * 0.3, map.ground - ry);
+        ctx.lineTo(hx + spacing * 0.3, map.ground - ry);
+        ctx.lineTo(hx + spacing * 0.55, map.ground + 2);
+        ctx.closePath();
+        ctx.fill();
+      } else {
+        ctx.ellipse(hx, map.ground + 30, spacing * 0.62, ry, 0, Math.PI, 0);
+        ctx.fill();
+      }
+    }
+  };
+  drawHillRow(th.hillFar, 0.08, 190, 560, 0);
+  drawHillRow(th.hillNear, 0.16, 120, 420, 160);
+
   // Sky layer: clouds by day, stars + moon at night
   if (currentMapIdx === 2) {
     ctx.save();
@@ -1630,22 +1840,58 @@ function drawBackground() {
 }
 
 function drawPlatform(p) {
+  const th = map.theme;
   // Shadow
   ctx.fillStyle = 'rgba(0,0,0,0.2)';
   ctx.fillRect(p.x + 4, p.y + 6, p.w, 10);
   // Base
-  ctx.fillStyle = '#7a5a3a';
+  ctx.fillStyle = th.platBase;
   ctx.fillRect(p.x, p.y + 4, p.w, 10);
   // Top surface
-  ctx.fillStyle = '#9a7a4a';
+  ctx.fillStyle = th.platTop;
   ctx.fillRect(p.x, p.y, p.w, 8);
   // Highlight
-  ctx.fillStyle = '#bfa06a';
+  ctx.fillStyle = shadeColor(th.platTop, 25);
   ctx.fillRect(p.x + 2, p.y, p.w - 4, 3);
-  // Edge details
-  ctx.fillStyle = '#6a4a2a';
+  // Edge caps
+  ctx.fillStyle = th.platEdge;
   ctx.fillRect(p.x, p.y, 4, 14);
   ctx.fillRect(p.x + p.w - 4, p.y, 4, 14);
+
+  if (currentMapIdx === 0) {
+    // Plank seams + grass wisps on top
+    ctx.fillStyle = th.platEdge;
+    for (let x = p.x + 26; x < p.x + p.w - 8; x += 26) ctx.fillRect(x, p.y + 4, 2, 10);
+    ctx.fillStyle = '#8fce5a';
+    for (let x = p.x + 8; x < p.x + p.w - 6; x += 22) {
+      const r = hash01(x + p.y);
+      if (r > 0.4) ctx.fillRect(x + r * 6, p.y - 3 - r * 3, 2, 3 + r * 3);
+    }
+  } else if (currentMapIdx === 1) {
+    // Stone block joints
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    for (let x = p.x + 32; x < p.x + p.w - 10; x += 32) ctx.fillRect(x, p.y + 2, 2, 12);
+    ctx.fillStyle = 'rgba(255,255,255,0.14)';
+    ctx.fillRect(p.x + 6, p.y + 6, 10, 3);
+  } else {
+    // Enchanted underglow + hanging vines
+    ctx.save();
+    ctx.shadowBlur = 10; ctx.shadowColor = '#a070ff';
+    ctx.fillStyle = 'rgba(150,100,255,0.5)';
+    ctx.fillRect(p.x + 2, p.y + 13, p.w - 4, 2);
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(120,220,140,0.5)';
+    ctx.lineWidth = 2;
+    for (let x = p.x + 18; x < p.x + p.w - 10; x += 44) {
+      const r = hash01(x * 3 + p.y);
+      const len = 8 + r * 14;
+      const swing = Math.sin(Date.now() / 600 + x) * 2;
+      ctx.beginPath();
+      ctx.moveTo(x, p.y + 14);
+      ctx.quadraticCurveTo(x + swing, p.y + 14 + len * 0.6, x + swing, p.y + 14 + len);
+      ctx.stroke();
+    }
+  }
 }
 
 function drawPortal() {
@@ -1663,11 +1909,29 @@ function drawPortal() {
   ctx.strokeRect(portal.x, portal.y, 30, 60);
   // Inner shimmer
   const pg = ctx.createLinearGradient(portal.x, portal.y, portal.x, portal.y + 60);
-  pg.addColorStop(0, 'rgba(0,200,255,0.6)');
-  pg.addColorStop(0.5, 'rgba(0,100,200,0.3)');
-  pg.addColorStop(1, 'rgba(0,200,255,0.6)');
+  pg.addColorStop(0, 'rgba(0,200,255,0.55)');
+  pg.addColorStop(0.5, 'rgba(0,100,200,0.28)');
+  pg.addColorStop(1, 'rgba(0,200,255,0.55)');
   ctx.fillStyle = pg;
   ctx.fillRect(portal.x + 3, portal.y + 3, 24, 54);
+  // Rotating vortex arcs
+  const pcx = portal.x + 15, pcy = portal.y + 30;
+  for (let i = 0; i < 3; i++) {
+    ctx.strokeStyle = i === 1 ? 'rgba(200,250,255,0.85)' : 'rgba(90,220,255,0.7)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(pcx, pcy, 4 + i * 5, t * 1.4 + i * 2.1, t * 1.4 + i * 2.1 + 2);
+    ctx.stroke();
+  }
+  // Rising motes
+  for (let i = 0; i < 4; i++) {
+    const my = 55 - ((t * 22 + i * 17) % 60);
+    const mx = 6 + hash01(i * 7) * 18;
+    ctx.globalAlpha = glow * (1 - my / 60);
+    ctx.fillStyle = '#bff4ff';
+    ctx.fillRect(portal.x + mx, portal.y + my, 2, 2);
+  }
+  ctx.globalAlpha = glow;
   // Label
   ctx.globalAlpha = 1;
   ctx.fillStyle = '#00FFFF';
@@ -1738,18 +2002,42 @@ function drawPlayer() {
     ctx.restore();
   }
 
-  // Legs
+  // Legs (tucked when airborne)
+  const inAir = player.state === 'jump';
   ctx.fillStyle = '#3a3550';
-  ctx.fillRect(px + 8, py + 33, 6, 7 + legOff);
-  ctx.fillRect(px + 16, py + 33, 6, 7 - legOff);
-  // Shoes
-  ctx.fillStyle = '#7a4420';
-  ctx.fillRect(px + 7, py + 39 + legOff, 8, 3);
-  ctx.fillRect(px + 15, py + 39 - legOff, 8, 3);
+  if (inAir) {
+    ctx.fillRect(px + 8, py + 33, 6, 5);
+    ctx.fillRect(px + 17, py + 32, 6, 6);
+    ctx.fillStyle = '#7a4420';
+    ctx.fillRect(px + 6, py + 37, 8, 3);
+    ctx.fillRect(px + 17, py + 37, 8, 3);
+  } else {
+    ctx.fillRect(px + 8, py + 33, 6, 7 + legOff);
+    ctx.fillRect(px + 16, py + 33, 6, 7 - legOff);
+    ctx.fillStyle = '#7a4420';
+    ctx.fillRect(px + 7, py + 39 + legOff, 8, 3);
+    ctx.fillRect(px + 15, py + 39 - legOff, 8, 3);
+  }
 
-  // Back arm
+  // Idle breathing: torso and head bob together, feet stay planted
+  const bob = player.state === 'idle' ? Math.round(Math.sin(Date.now() / 420) * 1.2) : 0;
+  ctx.translate(0, bob);
+
+  // Cape (warrior only), flapping with movement
+  if (c.id === 'warrior') {
+    const flap = walk ? Math.sin(Date.now() / 110) * 3.5 : Math.sin(Date.now() / 520) * 1.5;
+    ctx.fillStyle = '#8a1f28';
+    ctx.beginPath();
+    ctx.moveTo(px + 9, py + 22);
+    ctx.lineTo(px + 1 - flap, py + 37 + flap * 0.6);
+    ctx.lineTo(px + 9, py + 33);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Back arm (swings opposite the front leg)
   ctx.fillStyle = skin;
-  ctx.fillRect(px + 5, py + 23, 5, 9);
+  ctx.fillRect(px + 5, py + 23 + (walk ? legOff * 0.5 : 0), 5, 9);
 
   // Body / robe
   ctx.fillStyle = c.color;
@@ -1779,13 +2067,23 @@ function drawPlayer() {
   ctx.fillStyle = skin;
   ctx.fillRect(px + 6, py + 4, 18, 17);
   ctx.fillRect(px + 5, py + 12, 2, 4); // ear
-  // Eyes (big MapleStory eyes)
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(px + 11, py + 10, 3, 5);
-  ctx.fillRect(px + 18, py + 10, 3, 5);
-  ctx.fillStyle = '#3a2a4a';
-  ctx.fillRect(px + 12, py + 11, 2, 4);
-  ctx.fillRect(px + 19, py + 11, 2, 4);
+  // Big expressive eyes, with a periodic blink
+  const blinkEye = (Date.now() % 3400) < 130;
+  if (blinkEye) {
+    ctx.fillStyle = '#3a2a4a';
+    ctx.fillRect(px + 11, py + 13, 3, 1.5);
+    ctx.fillRect(px + 18, py + 13, 3, 1.5);
+  } else {
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(px + 11, py + 10, 3, 5);
+    ctx.fillRect(px + 18, py + 10, 3, 5);
+    ctx.fillStyle = '#3a2a4a';
+    ctx.fillRect(px + 12, py + 11, 2, 4);
+    ctx.fillRect(px + 19, py + 11, 2, 4);
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.fillRect(px + 12, py + 11, 1, 1);
+    ctx.fillRect(px + 19, py + 11, 1, 1);
+  }
   ctx.fillStyle = '#c06050';
   ctx.fillRect(px + 14, py + 17, 4, 1);
 
@@ -2107,41 +2405,67 @@ function drawEnemy(e) {
 
   ctx.restore();
 
-  // HP bar above enemy
-  const barW = e.w + 10;
-  const barX = e.x - 5;
-  const barY = e.y - 14;
-  ctx.fillStyle = '#330000';
-  ctx.fillRect(barX, barY, barW, 6);
-  ctx.fillStyle = '#ff3333';
-  ctx.fillRect(barX, barY, barW * (e.hp / e.maxHp), 6);
-  ctx.strokeStyle = '#000';
-  ctx.lineWidth = 0.5;
-  ctx.strokeRect(barX, barY, barW, 6);
+  // HP bar above enemy — only once it's been damaged
+  if (e.hp < e.maxHp) {
+    const barW = e.w + 10;
+    const barX = e.x - 5;
+    const barY = e.y - 13;
+    ctx.fillStyle = 'rgba(20,0,0,0.85)';
+    roundRect(ctx, barX - 1, barY - 1, barW + 2, 7, 3);
+    ctx.fill();
+    const pct = Math.max(0, e.hp / e.maxHp);
+    const hg = ctx.createLinearGradient(barX, 0, barX + barW, 0);
+    hg.addColorStop(0, '#e02020');
+    hg.addColorStop(1, '#ff7050');
+    ctx.fillStyle = hg;
+    if (pct > 0) { roundRect(ctx, barX, barY, Math.max(3, barW * pct), 5, 2); ctx.fill(); }
+  }
 
-  // Name
-  ctx.fillStyle = '#fff';
+  // Name chip
   ctx.font = '9px monospace';
+  const nw = ctx.measureText(e.name).width + 8;
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  roundRect(ctx, e.x + e.w / 2 - nw / 2, e.y - 26, nw, 12, 3);
+  ctx.fill();
+  ctx.fillStyle = '#fff';
   ctx.textAlign = 'center';
-  ctx.fillText(e.name, e.x + e.w / 2, e.y - 16);
+  ctx.fillText(e.name, e.x + e.w / 2, e.y - 17);
 }
 
 function drawDrop(d) {
   const pulse = Math.sin(d.glowPhase) * 0.3 + 0.7;
+  const hover = Math.sin(d.glowPhase * 0.7) * 2;
   ctx.save();
   ctx.globalAlpha = Math.min(d.life / 60, 1) * pulse;
   ctx.shadowBlur = 8;
   ctx.shadowColor = d.color;
-  ctx.fillStyle = d.color;
   if (d.isMeso) {
+    // Spinning gold coin
+    const spin = Math.abs(Math.cos(d.glowPhase * 0.8));
+    ctx.fillStyle = '#c8971e';
     ctx.beginPath();
-    ctx.arc(d.x, d.y, 6, 0, Math.PI * 2);
+    ctx.ellipse(d.x, d.y + hover, 6 * Math.max(spin, 0.18), 6, 0, 0, Math.PI * 2);
     ctx.fill();
+    ctx.fillStyle = '#FFD700';
+    ctx.beginPath();
+    ctx.ellipse(d.x - 1, d.y - 1 + hover, 5 * Math.max(spin, 0.15), 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#fff6c0';
+    ctx.fillRect(d.x - 2, d.y - 3 + hover, 1.5, 2);
   } else {
-    ctx.fillRect(d.x - 7, d.y - 7, 14, 14);
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(d.x - 7, d.y - 7, 14, 14);
+    // Real item icon, hovering
+    drawItemIcon(d, d.x - 10, d.y - 10 + hover, 20);
+    // Twinkle sparkle
+    const tw = (Math.sin(d.glowPhase * 1.6) + 1) / 2;
+    if (tw > 0.7) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.lineWidth = 1;
+      const sx = d.x + 8, sy = d.y - 8 + hover, sr = 3 * (tw - 0.7) / 0.3;
+      ctx.beginPath();
+      ctx.moveTo(sx - sr, sy); ctx.lineTo(sx + sr, sy);
+      ctx.moveTo(sx, sy - sr); ctx.lineTo(sx, sy + sr);
+      ctx.stroke();
+    }
   }
   ctx.restore();
   // Label
@@ -2159,17 +2483,25 @@ function drawParticles() {
     ctx.save();
     ctx.globalAlpha = Math.max(0, p.life);
     if (p.type === 'text') {
-      ctx.fillStyle = p.color;
-      ctx.font = 'bold 14px monospace';
+      const isCrit = typeof p.text === 'string' && p.text.startsWith('CRIT');
+      // Pop in slightly larger, settle as it fades
+      const pop = 1 + Math.max(0, p.life - 0.85) * 2.5;
+      ctx.font = `bold ${Math.round((isCrit ? 17 : 14) * pop)}px monospace`;
       ctx.textAlign = 'center';
-      ctx.shadowBlur = 6;
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+      ctx.strokeText(p.text, p.x, p.y);
+      ctx.fillStyle = p.color;
+      ctx.shadowBlur = isCrit ? 10 : 6;
       ctx.shadowColor = p.color;
       ctx.fillText(p.text, p.x, p.y);
     } else {
       ctx.fillStyle = p.color;
       ctx.shadowBlur = 4;
       ctx.shadowColor = p.color;
-      ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, (p.size / 2) * Math.max(0.2, p.life), 0, Math.PI * 2);
+      ctx.fill();
     }
     ctx.restore();
   }
