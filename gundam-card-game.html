@@ -214,10 +214,12 @@
     padding: 0 5px; border-radius: 6px; }
   /* Resource strip (mat bottom) */
   .zone.resdeck { width: 76px; flex-shrink: 0; }
-  .zone.resdeck .z-count { font-size: 15px; color: #2c3a5c; font-weight: 800; margin-right: 26px; }
+  .zone.resdeck .z-count { position: absolute; top: 3px; left: 7px; font-size: 15px; color: #2c3a5c; font-weight: 800; }
+  .mat.enemy .zone.resdeck .z-count { top: auto; bottom: 3px; left: auto; right: 7px; }
   .zone.resdeck .z-label { font-size: 6.5px; }
   .zone.resarea { flex: 1; justify-content: flex-start; padding-left: 10px; }
-  .zone.resarea .resources { display: flex; gap: 4px; align-items: center; flex-wrap: nowrap; overflow: hidden; }
+  .zone.resarea .resources { display: flex; gap: 4px; align-items: center; flex-wrap: nowrap; overflow: hidden; padding-right: 6px; margin-bottom: 7px; }
+  .mat.enemy .zone.resarea .resources { margin-bottom: 0; margin-top: 7px; }
   .zone.resarea .z-label span { color: #8f2620; margin-right: 5px; }
   .shield-card.gone { background: rgba(10,10,16,.55); border-color: rgba(80,70,50,.5); box-shadow: none; opacity: .3; }
   .shield-card.breaking { animation: shieldPop .45s ease-out forwards; }
@@ -484,19 +486,22 @@
     #inspect img { width: 150px; }
     #overlay { justify-content: flex-start; }
     #overlay h2 { font-size: 24px; }
-    /* Playmat compacts on phones: edge columns become horizontal strips above/below the field */
-    .mat { flex-direction: column; padding: 6px; gap: 6px; }
-    .mat.enemy { flex-direction: column-reverse; }
-    .mat-col { flex-direction: row; width: 100%; gap: 6px; }
-    .mat.enemy .mat-col { flex-direction: row; }
-    .zone.base-zone, .zone.shield-zone, .zone.deckz, .zone.trashz { flex: 1; flex-direction: row; padding: 3px 6px; min-height: 46px; }
-    .base-zone .bz-slot .card { width: 34px; height: 46px; }
-    .shield-zone .sz-grid { flex-direction: row; margin: 0 0 0 6px; }
-    .shield-card { width: 17px; height: 24px; font-size: 9px; }
-    .shield-card + .shield-card { margin-top: 0; margin-left: -5px; }
-    .deck-stack .deck-card, .trash-body .trash-card { width: 34px; height: 46px; }
+    /* Playmat on phones keeps the mat's real geometry — Base+Shields down the left edge,
+       Deck+Trash down the right, resources along the bottom — just narrower. */
+    .mat { padding: 5px; gap: 4px; }
+    .mat-col { width: 58px; gap: 4px; }
+    .zone.base-zone, .zone.deckz { flex: 1; }
+    .zone.shield-zone { flex: 1.5; padding: 3px 1px; }
+    .base-zone .bz-slot .card { width: 40px; height: 56px; }
+    .shield-zone .sz-label { font-size: 7.5px; }
+    .shield-card { width: 34px; height: 24px; font-size: 9px; }
+    .shield-card + .shield-card { margin-top: -9px; }
+    .deck-stack .deck-card, .trash-body .trash-card { width: 40px; height: 56px; }
     .mat-bottom { height: 32px; }
-    .zone.resdeck { width: 58px; }
+    .zone.resdeck { width: 50px; }
+    .zone.resdeck .z-count { font-size: 12px; }
+    .zone .z-label { font-size: 7px; }
+    .battlefield { min-height: 150px; }
     /* Deck builder stacks vertically on phones */
     #dbLayout { flex-wrap: wrap; }
     #dbGrid { max-height: 38vh; }
