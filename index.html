@@ -41,6 +41,9 @@ canvas { display: block; border: 2px solid #4a2a7a; image-rendering: pixelated; 
 #bR { right: 138px; bottom: 192px; width: 50px; height: 50px; font-size: 12px; }
 /* Inventory toggle */
 #bInv { right: 18px; bottom: 252px; width: 50px; height: 50px; font-size: 11px; background: rgba(55,30,100,0.55); border-color: rgba(170,130,230,0.8); }
+/* Quick potions — above movement cluster */
+#bPotHP { left: 16px; bottom: 172px; width: 46px; height: 46px; font-size: 10px; background: rgba(120,25,45,0.55); border-color: rgba(255,90,120,0.8); }
+#bPotMP { left: 72px; bottom: 172px; width: 46px; height: 46px; font-size: 10px; background: rgba(25,45,120,0.55); border-color: rgba(90,120,255,0.8); }
 </style>
 </head>
 <body>
@@ -55,6 +58,8 @@ canvas { display: block; border: 2px solid #4a2a7a; image-rendering: pixelated; 
   <div class="tbtn" id="bE" data-code="KeyE">E</div>
   <div class="tbtn" id="bR" data-code="KeyR">R</div>
   <div class="tbtn" id="bInv" data-code="KeyI">INV<br><small>I</small></div>
+  <div class="tbtn" id="bPotHP" data-code="KeyX">HP<br><small>X</small></div>
+  <div class="tbtn" id="bPotMP" data-code="KeyC">MP<br><small>C</small></div>
 </div>
 <script>
 const canvas = document.getElementById('canvas');
@@ -75,6 +80,7 @@ const ATTACK_COOLDOWN = 400;
 // ─── Input ────────────────────────────────────────────────────────────────────
 const keys = {};
 document.addEventListener('keydown', e => {
+  ensureAudio();
   if (!keys[e.code]) {
     keys[e.code] = true;
     handleKeyPress(e.code);
@@ -93,6 +99,7 @@ const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0
   if (isTouch) touchEl.classList.add('active');
 
   function pressCode(code) {
+    ensureAudio();
     if (!keys[code]) {            // mirror the keydown debounce
       keys[code] = true;
       handleKeyPress(code);
@@ -122,6 +129,11 @@ function canvasPoint(clientX, clientY) {
 function handleCanvasTap(cx, cy) {
   if (inventoryOpen) { handleInventoryTap(cx, cy); return; }
   if (gameState === 'classselect') {
+    // Continue banner tap
+    if (getSave() && cx >= W / 2 - 170 && cx <= W / 2 + 170 && cy >= 448 && cy <= 482) {
+      continueGame();
+      return;
+    }
     const cardW = 250, gap = 30;
     const total = CLASSES.length * cardW + (CLASSES.length - 1) * gap;
     const startX = W / 2 - total / 2;
@@ -171,12 +183,62 @@ function handleInventoryTap(cx, cy) {
 }
 canvas.addEventListener('click', e => { const p = canvasPoint(e.clientX, e.clientY); handleCanvasTap(p.x, p.y); });
 canvas.addEventListener('touchstart', e => {
-  if (gameState !== 'classselect') return;
+  if (gameState !== 'classselect' && !inventoryOpen) return;
+  ensureAudio();
   e.preventDefault();
   const t = e.changedTouches[0];
   const p = canvasPoint(t.clientX, t.clientY);
   handleCanvasTap(p.x, p.y);
 }, { passive: false });
+
+// ─── Audio (tiny WebAudio synth) ──────────────────────────────────────────────
+let audioCtx = null;
+function ensureAudio() {
+  if (!audioCtx) {
+    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; }
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+const sfxLast = {};
+function tone(f0, f1, dur, wave, vol) {
+  const t = audioCtx.currentTime;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = wave;
+  o.frequency.setValueAtTime(f0, t);
+  o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(t); o.stop(t + dur);
+}
+function sfx(name) {
+  if (!audioCtx || audioCtx.state !== 'running') return;
+  const now = performance.now();
+  if (sfxLast[name] && now - sfxLast[name] < 45) return; // throttle AoE spam
+  sfxLast[name] = now;
+  switch (name) {
+    case 'jump':    tone(300, 620, 0.12, 'square', 0.05); break;
+    case 'attack':  tone(220, 90, 0.08, 'sawtooth', 0.06); break;
+    case 'skill':   tone(420, 950, 0.16, 'sine', 0.08); break;
+    case 'hit':     tone(160, 60, 0.09, 'square', 0.07); break;
+    case 'crit':    tone(700, 180, 0.14, 'sawtooth', 0.09); break;
+    case 'kill':    tone(500, 1000, 0.18, 'triangle', 0.08); break;
+    case 'pickup':  tone(820, 1300, 0.09, 'sine', 0.06); break;
+    case 'coin':    tone(1100, 1550, 0.07, 'sine', 0.05); break;
+    case 'potion':  tone(560, 1050, 0.14, 'sine', 0.07); break;
+    case 'equip':   tone(360, 720, 0.16, 'triangle', 0.08); break;
+    case 'hurt':    tone(130, 45, 0.22, 'sawtooth', 0.1); break;
+    case 'death':   tone(240, 35, 0.65, 'sawtooth', 0.11); break;
+    case 'portal':  tone(400, 1400, 0.4, 'sine', 0.08); break;
+    case 'levelup':
+      tone(523, 523, 0.1, 'square', 0.06);
+      setTimeout(() => audioCtx && tone(659, 659, 0.1, 'square', 0.06), 100);
+      setTimeout(() => audioCtx && tone(784, 1046, 0.25, 'square', 0.07), 200);
+      break;
+    case 'rope':    tone(260, 320, 0.06, 'triangle', 0.04); break;
+  }
+}
 
 // ─── Particle System ──────────────────────────────────────────────────────────
 const particles = [];
@@ -235,6 +297,12 @@ const MAPS = [
     ],
     portal: { x: 2320, y: 390 },
     trees: [100,300,600,900,1100,1300,1600,1900,2200].map(x => ({ x })),
+    ropes: [
+      { x: 290, y1: 330, y2: 420 },
+      { x: 810, y1: 210, y2: 420 },
+      { x: 1250, y1: 230, y2: 420 },
+      { x: 1700, y1: 190, y2: 420 },
+    ],
   },
   {
     name: 'Perion — Rocky Mountain',
@@ -267,6 +335,12 @@ const MAPS = [
     ],
     portal: { x: 2520, y: 390 },
     trees: [200,500,800,1100,1400,1700,2000,2300].map(x => ({ x, isRock: true })),
+    ropes: [
+      { x: 480, y1: 260, y2: 420 },
+      { x: 1180, y1: 200, y2: 420 },
+      { x: 1900, y1: 240, y2: 420 },
+      { x: 2360, y1: 280, y2: 420 },
+    ],
   },
   {
     name: 'Ellinia — Enchanted Forest',
@@ -301,10 +375,17 @@ const MAPS = [
     ],
     portal: { x: 2720, y: 390 },
     trees: [150,400,650,900,1150,1400,1700,2000,2300,2600].map(x => ({ x, isGlow: true })),
+    ropes: [
+      { x: 430, y1: 240, y2: 420 },
+      { x: 1140, y1: 160, y2: 420 },
+      { x: 1880, y1: 210, y2: 420 },
+      { x: 2390, y1: 220, y2: 420 },
+    ],
   },
 ];
 
 // ─── Enemy factory ────────────────────────────────────────────────────────────
+const RANGED_MOBS = ['Fire Boar', 'Curse Eye', 'Evil Eye', 'Wraith', 'Jr. Balrog'];
 function makeEnemy(x, y, name, hp, atk, color, exp) {
   return {
     x, y: y - 36, w: 36, h: 36,
@@ -314,9 +395,12 @@ function makeEnemy(x, y, name, hp, atk, color, exp) {
     vy: 0, onGround: false,
     dir: 1, patrolTimer: 0,
     attackCooldown: 0, alive: true,
-    hitFlash: 0, spawnX: x,
+    hitFlash: 0, spawnX: x, spawnY: y - 36,
     patrolRange: 120 + Math.random() * 60,
     animFrame: 0, animTimer: 0,
+    respawnTimer: 0,
+    ranged: RANGED_MOBS.includes(name),
+    rangedCd: 1000 + Math.random() * 1500,
   };
 }
 
@@ -422,6 +506,7 @@ const player = {
   animTimer: 0,
   state: 'idle',
   buffAtk: 1, buffTimer: 0,
+  climbing: false, climbRope: null,
   skills: CLASSES[0].skills,
   inventory: [],
   equip: { weapon: null, shoes: null },
@@ -442,8 +527,10 @@ function playerAtk() { return player.atk * (player.buffTimer > 0 ? player.buffAt
 
 // ─── Projectiles & skill effects ───────────────────────────────────────────────
 const projectiles = [];
+const enemyProjectiles = [];
 const effects = [];
 function spawnEffect(o) { o.maxLife = o.life; effects.push(o); }
+let shake = 0;
 
 // ─── Game state ───────────────────────────────────────────────────────────────
 let currentMapIdx = 0;
@@ -468,6 +555,49 @@ function startGame(classIdx) {
   inventoryOpen = false; inventorySelectedSlot = -1;
   loadMap(0);
   gameState = 'playing';
+  saveGame();
+}
+
+// ─── Save / Load (localStorage) ───────────────────────────────────────────────
+const SAVE_KEY = 'msclone-save';
+function saveGame() {
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify({
+      classIdx: CLASSES.indexOf(player.cls),
+      level: player.level, exp: player.exp, expNeeded: player.expNeeded,
+      maxHp: player.maxHp, maxMp: player.maxMp,
+      atk: player.atk, baseAtk: player.baseAtk, spd: player.spd,
+      meso: player.meso, kills: totalMobsKilled,
+      inventory: player.inventory, equip: player.equip,
+      mapIdx: currentMapIdx,
+    }));
+  } catch (e) { /* storage unavailable (private mode / sandbox) */ }
+}
+function getSave() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return null;
+    const s = JSON.parse(raw);
+    if (typeof s.classIdx !== 'number' || !CLASSES[s.classIdx]) return null;
+    return s;
+  } catch (e) { return null; }
+}
+function continueGame() {
+  const s = getSave();
+  if (!s) return false;
+  applyClass(CLASSES[s.classIdx]);
+  player.level = s.level; player.exp = s.exp; player.expNeeded = s.expNeeded;
+  player.maxHp = s.maxHp; player.hp = s.maxHp;
+  player.maxMp = s.maxMp; player.mp = s.maxMp;
+  player.atk = s.atk; player.baseAtk = s.baseAtk; player.spd = s.spd;
+  player.meso = s.meso; totalMobsKilled = s.kills || 0;
+  player.inventory = s.inventory || [];
+  player.equip = s.equip || { weapon: null, shoes: null };
+  player.buffTimer = 0; player.buffAtk = 1;
+  inventoryOpen = false; inventorySelectedSlot = -1;
+  loadMap(Math.min(s.mapIdx || 0, MAPS.length - 1));
+  gameState = 'playing';
+  return true;
 }
 
 function loadMap(idx) {
@@ -475,12 +605,15 @@ function loadMap(idx) {
   map = MAPS[idx];
   drops.length = 0;
   projectiles.length = 0;
+  enemyProjectiles.length = 0;
   particles.length = 0;
   enemies = map.spawnEnemies();
   player.x = 120;
   player.y = map.ground - player.h;
   player.vx = 0;
   player.vy = 0;
+  player.climbing = false;
+  player.climbRope = null;
   camera.x = 0;
   inventoryOpen = false;
   inventorySelectedSlot = -1;
@@ -496,6 +629,7 @@ function handleKeyPress(code) {
     if (code === 'Digit1') { classHover = 0; }
     if (code === 'Digit2') { classHover = 1; }
     if (code === 'Digit3') { classHover = 2; }
+    if (code === 'KeyC' && getSave()) { continueGame(); return; }
     if (code === 'Space' || code === 'Enter' || code === 'KeyZ') startGame(classHover);
     return;
   }
@@ -520,24 +654,60 @@ function handleKeyPress(code) {
   if (gameState !== 'playing') return;
 
   if (code === 'ArrowUp' || code === 'KeyW' || code === 'Space') {
-    if (player.jumpsLeft > 0) {
+    // Jump off a rope
+    if (player.climbing && code === 'Space') {
+      player.climbing = false; player.climbRope = null;
+      player.vy = JUMP_FORCE * 0.8;
+      player.jumpsLeft = 1;
+      sfx('jump');
+      return;
+    }
+    // Grab a nearby rope (Up only, so Space still double-jumps)
+    if (!player.climbing && code !== 'Space' && tryGrabRope()) return;
+    if (!player.climbing && player.jumpsLeft > 0) {
       player.vy = JUMP_FORCE * (player.jumpsLeft === 1 ? 0.85 : 1);
       player.jumpsLeft--;
       player.onGround = false;
       spawnParticles(player.x + player.w / 2, player.y + player.h, '#cceeff', 4);
+      sfx('jump');
     }
   }
   if (code === 'KeyZ' || code === 'KeyA') {
+    if (player.climbing) return;
     doBasicAttack();
   }
   for (const skill of player.skills) {
-    if (code === skill.key) {
+    if (code === skill.key && !player.climbing) {
       useSkill(skill);
     }
   }
   if (code === 'KeyF') {
     pickupNearby();
   }
+  if (code === 'KeyX') quickPotion('hp');
+  if (code === 'KeyC') quickPotion('mp');
+}
+
+function tryGrabRope() {
+  if (!map.ropes) return false;
+  const pcx = player.x + player.w / 2;
+  for (const r of map.ropes) {
+    if (Math.abs(pcx - r.x) < 16 && player.y + player.h > r.y1 && player.y < r.y2) {
+      player.climbing = true;
+      player.climbRope = r;
+      player.x = r.x - player.w / 2;
+      player.vx = 0; player.vy = 0;
+      sfx('rope');
+      return true;
+    }
+  }
+  return false;
+}
+
+function quickPotion(kind) {
+  const idx = player.inventory.findIndex(it => !it.isEquip && (kind === 'hp' ? it.healHp : it.healMp));
+  if (idx >= 0) useInventoryItem(idx);
+  else spawnDamageNumber(player.x + player.w / 2, player.y - 18, kind === 'hp' ? 'No HP potion!' : 'No MP potion!', '#888');
 }
 
 function respawn() {
@@ -555,6 +725,7 @@ function doBasicAttack() {
   player.attacking = true;
   player.attackTimer = 260;
   player.attackCooldown = ATTACK_COOLDOWN;
+  sfx('attack');
   const weapon = player.cls.weapon;
   const cx = player.x + player.w / 2, cy = player.y + player.h / 2;
 
@@ -587,6 +758,8 @@ function useSkill(skill) {
   skill.cooldown = skill.maxCd;
   player.attacking = true;
   player.attackTimer = 240;
+  sfx('skill');
+  if (skill.fx === 'thunder') shake = 7;
   const cx = player.x + player.w / 2, cy = player.y + player.h / 2;
 
   // ── Self-buff (Rage) ──
@@ -644,19 +817,33 @@ function useSkill(skill) {
 }
 
 function hitEnemy(e, dmg, color) {
+  // Critical hits
+  const crit = Math.random() < 0.15;
+  if (crit) {
+    dmg = Math.floor(dmg * 1.6);
+    shake = Math.max(shake, 4);
+  }
   e.hp -= dmg;
   e.hitFlash = 8;
-  spawnDamageNumber(e.x + e.w / 2, e.y - 5, dmg, color);
-  spawnParticles(e.x + e.w / 2, e.y + e.h / 2, color, 4);
+  // Knockback away from the player; brief stagger so the AI doesn't cancel it
+  const kdir = (e.x + e.w / 2) >= (player.x + player.w / 2) ? 1 : -1;
+  e.vx = kdir * 3.5;
+  e.knock = 220;
+  spawnDamageNumber(e.x + e.w / 2, e.y - 5, crit ? `CRIT ${dmg}` : dmg, crit ? '#ff9a1e' : color);
+  spawnParticles(e.x + e.w / 2, e.y + e.h / 2, color, crit ? 8 : 4);
+  sfx(crit ? 'crit' : 'hit');
   if (e.hp <= 0) killEnemy(e);
 }
 
 function killEnemy(e) {
   e.alive = false;
+  e.respawnTimer = 9000 + Math.random() * 5000;
   totalMobsKilled++;
   spawnParticles(e.x + e.w / 2, e.y + e.h / 2, e.color, 12);
   spawnDrop(e.x + e.w / 2, e.y + e.h, currentMapIdx);
+  sfx('kill');
   gainExp(e.exp);
+  saveGame();
 }
 
 function gainExp(amount) {
@@ -680,6 +867,8 @@ function levelUp() {
   gameState = 'levelup';
   levelUpTimer = 120;
   spawnParticles(player.x + player.w / 2, player.y, '#FFD700', 20);
+  sfx('levelup');
+  saveGame();
 }
 
 function pickupNearby() {
@@ -697,14 +886,26 @@ function applyItem(item) {
   if (item.isMeso) {
     player.meso += item.value;
     spawnParticles(player.x + 15, player.y + 10, '#FFD700', 4);
-  } else {
-    if (player.inventory.length < 20) {
-      player.inventory.push({ ...item });
-      spawnDamageNumber(player.x + player.w / 2, player.y - 14, item.name, item.color);
-      spawnParticles(player.x + 15, player.y + 10, item.color, 3);
-    } else {
-      spawnDamageNumber(player.x + player.w / 2, player.y - 14, 'INV FULL!', '#ff4444');
+    sfx('coin');
+    return;
+  }
+  // Consumables stack; equips take their own slot
+  if (!item.isEquip) {
+    const existing = player.inventory.find(it => it.name === item.name && !it.isEquip);
+    if (existing) {
+      existing.qty = (existing.qty || 1) + 1;
+      spawnDamageNumber(player.x + player.w / 2, player.y - 14, `${item.name} ×${existing.qty}`, item.color);
+      sfx('pickup');
+      return;
     }
+  }
+  if (player.inventory.length < 20) {
+    player.inventory.push({ ...item, qty: 1 });
+    spawnDamageNumber(player.x + player.w / 2, player.y - 14, item.name, item.color);
+    spawnParticles(player.x + 15, player.y + 10, item.color, 3);
+    sfx('pickup');
+  } else {
+    spawnDamageNumber(player.x + player.w / 2, player.y - 14, 'INV FULL!', '#ff4444');
   }
 }
 
@@ -721,7 +922,9 @@ function useInventoryItem(idx) {
     if (item.healMp) parts.push(`MP+${item.healMp}`);
     spawnDamageNumber(player.x + player.w / 2, player.y - 18, parts.join(' ') || 'Used!', item.color);
     spawnParticles(player.x + player.w / 2, player.y + player.h / 2, item.color, 6);
-    player.inventory.splice(idx, 1);
+    sfx('potion');
+    item.qty = (item.qty || 1) - 1;
+    if (item.qty <= 0) player.inventory.splice(idx, 1);
   }
   inventorySelectedSlot = -1;
 }
@@ -741,6 +944,8 @@ function equipItem(item, idx) {
   if (item.stat === 'spd') player.spd += item.statVal;
   spawnDamageNumber(player.x + player.w / 2, player.y - 18, 'EQUIPPED!', item.color);
   spawnParticles(player.x + player.w / 2, player.y + player.h / 2, item.color, 8);
+  sfx('equip');
+  saveGame();
 }
 
 // ─── Collision Helpers ────────────────────────────────────────────────────────
@@ -826,12 +1031,14 @@ function update(ts) {
       if (next < MAPS.length) loadMap(next);
       else { loadMap(0); }
       gameState = 'playing';
+      saveGame();
     }
   }
   if (gameState === 'dead') return;
 
   updatePlayer(dt);
   updateEnemies(dt);
+  updateEnemyProjectiles();
   updateDrops();
   updateProjectiles();
   updateParticles();
@@ -843,6 +1050,40 @@ function updatePlayer(dt) {
   if (inventoryOpen) { player.vx = 0; return; }
   const spd = MOVE_SPEED + player.spd;
   let moving = false;
+
+  // ── Rope climbing ──
+  if (player.climbing) {
+    const r = player.climbRope;
+    player.vx = 0; player.vy = 0;
+    player.x = r.x - player.w / 2;
+    if (keys['ArrowUp'] || keys['KeyW']) { player.y -= 2.4; moving = true; }
+    if (keys['ArrowDown'] || keys['KeyS']) { player.y += 2.8; moving = true; }
+    // Reached the top: hop onto whatever the rope leads to
+    if (player.y < r.y1 - player.h + 6) {
+      player.y = r.y1 - player.h;
+      player.climbing = false; player.climbRope = null;
+      player.vy = -4;
+      player.jumpsLeft = 1;
+    }
+    // Slid off the bottom
+    if (player.y + player.h > r.y2) {
+      player.y = r.y2 - player.h;
+      player.climbing = false; player.climbRope = null;
+    }
+    // Walk off the rope
+    if (keys['ArrowLeft'] || keys['ArrowRight']) {
+      player.climbing = false; player.climbRope = null;
+    }
+    player.state = 'climb';
+    player.animTimer += dt;
+    if (moving && player.animTimer > 180) { player.animFrame = (player.animFrame + 1) % 4; player.animTimer = 0; }
+    // Timers still tick while climbing
+    if (player.attackCooldown > 0) player.attackCooldown -= dt;
+    if (player.invincible > 0) player.invincible -= dt;
+    if (player.buffTimer > 0) player.buffTimer -= dt;
+    for (const s of player.skills) if (s.cooldown > 0) s.cooldown -= dt;
+    return;
+  }
 
   if (keys['ArrowLeft'] || keys['KeyA']) {
     player.vx = -spd;
@@ -887,56 +1128,124 @@ function updatePlayer(dt) {
   if (portal && rectsOverlap(player.x, player.y, player.w, player.h, portal.x, portal.y, 30, 60)) {
     gameState = 'nextmap';
     nextMapTimer = 80;
+    sfx('portal');
   }
 }
 
 function updateEnemies(dt) {
   for (const e of enemies) {
-    if (!e.alive) continue;
+    // Respawn countdown for defeated mobs
+    if (!e.alive) {
+      if (e.respawnTimer > 0) {
+        e.respawnTimer -= dt;
+        if (e.respawnTimer <= 0) {
+          e.alive = true;
+          e.hp = e.maxHp;
+          e.x = e.spawnX;
+          e.y = e.spawnY;
+          e.vx = (Math.random() < 0.5 ? -1 : 1);
+          e.vy = 0;
+          e.attackCooldown = 600;
+          spawnParticles(e.x + e.w / 2, e.y + e.h / 2, e.color, 10);
+        }
+      }
+      continue;
+    }
     if (e.hitFlash > 0) e.hitFlash--;
     if (e.attackCooldown > 0) e.attackCooldown -= dt;
+
+    // Ranged mobs lob a shot at the player
+    if (e.ranged) {
+      e.rangedCd -= dt;
+      const pdist = Math.hypot(player.x - e.x, player.y - e.y);
+      if (e.rangedCd <= 0 && pdist < 380 && pdist > 60) {
+        const sx = e.x + e.w / 2, sy = e.y + e.h / 2 - 4;
+        const tx = player.x + player.w / 2, ty = player.y + player.h / 2;
+        const a = Math.atan2(ty - sy, tx - sx);
+        enemyProjectiles.push({
+          x: sx, y: sy,
+          vx: Math.cos(a) * 4.2, vy: Math.sin(a) * 4.2,
+          dmg: Math.floor(e.atk * 0.8),
+          color: e.name.includes('Fire') ? '#ff7a20' : (e.name.includes('Balrog') ? '#ff3050' : '#c060ff'),
+          life: 130,
+        });
+        e.rangedCd = 2200 + Math.random() * 1200;
+      }
+    }
 
     e.animTimer = (e.animTimer || 0) + dt;
     if (e.animTimer > 200) { e.animFrame = (e.animFrame + 1) % 4; e.animTimer = 0; }
 
-    // Patrol AI
-    e.patrolTimer += dt;
-    if (e.patrolTimer > 1000 + Math.random() * 500) {
-      e.vx = -e.vx;
-      e.dir = e.vx > 0 ? 1 : -1;
-      e.patrolTimer = 0;
-    }
+    // Stagger from knockback overrides normal movement briefly
+    if (e.knock > 0) {
+      e.knock -= dt;
+      e.vx *= 0.92;
+    } else {
+      // Patrol AI
+      e.patrolTimer += dt;
+      if (e.patrolTimer > 1000 + Math.random() * 500) {
+        e.vx = -e.vx;
+        e.dir = e.vx > 0 ? 1 : -1;
+        e.patrolTimer = 0;
+      }
 
-    // Chase player if nearby
-    const distX = player.x - e.x;
-    const distY = player.y - e.y;
-    const dist = Math.hypot(distX, distY);
-    if (dist < 250) {
-      const chaseSpd = 1.2 + currentMapIdx * 0.3;
-      e.vx = distX > 0 ? chaseSpd : -chaseSpd;
-      e.dir = e.vx > 0 ? 1 : -1;
-    }
+      // Chase player if nearby
+      const distX = player.x - e.x;
+      const distY = player.y - e.y;
+      const dist = Math.hypot(distX, distY);
+      if (dist < 250) {
+        const chaseSpd = 1.2 + currentMapIdx * 0.3;
+        e.vx = distX > 0 ? chaseSpd : -chaseSpd;
+        e.dir = e.vx > 0 ? 1 : -1;
+      }
 
-    // Clamp patrol
-    if (e.x < e.spawnX - e.patrolRange) e.vx = Math.abs(e.vx);
-    if (e.x > e.spawnX + e.patrolRange) e.vx = -Math.abs(e.vx);
+      // Clamp patrol
+      if (e.x < e.spawnX - e.patrolRange) e.vx = Math.abs(e.vx);
+      if (e.x > e.spawnX + e.patrolRange) e.vx = -Math.abs(e.vx);
+    }
 
     applyPhysics(e);
 
     // Attack player on contact
     if (e.attackCooldown <= 0 && player.invincible <= 0 &&
         rectsOverlap(e.x - 5, e.y - 5, e.w + 10, e.h + 10, player.x, player.y, player.w, player.h)) {
-      const dmg = e.atk;
-      player.hp -= dmg;
-      player.invincible = 800;
-      spawnDamageNumber(player.x + player.w / 2, player.y - 10, dmg, '#FF4466');
+      hurtPlayer(e.atk, e.x + e.w / 2);
       e.attackCooldown = 1200;
-      if (player.hp <= 0) {
-        player.hp = 0;
-        gameState = 'dead';
-        inventoryOpen = false; inventorySelectedSlot = -1;
-      }
     }
+  }
+}
+
+function hurtPlayer(dmg, sourceX) {
+  player.hp -= dmg;
+  player.invincible = 800;
+  spawnDamageNumber(player.x + player.w / 2, player.y - 10, dmg, '#FF4466');
+  shake = Math.max(shake, 6);
+  // Knockback away from the hit; getting knocked off a rope too
+  player.climbing = false; player.climbRope = null;
+  player.vx = (player.x + player.w / 2) < sourceX ? -4.5 : 4.5;
+  player.vy = -3.5;
+  sfx('hurt');
+  if (player.hp <= 0) {
+    player.hp = 0;
+    gameState = 'dead';
+    inventoryOpen = false; inventorySelectedSlot = -1;
+    sfx('death');
+  }
+}
+
+function updateEnemyProjectiles() {
+  for (let i = enemyProjectiles.length - 1; i >= 0; i--) {
+    const p = enemyProjectiles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life--;
+    let done = p.life <= 0;
+    if (!done && player.invincible <= 0 &&
+        rectsOverlap(p.x - 5, p.y - 5, 10, 10, player.x, player.y, player.w, player.h)) {
+      hurtPlayer(p.dmg, p.x);
+      done = true;
+    }
+    if (done) enemyProjectiles.splice(i, 1);
   }
 }
 
@@ -1023,6 +1332,14 @@ function draw() {
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, H);
 
+  // Screen shake (world only; HUD is drawn after restore)
+  if (shake > 0.4) {
+    ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
+    shake *= 0.88;
+  } else {
+    shake = 0;
+  }
+
   // Parallax BG elements
   drawBackground();
 
@@ -1043,6 +1360,9 @@ function draw() {
     drawPlatform(p);
   }
 
+  // Ropes
+  drawRopes();
+
   // Portal
   drawPortal();
 
@@ -1054,6 +1374,7 @@ function draw() {
 
   // Projectiles
   for (const p of projectiles) drawProjectile(p);
+  for (const p of enemyProjectiles) drawEnemyProjectile(p);
 
   // Skill effects (slashes, thunder, rain, buff rings)
   drawEffects();
@@ -1111,6 +1432,51 @@ function drawProjectile(p) {
     ctx.beginPath(); ctx.arc(p.x, p.y, r * 0.45, 0, Math.PI * 2); ctx.fill();
   }
   ctx.restore();
+}
+
+function drawEnemyProjectile(p) {
+  ctx.save();
+  ctx.shadowBlur = 14;
+  ctx.shadowColor = p.color;
+  const r = 7 + Math.sin(Date.now() / 70) * 1.2;
+  // Trail
+  ctx.globalAlpha = 0.35;
+  ctx.fillStyle = p.color;
+  ctx.beginPath(); ctx.arc(p.x - p.vx * 2, p.y - p.vy * 2, r * 0.7, 0, Math.PI * 2); ctx.fill();
+  // Core
+  ctx.globalAlpha = 0.95;
+  ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.globalAlpha = 0.75;
+  ctx.beginPath(); ctx.arc(p.x, p.y, r * 0.4, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+function drawRopes() {
+  if (!map.ropes) return;
+  for (const r of map.ropes) {
+    ctx.strokeStyle = '#8a6a3a';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(r.x, r.y1);
+    ctx.lineTo(r.x, r.y2);
+    ctx.stroke();
+    ctx.strokeStyle = '#b89058';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(r.x - 1, r.y1);
+    ctx.lineTo(r.x - 1, r.y2);
+    ctx.stroke();
+    // Rungs
+    ctx.strokeStyle = '#6a4a22';
+    ctx.lineWidth = 2;
+    for (let y = r.y1 + 10; y < r.y2 - 4; y += 14) {
+      ctx.beginPath();
+      ctx.moveTo(r.x - 5, y);
+      ctx.lineTo(r.x + 5, y);
+      ctx.stroke();
+    }
+  }
 }
 
 function drawEffects() {
@@ -1180,6 +1546,43 @@ function drawEffects() {
 }
 
 function drawBackground() {
+  // Sky layer: clouds by day, stars + moon at night
+  if (currentMapIdx === 2) {
+    ctx.save();
+    for (let i = 0; i < 40; i++) {
+      const sx = ((i * 173 + 37) % W);
+      const sy = ((i * 97 + 11) % 260);
+      const tw = 0.5 + 0.5 * Math.sin(Date.now() / 700 + i * 1.7);
+      ctx.globalAlpha = 0.25 + tw * 0.55;
+      ctx.fillStyle = i % 5 === 0 ? '#aaccff' : '#ffffff';
+      ctx.fillRect(sx, sy, 2, 2);
+    }
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 24; ctx.shadowColor = '#e8f0ff';
+    ctx.fillStyle = '#e8ecf5';
+    ctx.beginPath(); ctx.arc(W - 130, 80, 30, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#1a2a4a';
+    ctx.beginPath(); ctx.arc(W - 142, 72, 26, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  } else {
+    const drift = Date.now() / 300;
+    const cloudPar = camera.x * 0.12;
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    for (let i = 0; i < 6; i++) {
+      const cw = 90 + (i % 3) * 40;
+      const cxx = ((i * 340 + drift - cloudPar) % (W + cw + 100)) - cw - 50 + 0;
+      const cyy = 45 + (i % 3) * 42;
+      ctx.beginPath();
+      ctx.ellipse(cxx + cw / 2, cyy, cw / 2, 16, 0, 0, Math.PI * 2);
+      ctx.ellipse(cxx + cw / 3, cyy - 10, cw / 4, 13, 0, 0, Math.PI * 2);
+      ctx.ellipse(cxx + cw / 1.5, cyy - 8, cw / 4.5, 11, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
   const parallax = camera.x * 0.3;
   for (const t of map.trees) {
     const sx = (t.x - parallax) % (map.width + W);
@@ -1281,6 +1684,30 @@ function drawPlayer() {
   const c = player.cls;
   const skin = '#ffdfc4';
   const atk = player.attacking;
+
+  // Back-facing climbing pose
+  if (player.state === 'climb') {
+    const swing = Math.sin(player.animFrame * Math.PI / 2) * 3;
+    ctx.save();
+    // Legs
+    ctx.fillStyle = '#3a3550';
+    ctx.fillRect(px + 8, py + 33, 6, 7 + swing);
+    ctx.fillRect(px + 16, py + 33, 6, 7 - swing);
+    // Body
+    ctx.fillStyle = c.color;
+    ctx.fillRect(px + 8, py + 22, 14, 12);
+    // Arms reaching up, alternating
+    ctx.fillStyle = skin;
+    ctx.fillRect(px + 7, py + 12 - swing, 5, 12);
+    ctx.fillRect(px + 18, py + 12 + swing, 5, 12);
+    // Back of head (hair only, no face)
+    ctx.fillStyle = skin;
+    ctx.fillRect(px + 6, py + 4, 18, 17);
+    ctx.fillStyle = c.hair;
+    ctx.fillRect(px + 5, py + 2, 20, 14);
+    ctx.restore();
+    return;
+  }
 
   ctx.save();
   if (d < 0) {
@@ -1852,7 +2279,17 @@ function drawInventory() {
       ctx.strokeStyle = sel ? '#c090ff' : (item ? '#5a3a9a' : '#2e1660');
       ctx.lineWidth = sel ? 2 : 1;
       roundRect(ctx, sx, sy, SLOT, SLOT, 4); ctx.stroke();
-      if (item) drawItemIcon(item, sx + 3, sy + 3, SLOT - 6);
+      if (item) {
+        drawItemIcon(item, sx + 3, sy + 3, SLOT - 6);
+        if ((item.qty || 1) > 1) {
+          ctx.fillStyle = 'rgba(0,0,0,0.75)';
+          ctx.fillRect(sx + SLOT - 20, sy + SLOT - 15, 18, 13);
+          ctx.fillStyle = '#ffd700';
+          ctx.font = 'bold 10px monospace';
+          ctx.textAlign = 'right';
+          ctx.fillText(`×${item.qty}`, sx + SLOT - 3, sy + SLOT - 5);
+        }
+      }
     }
   }
 
@@ -1972,6 +2409,22 @@ function drawHUD() {
   ctx.textAlign = 'center';
   ctx.fillText(`EXP ${player.exp}/${player.expNeeded}`, 118, 71);
 
+  // Active buff chip below the stat panel
+  if (player.buffTimer > 0) {
+    const secs = Math.ceil(player.buffTimer / 1000);
+    ctx.fillStyle = 'rgba(120,20,20,0.85)';
+    roundRect(ctx, 8, 94, 118, 20, 5);
+    ctx.fill();
+    ctx.strokeStyle = '#ff5050';
+    ctx.lineWidth = 1;
+    roundRect(ctx, 8, 94, 118, 20, 5);
+    ctx.stroke();
+    ctx.fillStyle = '#ffb0a0';
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(`⚔ RAGE ×${player.buffAtk} · ${secs}s`, 16, 108);
+  }
+
   // Stats panel (top right)
   ctx.fillStyle = 'rgba(0,0,0,0.7)';
   roundRect(ctx, W - 170, 8, 162, 70, 8);
@@ -2006,7 +2459,7 @@ function drawHUD() {
   ctx.fillStyle = '#888';
   ctx.font = '10px monospace';
   ctx.textAlign = 'center';
-  ctx.fillText('←→ Move  Space Jump  Z Atk  Q/E/R Skills  F Pick  I Inv  ↓ Drop thru', W / 2, H - 8);
+  ctx.fillText('←→ Move  Space Jump  ↑ Rope  Z Atk  Q/E/R Skills  F Pick  I Inv  X/C Potion', W / 2, H - 8);
 }
 
 function drawSkillBar() {
@@ -2143,6 +2596,25 @@ function drawClassSelect() {
       const pulse = Math.floor(Date.now() / 400) % 2 === 0;
       if (pulse) ctx.fillText('▶ TAP / PRESS Z ◀', x + cardW / 2, cardY + cardH - 8);
     }
+  }
+
+  // Continue banner if a save exists
+  const save = getSave();
+  if (save) {
+    const bw = 340, bx = W / 2 - bw / 2, by = 448;
+    const pulse = 0.75 + Math.sin(Date.now() / 350) * 0.25;
+    ctx.save();
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = 'rgba(20,60,30,0.9)';
+    roundRect(ctx, bx, by, bw, 34, 8); ctx.fill();
+    ctx.strokeStyle = '#50d070'; ctx.lineWidth = 2;
+    roundRect(ctx, bx, by, bw, 34, 8); ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#a0ffb8';
+    ctx.font = 'bold 13px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(`▶ CONTINUE  Lv.${save.level} ${CLASSES[save.classIdx].name} · ${MAPS[Math.min(save.mapIdx || 0, MAPS.length - 1)].name.split(' — ')[0]}  [C]`, W / 2, by + 22);
+    ctx.restore();
   }
 
   ctx.fillStyle = '#888';
