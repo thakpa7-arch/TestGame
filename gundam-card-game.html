@@ -191,20 +191,36 @@
 
   /* Attacker lunge — the card nudges toward the opposing row when it strikes. Rested variants keep
      the 90° tap rotation (translateX in the rotated frame moves the card up/down on screen). */
-  @keyframes lungeUp   { 0%{ transform:none; } 35%{ transform: translateY(-24px) scale(1.06); } 100%{ transform:none; } }
-  @keyframes lungeDown { 0%{ transform:none; } 35%{ transform: translateY(24px) scale(1.06); } 100%{ transform:none; } }
-  @keyframes lungeUpRested   { 0%{ transform: rotate(90deg) scale(.82); } 35%{ transform: rotate(90deg) scale(.88) translateX(-24px); } 100%{ transform: rotate(90deg) scale(.82); } }
-  @keyframes lungeDownRested { 0%{ transform: rotate(90deg) scale(.82); } 35%{ transform: rotate(90deg) scale(.88) translateX(24px); } 100%{ transform: rotate(90deg) scale(.82); } }
-  .card.fx-lunge-up   { animation: lungeUp .42s ease-out; z-index: 5; }
-  .card.fx-lunge-down { animation: lungeDown .42s ease-out; z-index: 5; }
-  .card.rested.fx-lunge-up   { animation: lungeUpRested .42s ease-out; }
-  .card.rested.fx-lunge-down { animation: lungeDownRested .42s ease-out; }
+  @keyframes lungeUp   { 0%{ transform:none; } 24%{ transform: translateY(12px) scale(.96); } 58%{ transform: translateY(-38px) scale(1.14); } 100%{ transform:none; } }
+  @keyframes lungeDown { 0%{ transform:none; } 24%{ transform: translateY(-12px) scale(.96); } 58%{ transform: translateY(38px) scale(1.14); } 100%{ transform:none; } }
+  @keyframes lungeUpRested   { 0%{ transform: rotate(90deg) scale(.82); } 24%{ transform: rotate(90deg) scale(.8) translateX(10px); } 58%{ transform: rotate(90deg) scale(.9) translateX(-34px); } 100%{ transform: rotate(90deg) scale(.82); } }
+  @keyframes lungeDownRested { 0%{ transform: rotate(90deg) scale(.82); } 24%{ transform: rotate(90deg) scale(.8) translateX(-10px); } 58%{ transform: rotate(90deg) scale(.9) translateX(34px); } 100%{ transform: rotate(90deg) scale(.82); } }
+  .card.fx-lunge-up   { animation: lungeUp .52s cubic-bezier(.3,.6,.3,1); z-index: 5; }
+  .card.fx-lunge-down { animation: lungeDown .52s cubic-bezier(.3,.6,.3,1); z-index: 5; }
+  .card.rested.fx-lunge-up   { animation: lungeUpRested .52s cubic-bezier(.3,.6,.3,1); }
+  .card.rested.fx-lunge-down { animation: lungeDownRested .52s cubic-bezier(.3,.6,.3,1); }
 
-  /* Floating combat numbers (damage red / heal green) */
+  /* Deploy pop-in — a freshly deployed card drops onto the board with a gold flash */
+  @keyframes cardEnter { 0%{ transform: translateY(-26px) scale(1.28); opacity: 0; box-shadow: 0 0 34px rgba(251,191,36,.9); }
+    60%{ opacity: 1; box-shadow: 0 0 18px rgba(251,191,36,.5); } 100%{ transform: none; box-shadow: none; } }
+  @keyframes cardEnterRested { 0%{ transform: rotate(90deg) scale(1.1); opacity: 0; } 100%{ transform: rotate(90deg) scale(.82); opacity: 1; } }
+  .card.fx-enter { animation: cardEnter .5s cubic-bezier(.2,1.3,.4,1); }
+  .card.rested.fx-enter { animation: cardEnterRested .5s cubic-bezier(.2,1.3,.4,1); }
+
+  /* Floating combat numbers: damage = Hearthstone-style red splat, heal = rising green number */
   .float-num { position: fixed; z-index: 140; transform: translate(-50%,-50%); font-size: 26px; font-weight: 900;
     text-shadow: 0 2px 6px #000, 0 0 14px currentColor; pointer-events: none; animation: floatUp 1.05s ease-out forwards; }
   @keyframes floatUp { 0%{ opacity:0; transform: translate(-50%,-30%) scale(.6); } 12%{ opacity:1; transform: translate(-50%,-50%) scale(1.18); }
     28%{ transform: translate(-50%,-58%) scale(1); } 100%{ opacity:0; transform: translate(-50%,-170%) scale(.95); } }
+  .float-num.splat { width: 58px; height: 58px; display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 23px; text-shadow: 0 2px 3px rgba(60,0,0,.9);
+    background: radial-gradient(circle at 42% 38%, #f66 0%, #d92c22 45%, #8f130d 100%);
+    clip-path: polygon(50% 0%, 61% 12%, 76% 5%, 78% 21%, 95% 21%, 88% 36%, 100% 46%, 87% 56%, 96% 72%, 79% 72%, 77% 90%, 62% 82%, 50% 100%, 38% 82%, 23% 90%, 21% 72%, 4% 72%, 13% 56%, 0% 46%, 12% 36%, 5% 21%, 22% 21%, 24% 5%, 39% 12%);
+    animation: splatPop .95s ease-out forwards; }
+  @keyframes splatPop { 0%{ opacity:0; transform: translate(-50%,-50%) scale(.25) rotate(-14deg); }
+    16%{ opacity:1; transform: translate(-50%,-50%) scale(1.22) rotate(3deg); }
+    32%{ transform: translate(-50%,-50%) scale(1) rotate(0deg); } 74%{ opacity:1; }
+    100%{ opacity:0; transform: translate(-50%,-46%) scale(.92); } }
 
   /* Turn banner sweep */
   #turnBanner { position: fixed; left: 0; right: 0; top: 38%; z-index: 130; text-align: center; pointer-events: none; opacity: 0; }
@@ -230,6 +246,40 @@
   .db-row { display: flex; align-items: center; gap: 6px; background: #1a1930; border: 1px solid #32304e; border-radius: 7px; padding: 3px 6px; font-size: 12px; color: #e6e6f2; }
   .db-row b { flex: 1; text-align: left; font-weight: 600; }
   .db-row button { background: #32304e; color: #fff; border: none; border-radius: 5px; width: 22px; height: 22px; cursor: pointer; font-weight: 800; }
+
+  /* Hearthstone-style hand fan: each card sits in a rotated slot; hovering straightens and lifts it */
+  .hand-row { overflow: visible; }
+  .fan-slot { flex: 0 0 auto; transition: transform .18s ease, margin .18s ease; position: relative; }
+  .fan-slot:hover { transform: translateY(-26px) !important; z-index: 60 !important; }
+  .fan-slot:hover .card { transform: scale(1.42); box-shadow: 0 14px 40px rgba(0,0,0,.7), 0 0 22px rgba(34,211,238,.35); }
+  .hand-row .card { transition: transform .18s ease, box-shadow .18s ease; }
+  .hand-row .card.playable { outline: 2px solid rgba(52,211,153,.85); outline-offset: -2px; animation: playableBreathe 1.6s ease-in-out infinite; }
+  @keyframes playableBreathe { 0%,100%{ box-shadow: 0 0 7px rgba(52,211,153,.45); } 50%{ box-shadow: 0 0 16px rgba(52,211,153,.85); } }
+
+  /* Targeting arrow (attack declarations) */
+  #targetArrow { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 96; display: none; filter: drop-shadow(0 2px 6px rgba(0,0,0,.6)); }
+
+  /* Play-history ribbon (recent plays, newest on top; tap to inspect) */
+  #histRibbon { position: fixed; left: 4px; top: 50%; transform: translateY(-50%); z-index: 80; display: none; flex-direction: column; gap: 5px; }
+  @media (min-width: 1100px) { #histRibbon { display: flex; } }
+  .hist-item { width: 36px; height: 36px; border-radius: 50%; background-color: #14101e; background-size: cover; background-position: center 22%;
+    border: 2px solid var(--cyan); box-shadow: 0 2px 8px rgba(0,0,0,.65); cursor: pointer; font-size: 6.5px; color: #dde;
+    overflow: hidden; display: flex; align-items: center; justify-content: center; text-align: center; animation: histIn .3s ease; }
+  .hist-item.ai { border-color: #f87171; }
+  .hist-item:hover { transform: scale(1.35); border-width: 3px; }
+  @keyframes histIn { 0%{ transform: translateX(-44px); opacity: 0; } 100%{ transform: none; opacity: 1; } }
+
+  /* End Turn urges you when you have nothing left to do (Hearthstone's glowing button) */
+  #endTurnBtn.urge { border-color: #34d399; color: #d7ffe9; animation: urgePulse 1.25s ease-in-out infinite; }
+  @keyframes urgePulse { 0%,100%{ box-shadow: 0 0 8px rgba(52,211,153,.5); } 50%{ box-shadow: 0 0 22px rgba(52,211,153,.95); } }
+
+  /* Victory / defeat stinger */
+  #overlay h2.result { animation: vicPop .8s cubic-bezier(.2,1.7,.35,1) both; }
+  #overlay h2.result.win { background: linear-gradient(90deg, #fde68a, var(--gold), #fde68a); -webkit-background-clip: text; background-clip: text; color: transparent;
+    text-shadow: none; filter: drop-shadow(0 0 26px rgba(251,191,36,.6)); }
+  #overlay h2.result.loss { background: linear-gradient(90deg, #fca5a5, #ef4444, #fca5a5); -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 0 22px rgba(239,68,68,.55)); }
+  @keyframes vicPop { 0%{ transform: scale(.25); opacity: 0; } 60%{ transform: scale(1.15); opacity: 1; } 100%{ transform: scale(1); } }
   @keyframes shakeScreen { 0%,100%{ transform: translate(0,0);} 15%{ transform: translate(-7px,4px);} 30%{ transform: translate(8px,-5px);} 45%{ transform: translate(-6px,3px);} 60%{ transform: translate(5px,4px);} 75%{ transform: translate(-3px,-2px);} }
   .shake { animation: shakeScreen .4s ease-in-out; }
   @keyframes shieldPop { 0%{ transform: scale(1); box-shadow:0 0 6px rgba(251,191,36,.4);} 40%{ transform: scale(1.5); box-shadow:0 0 18px 6px rgba(255,120,60,.9);} 100%{ transform: scale(0); opacity:0; } }
@@ -375,6 +425,10 @@
     .battlefield { min-height: 124px; }
     .card { width: 80px; height: 112px; }
     .card:hover, .hand-row .card:hover { transform: none; box-shadow: none; }
+    .hand-row { overflow-x: auto; }
+    .fan-slot { transform: none !important; margin-left: 0 !important; }
+    .fan-slot:hover { transform: none !important; }
+    .fan-slot:hover .card { transform: none; box-shadow: none; }
     .hand-row { height: 128px; }
     #logPanel { width: 44vw; max-width: 190px; bottom: 6px; right: 6px; }
     #log { max-height: 110px; font-size: 9px; }
@@ -2503,12 +2557,56 @@ function floatNum(uid, text, color){
   try{
     const node=document.querySelector(`.card[data-uid="${uid}"]`); if(!node) return;
     const r=node.getBoundingClientRect(); if(!r || !r.width) return;
-    const f=document.createElement('div'); f.className='float-num'; f.textContent=text; f.style.color=color;
+    const f=document.createElement('div'); f.className='float-num'+(String(text)[0]==='-'?' splat':''); f.textContent=text;
+    if(String(text)[0]!=='-') f.style.color=color;
     f.style.left=(r.left+r.width/2)+'px'; f.style.top=(r.top+r.height*0.32)+'px';
     document.body.appendChild(f);
     setTimeout(()=>{ try{ f.remove(); }catch(e){} }, 1100);
   }catch(e){}
 }
+// ---- play-history ribbon (Hearthstone-style): the last few cards played/deployed, tap to inspect ----
+const HIST=[];
+function histAdd(card, cls){
+  if (!card || !card.name) return;
+  if (HIST[0] && HIST[0].card.uid===card.uid) return;   // skip immediate duplicates (flash + deploy)
+  HIST.unshift({card, cls}); if (HIST.length>8) HIST.pop();
+  try{
+    let h=document.getElementById('histRibbon');
+    if(!h){ h=document.createElement('div'); h.id='histRibbon'; document.body.appendChild(h); }
+    h.innerHTML=HIST.map((e,i)=>`<div class="hist-item ${e.cls}" data-h="${i}" title="${e.card.name}"`+
+      ` style="${e.card.img?`background-image:url('${e.card.img}')`:''}">${e.card.img?'':e.card.name.slice(0,12)}</div>`).join('');
+    h.querySelectorAll('.hist-item').forEach(n=>n.onclick=()=>{ const en=HIST[+n.dataset.h]; if(en) inspect(en.card); });
+  }catch(e){}
+}
+// ---- targeting arrow: a red bezier arrow from your attacker to the cursor while picking a target ----
+let _arrowSvg=null;
+function targetArrowSource(){
+  if (G.turn!=='player' || G.over) return null;
+  if (G.mode!=='attack-target' || G.selected==null) return null;
+  try{ return document.querySelector(`.card[data-uid="${G.selected}"]`); }catch(e){ return null; }
+}
+function drawTargetArrow(x,y){
+  try{
+    const srcNode=targetArrowSource();
+    if(!srcNode){ hideTargetArrow(); return; }
+    if(!_arrowSvg){
+      _arrowSvg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+      _arrowSvg.id='targetArrow';
+      _arrowSvg.innerHTML='<path id="taPath" fill="none" stroke="#ef4444" stroke-width="5" stroke-dasharray="13 8" stroke-linecap="round" opacity=".92"/>'+
+                          '<polygon id="taHead" points="0,-10 20,0 0,10" fill="#ef4444"/>';
+      document.body.appendChild(_arrowSvg);
+    }
+    _arrowSvg.style.display='block';
+    const r=srcNode.getBoundingClientRect(), x0=r.left+r.width/2, y0=r.top+r.height/2;
+    const mx=(x0+x)/2, my=Math.min(y0,y)-70;
+    _arrowSvg.querySelector('#taPath').setAttribute('d',`M${x0},${y0} Q${mx},${my} ${x},${y}`);
+    const ang=Math.atan2(y-my, x-mx)*180/Math.PI;
+    _arrowSvg.querySelector('#taHead').setAttribute('transform',`translate(${x},${y}) rotate(${ang})`);
+  }catch(e){}
+}
+function hideTargetArrow(){ if(_arrowSvg) _arrowSvg.style.display='none'; }
+document.addEventListener('mousemove', (e)=>{ if(targetArrowSource()) drawTargetArrow(e.clientX,e.clientY); else hideTargetArrow(); });
+
 // Full-width "YOUR TURN / ENEMY TURN" sweep at the start of each turn.
 function showTurnBanner(turn){
   try{
@@ -2521,6 +2619,7 @@ function showTurnBanner(turn){
 let flashCardTimer=null;
 function flashCard(card, tag){
   if (!card) return;
+  histAdd(card, /ENEMY/i.test(tag||'')?'ai':'me');
   let host=document.getElementById('cardFlash');
   if (!host){ host=document.createElement('div'); host.id='cardFlash'; document.body.appendChild(host); }
   const img = card.img ? `style="background-image:url('${card.img}')"` : '';
@@ -2577,6 +2676,8 @@ function unitHasTrait(unit, side, trait){
 // `forceAuto` resolves the reaction without an interactive target prompt (used when a token is
 // deployed mid-effect, where we can't safely enter target-selection mode).
 function onUnitDeployed(unit, side, after, forceAuto){
+  fxQueue.push({ kind:'enter', uid: unit.uid });        // pop-in animation on the next render
+  histAdd(unit, side===G.player?'me':'ai');             // play-history ribbon
   const srcs=(side.field||[]).filter(src=>src!==unit && src.allyDeploy && src.hp>0
     && (!src.allyDeploy.trait || unitHasTrait(unit, side, src.allyDeploy.trait)));
   let i=0;
@@ -2646,6 +2747,7 @@ function effMaxHp(u){
 // ---- setup / turns ----
 function startGame(){
   uid = 1;
+  HIST.length=0; try{ const h=document.getElementById('histRibbon'); if(h) h.innerHTML=''; }catch(e){}
   Object.assign(G, { turn:'player', turnNumber:1, phase:'main', selected:null, mode:'idle', pending:null, pendingHandIdx:-1, over:false,
                      firstPlayer:'player', skipDrawSide:null,
                      player:makeSide('player'), enemy:makeSide('enemy') });
@@ -3934,7 +4036,7 @@ function endGame(winnerSide){
   recordResult(G.playerDeckName, win);   // lifetime W/L per deck, shown on the deck picker
   fx('direct'); setTimeout(()=>sound(win?'win':'lose'), 250);
   const ov=el('overlay'); ov.classList.remove('hidden');
-  ov.innerHTML = `<h2>${win?'VICTORY':'DEFEAT'}</h2>
+  ov.innerHTML = `<h2 class="result ${win?'win':'loss'}">${win?'VICTORY':'DEFEAT'}</h2>
     <p>${win?`The enemy line is shattered — your <b>${G.playerDeckName}</b> deck holds the field, commander!`
             :`Your forces are overwhelmed. <b>${G.enemyDeckName}</b> flies its banner over the battlefield.`}</p>
     <button id="againBtn">PLAY AGAIN</button>`;
@@ -4454,7 +4556,7 @@ let fxQueue = [];
 function fx(kind, uid){ sound(kind); if(uid!=null) fxQueue.push({kind,uid}); if(kind==='direct'||kind==='shield'||kind==='die') screenShake(); }
 function screenShake(){ const r=el('app'); if(!r) return; r.classList.remove('shake'); void r.offsetWidth; r.classList.add('shake'); setTimeout(()=>r.classList.remove('shake'),420); }
 function applyVisualFx(){
-  const CLS={ die:'fx-die', lungeUp:'fx-lunge-up', lungeDown:'fx-lunge-down' };
+  const CLS={ die:'fx-die', lungeUp:'fx-lunge-up', lungeDown:'fx-lunge-down', enter:'fx-enter' };
   for(const f of fxQueue){ const node=document.querySelector(`.card[data-uid="${f.uid}"]`); if(node){ const cls=CLS[f.kind]||'fx-hit'; node.classList.remove(cls); void node.offsetWidth; node.classList.add(cls); } }
   fxQueue=[];
   G.player.breakingShield=false; G.enemy.breakingShield=false;   // one-shot
@@ -4489,14 +4591,29 @@ function render(){
   el('playerField').innerHTML = fieldHTML(G.player,'field-player','Play a card from your hand');
   el('enemyBase').innerHTML = G.enemy.base ? cardFace(G.enemy.base,'field-enemy') : `<div class="bz-empty">no base</div>`;
   el('playerBase').innerHTML = G.player.base ? cardFace(G.player.base,'field-player') : `<div class="bz-empty">no base</div>`;
-  el('hand').innerHTML = G.player.hand.length ? G.player.hand.map(c=>{
-    if(G.mode==='discard') return cardFace(c,'hand').replace('class="card', 'class="card selectable');
-    const needsUnit = c.type==='pilot' && !G.player.field.some(u=>u.type==='unit' && !u.pilot && !u.noPilot);
-    const playable = G.turn==='player' && canAfford(G.player,c) && !needsUnit && !G.over && G.mode==='idle' && !G.actionLock;
-    return cardFace(c,'hand').replace('class="card', `class="card ${playable?'':'dim'}`);
+  const _hn=G.player.hand.length, _mid=(_hn-1)/2;
+  el('hand').innerHTML = _hn ? G.player.hand.map((c,i)=>{
+    let face;
+    if(G.mode==='discard') face=cardFace(c,'hand').replace('class="card', 'class="card selectable');
+    else {
+      const needsUnit = c.type==='pilot' && !G.player.field.some(u=>u.type==='unit' && !u.pilot && !u.noPilot);
+      const playable = G.turn==='player' && canAfford(G.player,c) && !needsUnit && !G.over && G.mode==='idle' && !G.actionLock;
+      face=cardFace(c,'hand').replace('class="card', `class="card ${playable?'playable':'dim'}`);
+    }
+    // Hearthstone-style fan: rotate/lift each slot around the hand's center; overlap grows with size.
+    const off=i-_mid, rot=Math.max(-13,Math.min(13,off*(_hn>7?2.2:3.6))), lift=off*off*(_hn>7?1.0:1.7);
+    const ml = i===0?0 : (_hn>8?-42 : _hn>6?-26 : _hn>4?-10 : 5);
+    return `<div class="fan-slot" style="transform:rotate(${rot.toFixed(1)}deg) translateY(${lift.toFixed(0)}px);margin-left:${ml}px;z-index:${10+i}">${face}</div>`;
   }).join('') : `<div class="empty-hint">Hand empty</div>`;
 
   el('endTurnBtn').disabled = G.turn!=='player' || G.over;
+  // Glow the End Turn button when nothing is left to do (no playable card, attacker, or ability).
+  const _nothingLeft = G.turn==='player' && !G.over && G.mode==='idle'
+    && !G.player.hand.some(c=>!affordIssue(G.player,c) && !(c.type==='pilot' && !G.player.field.some(u=>u.type==='unit' && !u.pilot && !u.noPilot)))
+    && !G.player.field.some(u=>!u.rested && !u.sick && u.ap>0)
+    && ![...G.player.field, G.player.base].filter(Boolean).some(u=>activateReady(u));
+  if (_nothingLeft) el('endTurnBtn').classList.add('urge'); else el('endTurnBtn').classList.remove('urge');
+  hideTargetArrow();
   el('cancelBtn').style.display = (G.mode!=='idle' && G.turn==='player') ? 'inline-block' : 'none';
   bind();
   applyVisualFx();
