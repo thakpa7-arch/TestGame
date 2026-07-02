@@ -163,59 +163,62 @@
   /* ---- Playmat: rounded mat on the starfield with red HUD zone frames (official mat layout).
      Player mat: BASE+SHIELDS left column, battle area center, RESOURCE strip along the bottom,
      DECK+TRASH right column. The enemy mat is rotated 180° (row/column-reverse) like a real table. ---- */
-  .mat { flex: 1; min-width: 0; display: flex; gap: 8px; padding: 9px; border-radius: 16px; position: relative;
+  .mat { flex: 1; min-width: 0; display: flex; gap: 8px; padding: 9px; border-radius: 14px; position: relative;
     background:
-      url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 380' fill='none' stroke='rgba(210,225,255,0.30)' stroke-width='3' stroke-linejoin='round'%3E%3Cpath d='M100 26 L64 4 M100 26 L136 4 M96 10 h8 v10 h-8 Z'/%3E%3Crect x='86' y='22' width='28' height='22' rx='3'/%3E%3Cpath d='M90 34 h20'/%3E%3Cpath d='M74 48 h52 l12 42 -18 12 h-40 l-18 -12 Z'/%3E%3Cpath d='M100 60 l11 15 -11 15 -11 -15 Z'/%3E%3Cpath d='M80 56 l12 6 M120 56 l-12 6'/%3E%3Crect x='34' y='50' width='34' height='34' rx='5'/%3E%3Crect x='132' y='50' width='34' height='34' rx='5'/%3E%3Cpath d='M48 84 v34 h18 v40 h-20 v-38 M152 84 v34 h-18 v40 h20 v-38'/%3E%3Cpath d='M18 96 h30 l6 14 v64 l-21 18 -21 -18 v-64 Z'/%3E%3Cpath d='M82 102 h36 l10 34 h-56 Z M66 112 l-14 30 14 8 M134 112 l14 30 -14 8'/%3E%3Cpath d='M80 136 v54 h14 v-54 M106 136 v54 h14 v-54'/%3E%3Cpath d='M78 196 l-8 66 10 22 h20 l4 -20 v-64 M122 196 l8 66 -10 22 h-20'/%3E%3Cpath d='M66 288 l-14 20 h38 v-18 M134 288 l14 20 h-38 v-18'/%3E%3Cpath d='M84 44 l-16 -26 M116 44 l16 -26'/%3E%3C/svg%3E") right 6% center / auto 92% no-repeat,
-      radial-gradient(90% 120% at 70% 30%, rgba(148,170,215,.20), transparent 60%),
-      linear-gradient(165deg, #46557e 0%, #35426a 48%, #262f52 100%);
-    border: 1px solid rgba(200,50,43,.35); box-shadow: 0 8px 34px rgba(0,0,0,.65), inset 0 0 60px rgba(10,14,32,.5); }
+      url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 380' fill='none' stroke='rgba(64,88,140,0.38)' stroke-width='3' stroke-linejoin='round'%3E%3Cpath d='M100 26 L64 4 M100 26 L136 4 M96 10 h8 v10 h-8 Z'/%3E%3Crect x='86' y='22' width='28' height='22' rx='3'/%3E%3Cpath d='M90 34 h20'/%3E%3Cpath d='M74 48 h52 l12 42 -18 12 h-40 l-18 -12 Z'/%3E%3Cpath d='M100 60 l11 15 -11 15 -11 -15 Z'/%3E%3Cpath d='M80 56 l12 6 M120 56 l-12 6'/%3E%3Crect x='34' y='50' width='34' height='34' rx='5'/%3E%3Crect x='132' y='50' width='34' height='34' rx='5'/%3E%3Cpath d='M48 84 v34 h18 v40 h-20 v-38 M152 84 v34 h-18 v40 h20 v-38'/%3E%3Cpath d='M18 96 h30 l6 14 v64 l-21 18 -21 -18 v-64 Z'/%3E%3Cpath d='M82 102 h36 l10 34 h-56 Z M66 112 l-14 30 14 8 M134 112 l14 30 -14 8'/%3E%3Cpath d='M80 136 v54 h14 v-54 M106 136 v54 h14 v-54'/%3E%3Cpath d='M78 196 l-8 66 10 22 h20 l4 -20 v-64 M122 196 l8 66 -10 22 h-20'/%3E%3Cpath d='M66 288 l-14 20 h38 v-18 M134 288 l14 20 h-38 v-18'/%3E%3Cpath d='M84 44 l-16 -26 M116 44 l16 -26'/%3E%3C/svg%3E") right 8% center / auto 94% no-repeat,
+      radial-gradient(80% 110% at 30% 20%, rgba(255,255,255,.5), transparent 55%),
+      linear-gradient(160deg, #e3eaf7 0%, #c6d3ea 45%, #a3b6d8 100%);
+    border: 1px solid rgba(255,255,255,.35); box-shadow: 0 10px 36px rgba(0,0,0,.7); }
   .mat.enemy { flex-direction: row-reverse; background:
-      url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 380' fill='none' stroke='rgba(210,225,255,0.30)' stroke-width='3' stroke-linejoin='round'%3E%3Cpath d='M100 26 L64 4 M100 26 L136 4 M96 10 h8 v10 h-8 Z'/%3E%3Crect x='86' y='22' width='28' height='22' rx='3'/%3E%3Cpath d='M90 34 h20'/%3E%3Cpath d='M74 48 h52 l12 42 -18 12 h-40 l-18 -12 Z'/%3E%3Cpath d='M100 60 l11 15 -11 15 -11 -15 Z'/%3E%3Cpath d='M80 56 l12 6 M120 56 l-12 6'/%3E%3Crect x='34' y='50' width='34' height='34' rx='5'/%3E%3Crect x='132' y='50' width='34' height='34' rx='5'/%3E%3Cpath d='M48 84 v34 h18 v40 h-20 v-38 M152 84 v34 h-18 v40 h20 v-38'/%3E%3Cpath d='M18 96 h30 l6 14 v64 l-21 18 -21 -18 v-64 Z'/%3E%3Cpath d='M82 102 h36 l10 34 h-56 Z M66 112 l-14 30 14 8 M134 112 l14 30 -14 8'/%3E%3Cpath d='M80 136 v54 h14 v-54 M106 136 v54 h14 v-54'/%3E%3Cpath d='M78 196 l-8 66 10 22 h20 l4 -20 v-64 M122 196 l8 66 -10 22 h-20'/%3E%3Cpath d='M66 288 l-14 20 h38 v-18 M134 288 l14 20 h-38 v-18'/%3E%3Cpath d='M84 44 l-16 -26 M116 44 l16 -26'/%3E%3C/svg%3E") left 6% center / auto 92% no-repeat,
-      radial-gradient(90% 120% at 30% 70%, rgba(148,170,215,.20), transparent 60%),
-      linear-gradient(345deg, #46557e 0%, #35426a 48%, #262f52 100%); }
+      url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 380' fill='none' stroke='rgba(64,88,140,0.38)' stroke-width='3' stroke-linejoin='round'%3E%3Cpath d='M100 26 L64 4 M100 26 L136 4 M96 10 h8 v10 h-8 Z'/%3E%3Crect x='86' y='22' width='28' height='22' rx='3'/%3E%3Cpath d='M90 34 h20'/%3E%3Cpath d='M74 48 h52 l12 42 -18 12 h-40 l-18 -12 Z'/%3E%3Cpath d='M100 60 l11 15 -11 15 -11 -15 Z'/%3E%3Cpath d='M80 56 l12 6 M120 56 l-12 6'/%3E%3Crect x='34' y='50' width='34' height='34' rx='5'/%3E%3Crect x='132' y='50' width='34' height='34' rx='5'/%3E%3Cpath d='M48 84 v34 h18 v40 h-20 v-38 M152 84 v34 h-18 v40 h20 v-38'/%3E%3Cpath d='M18 96 h30 l6 14 v64 l-21 18 -21 -18 v-64 Z'/%3E%3Cpath d='M82 102 h36 l10 34 h-56 Z M66 112 l-14 30 14 8 M134 112 l14 30 -14 8'/%3E%3Cpath d='M80 136 v54 h14 v-54 M106 136 v54 h14 v-54'/%3E%3Cpath d='M78 196 l-8 66 10 22 h20 l4 -20 v-64 M122 196 l8 66 -10 22 h-20'/%3E%3Cpath d='M66 288 l-14 20 h38 v-18 M134 288 l14 20 h-38 v-18'/%3E%3Cpath d='M84 44 l-16 -26 M116 44 l16 -26'/%3E%3C/svg%3E") left 8% center / auto 94% no-repeat,
+      radial-gradient(80% 110% at 70% 80%, rgba(255,255,255,.5), transparent 55%),
+      linear-gradient(340deg, #e3eaf7 0%, #c6d3ea 45%, #a3b6d8 100%); }
   .mat-col { display: flex; flex-direction: column; gap: 6px; width: calc(var(--card-w) * 0.62); flex-shrink: 0; }
   .mat.enemy .mat-col, .mat.enemy .mat-mid { flex-direction: column-reverse; }
   .mat-mid { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
   .mat-bottom { display: flex; gap: 6px; height: 40px; flex-shrink: 0; }
   .mat.enemy .mat-bottom { flex-direction: row-reverse; }
   /* Red HUD zone frame with its label plate (photo-style: label sits inside the frame edge) */
-  .zone { position: relative; border: 2px solid rgba(214,58,49,.85); border-radius: 9px; background: rgba(16,20,40,.30);
-    display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0 12px rgba(120,20,16,.18); }
-  .zone .z-label { position: absolute; bottom: 2px; right: 5px; font-size: 8px; font-weight: 800; letter-spacing: 1px;
-    color: #ff7a70; text-align: right; line-height: 1.2; pointer-events: none; text-shadow: 0 1px 2px rgba(0,0,0,.7); }
+  .zone { position: relative; border: 2px solid #c8322b; border-radius: 6px; background: rgba(255,255,255,.07);
+    clip-path: polygon(0 14px, 14px 0, 100% 0, 100% 100%, 0 100%);
+    display: flex; align-items: center; justify-content: center; }
+  .zone .z-label { position: absolute; bottom: 2px; right: 5px; font-size: 9px; font-weight: 800; letter-spacing: 1px;
+    color: #c8322b; text-align: right; line-height: 1.15; pointer-events: none; }
   .mat.enemy .zone .z-label { bottom: auto; top: 2px; right: auto; left: 5px; text-align: left; }
+  .mat.enemy .zone { clip-path: polygon(0 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%); }
+  .mat .empty-hint { color: rgba(44,58,92,.55); }
   /* Base + shields (left column) */
   .zone.base-zone { flex: 1.1; flex-direction: column; }
   .base-zone .bz-slot { display: flex; justify-content: center; }
   .base-zone .bz-slot .card { width: calc(var(--card-w) * 0.5); height: calc(var(--card-h) * 0.44); }
-  .base-zone .bz-empty { color: rgba(230,238,255,.4); font-size: 9px; text-align: center; }
+  .base-zone .bz-empty { color: rgba(50,70,110,.5); font-size: 9px; text-align: center; }
   .zone.shield-zone { flex: 1.6; flex-direction: column; padding: 4px 2px; }
   .shield-zone.enemy, #enemyShieldZone { cursor: pointer; }
-  .shield-zone .sz-label { font-size: 9px; letter-spacing: 1px; color: #ffd9d6; font-weight: 800; opacity: .9; white-space: nowrap; }
+  .shield-zone .sz-label { font-size: 9px; letter-spacing: 1px; color: #c8322b; font-weight: 800; opacity: .95; white-space: nowrap; }
   .shield-zone .sz-grid { display: flex; flex-direction: column; align-items: center; margin-top: 2px; }
-  .shield-card { width: calc(var(--card-w) * 0.34); height: calc(var(--card-h) * 0.20); border-radius: 3px;
+  .shield-card { width: calc(var(--card-w) * 0.46); height: calc(var(--card-h) * 0.30); border-radius: 4px;
     background: var(--shield-img, linear-gradient(155deg, #2f4170, #15203a)) center/cover;
-    border: 1px solid rgba(251,191,36,.6); box-shadow: 0 2px 5px rgba(0,0,0,.5);
+    border: 1.5px solid #c8322b; box-shadow: 0 2px 5px rgba(20,30,60,.45);
     display: flex; align-items: center; justify-content: center; font-size: 12px; line-height: 1; }
-  .shield-card + .shield-card { margin-top: calc(var(--card-h) * -0.115); }
-  .shield-card.gone { background: rgba(10,10,16,.55); border-color: rgba(80,70,50,.5); box-shadow: none; opacity: .3; }
+  .shield-card + .shield-card { margin-top: calc(var(--card-h) * -0.21); }
+  .shield-card.gone { background: rgba(235,240,250,.35); border-color: rgba(200,50,43,.45); border-style: dashed; box-shadow: none; opacity: .55; }
   /* Deck + trash (right column) */
   .zone.deckz { flex: 1.1; flex-direction: column; }
   .zone.trashz { flex: 1; flex-direction: column; cursor: pointer; }
   .deck-stack .deck-card, .trash-body .trash-card { width: calc(var(--card-w) * 0.5); height: calc(var(--card-h) * 0.44); border-radius: 5px;
-    background: var(--shield-img, linear-gradient(155deg, #2f4170, #15203a)) center/cover; border: 1px solid rgba(251,191,36,.5);
-    box-shadow: 2px 2px 0 rgba(8,10,20,.8), 4px 4px 0 rgba(8,10,20,.5); position: relative; }
+    background: var(--shield-img, linear-gradient(155deg, #2f4170, #15203a)) center/cover; border: 1.5px solid #c8322b;
+    box-shadow: 2px 2px 0 rgba(90,110,150,.55), 4px 4px 0 rgba(90,110,150,.3); position: relative; }
   .trash-body .trash-card { background-size: cover; background-position: center top; background-color: #10141f; filter: grayscale(.35) brightness(.85); box-shadow: none; }
   .trash-body .trash-card.empty { background: rgba(12,15,28,.5); border-style: dashed; filter: none; }
   .dk-n { position: absolute; bottom: 2px; right: 3px; background: rgba(0,0,0,.78); color: #ffe9a8; font-size: 10px; font-weight: 800;
     padding: 0 5px; border-radius: 6px; }
   /* Resource strip (mat bottom) */
   .zone.resdeck { width: 76px; flex-shrink: 0; }
-  .zone.resdeck .z-count { font-size: 15px; color: #cfe0ff; font-weight: 800; margin-right: 26px; }
+  .zone.resdeck .z-count { font-size: 15px; color: #2c3a5c; font-weight: 800; margin-right: 26px; }
   .zone.resdeck .z-label { font-size: 6.5px; }
   .zone.resarea { flex: 1; justify-content: flex-start; padding-left: 10px; }
   .zone.resarea .resources { display: flex; gap: 4px; align-items: center; flex-wrap: nowrap; overflow: hidden; }
-  .zone.resarea .z-label span { color: #ffd9d6; margin-right: 5px; }
+  .zone.resarea .z-label span { color: #8f2620; margin-right: 5px; }
   .shield-card.gone { background: rgba(10,10,16,.55); border-color: rgba(80,70,50,.5); box-shadow: none; opacity: .3; }
   .shield-card.breaking { animation: shieldPop .45s ease-out forwards; }
 
@@ -329,8 +332,8 @@
   @keyframes shieldPop { 0%{ transform: scale(1); box-shadow:0 0 6px rgba(251,191,36,.4);} 40%{ transform: scale(1.5); box-shadow:0 0 18px 6px rgba(255,120,60,.9);} 100%{ transform: scale(0); opacity:0; } }
   .shield.breaking { animation: shieldPop .45s ease-out forwards; }
 
-  .battlefield { flex: 1; align-self: stretch; background: rgba(12,16,34,.28); border: 1.5px dashed rgba(214,58,49,.4); border-radius: 10px; padding: 8px; display: flex; gap: 8px; align-items: center; overflow-x: auto; min-height: 0; }
-  .battlefield.enemy { background: rgba(24,14,30,.28); }
+  .battlefield { flex: 1; align-self: stretch; background: transparent; border: none; border-radius: 10px; padding: 6px; display: flex; gap: 8px; align-items: center; overflow-x: auto; min-height: 0; }
+  .battlefield.enemy { background: transparent; }
   .empty-hint { color: var(--muted); font-size: 12px; margin: auto; }
 
   /* Cards (face = official art) */
