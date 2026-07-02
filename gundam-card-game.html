@@ -35,12 +35,13 @@
   }
   html, body {
     height: 100%;
-    background: #060503;
     color: var(--txt); font-family: "Segoe UI", Roboto, system-ui, sans-serif;
     overflow: hidden; -webkit-text-size-adjust: 100%;
   }
+  html { background: #060503; }
+  body { background: transparent; }
   /* ---- Space-battle backdrop (fixed, behind everything) ---- */
-  body::before, body::after { content: ""; position: fixed; inset: -10%; z-index: -2; pointer-events: none; }
+  body::before, body::after { content: ""; position: fixed; inset: -10%; z-index: 0; pointer-events: none; }
   body::before {
     background:
       radial-gradient(900px 520px at 18% 12%, rgba(251,191,36,.16), transparent 60%),
@@ -50,7 +51,7 @@
       linear-gradient(180deg, #0a0805 0%, #0b0904 45%, #060503 100%);
   }
   body::after {
-    z-index: -1; opacity: .9;
+    opacity: .9;
     background-image:
       radial-gradient(1.5px 1.5px at 12% 22%, #fff 99%, transparent),
       radial-gradient(1px 1px at 28% 64%, #cfe3ff 99%, transparent),
@@ -76,7 +77,7 @@
   #starfx i:nth-child(3){ top: 80%; left: -20%; animation-delay: 4.6s; background: linear-gradient(90deg, transparent, rgba(239,68,68,.7), #fff); filter: drop-shadow(0 0 6px rgba(239,68,68,.6)); }
   @keyframes beam { 0% { opacity: 0; transform: translate(0,0) rotate(-22deg); } 6% { opacity: .9; } 40% { opacity: .9; } 60%,100% { opacity: 0; transform: translate(135vw, -54vh) rotate(-22deg); } }
   /* ---- Gundam HUD / mobile-suit cockpit backdrop ---- */
-  #gundam-bg { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
+  #gundam-bg { position: fixed; inset: 0; z-index: 1; pointer-events: none; overflow: hidden; }
   /* Earth limb glowing along the bottom horizon */
   #gundam-bg .earth { position: absolute; bottom: -52vh; left: 50%; transform: translateX(-50%);
     width: 160vw; height: 88vh; border-radius: 50%;
@@ -122,7 +123,7 @@
   #gundam-bg .frame span:nth-child(3){ bottom: 0; left: 0; border-right: 0; border-top: 0; }
   #gundam-bg .frame span:nth-child(4){ bottom: 0; right: 0; border-left: 0; border-top: 0; }
   @media (prefers-reduced-motion: reduce) { body::after, #starfx i, #gundam-bg .radar, #gundam-bg .scan { animation: none; } }
-  #app { height: 100vh; display: flex; flex-direction: column; width: var(--app-w); max-width: 100%; margin: 0 auto; padding: 8px 12px; gap: 6px; }
+  #app { position: relative; z-index: 2; height: 100vh; display: flex; flex-direction: column; width: var(--app-w); max-width: 100%; margin: 0 auto; padding: 8px 12px; gap: 6px; }
 
   header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
   header h1 { font-size: clamp(16px, 1.35vw, 23px); letter-spacing: 2px; text-transform: uppercase;
