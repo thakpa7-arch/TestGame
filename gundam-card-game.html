@@ -344,8 +344,17 @@
 
   .battlefield { flex: 1; align-self: stretch; background: transparent; border: none; border-radius: 10px; padding: 6px; display: flex; gap: 6px; align-items: center; overflow-x: auto; min-height: 0; }
   /* Board scaling: unit cards shrink to whatever exactly fits the battlefield's real width
-     (fitBattlefields() overrides --card-h inline; every card-internal size derives from it).
-     overflow-x stays auto purely as a never-clip safety net at the minimum scale. */
+     (fitBattlefields() overrides --card-h inline). The derived size variables are re-declared HERE
+     because custom properties resolve var() where they are DEFINED — at :root they'd stay baked to
+     the root --card-h and the override would only change heights, not widths/badges. */
+  .battlefield {
+    --card-w: calc(var(--card-h) * 0.718);
+    --ov-pos: calc(var(--card-h) * 0.021);
+    --ov-sz:  calc(var(--card-h) * 0.128);
+    --ov-f:   calc(var(--card-h) * 0.078);
+    --stat-f: calc(var(--card-h) * 0.085);
+    --strip-top: calc(var(--card-h) * 0.134);
+  }
   .battlefield.enemy { background: transparent; }
   .empty-hint { color: var(--muted); font-size: 12px; margin: auto; }
 
