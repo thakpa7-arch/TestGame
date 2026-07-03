@@ -1750,7 +1750,8 @@ function gd05DestroyUnit(u, owner, byOwnNeoZeon){
   sendToTrash(u, owner);
   if (byOwnNeoZeon) owner.neoZeonSelfKill=true;
   const da=parseTrigger(u.effect,'Destroyed');
-  if (owner===G.player && da && da.kind==='dig') playerDig(u, owner, da);
+  if (owner===G.player && da && da.kind==='token') deployTokensInteractive(u, owner, da, 'Destroyed', null);
+  else if (owner===G.player && da && da.kind==='dig') playerDig(u, owner, da);
   else if (owner===G.player && da && da.kind==='scryMill') playerScryMill(u, owner);
   else runTrigger(u, owner, da, 'Destroyed');
   if (byOwnNeoZeon) firePilotDestroyed(u, owner);   // Quess's 【Destroyed】 only fires when destroyed by your own (Neo Zeon) effect
@@ -2466,9 +2467,10 @@ function tokenMakerQueue(act, side){
   else { for (let k=0;k<(act.count||1);k++) q.push(()=>genericToken(side.who)); }
   return q;
 }
-// Player-interactive token deploy: deploy what fits, then (per the Gundam rule that deploying into a
-// full battle area replaces a Unit of YOUR choice) let the player trash Units to make room for any
-// overflow tokens — e.g. Zeong's 【When Paired】 deploying 2 [Wire-Guided Arm] with a full field.
+// Player-interactive token deploy. Deploys what fits; for overflow tokens (full battle area) a
+// MODAL chooser lists your Units to trash for each remaining token — a modal survives the
+// post-combat clearSel()/render(), unlike a board-tap mode, so this also works from 【Destroyed】
+// triggers mid-battle. Any of your Units may be chosen (including just-placed tokens); Skip declines.
 function deployTokensInteractive(card, side, act, label, after){
   const cls=side===G.player?'me':'ai';
   const fin=()=>{ if(after) after(); };
@@ -2484,15 +2486,31 @@ function deployTokensInteractive(card, side, act, label, after){
     log(`${label}: <b>${card.name}</b> deploys ${placed.length} token${placed.length===1?'':'s'} (${names.join(', ')}).`, cls);
     for (const tk of placed) onUnitDeployed(tk, side, null, true);
   }
-  if (!queue.length){ fin(); return; }
-  // Overflow remains. The AI just loses the extras; the player chooses which Units to replace.
-  if (side!==G.player){ fin(); return; }
-  G.mode='token-replace';
-  G.pending={ card, side, queue, label, after, protect: new Set(side.field.filter(u=>placed.includes(u)).map(t=>t.uid)) };
-  setPrompt(`${card.name}: battle area full — tap one of YOUR Units to trash and deploy a token (${queue.length} left; Cancel to stop).`);
-  render();
+  if (!queue.length || side!==G.player){ fin(); return; }   // AI just loses the extras
+  (function nextTok(){
+    if (!queue.length){ render(); fin(); return; }
+    const mk=queue.shift();
+    const cands=side.field.filter(u=>u.hp>0);
+    if (!cands.length){ render(); fin(); return; }
+    el('blockMsg').innerHTML=`<b>${card.name}</b>: battle area full — choose one of YOUR Units to place in the trash for the next token (${queue.length+1} to deploy), or skip.`;
+    const wrap=el('blockBtns'); wrap.innerHTML='';
+    cands.forEach(u=>{ const b=document.createElement('button');
+      b.innerHTML=`💥 ${u.name} <span style="opacity:.6;font-size:10px">⚔${effAp(u)}/❤${u.hp}</span>`;
+      b.onclick=()=>{ el('blockModal').classList.remove('show');
+        const i=side.field.indexOf(u); if(i>=0) side.field.splice(i,1);
+        fx('die', u.uid); sendToTrash(u, side);   // placed in trash, not "destroyed" — no Destroyed trigger
+        log(`<b>${u.name}</b> is placed in the trash to make room.`, 'me');
+        const tk=mk(); side.field.push(tk); sound('deploy');
+        log(`<b>${card.name}</b> deploys <b>${tk.name}</b> token.`, 'me');
+        onUnitDeployed(tk, side, null, true); render(); nextTok(); };
+      wrap.appendChild(b); });
+    const skip=document.createElement('button'); skip.className='ghost';
+    skip.textContent = queue.length ? 'Skip remaining tokens' : 'Skip this token';
+    skip.onclick=()=>{ el('blockModal').classList.remove('show'); render(); fin(); };
+    wrap.appendChild(skip);
+    el('blockModal').classList.add('show');
+  })();
 }
-
 function shuffle(a){ for (let i=a.length-1;i>0;i--){ const j=(Math.random()*(i+1))|0; [a[i],a[j]]=[a[j],a[i]]; } return a; }
 
 // ---- competitive deck building (Link-synergy + curve-tuned, max 4 copies per name) ----
@@ -3480,7 +3498,10 @@ function applyActivateEffect(u, target, side, costUnit){
     const t = target || pingFriendly(side, a.self, true);
     if (t){ log(`<b>${u.name}</b> deals ${a.self} to your <b>${t.name}</b>, then it gets AP+${a.ap}.`, cls);
       damage(t, a.self, side, 'self'); if (t.hp>0){ t.tempAp=(t.tempAp||0)+a.ap; t.ap=effAp(t); } }
-  } else if (['selfDamage','selfDamageThen','damageBoth','selfPingDraw','token'].includes(a.kind)){
+  } else if (a.kind==='token'){
+    if (side===G.player) deployTokensInteractive(u, side, a, u.name, null);
+    else runTrigger(u, side, a, u.name);
+  } else if (['selfDamage','selfDamageThen','damageBoth','selfPingDraw'].includes(a.kind)){
     runTrigger(u, side, a, u.name);
   } else if (a.kind==='buff' && a.scope==='all-friendly'){
     for (const t of side.field){ t.tempAp=(t.tempAp||0)+a.amount; t.ap=effAp(t); }
@@ -4008,6 +4029,7 @@ function pickAiBlocker(atk, blockers){
 // clearSel(), unlike a G.mode selection. The AI (and player effects with 0–1 legal targets) auto-resolve.
 function fireDestroyed(u, side){
   const dact = parseTrigger(u.effect,'Destroyed');
+  if (side===G.player && dact && dact.kind==='token'){ deployTokensInteractive(u, side, dact, 'Destroyed', null); return; }
   if (side===G.player && dact && dact.kind==='dig'){ playerDig(u, side, dact); return; }
   if (side===G.player && dact && dact.kind==='scryMill'){ playerScryMill(u, side); return; }
   if (side===G.player && dact){
