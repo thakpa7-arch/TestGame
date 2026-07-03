@@ -226,8 +226,8 @@
     padding: 0 5px; border-radius: 6px; }
   /* Resource strip (mat bottom) */
   .zone.resarea { flex: 1; justify-content: flex-start; padding-left: 10px; }
-  .zone.resarea .resources { display: flex; gap: 5px; align-items: center; flex-wrap: nowrap; overflow: hidden; padding-right: 96px; }
-  .zone.resarea .res { width: 22px; height: 30px; }
+  .zone.resarea .resources { display: flex; gap: 3px; align-items: center; flex-wrap: nowrap; overflow: hidden; padding-right: 86px; min-width: 0; }
+  .zone.resarea .res { width: 16px; height: 22px; flex-shrink: 0; }
   .zone.resarea .z-label span { color: #8f2620; margin-right: 5px; }
   .shield-card.gone { background: rgba(10,10,16,.55); border-color: rgba(80,70,50,.5); box-shadow: none; opacity: .3; }
   .shield-card.breaking { animation: shieldPop .45s ease-out forwards; }
@@ -342,7 +342,12 @@
   @keyframes shieldPop { 0%{ transform: scale(1); box-shadow:0 0 6px rgba(251,191,36,.4);} 40%{ transform: scale(1.5); box-shadow:0 0 18px 6px rgba(255,120,60,.9);} 100%{ transform: scale(0); opacity:0; } }
   .shield.breaking { animation: shieldPop .45s ease-out forwards; }
 
-  .battlefield { flex: 1; align-self: stretch; background: transparent; border: none; border-radius: 10px; padding: 6px; display: flex; gap: 8px; align-items: center; overflow-x: auto; min-height: 0; }
+  .battlefield { flex: 1; align-self: stretch; background: transparent; border: none; border-radius: 10px; padding: 6px; display: flex; gap: 6px; align-items: center; overflow-x: auto; min-height: 0; }
+  /* Board scaling: unit cards shrink as more deploy (all card-internal sizes derive from --card-h,
+     so overriding it on the battlefield rescales everything proportionally). */
+  .battlefield.bf-4 { --card-h: calc(clamp(112px, 17.5vh, 200px) * .86); }
+  .battlefield.bf-5 { --card-h: calc(clamp(112px, 17.5vh, 200px) * .76); }
+  .battlefield.bf-6 { --card-h: calc(clamp(112px, 17.5vh, 200px) * .68); }
   .battlefield.enemy { background: transparent; }
   .empty-hint { color: var(--muted); font-size: 12px; margin: auto; }
 
@@ -507,6 +512,11 @@
     .deck-stack .deck-card, .trash-body .trash-card { width: 40px; height: 56px; }
     .mat-bottom { height: 32px; }
     .zone .z-label { font-size: 7px; }
+    .zone.resarea .resources { gap: 2px; padding-right: 58px; }
+    .zone.resarea .res { width: 11px; height: 15px; }
+    .battlefield.bf-4 { --card-h: calc(clamp(112px, 17.5vh, 200px) * .8); }
+    .battlefield.bf-5 { --card-h: calc(clamp(112px, 17.5vh, 200px) * .68); }
+    .battlefield.bf-6 { --card-h: calc(clamp(112px, 17.5vh, 200px) * .6); }
     .battlefield { min-height: 150px; }
     /* Deck builder stacks vertically on phones */
     #dbLayout { flex-wrap: wrap; }
@@ -4711,6 +4721,11 @@ function render(){
 
   el('enemyField').innerHTML = fieldHTML(G.enemy,'field-enemy','No enemy units');
   el('playerField').innerHTML = fieldHTML(G.player,'field-player','Play a card from your hand');
+  for (const [fid,s] of [['enemyField',G.enemy],['playerField',G.player]]){
+    const f=el(fid), n=s.field.length;
+    ['bf-4','bf-5','bf-6'].forEach(c=>f.classList.remove(c));
+    if (n>=4) f.classList.add('bf-'+Math.min(6,n));
+  }
   el('enemyBase').innerHTML = G.enemy.base ? cardFace(G.enemy.base,'field-enemy') : `<div class="bz-empty">no base</div>`;
   el('playerBase').innerHTML = G.player.base ? cardFace(G.player.base,'field-player') : `<div class="bz-empty">no base</div>`;
   const _hn=G.player.hand.length, _mid=(_hn-1)/2;
