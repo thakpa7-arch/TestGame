@@ -343,11 +343,9 @@
   .shield.breaking { animation: shieldPop .45s ease-out forwards; }
 
   .battlefield { flex: 1; align-self: stretch; background: transparent; border: none; border-radius: 10px; padding: 6px; display: flex; gap: 6px; align-items: center; overflow-x: auto; min-height: 0; }
-  /* Board scaling: unit cards shrink as more deploy (all card-internal sizes derive from --card-h,
-     so overriding it on the battlefield rescales everything proportionally). */
-  .battlefield.bf-4 { --card-h: calc(clamp(112px, 17.5vh, 200px) * .86); }
-  .battlefield.bf-5 { --card-h: calc(clamp(112px, 17.5vh, 200px) * .76); }
-  .battlefield.bf-6 { --card-h: calc(clamp(112px, 17.5vh, 200px) * .68); }
+  /* Board scaling: unit cards shrink to whatever exactly fits the battlefield's real width
+     (fitBattlefields() overrides --card-h inline; every card-internal size derives from it).
+     overflow-x stays auto purely as a never-clip safety net at the minimum scale. */
   .battlefield.enemy { background: transparent; }
   .empty-hint { color: var(--muted); font-size: 12px; margin: auto; }
 
@@ -514,9 +512,6 @@
     .zone .z-label { font-size: 7px; }
     .zone.resarea .resources { gap: 2px; padding-right: 58px; }
     .zone.resarea .res { width: 11px; height: 15px; }
-    .battlefield.bf-4 { --card-h: calc(clamp(112px, 17.5vh, 200px) * .8); }
-    .battlefield.bf-5 { --card-h: calc(clamp(112px, 17.5vh, 200px) * .68); }
-    .battlefield.bf-6 { --card-h: calc(clamp(112px, 17.5vh, 200px) * .6); }
     .battlefield { min-height: 150px; }
     /* Deck builder stacks vertically on phones */
     #dbLayout { flex-wrap: wrap; }
@@ -4685,6 +4680,22 @@ function applyVisualFx(){
 // Queue the attacker's lunge toward the opposing row (visual only, no sound).
 function fxLunge(atk){ fxQueue.push({ kind: atk.owner==='player'?'lungeUp':'lungeDown', uid: atk.uid }); }
 
+// Scale each battlefield's cards so ALL units fit its real width — no horizontal scrolling.
+// Overriding --card-h on the container rescales every card-internal size proportionally.
+function fitBattlefields(){
+  try{
+    for (const [fid, s] of [['enemyField',G.enemy],['playerField',G.player]]){
+      const f=document.getElementById(fid); if(!f || !f.clientWidth || !f.style || !f.style.setProperty) continue;
+      const n=(s.field||[]).length;
+      if (!n){ f.style.removeProperty('--card-h'); continue; }
+      const baseH=Math.max(112, Math.min(200, window.innerHeight*0.175));   // mirrors the :root clamp
+      const availPer=(f.clientWidth - 12 - 6*(n-1)) / n;                    // padding + gaps
+      const scale=Math.max(.36, Math.min(1, availPer/(baseH*0.718)));
+      f.style.setProperty('--card-h', (baseH*scale).toFixed(1)+'px');
+    }
+  }catch(e){}
+}
+try{ window.addEventListener('resize', ()=>{ if(G && G.player && G.enemy) fitBattlefields(); }); }catch(e){}
 // Deck zone: a face-down stack with the remaining count. Trash zone: the top card's art + count.
 function deckStackHTML(side){ return `<div class="deck-card"><span class="dk-n">${side.deck.length}</span></div>`; }
 function trashTopHTML(side){
@@ -4721,11 +4732,7 @@ function render(){
 
   el('enemyField').innerHTML = fieldHTML(G.enemy,'field-enemy','No enemy units');
   el('playerField').innerHTML = fieldHTML(G.player,'field-player','Play a card from your hand');
-  for (const [fid,s] of [['enemyField',G.enemy],['playerField',G.player]]){
-    const f=el(fid), n=s.field.length;
-    ['bf-4','bf-5','bf-6'].forEach(c=>f.classList.remove(c));
-    if (n>=4) f.classList.add('bf-'+Math.min(6,n));
-  }
+  fitBattlefields();
   el('enemyBase').innerHTML = G.enemy.base ? cardFace(G.enemy.base,'field-enemy') : `<div class="bz-empty">no base</div>`;
   el('playerBase').innerHTML = G.player.base ? cardFace(G.player.base,'field-player') : `<div class="bz-empty">no base</div>`;
   const _hn=G.player.hand.length, _mid=(_hn-1)/2;
