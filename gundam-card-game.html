@@ -492,13 +492,13 @@
     .side-stats { width: 100%; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
     .side-stats .name { width: 100%; }
     .battlefield { min-height: 124px; }
-    .card { width: 80px; height: 112px; }
+    :root { --card-h: clamp(96px, 15vh, 132px); }   /* smaller mobile base; cards stay variable-sized so board fitting works */
     .card:hover, .hand-row .card:hover { transform: none; box-shadow: none; }
     .hand-row { overflow-x: auto; }
     .fan-slot { transform: none !important; margin-left: 0 !important; }
     .fan-slot:hover { transform: none !important; }
     .fan-slot:hover .card { transform: none; box-shadow: none; }
-    .hand-row { height: 128px; }
+    .hand-row { height: calc(var(--card-h) + 14px); }
     #logPanel { width: 44vw; max-width: 190px; bottom: 6px; right: 6px; }
     #log { max-height: 110px; font-size: 9px; }
     #logHeader { font-size: 9px; padding: 4px 8px; }
@@ -4697,7 +4697,9 @@ function fitBattlefields(){
       const f=document.getElementById(fid); if(!f || !f.clientWidth || !f.style || !f.style.setProperty) continue;
       const n=(s.field||[]).length;
       if (!n){ f.style.removeProperty('--card-h'); continue; }
-      const baseH=Math.max(112, Math.min(200, window.innerHeight*0.175));   // mirrors the :root clamp
+      const mob=window.innerWidth<=820;                                      // mirrors the :root clamps
+      const baseH=mob ? Math.max(96, Math.min(132, window.innerHeight*0.15))
+                      : Math.max(112, Math.min(200, window.innerHeight*0.175));
       const availPer=(f.clientWidth - 12 - 6*(n-1)) / n;                    // padding + gaps
       const scale=Math.max(.36, Math.min(1, availPer/(baseH*0.718)));
       f.style.setProperty('--card-h', (baseH*scale).toFixed(1)+'px');
