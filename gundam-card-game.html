@@ -2328,11 +2328,11 @@ function makeCard(def, owner){
     c.allyDeploy = parseAllyDeploy(def.effect);   // "when one of your (Trait) Units is deployed, …"
     // player-activated ability (cost：effect); used at most once per turn
     c.activate = parseActivate(def.effect); c.activatedThisTurn = false;
-    if (def.id==='GD05-129'){ c.activate = { cost:{type:'rest'}, phase:'main', oncePerTurn:true, action:{ kind:'gd05AxisDeploy', scope:'self' }, customReady:(uu,sd)=>uu.hp>0 && sd.neoZeonSelfKill && sd.field.length<FIELD_MAX && gd05AxisDeployable(sd) }; }
+    if (def.id==='GD05-129'){ c.activate = { cost:{type:'rest'}, phase:'main', oncePerTurn:true, text:'Rest this Base: deploy a Lv.3-or-lower (Neo Zeon) Unit from your hand', action:{ kind:'gd05AxisDeploy', scope:'self' }, customReady:(uu,sd)=>uu.hp>0 && sd.neoZeonSelfKill && sd.field.length<FIELD_MAX && gd05AxisDeployable(sd) }; }
     // Gyunei's Jagd Doga (GD05-057): 【Activate･Main】Once/turn — destroy 1 of your other Units, then
     // set this Unit active (it can't attack the enemy player directly that turn). The destroy is the
     // ability's cost, handled in the custom action (gd05GyuneiSac), so the framework cost is 'none'.
-    if (def.id==='GD05-057'){ c.activate = { cost:{type:'none'}, phase:'main', oncePerTurn:true, action:{ kind:'gd05GyuneiSac', scope:'self' }, customReady:(uu,sd)=>uu.hp>0 && sd.field.some(x=>x!==uu && x.hp>0) }; }
+    if (def.id==='GD05-057'){ c.activate = { cost:{type:'none'}, phase:'main', oncePerTurn:true, text:'Destroy 1 of your other Units, then set this Unit active (can\'t attack the player this turn)', action:{ kind:'gd05GyuneiSac', scope:'self' }, customReady:(uu,sd)=>uu.hp>0 && sd.field.some(x=>x!==uu && x.hp>0) }; }
     // trash-conditional effects
     c.trashBuff = parseTrashBuff(def.effect);
     c.trashKeyword = parseTrashKeyword(def.effect);
@@ -3730,7 +3730,7 @@ function fieldClick(uidv){
       if (u.sick){ flashPrompt(`${u.name} has summoning sickness this turn.`); return; }
       if (trashBlocksAttack(u, G.player)){ flashPrompt(`${u.name} can't attack until ${u.trashCantAttack.maxCount+1}+ cards are in your trash.`); return; }
       G.selected=uidv; G.mode='attack-target';
-      setPrompt(`${u.name} attacking — tap a RESTED enemy unit, or the enemy shields to strike directly.`); render(); return;
+      setPrompt(`${u.name} attacking — tap a RESTED enemy unit, or the enemy base/shields to strike directly.`); render(); return;
     }
     // Tapping an enemy Unit just shows its card.
     const e=G.enemy.field.find(c=>c.uid===uidv);
@@ -4892,7 +4892,7 @@ function bind(){
   el('playerField').querySelectorAll('.card').forEach(n=>{ n.onclick=()=>{ if(_lpFired){ _lpFired=false; return; } fieldClick(+n.dataset.uid); }; attachLongPress(n, ()=>{ const c=G.player.field.find(x=>x.uid===+n.dataset.uid); if(c) inspect(c); }); });
   el('enemyField').querySelectorAll('.card').forEach(n=>{ n.onclick=()=>{ if(_lpFired){ _lpFired=false; return; } fieldClick(+n.dataset.uid); }; attachLongPress(n, ()=>{ const c=G.enemy.field.find(x=>x.uid===+n.dataset.uid); if(c) inspect(c); }); });
   el('playerBase').querySelectorAll('.card').forEach(n=> n.onclick=()=>{ if(G.player.base) inspect(G.player.base); });
-  el('enemyBase').querySelectorAll('.card').forEach(n=> n.onclick=()=>{ if(G.enemy.base) inspect(G.enemy.base); });
+  el('enemyBase').querySelectorAll('.card').forEach(n=> n.onclick=()=>{ if(G.mode==='attack-target'){ attackDirect(); return; } if(G.enemy.base) inspect(G.enemy.base); });
   // Magnifier: a single tap views the card (no hold), without firing the card's tap action.
   document.querySelectorAll('.ov-view').forEach(v=>{ v.onclick=(e)=>{ e.stopPropagation(); const uid=+v.dataset.view; const c=G.player.field.concat(G.enemy.field).find(x=>x.uid===uid); if(c) inspect(c); }; });
 }
@@ -4951,12 +4951,12 @@ function inspect(c){
     if (onField && !c.rested && !c.sick && c.ap>0){
       const ab=document.createElement('button');
       ab.innerHTML=`⚔ Attack with ${c.name}`;
-      ab.onclick=()=>{ closeInspect(); G.selected=c.uid; G.mode='attack-target'; setPrompt(`${c.name} attacking — tap a RESTED enemy unit, or the enemy shields to strike directly.`); render(); };
+      ab.onclick=()=>{ closeInspect(); G.selected=c.uid; G.mode='attack-target'; setPrompt(`${c.name} attacking — tap a RESTED enemy unit, or the enemy base/shields to strike directly.`); render(); };
       btns.appendChild(ab);
     }
     if (activateReady(c)){
       const ac=document.createElement('button');
-      const t=c.activate.text; ac.innerHTML=`⚡ ${t.length>42?t.slice(0,40)+'…':t}`;
+      const t=c.activate.text||'Use ability'; ac.innerHTML=`⚡ ${t.length>42?t.slice(0,40)+'…':t}`;
       ac.onclick=()=>{ closeInspect(); startActivate(c); };
       btns.appendChild(ac);
     }
@@ -5036,6 +5036,7 @@ el('playerExileRow').addEventListener('click', ()=>{ showPileViewer((G.player&&G
 el('enemyTrashRow').addEventListener('click', ()=>{ showPileViewer((G.enemy&&G.enemy.trash)||[], 'Enemy Trash (Graveyard)'); });
 el('enemyExileRow').addEventListener('click', ()=>{ showPileViewer((G.enemy&&G.enemy.exile)||[], 'Enemy Exile'); });
 el('enemyShieldZone').addEventListener('click', attackDirect);
+el('enemyBaseZone').addEventListener('click', ()=>{ if(G.mode==='attack-target') attackDirect(); });
 el('enemyField').addEventListener('click', e=>{ if(G.mode==='attack-target' && e.target.classList.contains('battlefield')) attackDirect(); });
 document.addEventListener('keydown', e=>{
   if(G.over) return;
