@@ -38,36 +38,19 @@
     color: var(--txt); font-family: "Segoe UI", Roboto, system-ui, sans-serif;
     overflow: hidden; -webkit-text-size-adjust: 100%;
   }
-  html { background: #1c1305; }
+  html { background: #161004; }
   body { background: transparent; }
-  /* ---- Space-battle backdrop (fixed, behind everything) ---- */
-  body::before, body::after { content: ""; position: fixed; inset: -10%; z-index: 0; pointer-events: none; }
-  body::before {
+  /* ---- Clean gold-to-black backdrop ---- */
+  body::before { content: ""; position: fixed; inset: -10%; z-index: 0; pointer-events: none;
     background:
-      radial-gradient(900px 520px at 18% 12%, rgba(251,191,36,.28), transparent 62%),
-      radial-gradient(820px 600px at 86% 22%, rgba(217,140,32,.30), transparent 62%),
-      radial-gradient(1100px 700px at 70% 96%, rgba(251,191,36,.20), transparent 62%),
-      radial-gradient(360px 360px at 90% 82%, rgba(255,205,90,.28), rgba(150,96,18,.16) 42%, transparent 72%),
-      linear-gradient(180deg, #3a2a0d 0%, #2a1e08 45%, #1c1305 100%);
+      radial-gradient(1200px 900px at 50% -8%, rgba(214,160,54,.55), transparent 66%),
+      linear-gradient(180deg, #3a2a0d 0%, #241a08 46%, #161004 100%);
   }
-  body::after {
-    opacity: .9;
-    background-image:
-      radial-gradient(1.5px 1.5px at 12% 22%, #fff 99%, transparent),
-      radial-gradient(1px 1px at 28% 64%, #cfe3ff 99%, transparent),
-      radial-gradient(1.6px 1.6px at 47% 18%, #fff 99%, transparent),
-      radial-gradient(1px 1px at 63% 48%, #bcd2ff 99%, transparent),
-      radial-gradient(1.4px 1.4px at 78% 30%, #fff 99%, transparent),
-      radial-gradient(1px 1px at 88% 70%, #d7e6ff 99%, transparent),
-      radial-gradient(1.2px 1.2px at 36% 85%, #fff 99%, transparent),
-      radial-gradient(1px 1px at 8% 78%, #b9ccff 99%, transparent),
-      radial-gradient(1.3px 1.3px at 55% 92%, #fff 99%, transparent),
-      radial-gradient(1px 1px at 72% 8%, #e6efff 99%, transparent);
-    background-repeat: no-repeat;
-    animation: drift 90s linear infinite alternate;
-  }
+  body::after { content: none; }
   @keyframes drift { from { transform: translate3d(0,0,0); } to { transform: translate3d(-2%, -3%, 0); } }
-  #starfx { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
+  #starfx { display: none; }
+  #gundam-bg { display: none; }
+  #starfx--unused { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
   #starfx i { position: absolute; height: 2px; width: 220px; border-radius: 2px;
     background: linear-gradient(90deg, transparent, rgba(34,211,238,.7), rgba(255,255,255,.95));
     filter: drop-shadow(0 0 6px rgba(34,211,238,.7)); opacity: 0; transform: rotate(-22deg);
