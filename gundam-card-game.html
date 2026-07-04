@@ -38,11 +38,13 @@
     color: var(--txt); font-family: "Segoe UI", Roboto, system-ui, sans-serif;
     overflow: hidden; -webkit-text-size-adjust: 100%;
   }
-  html { background: #241a08; }
+  html { background: #161004; }
   body { background: transparent; }
-  /* ---- Single solid gold-black backdrop ---- */
+  /* ---- Clean gold-to-black backdrop ---- */
   body::before { content: ""; position: fixed; inset: -10%; z-index: 0; pointer-events: none;
-    background: #241a08;
+    background:
+      radial-gradient(1200px 900px at 50% -8%, rgba(214,160,54,.55), transparent 66%),
+      linear-gradient(180deg, #3a2a0d 0%, #241a08 46%, #161004 100%);
   }
   body::after { content: none; }
   @keyframes drift { from { transform: translate3d(0,0,0); } to { transform: translate3d(-2%, -3%, 0); } }
@@ -4623,7 +4625,9 @@ function cardFace(c, ctx){
     if (G.mode==='gd05-sac-own' && G.pending?.cands.includes(c.uid)) cls.push('selectable');
   }
   if (ctx==='field-enemy'){
-    if (G.mode==='attack-target'){ const atkU=G.player.field.find(x=>x.uid===G.selected); if (c.rested || (atkU&&canHitActive(atkU,c))) cls.push('target'); else cls.push('dim'); }
+    if (G.mode==='attack-target'){ const atkU=G.player.field.find(x=>x.uid===G.selected);
+      if (c.type==='base'){ cls.push(atkU && !cantHitPlayer(atkU) ? 'target' : 'dim'); }   // clicking the base = a direct attack (hits the base first)
+      else if (c.rested || (atkU&&canHitActive(atkU,c))) cls.push('target'); else cls.push('dim'); }
     if (G.mode==='command-target' && ['damage','rest','destroy','bounce','debuff'].includes(G.pending?.action.kind) && enemyTargets(G.enemy,G.pending.action).includes(c)) cls.push('selectable');
     if (G.mode==='activate-target' && G.pending?.activate?.action.scope==='enemy' && (!G.activateCands || G.activateCands.includes(c.uid))) cls.push('selectable');
     if (G.mode==='trigger-target' && (G.pending?.scope==='enemy'||G.pending?.scope==='self-ping-enemy'||G.pending?.scope==='rest-both-enemy') && G.pending.cands.includes(c.uid)) cls.push('selectable');
