@@ -38,13 +38,11 @@
     color: var(--txt); font-family: "Segoe UI", Roboto, system-ui, sans-serif;
     overflow: hidden; -webkit-text-size-adjust: 100%;
   }
-  html { background: #161004; }
+  html { background: #241a08; }
   body { background: transparent; }
-  /* ---- Clean gold-to-black backdrop ---- */
+  /* ---- Single solid gold-black backdrop ---- */
   body::before { content: ""; position: fixed; inset: -10%; z-index: 0; pointer-events: none;
-    background:
-      radial-gradient(1200px 900px at 50% -8%, rgba(214,160,54,.55), transparent 66%),
-      linear-gradient(180deg, #3a2a0d 0%, #241a08 46%, #161004 100%);
+    background: #241a08;
   }
   body::after { content: none; }
   @keyframes drift { from { transform: translate3d(0,0,0); } to { transform: translate3d(-2%, -3%, 0); } }
@@ -883,9 +881,9 @@ function parseActivateCost(c){
   // A pure resource cost (just a circled number), e.g. "①" — rest that many active resources.
   if (RES_SYM[raw]) return { type:'resource', amount:RES_SYM[raw] };
   if (/rest this (base|unit)/.test(c)) return { type:'rest' };
-  // "Rest 1 of your (Trait) Unit(s)" — pay by resting a friendly Unit (often from a Base).
-  let rm = c.match(/^rest 1 (?:of your |friendly )(?:(other|another)\s+)?([a-z\/() ]*?)\s*units?$/);
-  if (rm){ const trait=(rm[2]||'').trim().replace(/[()]/g,'').trim()||null; return { type:'restUnit', trait, excludeSelf: !!rm[1] }; }
+  // "Rest N of your (Trait) Unit(s)" — pay by resting that many friendly Units (often from a Base).
+  let rm = c.match(/^rest (\d+) (?:of your |friendly )(?:(other|another)\s+)?([a-z\/() ]*?)\s*units?$/);
+  if (rm){ const trait=(rm[3]||'').trim().replace(/[()]/g,'').trim()||null; return { type:'restUnit', count:+rm[1], trait, excludeSelf: !!rm[2] }; }
   let m = c.match(/exile (\d+) ([a-z\/() ]*?)\s*cards? from your trash/);
   if (m){ const trait=(m[2]||'').trim().replace(/[()]/g,'').trim()||null; return { type:'exile', count:+m[1], trait }; }
   return null;
@@ -3456,7 +3454,7 @@ function activateCostPayable(u, side){
   const c=u.activate.cost;
   if (c.type==='none') return true;                       // no framework cost (e.g. cost is a self-sacrifice)
   if (c.type==='rest') return !u.rested;                  // a rest cost needs an active card
-  if (c.type==='restUnit') return side.field.some(x=>!x.rested && (!c.excludeSelf || x!==u) && matchTrashTrait(x, c.trait)); // a friendly Unit to rest (tokens count)
+  if (c.type==='restUnit') return side.field.filter(x=>!x.rested && (!c.excludeSelf || x!==u) && matchTrashTrait(x, c.trait)).length >= (c.count||1); // enough friendly Units to rest (tokens count)
   if (c.type==='exile') return trashCount(side, c.trait) >= c.count;
   if (c.type==='resource') return side.resAvail >= c.amount;
   return false;
@@ -3494,15 +3492,17 @@ function restCostCands(u, side){
 function startActivate(u){
   if (!activateReady(u)){ flashPrompt(`${u.name}'s ability isn't available.`); return; }
   const cost=u.activate.cost;
-  // "Rest 1 of your other (trait) Unit" cost: let the player pick WHICH Unit to rest first.
+  // "Rest N of your other (trait) Unit(s)" cost: let the player pick WHICH Unit(s) to rest first.
   if (cost.type==='restUnit'){
+    const need = cost.count||1;
     const cc = restCostCands(u, G.player);
-    if (cc.length>1){
+    if (cc.length>need){
       G.mode='activate-cost'; G.pending=u; G.activateCands=cc.map(c=>c.uid);
-      setPrompt(`${u.name}: tap one of YOUR Units to rest as the cost.`);
+      G.activateCostPicked=[]; G.activateCostNeed=need;
+      setPrompt(`${u.name}: tap ${need} of YOUR Unit${need===1?'':'s'} to rest as the cost.`);
       closeInspect(); render(); return;
     }
-    return activatePickTarget(u, cc[0]||null);
+    return activatePickTarget(u, need>1 ? cc.slice(0,need) : (cc[0]||null));
   }
   // "Exile N (trait) cards from your trash" cost (e.g. Lupus): let the player choose WHICH to exile.
   if (cost.type==='exile' && cost.count>0){
@@ -3534,10 +3534,18 @@ function applyActivateEffect(u, target, side, costUnit){
   // Pay the ability's cost.
   if (cost.type==='rest'){ u.rested=true; }
   else if (cost.type==='restUnit'){
-    // Use the player-chosen Unit if given; otherwise auto-pick the lowest-AP eligible Unit (tokens count).
-    const v=(costUnit && !costUnit.rested && side.field.includes(costUnit)) ? costUnit
-          : side.field.filter(x=>!x.rested && (!cost.excludeSelf || x!==u) && matchTrashTrait(x, cost.trait)).sort((x,y)=>x.ap-y.ap)[0];
-    if (v){ v.rested=true; log(`<b>${u.name}</b> rests <b>${v.name}</b> as a cost.`, cls); }
+    // Use the player-chosen Unit(s) if given; otherwise auto-pick the lowest-AP eligible Units (tokens count).
+    const need=cost.count||1;
+    let picks=[];
+    if (Array.isArray(costUnit)) picks=costUnit.filter(v=>v && !v.rested && side.field.includes(v));
+    else if (costUnit && !costUnit.rested && side.field.includes(costUnit)) picks=[costUnit];
+    if (picks.length<need){
+      const more=side.field.filter(x=>!x.rested && !picks.includes(x) && (!cost.excludeSelf || x!==u) && matchTrashTrait(x, cost.trait)).sort((x,y)=>x.ap-y.ap);
+      for (const v of more){ if(picks.length>=need) break; picks.push(v); }
+    }
+    picks=picks.slice(0,need);
+    for (const v of picks) v.rested=true;
+    if (picks.length) log(`<b>${u.name}</b> rests <b>${picks.map(v=>v.name).join(', ')}</b> as a cost.`, cls);
   }
   else if (cost.type==='resource'){ side.resAvail=Math.max(0, side.resAvail-cost.amount); log(`<b>${u.name}</b> pays ${cost.amount} resource${cost.amount===1?'':'s'}.`, cls); }
   else if (cost.type==='exile'){
@@ -3674,6 +3682,19 @@ function fieldClick(uidv){
     const u=G.pending;
     if (G.activateCands && !G.activateCands.includes(uidv)){ flashPrompt('Tap a highlighted Unit of yours to rest.'); return; }
     const costUnit=G.player.field.find(c=>c.uid===uidv); if(!costUnit) return;
+    const need=G.activateCostNeed||1;
+    if (need>1){
+      G.activateCostPicked=G.activateCostPicked||[];
+      if (!G.activateCostPicked.includes(costUnit)) G.activateCostPicked.push(costUnit);
+      G.activateCands=G.activateCands.filter(id=>id!==uidv);
+      if (G.activateCostPicked.length<need){
+        const left=need-G.activateCostPicked.length;
+        setPrompt(`${u.name}: tap ${left} more Unit${left===1?'':'s'} to rest.`);
+        render(); return;
+      }
+      const picks=G.activateCostPicked; G.activateCostPicked=null; G.activateCostNeed=null; G.activateCands=null;
+      activatePickTarget(u, picks); return;
+    }
     G.activateCands=null; activatePickTarget(u, costUnit); return;
   }
   if (G.mode==='activate-target'){
