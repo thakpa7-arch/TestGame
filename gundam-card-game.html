@@ -186,6 +186,9 @@
   .base-zone .bz-empty { color: rgba(210,222,255,.55); font-size: 9px; text-align: center; }
   .zone.shield-zone { flex: 1.6; flex-direction: column; padding: 4px 2px; }
   .shield-zone.enemy, #enemyShieldZone { cursor: pointer; }
+  /* When the enemy has no base, a direct attack hits the shields — highlight the whole
+     shield zone like an attack target so it reads as tappable. */
+  .shield-zone.zone-target { outline: 3px dashed var(--red); outline-offset: -2px; border-radius: 8px; animation: targetBreathe 1.15s ease-in-out infinite; }
   .shield-zone .sz-label { font-size: 9px; letter-spacing: 1px; color: #ff9d96; font-weight: 800; opacity: 1; white-space: nowrap; text-shadow: 0 1px 3px rgba(0,0,0,.9); }
   .shield-zone .sz-grid { display: flex; flex-direction: column; align-items: center; margin-top: 2px; }
   .shield-card { width: calc(var(--card-w) * 0.54); height: calc(var(--card-h) * 0.34); border-radius: 4px;
@@ -4858,6 +4861,10 @@ function render(){
   el('turnInfo').innerHTML = `Turn <b>${G.turnNumber}</b> · ${G.turn==='player'?'<b>Your</b> move':'<b>'+who(G.enemy)+'</b> acting'}`;
   el('enemyShieldZone').innerHTML = shieldZoneHTML(G.enemy) + '<div class="z-label">SHIELDS</div>';
   el('playerShieldZone').innerHTML = shieldZoneHTML(G.player) + '<div class="z-label">SHIELDS</div>';
+  // With no enemy base, a direct attack lands on the shields — highlight the shield zone as the target.
+  const _atkSel = G.mode==='attack-target' ? G.player.field.find(x=>x.uid===G.selected) : null;
+  el('enemyShieldZone').classList.toggle('zone-target',
+    G.mode==='attack-target' && !G.enemy.base && G.enemy.shields.length>0 && !!_atkSel && !cantHitPlayer(_atkSel));
   el('enemyResources').innerHTML = resHTML(G.enemy); el('playerResources').innerHTML = resHTML(G.player);
   el('enemyResText').textContent = `${G.enemy.resAvail}/${G.enemy.resMax}${G.enemy.ex?'+EX':''} ·`;
   el('playerResText').textContent = `${G.player.resAvail}/${G.player.resMax}${G.player.ex?'+EX':''} ·`;
