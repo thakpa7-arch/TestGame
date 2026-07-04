@@ -389,6 +389,9 @@
   .card .ov-hp.dmg  { color: #fde047; background: rgba(92,52,0,.92); box-shadow: 0 0 0 1px rgba(253,224,71,.7); }
   .card .ov-hp.crit { color: #fff; background: rgba(190,24,24,.96); box-shadow: 0 0 7px rgba(239,68,68,.85); }
   .card .hp-bar { position: absolute; left: 4px; right: 4px; bottom: 1px; height: 3px; border-radius: 2px; background: rgba(0,0,0,.65); overflow: hidden; }
+  .card .ov-kw { position: absolute; left: var(--ov-pos); top: calc(var(--ov-pos) + var(--ov-sz) + 2px); display: flex; flex-direction: column; gap: 2px; z-index: 4; pointer-events: none; }
+  .card .ov-kw .kwb { min-width: var(--ov-sz); height: var(--ov-sz); border-radius: 6px; background: rgba(6,10,24,.92); font-size: calc(var(--ov-f) * .95); line-height: 1; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 1px rgba(255,255,255,.16); }
+  .card .ov-kw .kwb.blk { background: rgba(28,60,120,.96); box-shadow: 0 0 7px rgba(110,160,255,.85); }
   .card .hp-bar > i { display: block; height: 100%; background: #34d399; transition: width .2s; }
   .card .hp-bar > i.dmg  { background: #fde047; }
   .card .hp-bar > i.crit { background: #ef4444; }
@@ -4598,6 +4601,16 @@ function cardFace(c, ctx){
     overlays += `<div class="fallback"><div class="fn">${isBase?'🏰 ':''}${c.name}</div><div class="ft">${plain(c.effect).slice(0,90)}</div></div><div class="ov-cost">${c.cost}</div>`;
   }
   overlays += `<div class="ov-name">${isBase?'🏰 ':''}${c.name}</div>`;
+  if (isUnit){   // visible keyword chips so granted keywords (e.g. Gyunei Guss's <Blocker>) are obvious
+    const kw=[];
+    if (effBlocker(c))    kw.push(['blk','🛡','Blocker']);
+    if (c.highManeuver)   kw.push(['','💨','High-Maneuver']);
+    if (c.firstStrike)    kw.push(['','🗡️','First Strike']);
+    if (c.suppression)    kw.push(['','💠','Suppression']);
+    if (c.breach>0)       kw.push(['','🎯','Breach '+c.breach]);
+    if (c.repair>0)       kw.push(['','➕','Repair '+c.repair]);
+    if (kw.length) overlays += `<div class="ov-kw">${kw.map(([cl,ic,t])=>`<div class="kwb ${cl}" title="${t}">${ic}</div>`).join('')}</div>`;
+  }
   if (ctx==='field-player' && G.turn==='player' && G.mode==='idle' && activateReady(c))
     overlays += `<div title="Activated ability ready" style="position:absolute;top:3px;left:50%;transform:translateX(-50%);font-size:15px;line-height:1;filter:drop-shadow(0 0 3px #000);pointer-events:none">⚡</div>`;
   if (isBase || isUnit){
