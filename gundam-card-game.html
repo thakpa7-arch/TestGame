@@ -38,17 +38,17 @@
     color: var(--txt); font-family: "Segoe UI", Roboto, system-ui, sans-serif;
     overflow: hidden; -webkit-text-size-adjust: 100%;
   }
-  html { background: #060503; }
+  html { background: #1c1305; }
   body { background: transparent; }
   /* ---- Space-battle backdrop (fixed, behind everything) ---- */
   body::before, body::after { content: ""; position: fixed; inset: -10%; z-index: 0; pointer-events: none; }
   body::before {
     background:
-      radial-gradient(900px 520px at 18% 12%, rgba(251,191,36,.16), transparent 60%),
-      radial-gradient(820px 600px at 86% 22%, rgba(180,83,9,.18), transparent 60%),
-      radial-gradient(1100px 700px at 70% 96%, rgba(251,191,36,.10), transparent 60%),
-      radial-gradient(360px 360px at 90% 82%, rgba(251,191,36,.20), rgba(120,70,8,.10) 40%, transparent 70%),
-      linear-gradient(180deg, #0a0805 0%, #0b0904 45%, #060503 100%);
+      radial-gradient(900px 520px at 18% 12%, rgba(251,191,36,.28), transparent 62%),
+      radial-gradient(820px 600px at 86% 22%, rgba(217,140,32,.30), transparent 62%),
+      radial-gradient(1100px 700px at 70% 96%, rgba(251,191,36,.20), transparent 62%),
+      radial-gradient(360px 360px at 90% 82%, rgba(255,205,90,.28), rgba(150,96,18,.16) 42%, transparent 72%),
+      linear-gradient(180deg, #3a2a0d 0%, #2a1e08 45%, #1c1305 100%);
   }
   body::after {
     opacity: .9;
