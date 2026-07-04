@@ -3046,7 +3046,7 @@ function dbFiltered(){
 function renderDBGrid(){
   const g=el('dbGrid'); if(!g) return;
   g.innerHTML=dbFiltered().map(c=>{
-    const n=DB.deck[c.id]||0, nameMax=dbNameCount(c.name)>=4;
+    const n=DB.deck[c.id]||0, nameMax=n>=4;
     const art=c.img?`background-image:url('${c.img}')`:'';
     return `<button class="db-tile ${n?'inDeck':''} ${nameMax?'maxed':''}" data-db="${c.id}" style="${art}" title="${c.name} — ${c.type} · Lv${c.lv} · Cost ${c.cost}">
       <div class="db-cost">${c.cost}</div>${n?`<div class="db-n">×${n}</div>`:''}
@@ -3073,7 +3073,7 @@ function renderDBSide(){
 function dbAdd(id){
   const d=CARD_BY_ID.get(id); if(!d) return;
   if (dbCount()>=50){ flashPrompt('Deck is full (50 cards).'); return; }
-  if (dbNameCount(d.name)>=4){ flashPrompt(`Max 4 copies of "${d.name}".`); return; }
+  if ((DB.deck[id]||0)>=4){ flashPrompt(`Max 4 copies of "${d.name}" (${id}).`); return; }
   DB.deck[id]=(DB.deck[id]||0)+1; renderDBGrid(); renderDBSide();
 }
 function dbRemove(id){
