@@ -291,11 +291,17 @@
   .db-row b { flex: 1; text-align: left; font-weight: 600; }
   .db-row button { background: #32304e; color: #fff; border: none; border-radius: 5px; width: 22px; height: 22px; cursor: pointer; font-weight: 800; }
 
-  /* Hearthstone-style hand fan: each card sits in a rotated slot; hovering straightens and lifts it */
+  /* Hearthstone-style hand fan: each card sits in a rotated slot; focusing straightens and lifts it */
   .hand-row { overflow: visible; }
   .fan-slot { flex: 0 0 auto; transition: transform .18s ease, margin .18s ease; position: relative; }
-  .fan-slot:hover { transform: translateY(-26px) !important; z-index: 60 !important; }
-  .fan-slot:hover .card { transform: scale(1.42); box-shadow: 0 14px 40px rgba(0,0,0,.7), 0 0 22px rgba(34,211,238,.35); }
+  /* Hover-to-enlarge only on real pointer devices, so it never sticks after a tap on touchscreens. */
+  @media (hover: hover) {
+    .fan-slot:hover { transform: translateY(-26px) !important; z-index: 60 !important; }
+    .fan-slot:hover .card { transform: scale(1.42); box-shadow: 0 14px 40px rgba(0,0,0,.7), 0 0 22px rgba(34,211,238,.35); }
+  }
+  /* Press-to-enlarge — the touch equivalent of hover: the card you're holding pops up bigger. */
+  .fan-slot:active { transform: translateY(-22px) !important; z-index: 60 !important; }
+  .fan-slot:active .card { transform: scale(1.34); box-shadow: 0 14px 40px rgba(0,0,0,.7), 0 0 22px rgba(34,211,238,.35); }
   .hand-row .card { transition: transform .18s ease, box-shadow .18s ease; }
   .hand-row .card.playable { outline: 2px solid rgba(52,211,153,.85); outline-offset: -2px; animation: playableBreathe 1.6s ease-in-out infinite; }
   @keyframes playableBreathe { 0%,100%{ box-shadow: 0 0 7px rgba(52,211,153,.45); } 50%{ box-shadow: 0 0 16px rgba(52,211,153,.85); } }
@@ -486,12 +492,10 @@
     .side-stats .name { width: 100%; }
     .battlefield { min-height: 124px; }
     :root { --card-h: clamp(96px, 15vh, 132px); }   /* smaller mobile base; cards stay variable-sized so board fitting works */
-    .card:hover, .hand-row .card:hover { transform: none; box-shadow: none; }
-    .hand-row { overflow-x: auto; }
-    .fan-slot { transform: none !important; margin-left: 0 !important; }
-    .fan-slot:hover { transform: none !important; }
-    .fan-slot:hover .card { transform: none; box-shadow: none; }
-    .hand-row { height: calc(var(--card-h) + 14px); }
+    /* Keep the fan on phones too. The lift/scale is driven by :active (press) via the shared rules
+       above; render() tightens the overlap so the whole fan fits the row width. overflow visible so
+       the pressed card can pop up above the row. */
+    .hand-row { overflow: visible; height: calc(var(--card-h) + 30px); align-items: flex-end; padding-bottom: 4px; }
     #logPanel { width: 44vw; max-width: 190px; bottom: 6px; right: 6px; }
     #log { max-height: 110px; font-size: 9px; }
     #logHeader { font-size: 9px; padding: 4px 8px; }
@@ -4944,6 +4948,19 @@ function render(){
   el('enemyBase').innerHTML = G.enemy.base ? cardFace(G.enemy.base,'field-enemy') : `<div class="bz-empty">no base</div>`;
   el('playerBase').innerHTML = G.player.base ? cardFace(G.player.base,'field-player') : `<div class="bz-empty">no base</div>`;
   const _hn=G.player.hand.length, _mid=(_hn-1)/2;
+  // Responsive fan overlap: keep the desktop Hearthstone look, but tighten the overlap so the whole
+  // fan always fits the hand row's width (essential on phones). Card width comes from the live
+  // --card-h so it tracks the mobile/desktop scaling.
+  let _handW=360, _cardW=100;
+  try {
+    _handW = el('hand').clientWidth || window.innerWidth || 360;
+    _cardW = (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--card-h')) || 140) * 0.718;
+  } catch(e){}
+  // Overlap (margin-left) that makes N cards exactly span the row, capped so we never overlap a card
+  // by more than ~80%. The desktop "desired" tiers stay unless fitting demands a tighter value.
+  const _fitMl = _hn>1 ? (_handW - 16 - _cardW*_hn) / (_hn-1) : 0;
+  const _desiredMl = _hn>8?-42 : _hn>6?-26 : _hn>4?-10 : 5;
+  const _ml = Math.max(Math.min(_desiredMl, _fitMl), -_cardW*0.8);
   el('hand').innerHTML = _hn ? G.player.hand.map((c,i)=>{
     let face;
     if(G.mode==='discard') face=cardFace(c,'hand').replace('class="card', 'class="card selectable');
@@ -4952,10 +4969,10 @@ function render(){
       const playable = G.turn==='player' && canAfford(G.player,c) && !needsUnit && !G.over && G.mode==='idle' && !G.actionLock;
       face=cardFace(c,'hand').replace('class="card', `class="card ${playable?'playable':'dim'}`);
     }
-    // Hearthstone-style fan: rotate/lift each slot around the hand's center; overlap grows with size.
+    // Hearthstone-style fan: rotate/lift each slot around the hand's center.
     const off=i-_mid, rot=Math.max(-13,Math.min(13,off*(_hn>7?2.2:3.6))), lift=off*off*(_hn>7?1.0:1.7);
-    const ml = i===0?0 : (_hn>8?-42 : _hn>6?-26 : _hn>4?-10 : 5);
-    return `<div class="fan-slot" style="transform:rotate(${rot.toFixed(1)}deg) translateY(${lift.toFixed(0)}px);margin-left:${ml}px;z-index:${10+i}">${face}</div>`;
+    const ml = i===0?0 : _ml;
+    return `<div class="fan-slot" style="transform:rotate(${rot.toFixed(1)}deg) translateY(${lift.toFixed(0)}px);margin-left:${ml.toFixed(1)}px;z-index:${10+i}">${face}</div>`;
   }).join('') : `<div class="empty-hint">Hand empty</div>`;
 
   el('endTurnBtn').disabled = G.turn!=='player' || G.over;
