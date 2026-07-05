@@ -1,7 +1,7 @@
 // Service worker for offline play (e.g. iPhone "Add to Home Screen"). Pre-caches the game shell on
 // install, then serves cache-first with runtime caching of same-origin GETs. The remote card art is
 // cross-origin (images.weserv.nl) and isn't cached — offline, cards fall back to their text faces.
-const CACHE = 'gundam-tcg-v38';
+const CACHE = 'gundam-tcg-v39';
 const SHELL = ['gundam-card-game.html', 'manifest.json', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', (e) => {

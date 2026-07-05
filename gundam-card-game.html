@@ -302,14 +302,16 @@
   /* Press-to-enlarge — the touch equivalent of hover: the card you're holding pops up bigger. */
   .fan-slot:active { transform: translateY(-22px) !important; z-index: 60 !important; }
   .fan-slot:active .card { transform: scale(1.34); box-shadow: 0 14px 40px rgba(0,0,0,.7), 0 0 22px rgba(34,211,238,.35); }
-  /* Tapped (focused) card: stays lifted, straightened and FULLY opaque so it's readable. On touch a
-     first tap focuses it here; a second tap opens the inspector. */
-  .fan-slot.focused { transform: translateY(-26px) !important; z-index: 62 !important; }
-  .fan-slot.focused .card { transform: scale(1.42); opacity: 1 !important; box-shadow: 0 16px 44px rgba(0,0,0,.78), 0 0 26px rgba(34,211,238,.5); }
+  /* Held (focused) card: blown up OUT of the hand — lifted well clear, straightened and much larger,
+     fully opaque so it's readable. The playable/unplayable outline (below) scales with it so you can
+     still tell whether it's castable. */
+  .fan-slot.focused { transform: translateY(-120px) !important; z-index: 200 !important; }
+  .fan-slot.focused .card { transform: scale(2.2); transform-origin: center bottom; opacity: 1 !important; box-shadow: 0 24px 60px rgba(0,0,0,.88), 0 0 36px rgba(34,211,238,.55); }
   .hand-row .card { transition: transform .18s ease, box-shadow .18s ease; }
-  /* Keep hand cards legible — an unaffordable card is only lightly dimmed, never see-through. */
-  .hand-row .card.dim { opacity: .78; }
-  .hand-row .card.playable { outline: 2px solid rgba(52,211,153,.85); outline-offset: -2px; animation: playableBreathe 1.6s ease-in-out infinite; }
+  /* Playable vs unaffordable is shown by outline colour (green vs red) — never by transparency — so
+     the state stays clear even when the card is blown up and fully opaque. */
+  .hand-row .card.playable { outline: 2px solid rgba(52,211,153,.9); outline-offset: -2px; animation: playableBreathe 1.6s ease-in-out infinite; }
+  .hand-row .card.dim { opacity: .9; outline: 2px solid rgba(224,96,96,.7); outline-offset: -2px; }
   @keyframes playableBreathe { 0%,100%{ box-shadow: 0 0 7px rgba(52,211,153,.45); } 50%{ box-shadow: 0 0 16px rgba(52,211,153,.85); } }
 
   /* Targeting arrow (attack declarations) */
@@ -361,7 +363,8 @@
   .card {
     width: var(--card-w); height: var(--card-h); flex-shrink: 0; border-radius: 8px; border: 2px solid var(--line);
     background: #0d1628 center/cover no-repeat; position: relative; cursor: pointer; overflow: hidden;
-    transition: transform .12s, box-shadow .12s; user-select: none;
+    transition: transform .12s, box-shadow .12s;
+    user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;   /* no text-select / iOS copy popup while holding */
   }
   .card:hover { transform: translateY(-4px); box-shadow: 0 6px 18px rgba(0,0,0,.6); z-index: 5; }
   .card.c-Blue { border-color: #3b82f6; }
@@ -5050,6 +5053,7 @@ function attachHandPeek(node){
   node.addEventListener('touchend',    ()=>clearPeek(true));    // release after a peek: swallow the tap
   node.addEventListener('touchmove',   ()=>clearPeek(false));   // dragged off / scrolling: just drop it
   node.addEventListener('touchcancel', ()=>clearPeek(false));
+  node.addEventListener('contextmenu', e=>e.preventDefault());  // no long-press copy/select menu
 }
 function bind(){
   el('hand').querySelectorAll('.card').forEach(n=> {
