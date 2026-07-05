@@ -302,7 +302,13 @@
   /* Press-to-enlarge — the touch equivalent of hover: the card you're holding pops up bigger. */
   .fan-slot:active { transform: translateY(-22px) !important; z-index: 60 !important; }
   .fan-slot:active .card { transform: scale(1.34); box-shadow: 0 14px 40px rgba(0,0,0,.7), 0 0 22px rgba(34,211,238,.35); }
+  /* Tapped (focused) card: stays lifted, straightened and FULLY opaque so it's readable. On touch a
+     first tap focuses it here; a second tap opens the inspector. */
+  .fan-slot.focused { transform: translateY(-26px) !important; z-index: 62 !important; }
+  .fan-slot.focused .card { transform: scale(1.42); opacity: 1 !important; box-shadow: 0 16px 44px rgba(0,0,0,.78), 0 0 26px rgba(34,211,238,.5); }
   .hand-row .card { transition: transform .18s ease, box-shadow .18s ease; }
+  /* Keep hand cards legible — an unaffordable card is only lightly dimmed, never see-through. */
+  .hand-row .card.dim { opacity: .78; }
   .hand-row .card.playable { outline: 2px solid rgba(52,211,153,.85); outline-offset: -2px; animation: playableBreathe 1.6s ease-in-out infinite; }
   @keyframes playableBreathe { 0%,100%{ box-shadow: 0 0 7px rgba(52,211,153,.45); } 50%{ box-shadow: 0 0 16px rgba(52,211,153,.85); } }
 
@@ -4961,6 +4967,7 @@ function render(){
   const _fitMl = _hn>1 ? (_handW - 16 - _cardW*_hn) / (_hn-1) : 0;
   const _desiredMl = _hn>8?-42 : _hn>6?-26 : _hn>4?-10 : 5;
   const _ml = Math.max(Math.min(_desiredMl, _fitMl), -_cardW*0.8);
+  if (G.focusHandUid!=null && !G.player.hand.some(c=>c.uid===G.focusHandUid)) G.focusHandUid=null;  // drop stale focus
   el('hand').innerHTML = _hn ? G.player.hand.map((c,i)=>{
     let face;
     if(G.mode==='discard') face=cardFace(c,'hand').replace('class="card', 'class="card selectable');
@@ -4972,7 +4979,8 @@ function render(){
     // Hearthstone-style fan: rotate/lift each slot around the hand's center.
     const off=i-_mid, rot=Math.max(-13,Math.min(13,off*(_hn>7?2.2:3.6))), lift=off*off*(_hn>7?1.0:1.7);
     const ml = i===0?0 : _ml;
-    return `<div class="fan-slot" style="transform:rotate(${rot.toFixed(1)}deg) translateY(${lift.toFixed(0)}px);margin-left:${ml.toFixed(1)}px;z-index:${10+i}">${face}</div>`;
+    const foc = G.focusHandUid===c.uid ? ' focused' : '';
+    return `<div class="fan-slot${foc}" style="transform:rotate(${rot.toFixed(1)}deg) translateY(${lift.toFixed(0)}px);margin-left:${ml.toFixed(1)}px;z-index:${10+i}">${face}</div>`;
   }).join('') : `<div class="empty-hint">Hand empty</div>`;
 
   el('endTurnBtn').disabled = G.turn!=='player' || G.over;
@@ -5044,7 +5052,12 @@ function bind(){
       else{ setPrompt(`Choose ${G.pending.discardLeft} more card${G.pending.discardLeft>1?'s':''} to discard.`); render(); }
       return;
     }
-    if(G.mode==='idle') inspect(c); else playFromHand(+n.dataset.uid);
+    if(G.mode!=='idle'){ playFromHand(+n.dataset.uid); return; }
+    // Idle. On touch, a first tap enlarges (focus) the card so you can read it; a second tap on the
+    // same card opens the inspector. On a pointer device hover already enlarges, so a click inspects.
+    const touch = !(window.matchMedia && window.matchMedia('(hover: hover)').matches);
+    if(touch && G.focusHandUid!==c.uid){ G.focusHandUid=c.uid; render(); return; }
+    G.focusHandUid=null; inspect(c);
   });
   el('playerField').querySelectorAll('.card').forEach(n=>{ n.onclick=()=>{ if(_lpFired){ _lpFired=false; return; } fieldClick(+n.dataset.uid); }; attachLongPress(n, ()=>{ const c=G.player.field.find(x=>x.uid===+n.dataset.uid); if(c) inspect(c); }); });
   el('enemyField').querySelectorAll('.card').forEach(n=>{ n.onclick=()=>{ if(_lpFired){ _lpFired=false; return; } fieldClick(+n.dataset.uid); }; attachLongPress(n, ()=>{ const c=G.enemy.field.find(x=>x.uid===+n.dataset.uid); if(c) inspect(c); }); });
