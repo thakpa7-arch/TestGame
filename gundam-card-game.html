@@ -3305,11 +3305,14 @@ function finishEndPhase(){
     s.hand.splice(s.hand.indexOf(worst),1); sendToTrash(worst, s);
     log(`${who(s)} discards <b>${worst.name}</b> down to the hand limit.`, s===G.player?'me':'ai');
   }
-  // EX Resources are one-time tempo: any that were rested to pay a cost this turn are spent for
-  // good (they don't refresh next turn). resAvail<ex means at least that many EX were used.
-  if (s.ex>0 && s.resAvail<s.ex){
-    const used=s.ex-s.resAvail; s.ex=s.resAvail;
-    log(`${who(s)} used up ${used} EX Resource${used===1?'':'s'}.`, s===G.player?'me':'ai');
+  // EX Resources are one-time tempo: any that were rested to pay a cost are spent for good (they
+  // don't refresh). Reconcile BOTH sides — the defender can burn EX on Action abilities/commands
+  // during the turn player's turn, and that spend must stick too (resAvail<ex means EX were used).
+  for (const sd of [G.player, G.enemy]){
+    if (sd.ex>0 && sd.resAvail<sd.ex){
+      const used=sd.ex-sd.resAvail; sd.ex=sd.resAvail;
+      log(`${who(sd)} used up ${used} EX Resource${used===1?'':'s'}.`, sd===G.player?'me':'ai');
+    }
   }
   const next = G.turn==='player' ? 'enemy' : 'player';
   if (next===(G.firstPlayer||'player')) G.turnNumber++;   // new round when the first player comes back up
@@ -5152,6 +5155,15 @@ function midSelection(){
   return false;
 }
 el('endTurnBtn').addEventListener('click', ()=>{ if(G.turn==='player'&&!G.over){ if(midSelection()){ flashPrompt('Finish your current selection first.'); return; } sound('endphase'); clearSel(); endTurn(); } });
+// Tapping anywhere outside the hand cancels an enlarged (focused) hand card. Capture phase so we read
+// the target before any handler re-renders it; the render is deferred so we never detach the element
+// the click is still travelling to (which would swallow field/button taps).
+document.addEventListener('click', (e)=>{
+  if (G.focusHandUid==null) return;
+  if (e.target && e.target.closest && e.target.closest('#hand')) return;   // the hand manages its own focus
+  G.focusHandUid=null;
+  setTimeout(()=>{ if(G.focusHandUid==null) render(); }, 0);
+}, true);
 // Battle-log tab: click the header to minimize/restore the log.
 el('logHeader').addEventListener('click', ()=>{
   const p=el('logPanel'); const collapsed=p.classList.toggle('collapsed');
