@@ -4280,6 +4280,16 @@ function endGame(winnerSide){
 function aiThreatScore(u){
   return effAp(u)*2 + ((effBlocker(u) && !u.rested)?5:0) + (u.linked?2:0) + (u.hp*0.3) + (u.repair||0);
 }
+// Is the AI's own life under real threat? Sum the player's board AP (what will swing at the AI next
+// turn) against the AI's defensive buffer (shields + base). When the player can chew through that
+// buffer quickly, the AI should stop racing blindly and start CLEARING the board (trade / gang up).
+function aiUnderPressure(){
+  const ai=G.enemy, pl=G.player;
+  if (G.aiForceFace) return false;                       // already committing to our own lethal
+  const incoming = pl.field.reduce((s,u)=>s+Math.max(0,effAp(u)),0);
+  const buffer = ai.shields.length + (ai.base?1:0);
+  return incoming >= buffer*2 + 1;                       // ~2 turns of clock or faster on the AI's life
+}
 // Best target for a single-target removal of `amount` damage: prefer something it KILLS (by threat),
 // else chip the scariest Unit.
 function aiRemovalTarget(amount){
@@ -4404,9 +4414,11 @@ function planAiAttacks(attackers){
   const pl=G.player, plan=new Map(), used=new Set();
   if (G.aiForceFace) return plan;                       // committing to lethal: everything goes face
   const lowDef = !pl.base && pl.shields.length<=2;
-  const bar = lowDef ? 7 : 4;                           // when the player is nearly dead, only divert for scary threats
+  const pressured = aiUnderPressure();
+  const bar = lowDef ? 7 : 4;                            // which single-target threats warrant a diverted killer
   const threats = pl.field.filter(u=>u.hp>0 && aiThreatScore(u)>=bar)
                           .sort((a,b)=>aiThreatScore(b)-aiThreatScore(a));
+  // Pass 1: cheapest single attacker that cleanly kills each threat (and survives / strikes first).
   for (const tgt of threats){
     const cands = attackers.filter(a=>!used.has(a.uid)
         && (tgt.rested || canHitActive(a,tgt))           // can legally attack it
@@ -4417,6 +4429,27 @@ function planAiAttacks(attackers){
     // so the strongest face-capable attackers are saved for the player's shields.
     cands.sort((a,b)=> (cantHitPlayer(b)?1:0)-(cantHitPlayer(a)?1:0) || effAp(a)-effAp(b));
     plan.set(cands[0].uid, tgt); used.add(cands[0].uid);
+  }
+  // Pass 2: GANG UP on a still-alive high threat that no single attacker could kill — but only with
+  // bodies that CAN'T pressure the player anyway (cantHitPlayer). Those attackers contribute nothing
+  // to the race, so pointing them together at a scary threat is free value: it removes a body the
+  // player would otherwise keep swinging, without slowing the AI's clock. Face-capable hitters are
+  // never diverted here (that would trade tempo for board control and lose races). Under pressure the
+  // bar drops so the AI clears more of the board while it still can.
+  if (!lowDef){
+    const gangBar = pressured ? 5 : 7;
+    for (const tgt of threats){
+      if ([...plan.values()].includes(tgt)) continue;    // already handled in pass 1
+      if (aiThreatScore(tgt) < gangBar) continue;
+      const cands = attackers.filter(a=>!used.has(a.uid) && cantHitPlayer(a)
+                             && (tgt.rested || canHitActive(a,tgt)) && effAp(a)>0)
+                             .sort((a,b)=>effAp(a)-effAp(b));
+      let sum=0; const team=[];
+      for (const a of cands){ team.push(a); sum+=effAp(a); if (sum>=tgt.hp) break; }
+      if (sum>=tgt.hp && team.length>=1){
+        for (const a of team){ plan.set(a.uid, tgt); used.add(a.uid); }
+      }
+    }
   }
   return plan;
 }
