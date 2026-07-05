@@ -4970,7 +4970,6 @@ function render(){
   const _fitMl = _hn>1 ? (_handW - 16 - _cardW*_hn) / (_hn-1) : 0;
   const _desiredMl = _hn>8?-42 : _hn>6?-26 : _hn>4?-10 : 5;
   const _ml = Math.max(Math.min(_desiredMl, _fitMl), -_cardW*0.8);
-  if (G.focusHandUid!=null && !G.player.hand.some(c=>c.uid===G.focusHandUid)) G.focusHandUid=null;  // drop stale focus
   el('hand').innerHTML = _hn ? G.player.hand.map((c,i)=>{
     let face;
     if(G.mode==='discard') face=cardFace(c,'hand').replace('class="card', 'class="card selectable');
@@ -4982,8 +4981,7 @@ function render(){
     // Hearthstone-style fan: rotate/lift each slot around the hand's center.
     const off=i-_mid, rot=Math.max(-13,Math.min(13,off*(_hn>7?2.2:3.6))), lift=off*off*(_hn>7?1.0:1.7);
     const ml = i===0?0 : _ml;
-    const foc = G.focusHandUid===c.uid ? ' focused' : '';
-    return `<div class="fan-slot${foc}" style="transform:rotate(${rot.toFixed(1)}deg) translateY(${lift.toFixed(0)}px);margin-left:${ml.toFixed(1)}px;z-index:${10+i}">${face}</div>`;
+    return `<div class="fan-slot" style="transform:rotate(${rot.toFixed(1)}deg) translateY(${lift.toFixed(0)}px);margin-left:${ml.toFixed(1)}px;z-index:${10+i}">${face}</div>`;
   }).join('') : `<div class="empty-hint">Hand empty</div>`;
 
   el('endTurnBtn').disabled = G.turn!=='player' || G.over;
@@ -5041,26 +5039,38 @@ function attachLongPress(node, fn){
   node.addEventListener('mousedown', start); node.addEventListener('mouseup', cancel); node.addEventListener('mouseleave', cancel);
   node.addEventListener('contextmenu', e=>{ e.preventDefault(); _lpFired=true; fn(); });
 }
+// Hold a HAND card to PEEK it larger in place (release to drop it); a quick tap still triggers the
+// card's action (inspect / play). Touch-only — pointer devices already enlarge on hover. The peek
+// toggles the .focused class directly (no re-render) so the live touch target is never detached.
+function attachHandPeek(node){
+  let timer=null, peeking=false;
+  const slot=node.closest && node.closest('.fan-slot');
+  const clearPeek=(suppressTap)=>{ clearTimeout(timer); if(peeking){ peeking=false; if(slot) slot.classList.remove('focused'); if(suppressTap) _lpFired=true; } };
+  node.addEventListener('touchstart', ()=>{ clearTimeout(timer); peeking=false; timer=setTimeout(()=>{ peeking=true; if(slot) slot.classList.add('focused'); }, 240); }, {passive:true});
+  node.addEventListener('touchend',    ()=>clearPeek(true));    // release after a peek: swallow the tap
+  node.addEventListener('touchmove',   ()=>clearPeek(false));   // dragged off / scrolling: just drop it
+  node.addEventListener('touchcancel', ()=>clearPeek(false));
+}
 function bind(){
-  el('hand').querySelectorAll('.card').forEach(n=> n.onclick=()=>{
-    if(_lpFired){ _lpFired=false; return; }
-    const c=G.player.hand.find(x=>x.uid===+n.dataset.uid);
-    if(G.mode==='discard'){
-      if(!c) return;
-      G.player.hand.splice(G.player.hand.indexOf(c),1);
-      sendToTrash(c, G.player);
-      log(`You discard <b>${c.name}</b>.`, 'me');
-      G.pending.discardLeft--;
-      if(G.pending.discardLeft<=0){ const after=G.pending.after; G.mode='idle'; G.pending=null; if(after){ after(); } else { clearSel(); render(); checkEnd(); } }
-      else{ setPrompt(`Choose ${G.pending.discardLeft} more card${G.pending.discardLeft>1?'s':''} to discard.`); render(); }
-      return;
-    }
-    if(G.mode!=='idle'){ playFromHand(+n.dataset.uid); return; }
-    // Idle. On touch, a first tap enlarges (focus) the card so you can read it; a second tap on the
-    // same card opens the inspector. On a pointer device hover already enlarges, so a click inspects.
-    const touch = !(window.matchMedia && window.matchMedia('(hover: hover)').matches);
-    if(touch && G.focusHandUid!==c.uid){ G.focusHandUid=c.uid; render(); return; }
-    G.focusHandUid=null; inspect(c);
+  el('hand').querySelectorAll('.card').forEach(n=> {
+    n.onclick=()=>{
+      if(_lpFired){ _lpFired=false; return; }
+      const c=G.player.hand.find(x=>x.uid===+n.dataset.uid);
+      if(G.mode==='discard'){
+        if(!c) return;
+        G.player.hand.splice(G.player.hand.indexOf(c),1);
+        sendToTrash(c, G.player);
+        log(`You discard <b>${c.name}</b>.`, 'me');
+        G.pending.discardLeft--;
+        if(G.pending.discardLeft<=0){ const after=G.pending.after; G.mode='idle'; G.pending=null; if(after){ after(); } else { clearSel(); render(); checkEnd(); } }
+        else{ setPrompt(`Choose ${G.pending.discardLeft} more card${G.pending.discardLeft>1?'s':''} to discard.`); render(); }
+        return;
+      }
+      // A quick tap goes straight to the action: inspect (which has the Play button) when idle,
+      // or play/target while resolving a mode. Holding the card peeks it larger (attachHandPeek).
+      if(G.mode==='idle') inspect(c); else playFromHand(+n.dataset.uid);
+    };
+    attachHandPeek(n);
   });
   el('playerField').querySelectorAll('.card').forEach(n=>{ n.onclick=()=>{ if(_lpFired){ _lpFired=false; return; } fieldClick(+n.dataset.uid); }; attachLongPress(n, ()=>{ const c=G.player.field.find(x=>x.uid===+n.dataset.uid); if(c) inspect(c); }); });
   el('enemyField').querySelectorAll('.card').forEach(n=>{ n.onclick=()=>{ if(_lpFired){ _lpFired=false; return; } fieldClick(+n.dataset.uid); }; attachLongPress(n, ()=>{ const c=G.enemy.field.find(x=>x.uid===+n.dataset.uid); if(c) inspect(c); }); });
@@ -5155,15 +5165,6 @@ function midSelection(){
   return false;
 }
 el('endTurnBtn').addEventListener('click', ()=>{ if(G.turn==='player'&&!G.over){ if(midSelection()){ flashPrompt('Finish your current selection first.'); return; } sound('endphase'); clearSel(); endTurn(); } });
-// Tapping anywhere outside the hand cancels an enlarged (focused) hand card. Capture phase so we read
-// the target before any handler re-renders it; the render is deferred so we never detach the element
-// the click is still travelling to (which would swallow field/button taps).
-document.addEventListener('click', (e)=>{
-  if (G.focusHandUid==null) return;
-  if (e.target && e.target.closest && e.target.closest('#hand')) return;   // the hand manages its own focus
-  G.focusHandUid=null;
-  setTimeout(()=>{ if(G.focusHandUid==null) render(); }, 0);
-}, true);
 // Battle-log tab: click the header to minimize/restore the log.
 el('logHeader').addEventListener('click', ()=>{
   const p=el('logPanel'); const collapsed=p.classList.toggle('collapsed');
