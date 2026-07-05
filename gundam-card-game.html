@@ -1083,10 +1083,35 @@ function parseSelfPing(t){
 }
 // Pick a friendly Unit to absorb `self` self-damage — one that survives it if possible.
 // `preferAttacker` favours the biggest current attacker (for "ping for a buff" effects).
+// A Unit whose ability is switched ON by having taken damage — the Barbatos line and kin:
+// 1st Form draws on attack while damaged, 2nd Form gets +AP while damaged, 4th Form gains
+// <Suppression> while damaged, Lupus Rex gains AP per damage taken, 6th Form <Repair> at 1 HP.
+// Self-damage aimed at these is pure upside (it turns the engine on), so the AI should prefer them.
+function benefitsFromDamage(u){
+  const e = u && u.effect || '';
+  return /(?:if|while) this (?:unit )?(?:is|has been) damaged/i.test(e)
+      || /damage (?:it|this unit) has received/i.test(e)
+      || /while this unit has 1 hp/i.test(e);
+}
+// How good a self-damage target a Unit is: a draw-on-attack payoff (card advantage — Barbatos 1st
+// Form) outranks a stat/keyword payoff (2nd/4th Form, Lupus Rex). Non-payoff Units score 0.
+function damagePayoff(u){
+  if (!benefitsFromDamage(u)) return 0;
+  const e = u && u.effect || '';
+  return /is damaged[^.]*\bdraw\b/i.test(e) ? 2 : 1;
+}
 function pingFriendly(side, self, preferAttacker){
   const cands = side.field.filter(u=>!u.token && u.hp>self);
   if (!cands.length) return null;
-  cands.sort(preferAttacker ? (a,b)=>(b.ap-a.ap)||(b.hp-a.hp) : (a,b)=>b.hp-a.hp);
+  const base = preferAttacker ? (a,b)=>(b.ap-a.ap)||(b.hp-a.hp) : (a,b)=>b.hp-a.hp;
+  cands.sort((a,b)=>{
+    // Switch ON an undamaged draw-payoff Unit (Barbatos 1st Form — a card-advantage engine) before
+    // hurting anything else. Stat/keyword payoffs keep the normal "buff my biggest attacker" pick.
+    const wa = (a.hp>=effMaxHp(a) && damagePayoff(a)>=2) ? 1 : 0;
+    const wb = (b.hp>=effMaxHp(b) && damagePayoff(b)>=2) ? 1 : 0;
+    if (wa!==wb) return wb-wa;
+    return base(a,b);
+  });
   return cands[0];
 }
 // Modal: reveal some deck cards face-up and let the player pick one (or none).
