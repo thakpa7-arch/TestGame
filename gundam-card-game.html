@@ -4973,6 +4973,7 @@ function render(){
   const _fitMl = _hn>1 ? (_handW - 16 - _cardW*_hn) / (_hn-1) : 0;
   const _desiredMl = _hn>8?-42 : _hn>6?-26 : _hn>4?-10 : 5;
   const _ml = Math.max(Math.min(_desiredMl, _fitMl), -_cardW*0.8);
+  if (G.peekUid!=null && !G.player.hand.some(c=>c.uid===G.peekUid)) G.peekUid=null;   // drop a stale preview
   el('hand').innerHTML = _hn ? G.player.hand.map((c,i)=>{
     let face;
     if(G.mode==='discard') face=cardFace(c,'hand').replace('class="card', 'class="card selectable');
@@ -4984,7 +4985,8 @@ function render(){
     // Hearthstone-style fan: rotate/lift each slot around the hand's center.
     const off=i-_mid, rot=Math.max(-13,Math.min(13,off*(_hn>7?2.2:3.6))), lift=off*off*(_hn>7?1.0:1.7);
     const ml = i===0?0 : _ml;
-    return `<div class="fan-slot" style="transform:rotate(${rot.toFixed(1)}deg) translateY(${lift.toFixed(0)}px);margin-left:${ml.toFixed(1)}px;z-index:${10+i}">${face}</div>`;
+    const foc = G.peekUid===c.uid ? ' focused' : '';   // blown-up preview, re-applied every render so it never snaps back
+    return `<div class="fan-slot${foc}" style="transform:rotate(${rot.toFixed(1)}deg) translateY(${lift.toFixed(0)}px);margin-left:${ml.toFixed(1)}px;z-index:${10+i}">${face}</div>`;
   }).join('') : `<div class="empty-hint">Hand empty</div>`;
 
   el('endTurnBtn').disabled = G.turn!=='player' || G.over;
@@ -5042,17 +5044,22 @@ function attachLongPress(node, fn){
   node.addEventListener('mousedown', start); node.addEventListener('mouseup', cancel); node.addEventListener('mouseleave', cancel);
   node.addEventListener('contextmenu', e=>{ e.preventDefault(); _lpFired=true; fn(); });
 }
-// Hold a HAND card to PEEK it larger in place (release to drop it); a quick tap still triggers the
-// card's action (inspect / play). Touch-only — pointer devices already enlarge on hover. The peek
-// toggles the .focused class directly (no re-render) so the live touch target is never detached.
+// Hold a HAND card to blow it up on screen. The preview LATCHES open (it stays after you lift your
+// finger) and is dismissed by tapping outside the hand (see the document handler below). A quick tap
+// still triggers the card's action. The preview lives in G.peekUid so render() re-applies it — an
+// unrelated re-render mid-hold can't wipe it (which used to make it snap back in). Touch-only;
+// pointer devices already enlarge on hover.
 function attachHandPeek(node){
-  let timer=null, peeking=false;
-  const slot=node.closest && node.closest('.fan-slot');
-  const clearPeek=(suppressTap)=>{ clearTimeout(timer); if(peeking){ peeking=false; if(slot) slot.classList.remove('focused'); if(suppressTap) _lpFired=true; } };
-  node.addEventListener('touchstart', ()=>{ clearTimeout(timer); peeking=false; timer=setTimeout(()=>{ peeking=true; if(slot) slot.classList.add('focused'); }, 240); }, {passive:true});
-  node.addEventListener('touchend',    ()=>clearPeek(true));    // release after a peek: swallow the tap
-  node.addEventListener('touchmove',   ()=>clearPeek(false));   // dragged off / scrolling: just drop it
-  node.addEventListener('touchcancel', ()=>clearPeek(false));
+  let timer=null;
+  const uid=+node.dataset.uid;
+  node.addEventListener('touchstart', ()=>{ _lpFired=false; clearTimeout(timer); timer=setTimeout(()=>{
+    _lpFired=true;              // swallow the tap that fires when this hold is released
+    G.peekUid=uid; render();    // latch the blown-up preview
+  }, 240); }, {passive:true});
+  const cancel=()=>clearTimeout(timer);   // released/moved before the hold threshold → normal tap
+  node.addEventListener('touchend', cancel);
+  node.addEventListener('touchmove', cancel);
+  node.addEventListener('touchcancel', cancel);
   node.addEventListener('contextmenu', e=>e.preventDefault());  // no long-press copy/select menu
 }
 function bind(){
@@ -5070,8 +5077,9 @@ function bind(){
         else{ setPrompt(`Choose ${G.pending.discardLeft} more card${G.pending.discardLeft>1?'s':''} to discard.`); render(); }
         return;
       }
+      if(G.peekUid!=null){ G.peekUid=null; render(); }   // a deliberate tap dismisses the blown-up preview
       // A quick tap goes straight to the action: inspect (which has the Play button) when idle,
-      // or play/target while resolving a mode. Holding the card peeks it larger (attachHandPeek).
+      // or play/target while resolving a mode. Holding the card blows it up (attachHandPeek).
       if(G.mode==='idle') inspect(c); else playFromHand(+n.dataset.uid);
     };
     attachHandPeek(n);
@@ -5169,6 +5177,16 @@ function midSelection(){
   return false;
 }
 el('endTurnBtn').addEventListener('click', ()=>{ if(G.turn==='player'&&!G.over){ if(midSelection()){ flashPrompt('Finish your current selection first.'); return; } sound('endphase'); clearSel(); endTurn(); } });
+// A blown-up hand preview is latched open — tapping anywhere OUTSIDE the hand exits it (and that tap
+// is consumed, so it only closes the preview). Capture phase reads the target before anything else;
+// the render is deferred so we never detach the element the tap is still travelling to.
+document.addEventListener('click', (e)=>{
+  if (G.peekUid==null) return;
+  if (e.target && e.target.closest && e.target.closest('#hand')) return;   // hand taps handled by the card onclick
+  e.stopPropagation(); e.preventDefault();
+  G.peekUid=null; _lpFired=false;
+  setTimeout(()=>render(), 0);
+}, true);
 // Battle-log tab: click the header to minimize/restore the log.
 el('logHeader').addEventListener('click', ()=>{
   const p=el('logPanel'); const collapsed=p.classList.toggle('collapsed');
