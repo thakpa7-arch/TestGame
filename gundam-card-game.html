@@ -3348,12 +3348,30 @@ function affordIssue(side,c){
   return null;
 }
 
-function playFromHand(uidv){
+// Confirm before a play burns the one-time EX Resource(s), so the player never spends it by accident.
+function confirmExSpend(card, n, onYes){
+  el('blockMsg').innerHTML = `Playing <b>${card.name}</b> will use ${n>1?n+' of your ':'your '}<span style="color:#fbbf24;font-weight:800">EX Resource${n>1?'s':''}</span> — EX is one-time and doesn't come back. Spend it?`;
+  const wrap=el('blockBtns'); wrap.innerHTML='';
+  const yes=document.createElement('button'); yes.innerHTML=`⚡ Play — use ${n>1?n+' EX':'EX'}`;
+  yes.onclick=()=>{ el('blockModal').classList.remove('show'); onYes(); };
+  const no=document.createElement('button'); no.className='ghost'; no.textContent='Cancel';
+  no.onclick=()=>{ el('blockModal').classList.remove('show'); render(); };
+  wrap.appendChild(yes); wrap.appendChild(no);
+  el('blockModal').classList.add('show');
+}
+function playFromHand(uidv, exConfirmed){
   if (G.turn!=='player' || G.over || G.mode!=='idle' || G.actionLock) return;
   const s=G.player; const idx=s.hand.findIndex(c=>c.uid===uidv); if(idx<0) return;
   const card=s.hand[idx];
   const issue=affordIssue(s,card);
   if (issue){ flashPrompt(`${card.name}: ${issue}.`); return; }
+  // Warn if this play dips into the EX Resource. EX are spent last: after paying, any shortfall below
+  // `ex` remaining is EX being burned. Only prompt for EX this play newly consumes.
+  if (!exConfirmed && s.ex>0){
+    const cost=effectiveCost(s,card);
+    const exUse = Math.max(0, s.ex - (s.resAvail - cost)) - Math.max(0, s.ex - s.resAvail);
+    if (exUse>0){ closeInspect(); confirmExSpend(card, exUse, ()=>playFromHand(uidv, true)); return; }
+  }
 
   if (card.type==='base'){
     s.hand.splice(idx,1); s.resAvail-=effectiveCost(s,card);
