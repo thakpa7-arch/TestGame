@@ -4371,6 +4371,7 @@ function aiHasLethal(attackers){
 function aiTurn(){
   if (G.over) return;
   G._aiGuard = 0;
+  G._aiPostDeploy = false;   // hard AI holds new bodies until after it attacks
   aiMainLoop();
 }
 // The AI must not advance its turn while the player is resolving a forced choice — an open block/
@@ -4389,6 +4390,15 @@ function aiMainLoop(){
   if (aiPaused()){ setTimeout(aiMainLoop, 200); return; }   // wait for the player's choice
   if (G._aiGuard++ < 40 && aiMainStep()){ render(); setTimeout(aiMainLoop, FLASH_MS+150); return; }
   aiPostMain();
+}
+// Hard AI only: after the attack step it places the Units it held back (G._aiPostDeploy is now true,
+// so aiMainStep's deploy is unlocked), then ends the turn. Deploying here — after combat — means a
+// shield-break Burst (e.g. Close Combat) fired during the attack couldn't pick off a just-placed Unit.
+function aiPostCombatLoop(){
+  if (G.over) return;
+  if (aiPaused()){ setTimeout(aiPostCombatLoop, 200); return; }
+  if (G._aiGuard++ < 40 && aiMainStep()){ render(); setTimeout(aiPostCombatLoop, FLASH_MS+150); return; }
+  log(`${who(G.enemy)} ends its turn.`, 'ai'); endTurn();
 }
 // Perform the single highest-priority main-phase action; return true if something was done.
 function aiMainStep(){
@@ -4418,7 +4428,12 @@ function aiMainStep(){
   if (ai.field.length<FIELD_MAX){
     const linkPilotInHand = u => ai.hand.some(c=>c.type==='pilot' && linkMatches(u, c));
     const depScore = u => (u.baseAp+u.baseHp) + (linkPilotInHand(u)?4:0) + (parseTrigger(u.effect,'Deploy')?2:0);
-    const dep = ai.hand.filter(c=>c.type==='unit' && canAfford(ai,c)).sort((a,b)=>depScore(b)-depScore(a))[0];
+    // Hard AI attacks BEFORE committing new bodies: pre-combat it only deploys Units that can ACT this
+    // turn — a blitz Unit, or one whose Link Pilot is in hand (pairing un-sicks it so it attacks now).
+    // A Unit that would just sit summoning-sick waits until after combat (see aiPostCombatLoop), so a
+    // shield-break Burst like Close Combat can't pick it off mid-combat. It loses nothing by waiting.
+    const holdForPostCombat = c => AI_LVL==='hard' && !G._aiPostDeploy && !c.blitz && !linkPilotInHand(c);
+    const dep = ai.hand.filter(c=>c.type==='unit' && canAfford(ai,c) && !holdForPostCombat(c)).sort((a,b)=>depScore(b)-depScore(a))[0];
     if (dep){ const i=ai.hand.indexOf(dep); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,dep); dep.rested=false; dep.sick=!dep.blitz; ai.field.push(dep); flashCard(dep,'ENEMY DEPLOY'); log(`${who(G.enemy)} deploys <b>${dep.name}</b>.`, 'ai'); runTrigger(dep, ai, parseTrigger(dep.effect,'Deploy'), 'Deploy'); onUnitDeployed(dep, ai); return true; }
   }
   // pair a pilot — evaluate EVERY (pilot, unit) combination and take the best one. Forming a Link is
@@ -4535,6 +4550,8 @@ function aiPostMain(){
       (function endStep(){
         if (G.over) return;
         if (aiPaused()){ setTimeout(endStep, 200); return; }   // wait out any pending player choice
+        // Hard AI held its non-blitz deploys until after attacking — now place them, then end.
+        if (AI_LVL==='hard' && !G._aiPostDeploy){ G._aiPostDeploy=true; G._aiGuard=0; aiPostCombatLoop(); return; }
         log(`${who(G.enemy)} ends its turn.`, 'ai'); endTurn();
       })();
       return;
