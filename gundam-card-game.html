@@ -307,14 +307,14 @@
   #peekOverlay { position: fixed; inset: 0; z-index: 190; display: none; align-items: center; justify-content: center; pointer-events: none; }
   #peekOverlay.show { display: flex; }
   #peekOverlay .card { transform: scale(3); opacity: 1 !important; box-shadow: 0 26px 70px rgba(0,0,0,.9), 0 0 42px rgba(34,211,238,.55); }
-  #peekOverlay .card.playable { outline: 2px solid rgba(52,211,153,.95); outline-offset: -2px; }
+  #peekOverlay .card.playable { outline: 3px solid #4ade80; outline-offset: -3px; box-shadow: 0 26px 70px rgba(0,0,0,.9), 0 0 44px rgba(74,222,128,.85); }
   #peekOverlay .card.dim { outline: 2px solid rgba(224,96,96,.75); outline-offset: -2px; }
   .hand-row .card { transition: transform .18s ease, box-shadow .18s ease; }
   /* Playable vs unaffordable is shown by outline colour (green vs red) — never by transparency — so
      the state stays clear even when the card is blown up and fully opaque. */
-  .hand-row .card.playable { outline: 2px solid rgba(52,211,153,.9); outline-offset: -2px; animation: playableBreathe 1.6s ease-in-out infinite; }
-  .hand-row .card.dim { opacity: .9; outline: 2px solid rgba(224,96,96,.7); outline-offset: -2px; }
-  @keyframes playableBreathe { 0%,100%{ box-shadow: 0 0 7px rgba(52,211,153,.45); } 50%{ box-shadow: 0 0 16px rgba(52,211,153,.85); } }
+  .hand-row .card.playable { outline: 3px solid #4ade80; outline-offset: -3px; animation: playableBreathe 1.3s ease-in-out infinite; }
+  .hand-row .card.dim { opacity: .82; outline: 2px solid rgba(224,96,96,.7); outline-offset: -2px; }
+  @keyframes playableBreathe { 0%,100%{ box-shadow: 0 0 11px 1px rgba(74,222,128,.6); } 50%{ box-shadow: 0 0 26px 5px rgba(74,222,128,1); } }
 
   /* Targeting arrow (attack declarations) */
   #targetArrow { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 96; display: none; filter: drop-shadow(0 2px 6px rgba(0,0,0,.6)); }
@@ -425,9 +425,9 @@
   /* Targetable units breathe from dark to full colour (instead of any rest-like motion) so it's
      obvious what an effect/attack can hit. */
   @keyframes targetBreathe { 0%,100% { filter: brightness(.5) saturate(.85); } 50% { filter: brightness(1.08) saturate(1.1); } }
-  .card.selectable { outline: 3px solid var(--green); outline-offset: -3px; animation: targetBreathe 1.15s ease-in-out infinite; }
+  .card.selectable { outline: 3px solid #4ade80; outline-offset: -3px; box-shadow: 0 0 20px 3px rgba(74,222,128,.9); animation: targetBreathe 1.05s ease-in-out infinite; }
   .card.selected, .card.attacking { outline: 3px solid var(--cyan); box-shadow: 0 0 16px var(--cyan); }
-  .card.target { outline: 3px dashed var(--red); outline-offset: -3px; animation: targetBreathe 1.15s ease-in-out infinite; }
+  .card.target { outline: 3px dashed #ff6b6b; outline-offset: -3px; box-shadow: 0 0 20px 3px rgba(239,68,68,.9); animation: targetBreathe 1.05s ease-in-out infinite; }
   .card.dim { opacity: .42; }
   @media (prefers-reduced-motion: reduce) { .card.selectable, .card.target { animation: none; } }
   .card .pilot-badge { position: absolute; top: var(--strip-top); left: var(--ov-pos); background: var(--purple); color: #fff; font-size: calc(var(--ov-f) * .64); padding: 1px 4px; border-radius: 3px; max-width: 90%; overflow: hidden; white-space: nowrap; }
