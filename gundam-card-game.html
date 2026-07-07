@@ -3893,15 +3893,19 @@ function fieldClick(uidv){
       // then the Block Step and battle follow.
       resolveAttackTriggers(atk, G.player, ()=>{
         if (atk.hp<=0){ clearSel(); render(); checkEnd(); return; }
-        const tgt2 = G.enemy.field.find(c=>c.uid===uidv);
-        if (!tgt2 || (!tgt2.rested && !canHitActive(atk, tgt2))){ atk.rested=true; clearSel(); render(); checkEnd(); return; }
-        const blockers = G.enemy.field.filter(b=>effBlocker(b) && !b.rested && b.hp>0);
-        if (!atk.highManeuver && blockers.length && aiWantsBlock(atk)){
-          const blk = pickAiBlocker(atk, blockers);
-          blk.rested=true; log(`${who(G.enemy)}'s <b>${blk.name}</b> &lt;Blocker&gt; intercepts!`, 'ai');
-          battle(atk, blk, G.player, G.enemy); return;
-        }
-        battle(atk,tgt2,G.player,G.enemy);
+        // Action Step for this individual attack: use an 【Action】 ability/command before it resolves.
+        offerPlayerActionStep(atk, ()=>{
+          if (atk.hp<=0 || atk.rested){ clearSel(); render(); checkEnd(); return; }   // an Action may have changed things
+          const tgt2 = G.enemy.field.find(c=>c.uid===uidv);
+          if (!tgt2 || (!tgt2.rested && !canHitActive(atk, tgt2))){ atk.rested=true; clearSel(); render(); checkEnd(); return; }
+          const blockers = G.enemy.field.filter(b=>effBlocker(b) && !b.rested && b.hp>0);
+          if (!atk.highManeuver && blockers.length && aiWantsBlock(atk)){
+            const blk = pickAiBlocker(atk, blockers);
+            blk.rested=true; log(`${who(G.enemy)}'s <b>${blk.name}</b> &lt;Blocker&gt; intercepts!`, 'ai');
+            battle(atk, blk, G.player, G.enemy); return;
+          }
+          battle(atk,tgt2,G.player,G.enemy);
+        });
       });
       return;
     }
@@ -3915,15 +3919,20 @@ function attackDirect(){
   declareAttack(atk, G.player);   // on-attack self-buffs (AP+/High-Maneuver) BEFORE the block step
   resolveAttackTriggers(atk, G.player, ()=>{
     if (atk.hp<=0){ clearSel(); render(); checkEnd(); return; }
-    // Defender may block a direct attack with an active <Blocker> (unless attacker has High-Maneuver)
-    const blockers = G.enemy.field.filter(b=>effBlocker(b) && !b.rested && b.hp>0);
-    if (!atk.highManeuver && blockers.length && aiWantsBlock(atk)){
-      const blk = pickAiBlocker(atk, blockers);
-      blk.rested=true; log(`${who(G.enemy)}'s <b>${blk.name}</b> &lt;Blocker&gt; intercepts your attack!`, 'ai');
-      battle(atk, blk, G.player, G.enemy); return;
-    }
-    atk.rested=true;
-    strikePlayer(atk, G.enemy, ()=>{ clearSel(); render(); });
+    // Action Step for this attack before it resolves.
+    offerPlayerActionStep(atk, ()=>{
+      if (atk.hp<=0 || atk.rested){ clearSel(); render(); checkEnd(); return; }
+      if (cantHitPlayer(atk)){ atk.rested=true; clearSel(); render(); checkEnd(); return; }   // an Action removed its direct-attack
+      // Defender may block a direct attack with an active <Blocker> (unless attacker has High-Maneuver)
+      const blockers = G.enemy.field.filter(b=>effBlocker(b) && !b.rested && b.hp>0);
+      if (!atk.highManeuver && blockers.length && aiWantsBlock(atk)){
+        const blk = pickAiBlocker(atk, blockers);
+        blk.rested=true; log(`${who(G.enemy)}'s <b>${blk.name}</b> &lt;Blocker&gt; intercepts your attack!`, 'ai');
+        battle(atk, blk, G.player, G.enemy); return;
+      }
+      atk.rested=true;
+      strikePlayer(atk, G.enemy, ()=>{ clearSel(); render(); });
+    });
   });
 }
 
@@ -4654,8 +4663,9 @@ function offerPlayerActionStep(attacker, cb){
   if (G.over){ cb(); return; }
   const opts=collectPlayerActions(attacker);
   if (!opts.length){ cb(); return; }
+  const atkSide = attacker ? (G.player.field.includes(attacker) ? G.player : G.enemy) : null;
   el('blockMsg').innerHTML = attacker
-    ? `<b>Action Step</b> — ${who(G.enemy)}'s <b>${attacker.name}</b> (AP ${attacker.ap}) is attacking. Use an Action ability/command, or Pass.`
+    ? `<b>Action Step</b> — ${who(atkSide)}'s <b>${attacker.name}</b> (AP ${attacker.ap}) is attacking. Use an Action ability/command, or Pass.`
     : `<b>End Phase — Action Step.</b> Use an Action ability/command before the Repair Step, or Pass.`;
   const wrap=el('blockBtns'); wrap.innerHTML='';
   opts.forEach(o=>{ const b=document.createElement('button'); b.innerHTML=`${o.label}${o.sub?` <span style="opacity:.6;font-size:10px">${o.sub}</span>`:''}`;
