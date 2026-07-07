@@ -3290,6 +3290,7 @@ function beginTurn(turn){
   G.phase='resource';
   if (s.resourceDeck>0){ s.resourceDeck--; s.resMax=Math.min(RES_MAX, s.resMax+1); }
   s.resAvail = s.resMax + s.ex;
+  s.hadTurn = true;   // resources have now been dealt at least once — safe to reconcile spent EX
   // 4) Main Phase — deploy, pair, activate, play commands, attack.
   G.phase='main';
   log(`— ${who(s)}'s turn ${G.turnNumber} —`, 'sys');
@@ -3320,7 +3321,9 @@ function finishEndPhase(){
   // don't refresh). Reconcile BOTH sides — the defender can burn EX on Action abilities/commands
   // during the turn player's turn, and that spend must stick too (resAvail<ex means EX were used).
   for (const sd of [G.player, G.enemy]){
-    if (sd.ex>0 && sd.resAvail<sd.ex){
+    // Guard on hadTurn: before a side's first turn its resAvail is still 0 (< ex), which would
+    // otherwise wrongly "consume" the EX Resource the second player is granted at setup.
+    if (sd.hadTurn && sd.ex>0 && sd.resAvail<sd.ex){
       const used=sd.ex-sd.resAvail; sd.ex=sd.resAvail;
       log(`${who(sd)} used up ${used} EX Resource${used===1?'':'s'}.`, sd===G.player?'me':'ai');
     }
