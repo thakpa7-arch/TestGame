@@ -309,8 +309,10 @@
   #peekOverlay .card { transform: scale(3); opacity: 1 !important; box-shadow: 0 26px 70px rgba(0,0,0,.9), 0 0 42px rgba(34,211,238,.55); }
   #peekOverlay .card.playable { outline: 3px solid #4ade80; outline-offset: -3px; box-shadow: 0 26px 70px rgba(0,0,0,.9), 0 0 44px rgba(74,222,128,.85); }
   #peekOverlay .card.dim { outline: 2px solid rgba(224,96,96,.75); outline-offset: -2px; }
-  /* Blown-up view is for reading the art/effect — hide the AP/HP stat badges and health bar. */
-  #peekOverlay .card .ov-ap, #peekOverlay .card .ov-hp, #peekOverlay .card .hp-bar { display: none; }
+  /* Blown-up view is just the card art — hide every overlay badge (AP/HP/health bar, cost, level,
+     name) so nothing covers the picture. */
+  #peekOverlay .card .ov-ap, #peekOverlay .card .ov-hp, #peekOverlay .card .hp-bar,
+  #peekOverlay .card .ov-cost, #peekOverlay .card .ov-lv, #peekOverlay .card .ov-name { display: none; }
   .hand-row .card { transition: transform .18s ease, box-shadow .18s ease; }
   /* Playable vs unaffordable is shown by outline colour (green vs red) — never by transparency — so
      the state stays clear even when the card is blown up and fully opaque. */
