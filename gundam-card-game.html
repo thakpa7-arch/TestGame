@@ -982,6 +982,9 @@ function matchTrashTrait(card, trait){
   return tl.split('/').some(part => cardTrait.includes(part.replace(/[()]/g,'').trim()));
 }
 function trashCount(side, trait){ return (side.trash||[]).filter(c=>matchTrashTrait(c,trait)).length; }
+// Count cards in a side's trash whose NAME contains `name` (e.g. "improved technique"), excluding one
+// card (the copy currently resolving, since it's committed to trash before its own effect resolves).
+function trashNameCount(side, name, exclude){ return (side.trash||[]).filter(c=>c!==exclude && (c.name||'').toLowerCase().includes(name)).length; }
 
 function parseTrashBuff(effect){
   const t = plain(effect).toLowerCase();
@@ -1640,6 +1643,10 @@ function targetFilter(t){
   const orm = t.match(/lv\.?\s*(\d+) or lower or (?:has |with )?(\d+) or less ap/i);
   if (orm){ f.orFilter=[{maxLv:+orm[1]},{maxAp:+orm[2]}]; return f; }
   if ((m=t.match(/lv\.?\s*(\d+) or lower/i))) f.maxLv=+m[1];
+  // "If there are N or more cards with "NAME" in their card name in your trash, choose 1 enemy Unit
+  // instead." — lifts the Lv cap once enough copies sit in your trash (e.g. Improved Technique).
+  const lift = t.match(/if there are (\d+) or more cards? with ["'“”]([^"'“”]+)["'“”] in their card name in your trash,?\s*choose 1 enemy unit instead/i);
+  if (lift) f.lvLift = { minCount:+lift[1], name: lift[2].trim().toLowerCase() };
   // "whose Lv. is equal to or lower than this Unit" — a cap relative to the SOURCE Unit's Lv
   // (e.g. Marida Cruz). Resolved against act.source at target-selection time.
   if (/(?:lv\.?[^.]*?)?equal to or lower than this unit/i.test(t)) f.maxLvSelf=true;
@@ -1655,10 +1662,15 @@ function enemyTargets(foe, act){
   const f=act.filter||{};
   // "Lv. equal to or lower than this Unit": cap by the source Unit's current level.
   const selfLvCap = (f.maxLvSelf && act.source) ? (act.source.lv||0) : null;
+  // Improved-Technique-style Lv-cap lift: enough same-named copies in the CASTER's trash (the caster
+  // is whoever's targeting the opponent `foe`) removes the Lv restriction entirely.
+  const caster = foe===G.player ? G.enemy : G.player;
+  const lvLifted = !!(f.lvLift && caster && trashNameCount(caster, f.lvLift.name, G.cmdInFlight&&G.cmdInFlight.card) >= f.lvLift.minCount);
+  const capLv = lvLifted ? null : f.maxLv;
   let list=foe.field.filter(u=>u.hp>0
     && (selfLvCap==null || (u.lv||0)<=selfLvCap)
-    && (f.maxLv==null || (u.lv||0)<=f.maxLv)
-    && (act.maxLv==null || (u.lv||0)<=act.maxLv)               // legacy field from parseTriggerInner
+    && (capLv==null || (u.lv||0)<=capLv)
+    && (lvLifted || act.maxLv==null || (u.lv||0)<=act.maxLv)   // legacy field from parseTriggerInner
     && (f.maxAp==null || effAp(u)<=f.maxAp)
     && (f.maxHp==null || u.hp<=f.maxHp)
     && (act.hp==null || act.hp>=99 || u.hp<=act.hp)            // legacy "N or less HP" field
