@@ -1638,7 +1638,7 @@ function parseTrigger(effect, kw){
   const pl = plain(effect);
   // Capture an optional gate bracket immediately before the trigger (e.g. 【During Pair】【Destroyed】)
   // so a paired/linked-only trigger doesn't fire when the Unit isn't paired/linked.
-  const m = pl.match(new RegExp('(【[^】]*】)?\\s*【\\s*'+kw+'[^】]*】\\s*([^【]*)','i'));
+  const m = pl.match(new RegExp('(【[^】]*】)?\\s*【\\s*'+kw+'[^】]*】(?:\\s*/\\s*【[^】]*】)*\\s*([^【]*)','i'));
   if (m){
     let act = parseClause(m[2]);
     const gate = (m[1]||'').toLowerCase();
