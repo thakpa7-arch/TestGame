@@ -1880,7 +1880,8 @@ function gd05Sacrifice(side, sourceCard){
   if (!ownCands.length) return;
   const free=ownCands.find(u=>gd05ReturnsOnSelfKill(u) && !u.token);
   if (!foeCands.length && !free) return;                      // no enemy to hit and no free-value sacrifice → skip
-  const val=u=>((u.baseAp||0)+(u.baseHp||0));
+  const val=u=>((u.baseAp||0)+(u.baseHp||0))+(u.pilot?5:0);   // a paired Unit is worth more (its pilot is lost too) — sac unpaired bodies first
+
   const sac=free || [...ownCands].sort((a,b)=>val(a)-val(b))[0];
   const victim=foeCands.length ? [...foeCands].sort((a,b)=>val(a)-val(b))[0] : null;   // the opponent loses their weakest, if any
   if (!free && victim && val(sac) > val(victim)) return;      // don't sacrifice a better Unit than you remove
@@ -1935,7 +1936,7 @@ function gd05GyuneiActivate(u, side){
     el('blockModal').classList.add('show');
   } else {
     const free=cands.find(x=>gd05ReturnsOnSelfKill(x) && !x.token);
-    const val=x=>((x.baseAp||0)+(x.baseHp||0));
+    const val=x=>((x.baseAp||0)+(x.baseHp||0))+(x.pilot?5:0);   // paired Units are worth more — give them up last
     finish(free || [...cands].sort((a,b)=>val(a)-val(b))[0]);
   }
 }
@@ -1949,7 +1950,7 @@ function gd05SacResolve(uid){
     if (sac){
       log(`<b>${src.name}</b>: you destroy your <b>${sac.name}</b>.`, 'me');
       gd05DestroyUnit(sac, G.player, true);
-      const victim=[...G.enemy.field].filter(u=>u.hp>0).sort((a,b)=>((a.baseAp||0)+(a.baseHp||0))-((b.baseAp||0)+(b.baseHp||0)))[0];
+      const victim=[...G.enemy.field].filter(u=>u.hp>0).sort((a,b)=>(((a.baseAp||0)+(a.baseHp||0))+(a.pilot?5:0))-(((b.baseAp||0)+(b.baseHp||0))+(b.pilot?5:0)))[0];
       if (victim){ log(`<b>${src.name}</b>: the AI destroys its <b>${victim.name}</b>.`, 'ai'); gd05DestroyUnit(victim, G.enemy, false); }
     }
   }
@@ -3703,9 +3704,19 @@ function aiActivate(u){
   // Gyunei's Jagd Doga self-sacrifice: only use it as a clean value play — this Unit has already
   // attacked (rested) and there's a free-return Unit (Jagd Doga) to sacrifice for no real loss.
   if (a.kind==='gd05GyuneiSac'){
-    if (!u.rested) return false;
-    const free=ai.field.find(x=>x!==u && x.hp>0 && gd05ReturnsOnSelfKill(x) && !x.token);
-    if (!free) return false;
+    if (!u.rested) return false;                               // only worth it to un-rest and swing again
+    const cands=ai.field.filter(x=>x!==u && x.hp>0);
+    if (!cands.length) return false;
+    const free=cands.find(x=>gd05ReturnsOnSelfKill(x) && !x.token);
+    if (free){ applyActivateEffect(u, null, ai); return true; }   // free-return body → sacrifice for value
+    // No free body: sacrifice one only if the re-activated Gyunei can then KILL a rested enemy Unit
+    // (it can't hit the player), and the cheapest body we'd give up is worth no more than that kill.
+    const gyAp=effAp(u);
+    const kill=pl.field.filter(t=>t.rested && t.hp>0 && gyAp>=t.hp).sort((x,y)=>aiThreatScore(y)-aiThreatScore(x))[0];
+    if (!kill) return false;
+    const bodyVal=x=>((x.baseAp||0)+(x.baseHp||0))+(x.pilot?5:0);   // paired Units cost more — give them up last
+    const cheapest=[...cands].sort((x,y)=>bodyVal(x)-bodyVal(y))[0];
+    if (bodyVal(cheapest) > ((kill.baseAp||0)+(kill.baseHp||0))) return false;
     applyActivateEffect(u, null, ai); return true;
   }
   let target=null;
