@@ -1080,6 +1080,7 @@ function persistentKeyword(u, kw){
   if (innateKeyword(u.effect, kw)) return true;
   if (u.pilot && clauseGrantsKeyword(u.effect, kw, 'During Pair')) return true;
   if (u.linked && clauseGrantsKeyword(u.effect, kw, 'During Link')) return true;
+  if (condKeyword(u, kw)) return true;
   return false;
 }
 // Reset the transient combat keywords granted "this turn" back to their persistent baseline.
@@ -3172,11 +3173,53 @@ function effAp(u){
   return Math.max(0, ap);
 }
 // A Unit has <Suppression> if it's printed innately, or conditionally "while damaged" and it is.
-function effSuppression(u){ return !!(u.suppression || (u.suppressionWhenDamaged && u.hp < effMaxHp(u))); }
+function effSuppression(u){ return !!(u.suppression || (u.suppressionWhenDamaged && u.hp < effMaxHp(u)) || condKeyword(u, 'suppression')); }
+// Conditional / granted keywords beyond the innate flag: 【During Link/Pair】"gains <kw>" on the
+// Unit or its paired Pilot; and static "While this Unit is (Trait)…", "While you have another
+// (Trait) Unit in play…", "While a rested enemy Unit is in play…" grants. Computed live so it
+// tracks board/pair/link state (used by effBlocker / effSuppression / persistentKeyword).
+function condKeyword(u, kw){
+  if (!u || u.type!=='unit') return false;
+  const side = u.owner==='player'?G.player:G.enemy;
+  const foe  = side===G.player?G.enemy:G.player;
+  const utr  = (u.trait||'').toLowerCase();
+  const texts=[u.effect]; if (u.pilotCard) texts.push(u.pilotCard.effect);
+  for (const eff of texts){
+    if (!eff) continue;
+    if (u.linked && clauseGrantsKeyword(eff, kw, 'During Link')) return true;
+    if (u.pilot  && clauseGrantsKeyword(eff, kw, 'During Pair')) return true;
+    const p = plain(eff);
+    let m = p.match(new RegExp('while this unit is\\s*\\(([^)]+)\\)[^.]*gains?\\s*<\\s*'+kw,'i'));
+    if (m && utr.includes(('('+m[1]+')').toLowerCase())) return true;
+    m = p.match(new RegExp('while you have another\\s*\\(([^)]+)\\)\\s*unit in play[^.]*gains?\\s*<\\s*'+kw,'i'));
+    if (m){ const tr=('('+m[1]+')').toLowerCase(); if (side && side.field.some(x=>x!==u && x.hp>0 && (x.trait||'').toLowerCase().includes(tr))) return true; }
+    if (new RegExp('while a rested enemy unit is in play[^.]*gains?\\s*<\\s*'+kw,'i').test(p)){
+      if (foe && foe.field.some(x=>x.rested && x.hp>0)) return true;
+    }
+  }
+  return false;
+}
+// Effective <Repair N>: printed amount, or one granted 【During Link/Pair】 by the Unit or its Pilot.
+function effRepair(u){
+  let r = u.repair||0;
+  if (u.type==='unit'){
+    const texts=[u.effect]; if (u.pilotCard) texts.push(u.pilotCard.effect);
+    for (const eff of texts){
+      if (!eff) continue;
+      for (const [gate,on] of [['During Link',u.linked],['During Pair',u.pilot]]){
+        if (!on) continue;
+        const m = plain(eff).match(new RegExp('【\\s*'+gate+'[^】]*】\\s*([^【]*)','i'));
+        if (m){ const mm=m[1].match(/gains?\s*<\s*repair\s*(\d+)/i); if(mm) r=Math.max(r,+mm[1]); }
+      }
+    }
+  }
+  return r;
+}
 // A Unit is a <Blocker> if printed, or via "While you have a (Trait) Pilot in play" (Virtue).
 function effBlocker(u){
   if (u.blocker) return true;
   if (u.condBlocker){ const side=u.owner==='player'?G.player:G.enemy; return !!(side&&side.field.some(x=>x.pilotCard && (x.pilotCard.trait||'').toLowerCase().includes(u.condBlocker))); }
+  if (condKeyword(u, 'blocker')) return true;
   return false;
 }
 // Can `u` attack an ACTIVE (non-rested) enemy Unit `target`? True if granted this turn, or innately
@@ -3563,7 +3606,7 @@ function finishEndPhase(){
   const s=me();
   // Repair Step (regen), then Hand Step (discard down to the hand limit).
   G.phase='end';
-  for (const u of s.field){ if (u.repair>0 && u.hp>0 && u.hp<effMaxHp(u)){ const _b=u.hp; u.hp=Math.min(effMaxHp(u), u.hp+u.repair); if(u.hp>_b) floatNum(u.uid,'+'+(u.hp-_b),'#7ee29a'); } u.tempAp=0; u.battleAp=0; u.canAttackActive=false; u.noDirectTurn=false; u.dmgReduce=0; resetTurnKeywords(u); u.ap=effAp(u); }
+  for (const u of s.field){ const _r=effRepair(u); if (_r>0 && u.hp>0 && u.hp<effMaxHp(u)){ const _b=u.hp; u.hp=Math.min(effMaxHp(u), u.hp+_r); if(u.hp>_b) floatNum(u.uid,'+'+(u.hp-_b),'#7ee29a'); } u.tempAp=0; u.battleAp=0; u.canAttackActive=false; u.noDirectTurn=false; u.dmgReduce=0; resetTurnKeywords(u); u.ap=effAp(u); }
   while (s.hand.length>HAND_MAX){
     const worst=[...s.hand].sort((a,b)=>cardValue(a)-cardValue(b))[0];
     s.hand.splice(s.hand.indexOf(worst),1); sendToTrash(worst, s);
