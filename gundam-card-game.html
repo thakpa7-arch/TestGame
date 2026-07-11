@@ -2684,6 +2684,7 @@ function makeCard(def, owner){
     c.suppression = innateKeyword(def.effect, 'suppression');
     // "When this Unit destroys an enemy shield area card with battle damage, deal N to a chosen enemy Unit." (e.g. Sinanju)
     c.onShieldBreak = parseShieldBreak(def.effect);
+    c.onKill = parseOnKill(def.effect);   // "when this Unit destroys an enemy Unit with battle damage, …"
     // Conditional keyword: "While this is damaged, it gains <Suppression>" (e.g. Barbatos 4th Form).
     c.suppressionWhenDamaged = /while this[^.]*?damaged[^.]*?gains?\s*<\s*suppression/i.test(plain(def.effect));
     // Static effect-damage reduction: "When this Unit receives effect damage from an enemy, reduce it by N." (Silver Bullet)
@@ -4463,6 +4464,29 @@ function resolveAttackTriggers(atk, atkSide, done){
   })();
 }
 // Simultaneous battle, modified by First Strike (striker hits first; if foe dies, no return).
+// Parse a unit's "when this Unit destroys an enemy Unit with battle damage, <effect>" trigger.
+// Excludes the <Breach> reminder text (parenthesised, ends "…shield area."). Currently models the
+// self-contained payoffs (recover HP, draw); target-selecting ones (set-active/scry) are left null.
+function parseOnKill(effect){
+  const p = plain(effect).replace(/\([^)]*shield area[^)]*\)/gi, '');
+  const m = p.match(/when this unit destroys an enemy unit with battle damage,?\s*([^.<【]*)/i);
+  if (!m) return null;
+  const t = m[1].toLowerCase(); let d;
+  if ((d = t.match(/recovers?\s*(\d+)\s*hp/)))  return { kind:'recover', amount:+d[1] };
+  if ((d = t.match(/^draw (\d+)/)) && !/discard/.test(t)) return { kind:'draw', amount:+d[1] };
+  return null;
+}
+function applyOnKill(u, side, k){
+  if (!k) return;
+  const cls = side===G.player ? 'me' : 'ai';
+  if (k.kind==='recover'){
+    const before=u.hp; u.hp=Math.min(effMaxHp(u), u.hp + k.amount);
+    if (u.hp>before){ log(`<b>${u.name}</b> recovers ${u.hp-before} HP.`, cls); try{ floatNum(u.uid,'+'+(u.hp-before),'#7ee29a'); }catch(e){} }
+  } else if (k.kind==='draw'){
+    for (let i=0;i<k.amount;i++) draw(side);
+    log(`<b>${u.name}</b>: draw ${k.amount}.`, cls);
+  }
+}
 function battle(atk, def, atkSide, defSide){
   atk.rested=true;
   fxLunge(atk);
@@ -4478,6 +4502,11 @@ function battle(atk, def, atkSide, defSide){
   else { damage(def,a,defSide,'battle'); damage(atk,d,atkSide,'battle'); }
   // <Breach N>: when this attack destroys an enemy Unit, hit the top enemy shield.
   if (atk.breach>0 && def.type==='unit' && def.hp<=0) breachShield(atk, defSide);
+  if (def.type==='unit' && def.hp<=0 && atk.hp>0){                                            // "when this Unit destroys an enemy Unit…"
+    if (atk.onKill) applyOnKill(atk, atkSide, atk.onKill);
+    const pk = atk.pilotCard ? parseOnKill(atk.pilotCard.effect) : null;                      // on-kill can live on the paired Pilot (e.g. Amuro)
+    if (pk) applyOnKill(atk, atkSide, pk);
+  }
   clearBattleScoped();                 // "during this battle" effects (e.g. Kira's AP-2) end now
   clearSel(); render(); checkEnd();
 }
