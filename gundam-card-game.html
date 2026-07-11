@@ -2058,7 +2058,11 @@ function condMet(cond, side, source, other){
     case 'trash':          return trashCount(side, cond.trait) >= cond.min;
     case 'linkUnit':       return side.field.some(u=>u.linked && traitMatchUnit(u,cond.trait));
     case 'friendlyUnit': {
-      const n = side.field.filter(u=>traitMatchUnit(u,cond.trait) && (!other || u!==source)).length;
+      // "other"/"another"/"friendly" are quantifiers, not traits — exclude the source, drop the filter.
+      let tr=cond.trait, excl=other;
+      if (tr==='other' || tr==='another'){ excl=true; tr=null; }
+      else if (tr==='friendly'){ tr=null; }
+      const n = side.field.filter(u=>traitMatchUnit(u,tr) && (!excl || u!==source)).length;
       return n >= cond.min;
     }
     case 'selfDamaged':      return !!(source && source.hp < effMaxHp(source));
