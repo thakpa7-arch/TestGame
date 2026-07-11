@@ -1152,6 +1152,10 @@ function parseActivateEffect(t){
     // Keep any target restriction (e.g. Isaribi's "Choose 1 of your damaged Units").
     return { kind:'buff', amount:+d[1], scope: all?'all-friendly':'friendly', filter:friendlyFilter(t) };
   }
+  // Damage-shield: "…when it/this Unit receives enemy damage, reduce it by N (this turn/battle)."
+  if ((d=t.match(/receives?\s+enemy\s+(?:battle\s+)?damage,?\s*reduce it by (\d+)/))){
+    const self=/this unit/.test(t); return { kind:'grantReduce', amount:+d[1], scope:self?'self':'friendly', filter:friendlyFilter(t) };
+  }
   return null;
 }
 // Circled-digit resource symbols (① = pay/rest 1 resource).
@@ -1166,7 +1170,7 @@ function parseActivateCost(c){
   // "Rest N of your (Trait) Unit(s)" — pay by resting that many friendly Units (often from a Base).
   let rm = c.match(/^rest (\d+) (?:of your |friendly )(?:(other|another)\s+)?([a-z\/() ]*?)\s*units?$/);
   if (rm){ const trait=(rm[3]||'').trim().replace(/[()]/g,'').trim()||null; return { type:'restUnit', count:+rm[1], trait, excludeSelf: !!rm[2] }; }
-  let m = c.match(/exile (\d+) ([a-z\/() ]*?)\s*cards? from your trash/);
+  let m = c.match(/exile (\d+) ([a-z\/() ]*?)\s*cards? (?:from your trash|in your trash from the game)/);
   if (m){ const trait=(m[2]||'').trim().replace(/[()]/g,'').trim()||null; return { type:'exile', count:+m[1], trait }; }
   return null;
 }
@@ -1199,7 +1203,7 @@ function parseActivate(effect){
       const scope = ['damage','destroy','rest','bounce','debuff'].includes(k)?'enemy' : (['buff','heal','setActiveFriendly'].includes(k)?'friendly':'self');
       action = Object.assign({}, tex.inner, { scope });
       text = body;
-    }
+    } else { const eff=parseActivateEffect(body); if(eff){ cost={type:'none'}; action=eff; text=body; } }
   }
   if (!cost || !action) return null;
   return { phase, cost, text:(text||'').replace(/\s*\(.*$/,'').replace(/\.$/,'').trim(), action, requireLink, requirePair, oncePerTurn };
@@ -1728,7 +1732,7 @@ function parseClause(raw){
     return { kind:'grantAttackActive', scope:self?'self':'friendly', filter:friendlyFilter(t), all:/all your/.test(t) };
   }
   // Damage-reduction shield for this turn/battle.
-  if ((d=t.match(/reduce (?:the next |battle )?damage (?:it|this unit) (?:would receive|receives?) by (\d+)/)) || (d=t.match(/reduce (?:the )?battle damage (?:it|this unit) receives by (\d+)/))){
+  if ((d=t.match(/reduce (?:the next |battle )?damage (?:it|this unit) (?:would receive|receives?) by (\d+)/)) || (d=t.match(/reduce (?:the )?battle damage (?:it|this unit) receives by (\d+)/)) || (d=t.match(/receives?\s+enemy\s+(?:battle\s+)?damage,?\s*reduce it by (\d+)/))){
     const self=/this unit/.test(t.slice(t.indexOf('reduce'))); return { kind:'grantReduce', amount:+d[1], scope:self?'self':'friendly', filter:friendlyFilter(t) };
   }
   if (/can'?t receive battle damage|battle damage it would receive is dealt to this unit/.test(t)){
@@ -2031,6 +2035,7 @@ function parseCondition(t){
   if ((m=t.match(/(?:a|an|another)\s+friendly\s+([a-z\/() ]*?)\s*unit (?:is|are) in play/))) return { type:'friendlyUnit', min:1, trait:(m[1]||'').replace(/[()]/g,'').trim()||null };
   if ((m=t.match(/(\d+) or more (?:friendly )?([a-z\/() ]*?)\s*units?(?: are)? in play/))) return { type:'friendlyUnit', min:+m[1], trait:(m[2]||'').replace(/[()]/g,'').trim()||null };
   if ((m=t.match(/you have (\d+) or more ([a-z\/() ]*?)\s*units?/))) return { type:'friendlyUnit', min:+m[1], trait:(m[2]||'').replace(/[()]/g,'').trim()||null };
+  if ((m=t.match(/you have (?:another|an|a)\s+([a-z\/() ]*?)\s*units?\s+in play/))){ let tr=(m[1]||'').replace(/[()]/g,'').trim(); if(tr.includes('/')) tr=null; return { type:'friendlyUnit', min:1, trait:tr||null }; }
   if (/this (?:unit )?is damaged/.test(t)) return { type:'selfDamaged' };
   if (/you are attacking a damaged enemy|attacking a damaged enemy/.test(t)) return { type:'attackingDamaged' };
   return null;
