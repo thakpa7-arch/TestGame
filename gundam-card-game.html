@@ -1112,7 +1112,7 @@ function parseTraitAura(effect){
 // "When this Unit OR one of your (Trait) Units is deployed, <effect>." A passive listener that fires
 // the effect whenever a matching friendly Unit (other than itself) is deployed (e.g. Neo Zeong).
 function parseAllyDeploy(effect){
-  const m = plain(effect).match(/when this unit or one of your\s*([a-z0-9\/() -]*?)\s*units? (?:is|are) deployed,\s*([^【]*)/i);
+  const m = plain(effect).match(/when (?:this unit or )?(?:one|another) of your\s*([a-z0-9\/() -]*?)\s*units? (?:is|are) deployed,\s*([^【]*)/i);
   if (!m) return null;
   const trait=(m[1]||'').replace(/[()]/g,'').trim().toLowerCase()||null;
   const act=parseClause(m[2]);
