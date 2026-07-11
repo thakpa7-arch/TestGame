@@ -3981,6 +3981,8 @@ function applyActivateEffect(u, target, side, costUnit){
     const t=target||u; grantKeyword(t, a.kw, a.amount); t.ap=effAp(t); log(`<b>${u.name}</b>: <b>${t.name}</b> gains &lt;${kwLabel(a.kw)}${a.kw==='breach'?' '+a.amount:''}&gt;.`, cls);
   } else if (a.kind==='grantHigh'){
     const t=target||u; t.highManeuver=true; log(`<b>${u.name}</b>: <b>${t.name}</b> gains &lt;High-Maneuver&gt;.`, cls);
+  } else if (a.kind==='grantReduce'){
+    const t=target||u; t.dmgReduce=(t.dmgReduce||0)+a.amount; log(`<b>${u.name}</b>: <b>${t.name}</b> ${a.amount>=99?"can't receive battle damage":"reduces damage by "+a.amount} this turn.`, cls);
   }
 }
 // AI: pick a sensible target for a ready activated ability and use it (before attacking).
