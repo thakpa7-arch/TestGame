@@ -2074,7 +2074,29 @@ function gd05Custom(card, label){
   if (!card) return null;
   if (card.def==='GD05-093' && (label==='Link' || label==='When Linked')) return { kind:'gd05BaseFromTrash' };
   if (card.def==='GD05-094' && label==='Destroyed') return { kind:'grantReduce', amount:2, scope:'friendly', filter:{ traits:['(neo zeon)'] } };
+  if (card.def==='GD05-017' && (label==='Pair' || label==='When Paired')) return { kind:'gd05NuBattle' };
   return null;
+}
+// GD05-017 Nu Gundam (LR) 【When Paired】: you may exile 3 (Londo Bell) cards from your trash; if you
+// do, choose 1 enemy Unit and resolve a damage-step-only battle against it (both deal AP, no block,
+// no attack declaration). Auto-resolved and taken only when it's a favorable exchange (we kill it
+// or survive) so it never throws away trash for a bad trade.
+function gd05NuGundamBattle(side, card){
+  if (!card || card.hp<=0) return;
+  const foe = side===G.player ? G.enemy : G.player;
+  const lb = side.trash.filter(c=>/\(londo bell\)/i.test(c.trait||''));
+  if (lb.length < 3) return;
+  const targets = foe.field.filter(u=>u.hp>0);
+  if (!targets.length) return;
+  const ca = effAp(card);
+  const pick = [...targets].sort((a,b)=>aiThreatScore(b)-aiThreatScore(a))[0];
+  const ta = effAp(pick);
+  if (ca < pick.hp && ta >= card.hp) return;                 // don't trade Nu Gundam for nothing
+  for (let i=0;i<3;i++){ const c=lb[i]; const idx=side.trash.indexOf(c); if(idx>=0){ side.trash.splice(idx,1); side.exile.push(c); } }
+  log(`<b>${card.name}</b>: exile 3 (Londo Bell) cards, then battle <b>${pick.name}</b> — damage step only.`, side===G.player?'me':'ai');
+  damage(pick, ca, foe, 'battle');
+  if (card.hp>0) damage(card, ta, side, 'battle');
+  render(); checkEnd();
 }
 function gd05ReturnsOnSelfKill(u){
   const e=(plain(u.effect||'')).toLowerCase();
@@ -2245,6 +2267,7 @@ function runTrigger(card, side, act, label){
   if (!act) return;
   act.source = card;
   if (act.kind==='gd05Sac'){ gd05Sacrifice(side, card); return; }
+  if (act.kind==='gd05NuBattle'){ gd05NuGundamBattle(side, card); return; }
   if (act.kind==='gd05BaseFromTrash'){ gd05DeployBaseFromTrash(side, card, label); return; }
   if (act.kind==='gd05AxisDeploy'){ gd05AxisDeploy(side, card); return; }
   // Conditional effect: only resolve the inner effect when the board condition holds.
@@ -2415,6 +2438,7 @@ function resolvePlayerTrigger(card, side, act, label, after){
   if (!act){ fin(); return; }
   act.source = card;
   if (act.kind==='gd05Sac'){ gd05SacInteractive(side, card, fin); return; }
+  if (act.kind==='gd05NuBattle'){ gd05NuGundamBattle(side, card); fin(); return; }
   if (act.kind==='gd05BaseFromTrash'){ gd05DeployBaseFromTrash(side, card, label, fin); return; }
   if (act.kind==='cond'){                       // gate, then resolve the inner interactively
     if (!condMet(act.cond, side, card, act.other)){
