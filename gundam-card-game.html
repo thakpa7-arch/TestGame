@@ -24,7 +24,7 @@
     --card-h: clamp(112px, 17.5vh, 200px);
     --card-w: calc(var(--card-h) * 0.718);
     --col: clamp(168px, 13vw, 236px);          /* side-stats column width */
-    --app-w: min(1700px, 96vw);                /* board width grows on wide monitors */
+    --app-w: min(1280px, 96vw);                /* capped so wide monitors keep a table-like aspect (avoids backdrop over-stretch) */
     /* Card-internal overlays scale with the card so badges/stats stay proportional at any size.
        Fractions are tuned so they equal the original px at the 142px base height. */
     --ov-pos: calc(var(--card-h) * 0.021);     /* ~3px corner inset */
