@@ -1717,6 +1717,14 @@ function parseClause(raw){
   // so "deal N damage to this Unit"/"…to it" hits a friendly, not the foe.
   const ping = parseSelfPing(t);
   if (ping) return ping;
+  // "You may choose 1 of your other Units. Destroy it. If you do, place the top N cards of your deck
+  // into your trash. Add 1 (Trait) Unit card you placed … to your hand." (Sazabi GD05-052) — the
+  // self-sacrifice gates the mill, so it must be checked before the plain mill rule below.
+  if (/you may choose 1 of your other units\.\s*destroy it\.\s*if you do,\s*place the top (\d+) cards? of your deck into your trash/.test(t)){
+    const n=+t.match(/place the top (\d+) cards?/)[1];
+    const rt=t.match(/add 1 ([a-z\/() ]*?) card you placed/);
+    return { kind:'selfSacMill', amount:n, retrieveFilter: rt?rt[1].trim():null };
+  }
   // Mill / scry clauses must be checked BEFORE generic AP/damage rules — otherwise a trailing
   // "…it gets AP-2" (e.g. Zeheart) would match the debuff rule and drop the mill entirely.
   if ((d=t.match(/place the top (\d+) cards? of your deck into your trash/i)) || (/place the top card of your deck into your trash/.test(t))){
@@ -2178,6 +2186,58 @@ function gd05DestroyUnit(u, owner, byOwnNeoZeon){
     const ti=owner.trash.indexOf(u); if(ti>=0){ owner.trash.splice(ti,1); resetUnit(u); owner.hand.push(u); log(`<b>${u.name}</b> returns from trash to ${owner===G.player?'your':'its'} hand.`, cls); }
   }
 }
+// GD05-052 Sazabi 【Deploy】: "You MAY choose 1 of your other Units. Destroy it. If you do, place the
+// top N into your trash and add 1 milled (Neo Zeon) Unit to hand." The sacrifice is the gate — no
+// sacrifice, no mill. Shared mill+retrieve once the sacrifice is paid; returns the milled cards that
+// match the retrieve filter (still sitting in trash).
+function selfSacMillResolve(side, card, act){
+  const cls=side===G.player?'me':'ai';
+  const milled=[];
+  for (let i=0;i<act.amount && side.deck.length;i++){ const c=side.deck.pop(); sendToTrash(c,side); milled.push(c); revealMill(c,side); }
+  if (milled.length) log(`<b>${card.name}</b>: places ${milled.length} card${milled.length>1?'s':''} in trash — ${milled.map(c=>c.name).join(', ')}.`, cls);
+  return milled.filter(c=>side.trash.includes(c) && matchTrashTrait(c, act.retrieveFilter));
+}
+// AI: only pay the sacrifice with a spare low-value body (or a free-return Jagd Doga), then auto-grab
+// the strongest milled Unit.
+function selfSacMillAI(side, card, act){
+  const cands=side.field.filter(u=>u!==card && u.hp>0);
+  if (!cands.length) return;                                    // "may" — nothing to sacrifice, so skip
+  const val=u=>((u.baseAp||0)+(u.baseHp||0))+(u.pilot?5:0);
+  const free=cands.find(u=>gd05ReturnsOnSelfKill(u) && !u.token);
+  const sac=free || [...cands].sort((a,b)=>val(a)-val(b))[0];
+  if (!free && val(sac)>6) return;                              // don't pitch a genuinely good Unit
+  const cls=side===G.player?'me':'ai';
+  log(`<b>${card.name}</b>: the AI destroys its <b>${sac.name}</b>.`, cls);
+  gd05DestroyUnit(sac, side, true);                            // its own (Neo Zeon) effect → Axis flag, Quess, trash-return
+  const nz=selfSacMillResolve(side, card, act);
+  if (nz.length && side.hand.length<HAND_MAX){
+    const best=[...nz].sort((a,b)=>((b.baseAp||0)+(b.baseHp||0))-((a.baseAp||0)+(a.baseHp||0)))[0];
+    const ti=side.trash.indexOf(best); if (ti>=0){ side.trash.splice(ti,1); resetUnit(best); side.hand.push(best); log(`<b>${card.name}</b>: the AI adds <b>${best.name}</b> to its hand.`, cls); }
+  }
+  render();
+}
+// Player: pick which of your Units to sacrifice (or decline), then choose which milled Unit to keep.
+function selfSacMillPlayer(card, side, act, after){
+  const fin=()=>{ if (after) after(); };
+  const cands=side.field.filter(u=>u!==card && u.hp>0);
+  if (!cands.length){ fin(); return; }
+  promptTargetChoice(cands,
+    `<b>${card.name}</b> 【Deploy】 — destroy one of YOUR other Units? If you do, mill ${act.amount} and add a milled ${act.retrieveFilter||'Unit'} to your hand.`,
+    (pick)=>{
+      if (!pick){ fin(); return; }                             // declined the "may"
+      log(`<b>${card.name}</b>: you destroy your <b>${pick.name}</b>.`, 'me');
+      gd05DestroyUnit(pick, side, true);
+      const nz=selfSacMillResolve(side, card, act);
+      if (nz.length && side.hand.length<HAND_MAX){
+        showLookAtTop(nz, `${card.name}: add 1 ${act.retrieveFilter||'Unit'} you placed in your trash to your hand`, ()=>true, true, (chosen)=>{
+          if (chosen){ const ti=side.trash.indexOf(chosen); if (ti>=0){ side.trash.splice(ti,1); resetUnit(chosen); side.hand.push(chosen); log(`<b>${card.name}</b>: you add <b>${chosen.name}</b> to hand.`, 'me'); } }
+          render(); fin();
+        });
+        return;
+      }
+      render(); fin();
+    }, "Don't destroy");
+}
 // Sazabi 【Attack】: you MAY destroy 1 of your own Units; if you do, each opponent destroys 1 of their
 // own non-battling Units. Auto-resolved for both sides (sac only when worthwhile / free via Jagd Doga).
 function gd05Sacrifice(side, sourceCard){
@@ -2308,6 +2368,7 @@ function runTrigger(card, side, act, label){
   act.source = card;
   if (act.kind==='gd05Sac'){ gd05Sacrifice(side, card); return; }
   if (act.kind==='gd05NuBattle'){ gd05NuGundamBattle(side, card); return; }
+  if (act.kind==='selfSacMill'){ selfSacMillAI(side, card, act); return; }
   if (act.kind==='gd05BaseFromTrash'){ gd05DeployBaseFromTrash(side, card, label); return; }
   if (act.kind==='gd05AxisDeploy'){ gd05AxisDeploy(side, card); return; }
   // Conditional effect: only resolve the inner effect when the board condition holds.
@@ -2483,6 +2544,7 @@ function resolvePlayerTrigger(card, side, act, label, after){
   act.source = card;
   if (act.kind==='gd05Sac'){ gd05SacInteractive(side, card, fin); return; }
   if (act.kind==='gd05NuBattle'){ gd05NuGundamBattlePlayer(side, card, fin); return; }
+  if (act.kind==='selfSacMill'){ selfSacMillPlayer(card, side, act, fin); return; }
   if (act.kind==='gd05BaseFromTrash'){ gd05DeployBaseFromTrash(side, card, label, fin); return; }
   if (act.kind==='cond'){                       // gate, then resolve the inner interactively
     if (!condMet(act.cond, side, card, act.other)){
