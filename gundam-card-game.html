@@ -1309,7 +1309,7 @@ function parseTriggerInner(t){
     if (/<\s*suppression/i.test(tl)) return { kind:'selfKeyword', kw:'suppression' };
     if (/<\s*blocker/i.test(tl)) return { kind:'selfKeyword', kw:'blocker' };
   }
-  if ((d=tl.match(/draw (\d+)/i))){ if(/discard/.test(tl)){ const disc=tl.match(/discard (\d+)/i); return { kind:'drawDiscard', draw:+d[1], discard:+(disc?disc[1]:1) }; } return { kind:'draw', amount:+d[1] }; }
+  if ((d=tl.match(/draw (\d+)/i))){ if(/discard/.test(tl)){ const disc=tl.match(/discard (\d+)/i); const dn=+(disc?disc[1]:1); return tl.indexOf('discard')<tl.indexOf('draw') ? { kind:'discardDraw', discard:dn, draw:+d[1] } : { kind:'drawDiscard', draw:+d[1], discard:dn }; } return { kind:'draw', amount:+d[1] }; }
   return null;
 }
 // "Choose N [trait] cards from your trash. Exile them. If you do, [effect]."
@@ -1581,10 +1581,11 @@ function inferCommand(effect){
     const tokenLimit = tokenLimitTrait(raw);   // "if you have no (X) Unit tokens in play"
     return specs.length ? { kind:'token', specs, choose, cond, tokenLimit } : { kind:'token', count:+((t.match(/deploy (\d+)/)||[])[1]||1), tokenLimit };
   }
-  // draw-then-discard (e.g. "Draw 2. Then, discard 1.") — must be checked before plain draw
+  // draw/discard — order matters: "Draw 2. Then discard 1." (draw first) vs "Discard 1. If you do,
+  // draw 2." (discard first, as a cost — Airframe Seizure). Decide by which word comes first.
   if (/draw \d/.test(t) && /discard \d/.test(t)){
     const dm = t.match(/draw (\d+)/), disc = t.match(/discard (\d+)/);
-    return { kind:'drawDiscard', draw:+dm[1], discard:+(disc[1]) };
+    return t.indexOf('discard')<t.indexOf('draw') ? { kind:'discardDraw', discard:+disc[1], draw:+dm[1] } : { kind:'drawDiscard', draw:+dm[1], discard:+disc[1] };
   }
   // Delegate to the unified clause parser so Commands gain every effect the triggers understand
   // (AP-/debuff, keyword grants, dig, reanimate, set-active, damage-reduction, …).
@@ -1828,7 +1829,7 @@ function parseClause(raw){
     const dk = t.match(/when this effect destroys an enemy unit,?\s*draw (\d+)/);
     return { kind:'damage', amount:+d[1], scope, both:/to them|to each/.test(t), filter:targetFilter(t), drawOnKill: dk?+dk[1]:undefined };
   }
-  if ((d=t.match(/draw (\d+)/)) && /discard (\d+)/.test(t)){ const disc=t.match(/discard (\d+)/); return { kind:'drawDiscard', draw:+d[1], discard:+disc[1] }; }
+  if ((d=t.match(/draw (\d+)/)) && /discard (\d+)/.test(t)){ const disc=t.match(/discard (\d+)/); return t.indexOf('discard')<t.indexOf('draw') ? { kind:'discardDraw', discard:+disc[1], draw:+d[1] } : { kind:'drawDiscard', draw:+d[1], discard:+disc[1] }; }
   if ((d=t.match(/draw (\d+)/))) return { kind:'draw', amount:+d[1] };
   if (/\bdraw\b/.test(t)) return { kind:'draw', amount:1 };
   if ((d=t.match(/ap\s*\+\s*(\d+)/))) return { kind:'buff', amount:+d[1], filter:targetFilter(t) };
@@ -2427,6 +2428,10 @@ function runTrigger(card, side, act, label){
     for(let i=0;i<act.draw;i++) draw(side);
     log(`${label}: <b>${name}</b> — draw ${act.draw}, discard ${act.discard}.`, cls);
     autoDiscard(side, act.discard, name);
+  } else if (act.kind==='discardDraw'){
+    const had=side.hand.length; autoDiscard(side, act.discard, name);
+    if (had>0){ for(let i=0;i<act.draw;i++) draw(side); }
+    log(`${label}: <b>${name}</b> — discard ${act.discard}${had>0?', draw '+act.draw:' (no draw)'}.`, cls);
   } else if (act.kind==='damage' && (act.scope==='all-enemy' || act.scope==='all-both')){
     damageAll(card, side, act, label);
   } else if (act.kind==='debuff' && act.scope==='all-enemy'){
@@ -3916,6 +3921,18 @@ function startCommand(card, handIdx){
     }
     closeInspect(); clearSel(); render(); checkEnd(); return;
   }
+  // Discard-first ("Discard N. If you do, draw M." — Airframe Seizure): the discard is the cost, so
+  // pick it first, THEN draw. With no card to discard the "if you do" fails and there is no draw.
+  if (a.kind==='discardDraw'){
+    commit(card,handIdx);
+    if (s.hand.length>0){
+      G.mode='discard'; G.pending={ discardLeft:a.discard, after:()=>{ for(let i=0;i<a.draw;i++) draw(s); log(`<b>${card.name}</b>: draw ${a.draw}.`, 'me'); G.mode='idle'; G.pending=null; clearSel(); render(); checkEnd(); } };
+      setPrompt(`${card.name}: discard ${a.discard} first, then draw ${a.draw}. Choose ${a.discard} card${a.discard>1?'s':''} to discard.`);
+      closeInspect(); render(); return;
+    }
+    log(`<b>${card.name}</b>: no card to discard — no draw.`, 'me');
+    closeInspect(); clearSel(); render(); checkEnd(); return;
+  }
   // "Deploy A or B" token command — let the player pick which token to create.
   if (a.kind==='token' && a.choose && a.specs && a.specs.length>1){
     if (s.field.length>=FIELD_MAX){ flashPrompt('Battle area full (max '+FIELD_MAX+').'); return; }
@@ -3967,6 +3984,11 @@ function applyCommand(card, side, target){
     for(let i=0;i<a.draw;i++) draw(side);
     log(`<b>${card.name}</b>: draw ${a.draw}.`, side===G.player?'me':'ai');
     autoDiscard(side, a.discard, card.name);
+  }
+  else if (a.kind==='discardDraw'){                    // discard first (cost), then draw — only if a card was discarded
+    const had=side.hand.length;
+    autoDiscard(side, a.discard, card.name);
+    if (had>0){ for(let i=0;i<a.draw;i++) draw(side); log(`<b>${card.name}</b>: draw ${a.draw}.`, side===G.player?'me':'ai'); }
   }
   else if (a.kind==='draw'){ for(let i=0;i<a.amount;i++) draw(side); log(`<b>${card.name}</b>: draw ${a.amount}.`, side===G.player?'me':'ai'); }
   else if (a.kind==='damage'){
