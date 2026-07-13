@@ -1456,6 +1456,30 @@ function playerDig(card, side, act, after){
       render(); if(after)after();
     });
 }
+// Dig-and-deploy: look at the top N, optionally deploy one matching Unit (free), return the rest to
+// the bottom (shuffled). Player picks from a modal; AI auto-picks the strongest fit. (GD02-038)
+function digDeploy(card, side, act, after){
+  const done=()=>{ if(after) after(); };
+  const n=Math.min(act.amount, side.deck.length);
+  if(!n){ done(); return; }
+  const top=side.deck.splice(side.deck.length-n, n);
+  const fits=c=>c.type==='unit' && !c.token && matchFilter(c,act.filter) && (act.maxLv==null||(c.lv||0)<=act.maxLv);
+  const putBack=()=>{ shuffle(top); for(const c of top) side.deck.unshift(c); };   // remaining cards to the bottom, randomly
+  const deploy=(c)=>{
+    top.splice(top.indexOf(c),1);
+    resetUnit(c); c.rested=false; c.sick=!c.blitz; side.field.push(c);
+    log(`<b>${card.name}</b>: deploys <b>${c.name}</b> from the top of ${side===G.player?'your':'its'} deck.`, side===G.player?'me':'ai');
+    putBack();
+    if (side===G.player) resolvePlayerTrigger(c, side, parseTrigger(c.effect,'Deploy'), 'Deploy', ()=>{ onUnitDeployed(c, side, ()=>{ render(); done(); }); });
+    else { runTrigger(c, side, parseTrigger(c.effect,'Deploy'), 'Deploy'); onUnitDeployed(c, side, null, true); render(); done(); }
+  };
+  const cands=top.filter(fits);
+  if (!cands.length || side.field.length>=FIELD_MAX){ putBack(); render(); done(); return; }
+  if (side===G.player)
+    showLookAtTop(top, `${card.name}: you may deploy a ${act.filter||'Unit'}${act.maxLv?` (Lv.${act.maxLv} or lower)`:''}`,
+      c=>fits(c)&&side.field.length<FIELD_MAX, true, (chosen)=>{ if(chosen) deploy(chosen); else { putBack(); render(); done(); } });
+  else deploy(cands.sort((a,b)=>(b.baseAp+b.baseHp)-(a.baseAp+a.baseHp))[0]);
+}
 // Deploy a Unit from the trash, paying its cost (player picks; AI auto-picks the strongest affordable).
 function reanimate(card, side, act, after){
   const fits=c=>c.type==='unit' && !c.token && matchFilter(c,act.filter) && (act.maxLv==null||(c.lv||0)<=act.maxLv);
@@ -1640,7 +1664,10 @@ function linkMatches(u, p){
   const ptrait = (p.trait||'').toLowerCase(), pname = (p.name||'').toLowerCase();
   return u.link.some(entry=>{
     const e = entry.trim();
-    const tm = e.match(/\(([^)]+)\)/);                 // "(OZ) Trait" / "(OZ)" → trait requirement
+    // A trait requirement is the WHOLE entry being a parenthetical (optionally "… Trait"), e.g.
+    // "(OZ)" / "(OZ) Trait". A Pilot name may itself contain parentheses ("Amate Yuzuriha (Machu)"),
+    // so only treat as a trait link when the parenthetical spans the entire entry.
+    const tm = e.match(/^\(([^)]+)\)\s*(?:trait)?$/i);
     if (tm) return ptrait.includes(tm[1].toLowerCase());
     return e.toLowerCase() === pname;                   // otherwise a specific Pilot name
   });
@@ -1744,10 +1771,23 @@ function parseClause(raw){
   if (/look at the top 2 cards of your deck and return 1 to the top.*place the remaining card into your trash/.test(t))
     return { kind:'scryMill', amount:2 };
   // Dig: "Look at the top N cards. You may reveal 1 [filter] card … add it to your hand. Return the rest …"
-  if ((d=t.match(/look at the top (\d+) cards? of your deck/)) && /add (?:it|them|that card) to your hand/.test(t)){
-    const fm=t.match(/reveal (?:up to )?\d*\s*([a-z0-9\s\(\)\/\-]*?)\s*cards?\b/);
-    const dest = /to the (?:top|bottom)/.test(t) && /to the top/.test(t.split('add')[1]||'') ? 'top' : 'bottom';
-    return { kind:'dig', amount:+d[1], filter: fm?fm[1].trim():null, dest };
+  // Also handles the singular "Look at the top card … if it is a (X) card … add it to your hand …" (Amate).
+  if ((d=t.match(/look at the top (?:(\d+) cards?|card) of your deck/)) && /add (?:it|them|that card) to your hand/.test(t)){
+    const n = d[1] ? +d[1] : 1;
+    // Filter can be stated as "reveal 1 (X) card" or as a condition "if it is a (X) card".
+    const ifm=t.match(/if it is (?:a |an )?(\([^)]+\)|[a-z0-9\/\- ]+?)\s*card\b/);
+    const fm =t.match(/reveal (?:up to )?\d*\s*([a-z0-9\s\(\)\/\-]*?)\s*cards?\b/);
+    const flt = (ifm && ifm[1].trim()) ? ifm[1].trim() : (fm && fm[1].trim() ? fm[1].trim() : null);
+    const dest = /to the top/.test(t.split('add')[1]||'') ? 'top' : 'bottom';
+    return { kind:'dig', amount:n, filter: flt, dest };
+  }
+  // Dig-and-deploy: "Look at the top N cards. You may deploy 1 [filter] Unit card (that is Lv.X or lower)
+  // among them. Return the remaining cards … to the bottom." (GQuuuuuuX GD02-038) — a free deploy.
+  if ((d=t.match(/look at the top (\d+) cards? of your deck/)) && /deploy 1 .+? among them/.test(t)){
+    const fm=t.match(/deploy 1 (.+?) among them/);
+    const lv=t.match(/lv\.?(\d+) or lower/);
+    const flt=(fm?fm[1]:'unit').replace(/\s*(?:that is|which is)\b.*$/,'').replace(/\s*cards?\b.*$/,'').trim() || 'unit';
+    return { kind:'digDeploy', amount:+d[1], filter: flt, maxLv: lv?+lv[1]:null };
   }
   if (/look at the top card of your deck.*(?:return it to|place it into)/.test(t))
     return { kind:'scryKeep', amount:1 };
@@ -1795,6 +1835,11 @@ function parseClause(raw){
     const ePart='enemy unit'+(t.split(/\band 1 enemy unit\b/)[1]||'');
     const eLv=(ePart.match(/lv\.?(\d+) or lower/)||[])[1];
     return { kind:'restBoth', filter:friendlyFilter(fPart), enemyFilter:{ maxLv: eLv?+eLv:99 } };
+  }
+  // "Choose 1 to N of your/friendly [trait] Units. They get AP+X during this turn." → buff up to N chosen friendlies.
+  if (/1 to (\d+)[^.]*?(?:of your|friendly)[^.]*?units?/.test(t) && (d=t.match(/(?:they get|it gets)\s*ap\s*\+\s*(\d+)/))){
+    const cm=t.match(/1 to (\d+)/);
+    return { kind:'buffMulti', amount:+d[1], count:cm?+cm[1]:2, filter:friendlyFilter(t) };
   }
   // "Choose 1 to N enemy Units. Rest them." → rest several enemies.
   if (/rest them/.test(t) && /enemy unit/.test(t)){
@@ -1915,6 +1960,7 @@ function targetFilter(t){
   const orm = t.match(/lv\.?\s*(\d+) or lower or (?:has |with )?(\d+) or less ap/i);
   if (orm){ f.orFilter=[{maxLv:+orm[1]},{maxAp:+orm[2]}]; return f; }
   if ((m=t.match(/lv\.?\s*(\d+) or lower/i))) f.maxLv=+m[1];
+  if ((m=t.match(/lv\.?\s*(\d+) or higher/i))) f.minLv=+m[1];   // "Lv.5 or higher" target gate (e.g. Sugai's Gelgoog GD02-041)
   // "If there are N or more cards with "NAME" in their card name in your trash, choose 1 enemy Unit
   // instead." — lifts the Lv cap once enough copies sit in your trash (e.g. Improved Technique).
   const lift = t.match(/if there are (\d+) or more cards? with ["'“”]([^"'“”]+)["'“”] in their card name in your trash,?\s*choose 1 enemy unit instead/i);
@@ -1942,6 +1988,7 @@ function enemyTargets(foe, act){
   let list=foe.field.filter(u=>u.hp>0
     && (selfLvCap==null || (u.lv||0)<=selfLvCap)
     && (capLv==null || (u.lv||0)<=capLv)
+    && (f.minLv==null || (u.lv||0)>=f.minLv)                   // "Lv.N or higher" target gate
     && (lvLifted || act.maxLv==null || (u.lv||0)<=act.maxLv)   // legacy field from parseTriggerInner
     && (f.maxAp==null || effAp(u)<=f.maxAp)
     && (f.maxHp==null || u.hp<=f.maxHp)
@@ -2416,6 +2463,12 @@ function runTrigger(card, side, act, label){
     applySelfRestDamage(card, side, act, chosen, label);
   } else if (act.kind==='reanimate'){
     reanimate(card, side, act);
+  } else if (act.kind==='digDeploy'){
+    digDeploy(card, side, act);
+  } else if (act.kind==='buffMulti'){
+    const cands=friendlyTargets(side,act).sort((a,b)=>effAp(b)-effAp(a)).slice(0,act.count);
+    for (const t of cands){ t.tempAp=(t.tempAp||0)+act.amount; t.ap=effAp(t); }
+    if (cands.length) log(`${label}: <b>${name}</b> gives AP+${act.amount} to ${cands.length} friendly Unit${cands.length>1?'s':''}.`, cls);
   } else if (act.kind==='shieldToHand'){
     doShieldToHand(card, side, act, label);
     if (act.then) runTrigger(card, side, act.then, label);   // trailing "Then, <effect>"
@@ -2511,7 +2564,11 @@ function runTrigger(card, side, act, label){
       log(`${label}: <b>${name}</b> looks at top — keeps it (only 1 card).`, cls);
     }
   } else if (act.kind==='scryKeep'){
-    if(side.deck.length) log(`${label}: <b>${name}</b> looks at top card — keeps it.`, cls);
+    if(side.deck.length){
+      const top=side.deck[side.deck.length-1];
+      if (cardValue(top) < 3){ side.deck.pop(); side.deck.unshift(top); log(`${label}: <b>${name}</b> sends <b>${top.name}</b> to the bottom.`, cls); }
+      else log(`${label}: <b>${name}</b> looks at top card — keeps it.`, cls);
+    }
   } else if (act.kind==='dig'){
     const n=Math.min(act.amount, side.deck.length);
     if(n){
@@ -2583,6 +2640,19 @@ function resolvePlayerTrigger(card, side, act, label, after){
   if (act.kind==='dig'){ playerDig(card, G.player, act, fin); return; }
   if (act.kind==='scryMill'){ playerScryMill(card, G.player, fin); return; }
   if (act.kind==='reanimate'){ reanimate(card, G.player, act, fin); return; }
+  if (act.kind==='digDeploy'){ digDeploy(card, G.player, act, fin); return; }
+  // "Look at the top card. Return it to the top or bottom of your deck." — peek + choose (Shuji Itō).
+  if (act.kind==='scryKeep'){
+    if (!G.player.deck.length){ fin(); return; }
+    const top=G.player.deck[G.player.deck.length-1];
+    el('blockMsg').innerHTML = `${card.name}: your top card is <b>${top.name}</b>. Keep it on top, or send it to the bottom?`;
+    const wrap=el('blockBtns'); wrap.innerHTML='';
+    const addBtn=(txt,fn)=>{ const b=document.createElement('button'); b.innerHTML=txt; b.onclick=()=>{ el('blockModal').classList.remove('show'); fn(); render(); fin(); }; wrap.appendChild(b); };
+    addBtn('⬆ Keep on top', ()=>{ log(`<b>${card.name}</b>: keeps <b>${top.name}</b> on top.`,'me'); });
+    addBtn('⬇ Send to bottom', ()=>{ G.player.deck.pop(); G.player.deck.unshift(top); log(`<b>${card.name}</b>: sends <b>${top.name}</b> to the bottom.`,'me'); });
+    el('blockModal').classList.add('show');
+    return;
+  }
   if (act.kind==='deployFromHand'){ deployFromHand(card, G.player, act, fin); return; }
   // Eins-style "rest up to N of your Units, then AoE": let the player pick which of their Units to tap.
   if (act.kind==='selfRestDamage'){
@@ -2652,6 +2722,15 @@ function resolvePlayerTrigger(card, side, act, label, after){
     G.mode='trigger-multi';
     G.pending={ card, side, act, label, after, picked:[], cands: cands.map(c=>c.uid), max: Math.min(act.count, cands.length) };
     setPrompt(`${card.name}: tap up to ${G.pending.max} enemy Unit${G.pending.max>1?'s':''} to deal ${act.amount} each (Cancel to finish).`);
+    render(); return;
+  }
+  // "Choose 1 to N friendly [trait] Units. They get AP+X." — let the player tap up to N of their own.
+  if (act.kind==='buffMulti'){
+    const cands = friendlyTargets(G.player, act);
+    if (!cands.length){ fin(); return; }
+    G.mode='trigger-multi';
+    G.pending={ card, side, act, label, after, picked:[], cands: cands.map(c=>c.uid), max: Math.min(act.count, cands.length) };
+    setPrompt(`${card.name}: tap up to ${G.pending.max} of your Unit${G.pending.max>1?'s':''} to give AP+${act.amount} (Cancel to finish).`);
     render(); return;
   }
   // Board-wide debuff (Norn) applies to every enemy Unit with no choice.
@@ -4305,11 +4384,11 @@ function fieldClick(uidv){
   }
   if (G.mode==='trigger-multi'){
     const p=G.pending;
-    if (!p.cands.includes(uidv)){ flashPrompt('Tap a highlighted enemy Unit.'); return; }
+    if (!p.cands.includes(uidv)){ flashPrompt('Tap a highlighted Unit.'); return; }
     if (p.picked.includes(uidv)){ flashPrompt('Already chosen.'); return; }
     p.picked.push(uidv);
     if (p.picked.length>=p.max){ finishMultiDamage(); return; }
-    setPrompt(`${p.card.name}: hit ${p.picked.length}/${p.max}. Tap another or Cancel to finish.`);
+    setPrompt(`${p.card.name}: chose ${p.picked.length}/${p.max}. Tap another or Cancel to finish.`);
     render(); return;
   }
   if (G.mode==='trigger-target'){
@@ -4863,10 +4942,18 @@ function finishSelfRest(){
 // Finish a "Choose 1 to N enemy Units. Deal X to them." multi-pick (a tap reaching the max, or Cancel).
 function finishMultiDamage(){
   const p=G.pending; if (!p) return;
-  const chosen=p.picked.map(uid=>G.enemy.field.find(u=>u.uid===uid)).filter(Boolean);
+  const buff = p.act.kind==='buffMulti';
+  const pool = buff ? G.player.field : G.enemy.field;
+  const chosen=p.picked.map(uid=>pool.find(u=>u.uid===uid)).filter(Boolean);
   G.mode='idle'; G.pending=null;
-  if (chosen.length) log(`${p.label}: <b>${p.card.name}</b> deals ${p.act.amount} to ${chosen.length} enemy Unit${chosen.length>1?'s':''}.`, p.side===G.player?'me':'ai');
-  for (const t of chosen) damage(t, p.act.amount, G.enemy);
+  const cls = p.side===G.player?'me':'ai';
+  if (buff){
+    for (const t of chosen){ t.tempAp=(t.tempAp||0)+p.act.amount; t.ap=effAp(t); }
+    if (chosen.length) log(`${p.label}: <b>${p.card.name}</b> gives AP+${p.act.amount} to ${chosen.map(u=>'<b>'+u.name+'</b>').join(', ')} this turn.`, cls);
+  } else {
+    if (chosen.length) log(`${p.label}: <b>${p.card.name}</b> deals ${p.act.amount} to ${chosen.length} enemy Unit${chosen.length>1?'s':''}.`, cls);
+    for (const t of chosen) damage(t, p.act.amount, G.enemy);
+  }
   if (p.after) p.after(); else { clearSel(); render(); checkEnd(); }
 }
 
