@@ -1519,8 +1519,11 @@ function showPileViewer(pile, title){
   const typeOrder={unit:0,pilot:1,command:2,base:3};
   const groups=new Map();
   for(const c of pile){
-    const trait=((c.trait||'').match(/\(([^)]+)\)/)||[,'No trait'])[1];
-    const key=c.type+' · ('+trait+')';
+    // Show the FULL trait line — a card can carry several tags, e.g. "(Earth Federation) (Londo Bell)".
+    // Grouping on only the first tag hid traits like (Londo Bell) that trash-count effects key off.
+    const tags=(c.trait||'').match(/\(([^)]+)\)/g);
+    const traitLabel=tags ? tags.join(' ') : 'No trait';
+    const key=c.type+' · '+traitLabel;
     if(!groups.has(key)) groups.set(key, []);
     groups.get(key).push(c);
   }
