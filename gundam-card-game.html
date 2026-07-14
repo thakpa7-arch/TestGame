@@ -1225,7 +1225,9 @@ function matchTrashTrait(card, trait){
   let needType=null;
   const tm = tl.match(/\b(unit|pilot|base|command)s?\b/);
   if (tm){ needType=tm[1]; tl = tl.replace(/\b(unit|pilot|base|command)s?\b/g,'').replace(/\s+/g,' ').trim(); }
-  if (needType && card.type !== needType) return false;
+  // A Command played via its 【Pilot】 mode is still a Command card in the trash (see pilotFromMode).
+  const cardType = card.cmdPilot ? 'command' : card.type;
+  if (needType && cardType !== needType) return false;
   if (!tl) return true;                                   // pure type requirement (e.g. just "Unit")
   // Color requirements (e.g. "3 blue cards") match the card's printed color.
   if (['blue','green','red','white','purple','black','colorless'].includes(tl)) return (card.color||'').toLowerCase()===tl;
@@ -1474,7 +1476,11 @@ function digDeploy(card, side, act, after){
     else { runTrigger(c, side, parseTrigger(c.effect,'Deploy'), 'Deploy'); onUnitDeployed(c, side, null, true); render(); done(); }
   };
   const cands=top.filter(fits);
-  if (!cands.length || side.field.length>=FIELD_MAX){ putBack(); render(); done(); return; }
+  if (!cands.length || side.field.length>=FIELD_MAX){
+    const why = side.field.length>=FIELD_MAX ? 'battle area is full' : `no ${act.filter||'Unit'}${act.maxLv?` (Lv.${act.maxLv} or lower)`:''} among them`;
+    log(`<b>${card.name}</b>: looks at the top ${n} — ${why}, nothing deployed.`, side===G.player?'me':'ai');
+    putBack(); render(); done(); return;
+  }
   if (side===G.player)
     showLookAtTop(top, `${card.name}: you may deploy a ${act.filter||'Unit'}${act.maxLv?` (Lv.${act.maxLv} or lower)`:''}`,
       c=>fits(c)&&side.field.length<FIELD_MAX, true, (chosen)=>{ if(chosen) deploy(chosen); else { putBack(); render(); done(); } });
@@ -3956,7 +3962,10 @@ function playFromHand(uidv, exConfirmed){
 // pilot-target click handler still finds (and removes) the original card in hand.
 function pilotFromMode(card){
   const pm=card.pilotMode;
-  return { uid: card.uid, owner: card.owner, def: card.def, name: pm.name, type:'pilot',
+  // cmdPilot: this card is really a Command played via its 【Pilot】 mode. It behaves as a Pilot while
+  // paired, but in the trash it is still a Command card — so effects that exile/count "Pilot cards"
+  // (e.g. GFreD) must NOT treat it as a Pilot.
+  return { uid: card.uid, owner: card.owner, def: card.def, name: pm.name, type:'pilot', cmdPilot:true,
            color: card.color, cost: card.cost, lv: card.lv, trait: pm.trait||card.trait,
            effect:'', img: card.img, pAp: pm.pAp, pHp: pm.pHp, trashCostReduce:null };
 }
