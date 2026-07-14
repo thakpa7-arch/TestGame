@@ -1411,6 +1411,27 @@ function showLookAtTop(cards, title, canPick, allowSkip, onChoose){
   if(allowSkip){ const sk=document.createElement('button'); sk.textContent='Take none'; sk.style.cssText='margin-top:16px;padding:11px 24px;background:#333;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600'; sk.onclick=()=>{ modal.remove(); onChoose(null); }; box.appendChild(sk); }
   modal.appendChild(box); document.body.appendChild(modal);
 }
+// Look at the top card and choose to leave it on top or send it to the bottom (Shuji Itō). Shows the
+// actual card face so the player sees what they revealed.
+function showScryChoice(source, top, done){
+  const modal=document.createElement('div'); modal.className='modal-overlay';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.86);z-index:1000;display:flex;align-items:center;justify-content:center;padding:14px;';
+  const box=document.createElement('div');
+  box.style.cssText='background:#16162a;border:1px solid #6a4fb0;border-radius:12px;padding:20px;max-width:420px;width:100%;text-align:center;';
+  box.innerHTML=`<h3 style="margin:0 0 14px;color:#d8b4ff;font-size:17px">${source.name}: top card of your deck</h3>`;
+  const face=document.createElement('div');
+  face.style.cssText=`width:150px;height:210px;margin:0 auto 8px;border-radius:9px;border:2px solid #6a4fb0;overflow:hidden;position:relative;`+(top.img?`background:url('${top.img}') center/cover;`:'background:#0d1628;display:flex;align-items:center;justify-content:center;color:#cdd;font-size:13px;text-align:center;padding:8px;');
+  if(!top.img) face.textContent=top.name;
+  box.appendChild(face);
+  const label=document.createElement('div'); label.style.cssText='color:#e8e8f4;font-weight:700;margin:0 0 14px'; label.textContent=top.name;
+  box.appendChild(label);
+  const wrap=document.createElement('div'); wrap.style.cssText='display:flex;gap:10px;justify-content:center;flex-wrap:wrap;';
+  const addBtn=(txt,bg,fn)=>{ const b=document.createElement('button'); b.innerHTML=txt; b.style.cssText=`padding:11px 20px;background:${bg};color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:700`; b.onclick=()=>{ modal.remove(); fn(); render(); if(done)done(); }; wrap.appendChild(b); };
+  addBtn('⬆ Keep on top', '#6a4fb0', ()=>{ log(`<b>${source.name}</b>: keeps <b>${top.name}</b> on top of the deck.`,'me'); });
+  addBtn('⬇ Send to bottom', '#333', ()=>{ G.player.deck.pop(); G.player.deck.unshift(top); log(`<b>${source.name}</b>: sends <b>${top.name}</b> to the bottom of the deck.`,'me'); });
+  box.appendChild(wrap);
+  modal.appendChild(box); document.body.appendChild(modal);
+}
 // Multi-select trash cards to pay an "exile N cards" cost (e.g. Lupus), then continue activation.
 function pickExileCards(u, cands, n){
   const chosen=[];
@@ -2651,12 +2672,7 @@ function resolvePlayerTrigger(card, side, act, label, after){
   if (act.kind==='scryKeep'){
     if (!G.player.deck.length){ fin(); return; }
     const top=G.player.deck[G.player.deck.length-1];
-    el('blockMsg').innerHTML = `${card.name}: your top card is <b>${top.name}</b>. Keep it on top, or send it to the bottom?`;
-    const wrap=el('blockBtns'); wrap.innerHTML='';
-    const addBtn=(txt,fn)=>{ const b=document.createElement('button'); b.innerHTML=txt; b.onclick=()=>{ el('blockModal').classList.remove('show'); fn(); render(); fin(); }; wrap.appendChild(b); };
-    addBtn('⬆ Keep on top', ()=>{ log(`<b>${card.name}</b>: keeps <b>${top.name}</b> on top.`,'me'); });
-    addBtn('⬇ Send to bottom', ()=>{ G.player.deck.pop(); G.player.deck.unshift(top); log(`<b>${card.name}</b>: sends <b>${top.name}</b> to the bottom.`,'me'); });
-    el('blockModal').classList.add('show');
+    showScryChoice(card, top, fin);
     return;
   }
   if (act.kind==='deployFromHand'){ deployFromHand(card, G.player, act, fin); return; }
