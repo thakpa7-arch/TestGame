@@ -2431,17 +2431,27 @@ function gd05DeployBaseFromTrash(side, sourceCard, label, after){
 function gd05AxisDeployable(side){
   return side.hand.some(c=>c.type==='unit' && (c.lv||0)<=3 && (c.trait||'').toLowerCase().includes('(neo zeon)'));
 }
-function gd05AxisDeploy(side, base){
+function gd05AxisDeploy(side, base, after){
   const cls=side===G.player?'me':'ai';
-  if (!side.neoZeonSelfKill){ log(`<b>${base.name}</b>: no Unit was destroyed by your effect this turn.`, cls); return; }
-  if (side.field.length>=FIELD_MAX) return;
+  const fin=()=>{ if(after) after(); };
+  if (!side.neoZeonSelfKill){ log(`<b>${base.name}</b>: no Unit was destroyed by your effect this turn.`, cls); fin(); return; }
+  if (side.field.length>=FIELD_MAX){ fin(); return; }
   const cands=side.hand.filter(c=>c.type==='unit' && (c.lv||0)<=3 && (c.trait||'').toLowerCase().includes('(neo zeon)'));
-  if (!cands.length) return;
-  const c=[...cands].sort((a,b)=>((b.baseAp||0)+(b.baseHp||0))-((a.baseAp||0)+(a.baseHp||0)))[0];
-  side.hand.splice(side.hand.indexOf(c),1); c.rested=false; c.sick=!c.blitz; side.field.push(c);
-  sound('deploy'); log(`<b>${base.name}</b>: deploys <b>${c.name}</b> from hand.`, cls);
-  if (side===G.player) resolvePlayerTrigger(c, side, parseTrigger(c.effect,'Deploy'), 'Deploy', ()=>render());
-  else runTrigger(c, side, parseTrigger(c.effect,'Deploy'), 'Deploy');
+  if (!cands.length){ fin(); return; }
+  const deploy=(c)=>{
+    if(!c){ fin(); return; }
+    side.hand.splice(side.hand.indexOf(c),1);
+    resetUnit(c);                                   // clear any stale HP/state (e.g. a unit that returned to hand damaged)
+    c.rested=false; c.sick=!c.blitz; side.field.push(c);
+    sound('deploy'); log(`<b>${base.name}</b>: deploys <b>${c.name}</b> from hand.`, cls);
+    if (side===G.player) resolvePlayerTrigger(c, side, parseTrigger(c.effect,'Deploy'), 'Deploy', ()=>{ onUnitDeployed(c, side, ()=>{ render(); fin(); }); });
+    else { runTrigger(c, side, parseTrigger(c.effect,'Deploy'), 'Deploy'); onUnitDeployed(c, side, null, true); fin(); }
+  };
+  // The active player CHOOSES which (Neo Zeon) Unit to deploy (e.g. the Jagd Doga you just recurred),
+  // rather than the game auto-picking the biggest one.
+  if (side===G.player)
+    showLookAtTop(cands, `${base.name}: deploy 1 (Neo Zeon) Unit (Lv.3 or lower) from your hand`, ()=>true, false, (chosen)=>{ deploy(chosen); render(); });
+  else deploy([...cands].sort((a,b)=>((b.baseAp||0)+(b.baseHp||0))-((a.baseAp||0)+(a.baseHp||0)))[0]);
 }
 // Resolve a triggered action for `side`, auto-targeting sensibly. `label` is 'Deploy' / 'Pair'.
 function runTrigger(card, side, act, label){
@@ -4258,6 +4268,13 @@ function applyActivateEffect(u, target, side, costUnit){
     const t=target||u; t.highManeuver=true; log(`<b>${u.name}</b>: <b>${t.name}</b> gains &lt;High-Maneuver&gt;.`, cls);
   } else if (a.kind==='grantReduce'){
     const t=target||u; t.dmgReduce=(t.dmgReduce||0)+a.amount; log(`<b>${u.name}</b>: <b>${t.name}</b> ${a.amount>=99?"can't receive battle damage":"reduces damage by "+a.amount} this turn.`, cls);
+  } else if (a.kind==='gd05AxisDeploy'){
+    gd05AxisDeploy(side, u);                              // Axis: player chooses the (Neo Zeon) Unit to deploy; AI auto-picks
+  } else {
+    // Trigger-style activated effects (dig, mill, gd05 customs, …) resolve through the shared
+    // resolver — interactively for the player, auto for the AI — instead of silently doing nothing.
+    if (side===G.player) resolvePlayerTrigger(u, side, a, u.name, ()=>render());
+    else runTrigger(u, side, a, u.name);
   }
 }
 // AI: pick a sensible target for a ready activated ability and use it (before attacking).
@@ -4762,8 +4779,12 @@ function battle(atk, def, atkSide, defSide){
   const fs = atk.firstStrike ? 'me' : 'both';
   log(`<b>${atk.name}</b> (${atk.ap}/${atk.hp}) vs <b>${def.name}</b> (${def.ap}/${def.hp})${fs!=='both'?' — &lt;First Strike&gt;':''}.`, atkSide===G.player?'me':'ai');
   const a=atk.ap, d=def.ap;
-  if (fs==='me'){ damage(def,a,defSide,'battle'); if (def.hp>0) damage(atk,d,atkSide,'battle'); }
-  else { damage(def,a,defSide,'battle'); damage(atk,d,atkSide,'battle'); }
+  // Only strike units still on their field: a mid-resolution effect (sacrifice, an earlier kill) can
+  // remove a combatant before this point — hitting it then would leave a ghost at negative HP.
+  const hitDef=()=>{ if (defSide.field.includes(def)) damage(def,a,defSide,'battle'); };
+  const hitAtk=()=>{ if (atkSide.field.includes(atk)) damage(atk,d,atkSide,'battle'); };
+  if (fs==='me'){ hitDef(); if (def.hp>0) hitAtk(); }
+  else { hitDef(); hitAtk(); }
   // <Breach N>: when this attack destroys an enemy Unit, hit the top enemy shield.
   if (atk.breach>0 && def.type==='unit' && def.hp<=0) breachShield(atk, defSide);
   if (def.type==='unit' && def.hp<=0 && atk.hp>0){                                            // "when this Unit destroys an enemy Unit…"
