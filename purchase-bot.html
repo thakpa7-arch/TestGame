@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Limited-Time Purchase Bot</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0d0d10;
+      color: #e6e6e6;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 24px;
+    }
+    .wrap { width: 100%; max-width: 860px; }
+    h1 { font-size: 20px; margin-bottom: 4px; }
+    .sub { color: #888; font-size: 13px; margin-bottom: 20px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+    .card {
+      background: #17171c;
+      border: 1px solid #2a2a33;
+      border-radius: 10px;
+      padding: 16px;
+    }
+    .card h2 { font-size: 14px; color: #b7b7c2; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .product-name { font-size: 16px; font-weight: 600; color: #ffd54a; }
+    .price { font-size: 24px; margin: 8px 0; }
+    .stat { display: flex; justify-content: space-between; font-size: 13px; padding: 4px 0; color: #aaa; }
+    .stat b { color: #e6e6e6; font-weight: 600; }
+    .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+    .badge.soon { background: #3a3a12; color: #ffd54a; }
+    .badge.live { background: #12331a; color: #5be584; }
+    .badge.gone { background: #331616; color: #ff7676; }
+    label { display: block; font-size: 12px; color: #999; margin: 10px 0 4px; }
+    input {
+      width: 100%; background: #0d0d10; border: 1px solid #2a2a33;
+      color: #e6e6e6; padding: 8px; border-radius: 6px; font-family: inherit; font-size: 13px;
+    }
+    .row { display: flex; gap: 10px; }
+    .row > div { flex: 1; }
+    button {
+      font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+      border: none; border-radius: 6px; padding: 10px 14px; margin-top: 14px;
+    }
+    button.primary { background: #5b8def; color: #fff; width: 100%; }
+    button.primary:disabled { background: #333; color: #777; cursor: not-allowed; }
+    button.ghost { background: transparent; border: 1px solid #3a3a44; color: #ccc; }
+    #log {
+      margin-top: 16px; background: #0a0a0d; border: 1px solid #2a2a33; border-radius: 10px;
+      padding: 12px; height: 240px; overflow-y: auto; font-size: 12px; line-height: 1.6;
+    }
+    .log-line { white-space: pre-wrap; }
+    .log-info { color: #9db4d0; }
+    .log-warn { color: #ffcc66; }
+    .log-error { color: #ff7676; }
+    .log-success { color: #5be584; font-weight: 600; }
+    .log-time { color: #555; }
+    .footer { margin-top: 16px; font-size: 12px; color: #666; }
+    .footer a { color: #5b8def; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>🤖 Limited-Time Purchase Bot</h1>
+    <p class="sub">Watches a flash-sale product and auto-buys it the instant it drops — racing rival shoppers for limited stock. Everything runs against a simulated in-memory store; no real service is contacted.</p>
+
+    <div class="grid">
+      <div class="card">
+        <h2>Storefront <span id="status-badge" class="badge soon">Drops soon</span></h2>
+        <div class="product-name" id="p-name">—</div>
+        <div class="price" id="p-price">—</div>
+        <div class="stat"><span>Stock</span><b id="p-stock">—</b></div>
+        <div class="stat"><span>Drops in</span><b id="p-drop">—</b></div>
+        <button class="ghost" id="reset-btn" style="width:100%">↻ New drop</button>
+      </div>
+
+      <div class="card">
+        <h2>Bot config</h2>
+        <label>Max price ($)</label>
+        <input id="cfg-maxprice" type="number" value="30" min="0">
+        <div class="row">
+          <div>
+            <label>Quantity</label>
+            <input id="cfg-qty" type="number" value="1" min="1">
+          </div>
+          <div>
+            <label>Poll (ms)</label>
+            <input id="cfg-poll" type="number" value="200" min="20">
+          </div>
+        </div>
+        <button class="primary" id="start-btn">▶ Deploy bot</button>
+        <button class="ghost" id="stop-btn" style="width:100%" disabled>■ Stop</button>
+      </div>
+    </div>
+
+    <div id="log"><div class="log-line log-info">Bot idle. Configure and deploy.</div></div>
+
+    <p class="footer">Bot logic lives in <code>purchase-bot.js</code> (reusable <code>PurchaseBot</code> class + pluggable <code>StoreClient</code>). Point it at a real API by implementing <code>getProduct / reserve / checkout</code>. &nbsp;·&nbsp; <a href="index.html">← Pong</a></p>
+  </div>
+
+  <script src="purchase-bot.js"></script>
+  <script>
+    const { PurchaseBot, SimulatedStore } = window.PurchaseBotLib;
+
+    let store = null;
+    let bot = null;
+    let uiTimer = null;
+
+    const $ = (id) => document.getElementById(id);
+    const logEl = $('log');
+
+    function logLine(level, msg) {
+      const t = new Date().toLocaleTimeString();
+      const div = document.createElement('div');
+      div.className = 'log-line log-' + level;
+      div.innerHTML = `<span class="log-time">${t}</span>  ` + escapeHtml(msg);
+      logEl.appendChild(div);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+    function escapeHtml(s) {
+      return s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    }
+
+    function newStore() {
+      if (store) store.dispose();
+      store = new SimulatedStore({
+        dropInMs: 6000,
+        price: 25,
+        stock: 5,
+        latencyMs: 40,
+        reservationTtlMs: 3000,
+        rivalIntervalMs: 350, // rivals grab a unit every 350ms once live
+      });
+      startUiRefresh();
+    }
+
+    function startUiRefresh() {
+      if (uiTimer) clearInterval(uiTimer);
+      uiTimer = setInterval(refreshStorefront, 200);
+      refreshStorefront();
+    }
+
+    async function refreshStorefront() {
+      if (!store) return;
+      const p = await store.getProduct(store.product.id);
+      const raw = store.product;
+      $('p-name').textContent = raw.name;
+      $('p-price').textContent = '$' + raw.price;
+      $('p-stock').textContent = raw.stock;
+
+      const remaining = raw.dropAt - Date.now();
+      const badge = $('status-badge');
+      if (remaining > 0) {
+        $('p-drop').textContent = (remaining / 1000).toFixed(1) + 's';
+        badge.className = 'badge soon'; badge.textContent = 'Drops soon';
+      } else if (raw.stock > 0) {
+        $('p-drop').textContent = 'LIVE';
+        badge.className = 'badge live'; badge.textContent = 'On sale';
+      } else {
+        $('p-drop').textContent = 'ended';
+        badge.className = 'badge gone'; badge.textContent = 'Sold out';
+      }
+    }
+
+    async function deployBot() {
+      $('start-btn').disabled = true;
+      $('stop-btn').disabled = false;
+      logEl.innerHTML = '';
+
+      bot = new PurchaseBot({
+        store,
+        productId: store.product.id,
+        maxPrice: Number($('cfg-maxprice').value),
+        quantity: Number($('cfg-qty').value),
+        pollMs: Number($('cfg-poll').value),
+        deadlineMs: 60000,
+        onLog: logLine,
+      });
+
+      const result = await bot.run();
+      if (!result.ok) {
+        logLine('error', `Bot finished without a purchase (${result.reason}).`);
+      }
+      $('start-btn').disabled = false;
+      $('stop-btn').disabled = true;
+    }
+
+    $('start-btn').addEventListener('click', deployBot);
+    $('stop-btn').addEventListener('click', () => bot && bot.stop());
+    $('reset-btn').addEventListener('click', () => {
+      if (bot) bot.stop();
+      newStore();
+      logEl.innerHTML = '';
+      logLine('info', 'New drop scheduled. Deploy the bot to grab it.');
+      $('start-btn').disabled = false;
+      $('stop-btn').disabled = true;
+    });
+
+    newStore();
+  </script>
+</body>
+</html>
