@@ -2,7 +2,7 @@
 // NETWORK-FIRST so code updates land immediately when online, falling back to cache only when offline;
 // other assets stay cache-first. The remote card art is cross-origin (images.weserv.nl) and isn't
 // cached — offline, cards fall back to their text faces.
-const CACHE = 'gundam-tcg-v83';
+const CACHE = 'gundam-tcg-v84';
 const SHELL = ['gundam-card-game.html', 'manifest.json', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', (e) => {
