@@ -1743,7 +1743,7 @@ function inferCommand(effect){
   // resolved separately, so don't let it leak into the main action (e.g. extra token specs).
   const full = plain(effect);
   const mm = full.match(/【\s*(?:Main|Action)[^】]*】([\s\S]*)$/i);
-  const raw = (mm ? mm[1] : full.replace(/【\s*Burst\s*】[^【]*/ig,' ')).trim();
+  const raw = firstModal((mm ? mm[1] : full.replace(/【\s*Burst\s*】[^【]*/ig,' ')).trim());
   const t = raw.toLowerCase();
   let m;
   // Token-creating commands ("Deploy N [Name](…) Unit token(s)"). "or" between specs = pick one.
@@ -1839,7 +1839,16 @@ function parseTrigger(effect, kw){
   return null;
 }
 // Parse one effect clause (original-case `raw`) into an engine action.
+// A modal clause ("choose 1 of the following effects…： ■A ■B") offers alternatives. Parsing the
+// whole string merges every mode's restrictions into one impossible filter (Two Unicorns ST12-015
+// ended up needing Lv.2-or-lower AND Lv.5-or-higher), so resolve just the first mode.
+function firstModal(raw){
+  if (raw.indexOf('■') < 0) return raw;
+  const parts = raw.split('■').slice(1);
+  return parts.length ? parts[0].trim() : raw;
+}
 function parseClause(raw){
+  raw = firstModal(raw);
   const t = raw.toLowerCase(); let d;
   // Leading "During your turn, <effect>" — gate the effect on it being your turn (e.g. Reineforce Jr.
   // only deploys its Parts token when bursted/played on your own turn). The remainder may carry a
@@ -1901,6 +1910,16 @@ function parseClause(raw){
     const n=+t.match(/place the top (\d+) cards?/)[1];
     const rt=t.match(/add 1 ([a-z\/() ]*?) card you placed/);
     return { kind:'selfSacMill', amount:n, retrieveFilter: rt?rt[1].trim():null };
+  }
+  // "Choose 1 of your [other] Units. Destroy it. If you do, <effect>" — the sacrifice is a COST that
+  // must be chosen and paid before the payoff runs (Final Duty ST13-014). Without this the payoff
+  // parsed on its own and the Unit was never destroyed.
+  {
+    const sm = t.match(/(?:you may\s+)?choose 1 of your (other )?units?\.\s*destroy it\.\s*if you do,?\s*([\s\S]+)/);
+    if (sm){
+      const inner = parseClause(sm[2].trim());
+      if (inner) return { kind:'selfSacThen', other:!!sm[1], may:/you may\s+choose 1 of your/.test(t), inner };
+    }
   }
   // Mill / scry clauses must be checked BEFORE generic AP/damage rules — otherwise a trailing
   // "…it gets AP-2" (e.g. Zeheart) would match the debuff rule and drop the mill entirely.
@@ -2601,6 +2620,16 @@ function runTrigger(card, side, act, label){
   if (act.kind==='gd05Sac'){ gd05Sacrifice(side, card); return; }
   if (act.kind==='gd05NuBattle'){ gd05NuGundamBattle(side, card); return; }
   if (act.kind==='selfSacMill'){ selfSacMillAI(side, card, act); return; }
+  if (act.kind==='selfSacThen'){
+    const cands=side.field.filter(u=>u!==card && u.hp>0);
+    if (!cands.length) return;
+    const val=u=>((u.baseAp||0)+(u.baseHp||0))+(u.pilot?5:0);
+    const sac=cands.find(u=>u.token) || [...cands].sort((x,y)=>val(x)-val(y))[0];
+    log(`${label}: <b>${card.name}</b> — ${side===G.player?'you destroy your':'the AI destroys its'} <b>${sac.name}</b>.`, side===G.player?'me':'ai');
+    gd05DestroyUnit(sac, side, /\(neo zeon\)/i.test(card.trait||''));
+    runTrigger(card, side, act.inner, label);
+    return;
+  }
   if (act.kind==='gd05BaseFromTrash'){ gd05DeployBaseFromTrash(side, card, label); return; }
   if (act.kind==='gd05AxisDeploy'){ gd05AxisDeploy(side, card); return; }
   // Conditional effect: only resolve the inner effect when the board condition holds.
@@ -2799,6 +2828,18 @@ function resolvePlayerTrigger(card, side, act, label, after){
   if (act.kind==='gd05Sac'){ gd05SacInteractive(side, card, fin); return; }
   if (act.kind==='gd05NuBattle'){ gd05NuGundamBattlePlayer(side, card, fin); return; }
   if (act.kind==='selfSacMill'){ selfSacMillPlayer(card, side, act, fin); return; }
+  if (act.kind==='selfSacThen'){
+    const cands=side.field.filter(u=>u!==card && u.hp>0);
+    if (!cands.length){ fin(); return; }
+    promptTargetChoice(cands, `<b>${card.name}</b> — destroy one of YOUR Units to pay for its effect.`,
+      (pick)=>{
+        if (!pick){ fin(); return; }
+        log(`<b>${card.name}</b>: you destroy your <b>${pick.name}</b>.`, 'me');
+        gd05DestroyUnit(pick, side, /\(neo zeon\)/i.test(card.trait||''));
+        resolvePlayerTrigger(card, side, act.inner, label, after);
+      }, act.may ? "Don't destroy" : null);
+    return;
+  }
   if (act.kind==='gd05BaseFromTrash'){ gd05DeployBaseFromTrash(side, card, label, fin); return; }
   if (act.kind==='cond'){                       // gate, then resolve the inner interactively
     if (!condMet(act.cond, side, card, act.other)){
