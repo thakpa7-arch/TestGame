@@ -1220,6 +1220,21 @@ function parseActivateEffect(t){
   // damage step." (Qubeley ST13-001) — the token and the enemy trade damage with no attack/block step.
   if (/of your unit tokens/.test(t) && /only perform the damage step/.test(t))
     return { kind:'tokenDuel', scope:'enemy' };
+  // "Choose 1 (Trait) Pilot card that is Lv.N or lower from your trash. Pair it with this Unit."
+  if (/from your trash/.test(t) && /pair it with this unit/.test(t)){
+    const fm=t.match(/choose 1 ([a-z0-9\s\(\)\/\-]*?)\s*pilot card/);
+    const lv=t.match(/lv\.?(\d+) or lower/);
+    return { kind:'pairFromTrash', scope:'self', trait: fm?((fm[1]||'').trim().replace(/[()]/g,'').trim()||null):null, maxLv: lv?+lv[1]:null };
+  }
+  // "Choose 1 Unit card with "NAME" in its card name that is Lv.N or higher from your trash. Deploy it."
+  if (/from your trash/.test(t) && /\bdeploy it\b/.test(t)){
+    const nm=t.match(/with ["'“”]([^"'“”]+)["'“”] in its card name/);
+    const lo=t.match(/lv\.?(\d+) or higher/), hi=t.match(/lv\.?(\d+) or lower/);
+    return { kind:'deployFromTrash', scope:'self', name: nm?nm[1].toLowerCase():null, minLv: lo?+lo[1]:null, maxLv: hi?+hi[1]:null };
+  }
+  // "Choose 1 enemy Base/enemy Shield this Unit is battling. Deal N damage to it." (Moebius)
+  if (/enemy base\s*\/\s*enemy shield/.test(t) && (d=t.match(/deal (\d+) damage/)))
+    return { kind:'baseShieldDamage', amount:+d[1], scope:'self' };
   if (/set this unit as active/.test(t))                    return { kind:'setActive', scope:'self', noDirectTurn:/can'?t choose the enemy player[^.]*as its attack target/.test(t) };
   // "Choose 1 friendly Unit… Set it as active." — re-ready one of your Units (often a Blocker).
   if (/set it as active/.test(t) && /(friendly|of your)[^.]*unit/.test(t)) return { kind:'setActive', scope:'friendly' };
@@ -1255,19 +1270,29 @@ function parseActivateEffect(t){
 const RES_SYM = { '①':1,'②':2,'③':3,'④':4,'⑤':5,'⑥':6 };
 // Parse an activated ability's cost half into a cost descriptor (null if unmodeled).
 function parseActivateCost(c){
-  const raw = c.trim();
-  c = c.toLowerCase();
+  let raw = c.trim();
+  // A circled-number resource may be the FIRST half of a compound cost: "①, rest 1 friendly (CB) Unit".
+  let resource = 0;
+  const rp = raw.match(/^([①②③④⑤⑥])\s*[,、]\s*(.+)$/);
+  if (rp){ resource = RES_SYM[rp[1]]; raw = rp[2].trim(); }
+  c = raw.toLowerCase();
+  const out = (o)=> resource ? Object.assign(o, { resource }) : o;
   // A pure resource cost (just a circled number), e.g. "①" — rest that many active resources.
-  if (RES_SYM[raw]) return { type:'resource', amount:RES_SYM[raw] };
-  if (/rest this (base|unit)/.test(c)) return { type:'rest' };
+  if (RES_SYM[raw]) return { type:'resource', amount:RES_SYM[raw] + resource };
+  // "Return this Unit to the bottom of its owner's deck" / "Destroy this Unit" / "Discard 1 (X) card".
+  if (/^return this unit to the bottom of (?:its owner'?s?|their) deck$/.test(c)) return out({ type:'selfToDeck' });
+  if (/^destroy this unit$/.test(c)) return out({ type:'destroySelf' });
+  const dm = c.match(/^discard (\d+) ([a-z\/() ]*?)\s*cards?$/);
+  if (dm){ const trait=(dm[2]||'').trim().replace(/[()]/g,'').trim()||null; return out({ type:'discard', count:+dm[1], trait }); }
+  if (/rest this (base|unit)/.test(c)) return out({ type:'rest' });
   // "Rest N of your (Trait) Unit(s)" — pay by resting that many friendly Units (often from a Base).
   let rm = c.match(/^rest (\d+) (?:of your |friendly )(?:(other|another)\s+)?([a-z\/() ]*?)\s*units?$/);
-  if (rm){ const trait=(rm[3]||'').trim().replace(/[()]/g,'').trim()||null; return { type:'restUnit', count:+rm[1], trait, excludeSelf: !!rm[2] }; }
+  if (rm){ const trait=(rm[3]||'').trim().replace(/[()]/g,'').trim()||null; return out({ type:'restUnit', count:+rm[1], trait, excludeSelf: !!rm[2] }); }
   // "Destroy N friendly Unit token(s)" — pay by destroying your own tokens (Red Gundam 0079).
   let tk = c.match(/^destroy (\d+) (?:friendly |of your )?unit tokens?$/);
-  if (tk) return { type:'destroyToken', count:+tk[1] };
+  if (tk) return out({ type:'destroyToken', count:+tk[1] });
   let m = c.match(/exile (\d+) ([a-z\/() ]*?)\s*cards? (?:from your trash|in your trash from the game)/);
-  if (m){ const trait=(m[2]||'').trim().replace(/[()]/g,'').trim()||null; return { type:'exile', count:+m[1], trait }; }
+  if (m){ const trait=(m[2]||'').trim().replace(/[()]/g,'').trim()||null; return out({ type:'exile', count:+m[1], trait }); }
   return null;
 }
 // Parse a full 【Activate･Main/Action】 ability ("cost：effect"). A self-rest OR an
@@ -1412,14 +1437,17 @@ function parseTriggerInner(t){
 }
 // "Choose N [trait] cards from your trash. Exile them. If you do, [effect]."
 function parseTrashExile(t){
-  const m = t.match(/(?:you may )?choose (\d+) ([a-z\/() ]*?)\s*cards? from your trash\.?\s*exile (?:it|them) from the game\.?\s*if you do,?\s*(.+)/i);
+  // Two printed wordings: "choose N … from your trash. Exile them from the game. If you do, …" and the
+  // shorter "you may exile N … from your trash. If you do, …".
+  const m = t.match(/(?:you may )?choose (\d+) ([a-z\/() ]*?)\s*cards? from your trash\.?\s*exile (?:it|them) from the game\.?\s*if you do,?\s*(.+)/i)
+         || t.match(/(?:you may )?exile (\d+) ([a-z\/() ]*?)\s*cards? from your trash\.?\s*if you do,?\s*(.+)/i);
   if (!m) return null;
   const rest = m[3].trim();
   // The payoff may itself be a trash retrieval ("choose 1 (Special Move) Command card from your trash.
   // Add it to your hand." — Shining Gundam), which parseTriggerInner doesn't cover.
   let inner = parseTriggerInner(rest);
-  if (!inner && /from your trash\.?\s*add it to your hand/i.test(rest)){
-    const rm = rest.match(/choose 1 ([^.]+?) card[^.]*? from your trash/i);
+  if (!inner && /from your trash/i.test(rest) && /add it to your hand|to your hand/i.test(rest)){
+    const rm = rest.match(/(?:choose|add) 1 ([^.]+?) card[^.]*? from your trash/i);
     inner = { kind:'trashRetrieve', filter: rm?rm[1].trim():null };
   }
   return inner ? { kind:'trashExile', count:+m[1], trait:(m[2]||'').trim().replace(/[()]/g,'').trim()||null, inner } : null;
@@ -1524,7 +1552,14 @@ function showScryChoice(source, top, done){
   const wrap=document.createElement('div'); wrap.style.cssText='display:flex;gap:10px;justify-content:center;flex-wrap:wrap;';
   const addBtn=(txt,bg,fn)=>{ const b=document.createElement('button'); b.innerHTML=txt; b.style.cssText=`padding:11px 20px;background:${bg};color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:700`; b.onclick=()=>{ modal.remove(); fn(); render(); if(done)done(); }; wrap.appendChild(b); };
   addBtn('⬆ Keep on top', '#6a4fb0', ()=>{ log(`<b>${source.name}</b>: keeps <b>${top.name}</b> on top of the deck.`,'me'); });
-  addBtn('⬇ Send to bottom', '#333', ()=>{ G.player.deck.pop(); G.player.deck.unshift(top); log(`<b>${source.name}</b>: sends <b>${top.name}</b> to the bottom of the deck.`,'me'); });
+  // Move the card BY IDENTITY: the modal stays up while other effects resolve, so the deck's top may
+  // no longer be the card that was revealed (popping blind would delete one card and clone this one).
+  addBtn('⬇ Send to bottom', '#333', ()=>{
+    const i = G.player.deck.lastIndexOf(top);
+    if (i < 0){ log(`<b>${source.name}</b>: <b>${top.name}</b> already left the deck.`,'me'); return; }
+    G.player.deck.splice(i,1); G.player.deck.unshift(top);
+    log(`<b>${source.name}</b>: sends <b>${top.name}</b> to the bottom of the deck.`,'me');
+  });
   box.appendChild(wrap);
   modal.appendChild(box); document.body.appendChild(modal);
 }
@@ -2057,7 +2092,20 @@ function parseClause(raw){
     return { kind:'reanimate', filter: flt, maxLv: lv?+lv[1]:null };
   }
   // Return a paired Pilot to hand (often a 【Destroyed】 "save the pilot" effect).
-  if (/return (?:its|the|this unit's) (?:paired )?pilot to|return the card paired with this unit to/.test(t)) return { kind:'returnPilot' };
+  if (/return (?:its|the|this unit's) (?:paired )?pilot to|return the card paired with this unit to/.test(t)
+      || /return an?\s*[a-z]*\s*pilot paired with this unit to/.test(t)) return { kind:'returnPilot' };
+  // "Choose 1 of your (Trait) Unit tokens. It may attack on the turn it is deployed." (Justice Gundam)
+  if (/unit tokens?\b/.test(t) && /may attack on the turn it is deployed/.test(t)){
+    const tr=t.match(/of your \(([^)]+)\)\s*unit tokens?/);
+    return { kind:'readyToken', trait: tr?tr[1].toLowerCase():null };
+  }
+  // "Look at the top N cards. You may reveal 1 [filter] card among them and return it to the top of
+  // your deck. Return the remaining cards randomly to the bottom." (Asuna Elmarit) — a scry-to-top.
+  if ((d=t.match(/look at the top (\d+) cards? of your deck/)) && /return it to the top of your deck/.test(t)){
+    const fm=t.match(/reveal (?:up to )?\d*\s*([a-z0-9\s\(\)\/\-]*?)\s*cards?\b/);
+    const flt=(fm && /\([^)]+\)|\b(unit|pilot|base|command)\b/i.test(fm[1]||'')) ? fm[1].trim() : null;
+    return { kind:'digTop', amount:+d[1], filter: flt };
+  }
   // Stun: rest a Unit and stop it untapping next Start Phase ("…won't be set as active…").
   if (/won'?\s?t be set as active/.test(t)) return { kind:'stun', filter:targetFilter(t) };
   // "Choose 1 enemy player. That player chooses N Unit cards from their trash. Exile them from the
@@ -2723,6 +2771,27 @@ function runTrigger(card, side, act, label){
       else autoDiscard(foe, act.amount, name);
       log(`${label}: <b>${name}</b> — ${who(foe)} discards ${act.amount}.`, cls);
     }
+  } else if (act.kind==='readyToken'){
+    const t=side.field.filter(x=>x.token && x.sick && x.hp>0
+      && (!act.trait || (x.trait||'').toLowerCase().includes('('+act.trait+')')))
+      .sort((a,b)=>effAp(b)-effAp(a))[0];
+    if (t){ t.sick=false; log(`${label}: <b>${t.name}</b> may attack this turn.`, cls); }
+  } else if (act.kind==='digTop'){
+    const n=Math.min(act.amount, side.deck.length);
+    if (n){
+      const top=side.deck.splice(side.deck.length-n, n);
+      const keepTop=(pick)=>{
+        const rest=top.filter(c=>c!==pick);
+        shuffle(rest); for (const c of rest) side.deck.unshift(c);   // the rest go to the bottom
+        if (pick){ side.deck.push(pick); log(`${label}: <b>${name}</b> puts <b>${pick.name}</b> on top of the deck.`, cls); }
+        else log(`${label}: <b>${name}</b> looks at top ${n} — nothing kept.`, cls);
+        render();
+      };
+      const legal=top.filter(c=>matchFilter(c, act.filter));
+      if (side===G.player && legal.length)
+        showLookAtTop(top, `${name}: keep 1 on TOP of your deck (the rest go to the bottom)`, (c)=>legal.includes(c), true, keepTop);
+      else keepTop([...legal].sort((a,b)=>cardValue(b)-cardValue(a))[0] || null);
+    }
   } else if (act.kind==='pairFromHand'){
     pairFromHand(card, side, act, label);
   } else if (act.kind==='pilotMain'){
@@ -3181,6 +3250,14 @@ function makeCard(def, owner){
     c.onceDmgReduceLink  = /【\s*during link\s*】[^【]*?【\s*once per turn\s*】[^【]*?receives?\s+damage from an enemy/i.test(plain(def.effect));
     // 【Once per Turn】"When this Unit is rested by an effect, set it as active." (Gundam Throne Drei)
     c.unrestOnce = /when this unit is rested by an effect,?\s*set it as active/i.test(plain(def.effect));
+    // 【Once per Turn】"During your turn, when your (Trait) Unit deals battle damage to an enemy Unit,
+    // you may return the enemy Unit to its owner's hand." (Freedom Gundam METEOR) — a board watcher.
+    const bdb = plain(def.effect).match(/when your\s*\(([^)]+)\)\s*unit deals battle damage to an enemy unit,\s*you may return the enemy unit to its owner'?s hand/i);
+    c.battleBounceTrait = bdb ? bdb[1].trim().toLowerCase() : null;
+    // 【Once per Turn】"When a friendly (Trait) Unit links, choose 1 enemy Unit. It can't activate
+    // <Blocker> during this turn." (Girty Lue) — fires on pairing, from a Base.
+    const lnk = plain(def.effect).match(/when a friendly\s*\(([^)]+)\)\s*unit links,\s*choose 1 enemy unit\.\s*it can'?t activate\s*<\s*blocker/i);
+    c.linkDenyBlockerTrait = lnk ? lnk[1].trim().toLowerCase() : null;
     // 【During Pair】【Once per Turn】"…battle damage from an enemy Unit with AP equal to or less than
     // it, it doesn't receive that damage." (Full Armor Unicorn Gundam)
     c.pairPreventLowAp = /would receive battle damage from an enemy unit with ap equal to or less than it,?\s*it doesn'?t receive that damage/i.test(plain(def.effect));
@@ -3767,8 +3844,15 @@ function effBreach(u){
   }
   return b;
 }
+// Effective <Support N>: printed on the Unit, or carried by the Pilot paired with it (Nena Trinity).
+function effSupport(u){
+  let s = u.support||0;
+  if (u.type==='unit' && u.pilotCard) s = Math.max(s, supportAmount(u.pilotCard.srcEffect || u.pilotCard.effect));
+  return s;
+}
 // A Unit is a <Blocker> if printed, or via "While you have a (Trait) Pilot in play" (Virtue).
 function effBlocker(u){
+  if (u.noBlockTurn === G.turnNumber) return false;   // an effect switched its <Blocker> off this turn
   if (u.blocker) return true;
   if (u.condBlocker){ const side=u.owner==='player'?G.player:G.enemy; return !!(side&&side.field.some(x=>x.pilotCard && (x.pilotCard.trait||'').toLowerCase().includes(u.condBlocker))); }
   if (condKeyword(u, 'blocker')) return true;
@@ -4414,6 +4498,10 @@ function applyCommand(card, side, target){
 // ---- player-activated abilities (【Activate･Main】 with a rest-self OR exile-from-trash cost) ----
 function activateCostPayable(u, side){
   const c=u.activate.cost;
+  if (c.resource && side.resAvail < c.resource) return false;   // compound "①, <other cost>" prefix
+  if (c.type==='selfToDeck') return !u.token && side.field.includes(u);
+  if (c.type==='destroySelf') return !u.token && side.field.includes(u);
+  if (c.type==='discard') return side.hand.filter(x=>matchTrashTrait(x, c.trait)).length >= (c.count||1);
   if (c.type==='none') return true;                       // no framework cost (e.g. cost is a self-sacrifice)
   if (c.type==='rest') return !u.rested;                  // a rest cost needs an active card
   if (c.type==='restUnit') return side.field.filter(x=>!x.rested && (!c.excludeSelf || x!==u) && matchTrashTrait(x, c.trait)).length >= (c.count||1); // enough friendly Units to rest (tokens count)
@@ -4495,7 +4583,24 @@ function resolveActivate(u, target, costUnit){      // player path
 function applyActivateEffect(u, target, side, costUnit){
   let a=u.activate.action; const cost=u.activate.cost, foe = side===G.player?G.enemy:G.player, cls = side===G.player?'me':'ai';
   // Pay the ability's cost.
-  if (cost.type==='rest'){ u.rested=true; }
+  if (cost.resource){ side.resAvail=Math.max(0, side.resAvail-cost.resource); log(`<b>${u.name}</b> pays ${cost.resource} resource${cost.resource===1?'':'s'}.`, cls); }
+  if (cost.type==='selfToDeck'){
+    const i=side.field.indexOf(u); if(i>=0) side.field.splice(i,1);
+    resetUnit(u); side.deck.unshift(u);
+    log(`<b>${u.name}</b> returns to the bottom of its owner's deck as a cost.`, cls);
+  }
+  else if (cost.type==='destroySelf'){
+    const i=side.field.indexOf(u); if(i>=0) side.field.splice(i,1);
+    fx('die', u.uid); sendToTrash(u, side);
+    log(`<b>${u.name}</b> destroys itself as a cost.`, cls);
+  }
+  else if (cost.type==='discard'){
+    const need=cost.count||1;
+    const pool=side.hand.filter(x=>matchTrashTrait(x, cost.trait)).sort((a,b)=>cardValue(a)-cardValue(b));
+    for (const p of pool.slice(0,need)){ side.hand.splice(side.hand.indexOf(p),1); sendToTrash(p, side);
+      log(`<b>${u.name}</b> discards <b>${p.name}</b> as a cost.`, cls); }
+  }
+  else if (cost.type==='rest'){ u.rested=true; }
   else if (cost.type==='restUnit'){
     // Use the player-chosen Unit(s) if given; otherwise auto-pick the lowest-AP eligible Units (tokens count).
     const need=cost.count||1;
@@ -4527,6 +4632,42 @@ function applyActivateEffect(u, target, side, costUnit){
     const t = (a.scope==='friendly' && target) ? target : u;
     t.rested=false; log(`<b>${u.name}</b>: <b>${t.name}</b> is set active.`, cls);
     if (a.noDirectTurn){ t.noDirectTurn=true; log(`<b>${t.name}</b> can't attack the enemy player directly this turn.`, cls); }
+  } else if (a.kind==='pairFromTrash'){
+    // Char's Gelgoog: only while this Unit is unpaired, and the Pilot comes out of the trash.
+    if (!u.pilot && !u.noPilot && side.field.includes(u)){
+      const cands=side.trash.filter(c=>c.type==='pilot' && !c.cmdPilot
+        && (a.maxLv==null || (c.lv||0)<=a.maxLv) && matchTrashTrait(c, a.trait));
+      const pick=(p)=>{ if(!p) return; side.trash.splice(side.trash.indexOf(p),1); refreshTrashStats(side);
+        log(`<b>${u.name}</b> pairs <b>${p.name}</b> from the trash.`, cls);
+        attachPilot(u, p, ()=>{ render(); }); };
+      if (!cands.length) log(`<b>${u.name}</b>: no eligible Pilot in the trash.`, cls);
+      else if (side===G.player && cands.length>1) showLookAtTop(cands, `${u.name}: pair a Pilot from your trash`, ()=>true, true, pick);
+      else pick([...cands].sort((x,y)=>((y.pAp||0)+(y.pHp||0))-((x.pAp||0)+(x.pHp||0)))[0]);
+    }
+  } else if (a.kind==='deployFromTrash'){
+    const cands=side.trash.filter(c=>c.type==='unit'
+      && (a.name==null || (c.name||'').toLowerCase().includes(a.name))
+      && (a.minLv==null || (c.lv||0)>=a.minLv) && (a.maxLv==null || (c.lv||0)<=a.maxLv));
+    const deploy=(c)=>{
+      if (!c || side.field.length>=FIELD_MAX) return;
+      side.trash.splice(side.trash.indexOf(c),1); refreshTrashStats(side);
+      resetUnit(c); c.rested=false; c.sick=!c.blitz; side.field.push(c); sound('deploy');
+      log(`<b>${u.name}</b> deploys <b>${c.name}</b> from the trash.`, cls);
+      if (side===G.player) resolvePlayerTrigger(c, side, parseTrigger(c.effect,'Deploy'), 'Deploy', ()=>{ render(); });
+      else runTrigger(c, side, parseTrigger(c.effect,'Deploy'), 'Deploy');
+    };
+    if (!cands.length) log(`<b>${u.name}</b>: nothing eligible in the trash.`, cls);
+    else if (side===G.player && cands.length>1) showLookAtTop(cands, `${u.name}: deploy a Unit from your trash`, ()=>true, true, deploy);
+    else deploy([...cands].sort((x,y)=>(y.lv||0)-(x.lv||0))[0]);
+  } else if (a.kind==='baseShieldDamage'){
+    // "…enemy Base/enemy Shield this Unit is battling" — hit the Base while it guards, else a Shield.
+    if (foe.base && !foe.base.token && foe.base.hp>0){
+      const b=foe.base; b.hp-=a.amount; floatNum(b.uid,'-'+a.amount,'#ff6b5e');
+      log(`<b>${u.name}</b> deals ${a.amount} to <b>${b.name}</b>.`, cls);
+      if (b.hp<=0){ foe.base=null; fx('die', b.uid); sendToTrash(b, foe); log(`${who(foe)}'s base is destroyed.`, cls); }
+    } else if (foe.shields.length){
+      breachShield(u, foe);
+    } else log(`<b>${u.name}</b>: nothing to hit.`, cls);
   } else if (a.kind==='gd05GyuneiSac'){
     gd05GyuneiActivate(u, side);
   } else if (a.kind==='selfPingBuff'){
@@ -5146,6 +5287,8 @@ function battle(atk, def, atkSide, defSide){
   else { hitDef(); hitAtk(); }
   // <Breach N>: when this attack destroys an enemy Unit, hit the top enemy shield.
   if (effBreach(atk)>0 && def.type==='unit' && def.hp<=0) breachShield(atk, defSide);
+  // "when your (Trait) Unit deals battle damage to an enemy Unit, you may return it to hand" (METEOR)
+  if (def.type==='unit' && def.hp>0 && a>0) battleBounceHook(atk, def, atkSide, defSide);
   if (def.type==='unit' && def.hp<=0 && atk.hp>0){                                            // "when this Unit destroys an enemy Unit…"
     if (atk.onKill && onKillMatches(atk.onKill, def)) applyOnKill(atk, atkSide, atk.onKill);
     const pk = atk.pilotCard ? parseOnKill(atk.pilotCard.effect) : null;                      // on-kill can live on the paired Pilot (e.g. Amuro)
@@ -5166,13 +5309,14 @@ function clearBattleScoped(){
 function applySupport(atk, atkSide, def){
   if (atkSide.who !== G.turn) return;            // never on the opponent's turn
   if (!def || def.type!=='unit' || def.hp<=0 || atk.ap>=def.hp) return;
-  const helpers = atkSide.field.filter(u=>u.support>0 && !u.rested && u.hp>0 && u!==atk);
+  const helpers = atkSide.field.filter(u=>effSupport(u)>0 && !u.rested && u.hp>0 && u!==atk);
   if (!helpers.length) return;
   const need = def.hp - atk.ap;
-  helpers.sort((a,b)=>a.support-b.support);
-  const h = helpers.find(u=>u.support>=need) || helpers[helpers.length-1];
-  h.rested = true; atk.tempAp = (atk.tempAp||0) + h.support; atk.ap = effAp(atk);
-  log(`<b>${h.name}</b> &lt;Support&gt; rests to give <b>${atk.name}</b> +${h.support} AP.`, atkSide===G.player?'me':'ai');
+  helpers.sort((a,b)=>effSupport(a)-effSupport(b));
+  const h = helpers.find(u=>effSupport(u)>=need) || helpers[helpers.length-1];
+  const amt = effSupport(h);
+  h.rested = true; atk.tempAp = (atk.tempAp||0) + amt; atk.ap = effAp(atk);
+  log(`<b>${h.name}</b> &lt;Support&gt; rests to give <b>${atk.name}</b> +${amt} AP.`, atkSide===G.player?'me':'ai');
 }
 
 // <Breach N>: deal the breach damage to the FIRST card in the enemy shield area. A standing Base
@@ -5290,6 +5434,39 @@ function damage(u, dmg, side, kind){
 // 【Once per Turn】"During your turn, when you pair a Pilot with one of your Units, deploy N [Token]…"
 // (Qubeley ST13-001). The payoff sits on a DIFFERENT Unit than the one being paired, so it can't be a
 // 【When Paired】 trigger on the paired card — it's a board-wide watcher checked on every pairing.
+// 【Once per Turn】"When a friendly (Trait) Unit links, choose 1 enemy Unit. It can't activate
+// <Blocker> during this turn." (Girty Lue GD05-127) — the payoff sits on a Base, so it's a watcher.
+function linkDenyBlockerHook(side, linkedUnit){
+  if (!side || !linkedUnit) return;
+  for (const src of [...side.field, side.base].filter(Boolean)){
+    const tr = src.linkDenyBlockerTrait; if (!tr) continue;
+    if (src.hp<=0) continue;
+    if (!(linkedUnit.trait||'').toLowerCase().includes('('+tr+')')) continue;
+    if (src.linkDenyTurn === G.turnNumber) continue;                 // 【Once per Turn】
+    const foe = side===G.player ? G.enemy : G.player;
+    const cands = foe.field.filter(x=>x.hp>0 && effBlocker(x));
+    const t = cands.sort((a,b)=>b.hp-a.hp)[0] || foe.field.filter(x=>x.hp>0).sort((a,b)=>b.hp-a.hp)[0];
+    if (!t) continue;
+    src.linkDenyTurn = G.turnNumber;
+    t.noBlockTurn = G.turnNumber;
+    log(`<b>${src.name}</b>: <b>${t.name}</b> can't activate &lt;Blocker&gt; this turn.`, side===G.player?'me':'ai');
+  }
+}
+// 【Once per Turn】"During your turn, when your (Trait) Unit deals battle damage to an enemy Unit, you
+// may return the enemy Unit to its owner's hand." (Freedom Gundam METEOR GD03-076).
+function battleBounceHook(atk, def, atkSide, defSide){
+  if (!def || def.hp<=0 || def.type!=='unit' || G.turn!==atkSide.who) return;
+  for (const src of [...atkSide.field, atkSide.base].filter(Boolean)){
+    const tr = src.battleBounceTrait; if (!tr) continue;
+    if (src.hp<=0 || src.bounceTurn===G.turnNumber) continue;
+    if (!(atk.trait||'').toLowerCase().includes('('+tr+')')) continue;
+    src.bounceTurn = G.turnNumber;
+    const i=defSide.field.indexOf(def); if(i>=0) defSide.field.splice(i,1);
+    log(`<b>${src.name}</b>: <b>${def.name}</b> is returned to its owner's hand.`, atkSide===G.player?'me':'ai');
+    returnToHand(def, defSide);
+    return;
+  }
+}
 function pairDeployHook(side){
   if (!side || G.turn !== side.who) return;
   for (const src of [...side.field]){
@@ -5358,6 +5535,7 @@ function attachPilot(u, p, onDone){
   // GD05 pilots (e.g. Char Aznable) carry custom 【When Linked】 effects that parseTrigger can't read,
   // so fall back to gd05Custom — otherwise runTriggerSeq skips the null act and the effect never fires.
   pairDeployHook(side);                 // board-wide "when you pair a Pilot…" payoffs (Qubeley)
+  if (justLinked) linkDenyBlockerHook(side, u);   // board-wide "when a friendly (X) Unit links…" payoffs
   const trigs = [
     { card:p, act:parseTrigger(p.effect,'When Paired') || gd05Custom(p,'Pair'), label:'Pair' },
     { card:u, act:parseTrigger(u.effect,'When Paired') || gd05Custom(u,'Pair'), label:'Pair' },
