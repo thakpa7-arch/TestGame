@@ -2718,6 +2718,7 @@ function runTrigger(card, side, act, label){
         if (card.hp<=0){ const fi=side.field.indexOf(card); if(fi>=0) side.field.splice(fi,1); fx('die',card.uid); log(`<b>${card.name}</b> is destroyed.`, cls); sendToTrash(card, side); runTrigger(card, side, parseTrigger(card.effect,'Destroyed'), 'Destroyed'); }
       }
       if (side.hand.length<HAND_MAX){ side.hand.push(pc); log(`${label}: <b>${name}</b> returns Pilot <b>${pc.name}</b> to hand.`, cls); }
+      else sendToTrash(pc, side);     // hand full — the Pilot is discarded rather than lost
     }
   } else if (act.kind==='setActive'){
     card.rested=false; log(`${label}: <b>${name}</b> is set active.`, cls);
@@ -3046,12 +3047,15 @@ function resetUnit(u){
 // Return a deployed unit to its owner's hand, stripped back to a fresh card. A paired Pilot follows
 // the Unit — it returns to the owner's hand too (it goes where the Unit goes).
 function returnToHand(u, owner){
-  if (u.token) return;                       // tokens vanish instead
   const pilot = u.pilotCard;                 // grab the paired Pilot before resetUnit() clears it
+  if (u.token){                              // the token itself vanishes, but a real Pilot can't
+    if (pilot){ u.pilotCard=null; u.pilot=null; sendToTrash(pilot, owner); }
+    return;
+  }
   sound('bounce');
   resetUnit(u);
   const hand = owner.hand;
-  if (hand.length<HAND_MAX) hand.push(u);
+  if (hand.length<HAND_MAX) hand.push(u); else sendToTrash(u, owner);   // no room: it's discarded, not lost
   if (pilot){
     if (hand.length<HAND_MAX) hand.push(pilot); else sendToTrash(pilot, owner);
     log(`<b>${pilot.name}</b> returns to ${owner===G.player?'your':'its'} hand with <b>${u.name}</b>.`, owner===G.player?'me':'ai');
@@ -3064,9 +3068,12 @@ function refreshTrashStats(side){
 }
 // Send a card to the trash zone (tokens are simply removed with no trash entry).
 function sendToTrash(card, side){
-  if (!card || card.token) return;
-  side.trash.push(card);
-  // A destroyed unit carries its pilot to trash as well.
+  if (!card) return;
+  if (!card.token) side.trash.push(card);
+  // A destroyed unit carries its pilot to trash as well — including a token, which itself just
+  // vanishes but can't take a real Pilot card with it.
+  // (left attached: 【Destroyed】 / on-kill checks read it right after this call; resetUnit() clears it
+  // if the Unit ever comes back into play)
   if (card.pilotCard) side.trash.push(card.pilotCard);
   refreshTrashStats(side);
 }
@@ -4039,7 +4046,10 @@ function draw(side, silent){
     return null;
   }
   const c = side.deck.pop();
+  // Hand limit: a card drawn with a full hand can't be held, so it's discarded (it must go somewhere —
+  // otherwise it would leave the game entirely and skew every "N cards in your trash" effect).
   if (side.hand.length<HAND_MAX) side.hand.push(c);
+  else { sendToTrash(c, side); log(`${who(side)} hand is full — <b>${c.name}</b> is discarded.`, side===G.player?'me':'ai'); }
   // Reveal the player's own draws (turn draw and effect draws) so you can see what you got — both
   // a log line and a card pop — but never reveal the AI's cards.
   if (!silent && side===G.player && c){ log(`You draw <b>${c.name}</b>.`, 'me'); sound('draw'); revealDraw(c); }
@@ -4148,6 +4158,7 @@ function playFromHand(uidv, exConfirmed){
 
   if (card.type==='base'){
     s.hand.splice(idx,1); s.resAvail-=effectiveCost(s,card);
+    sendToTrash(s.base, s);   // the outgoing Base is discarded (no-op for the EX Base token)
     s.base = card; card.rested=false; card.sick=false;
     sound('deploy');
     log(`You deploy base <b>${card.name}</b> (HP ${card.hp}) — it now guards your shields.`, 'me');
@@ -4833,33 +4844,44 @@ function resolveShieldBreakTrigger(atk, defSide, done){
 // Bursts fire on the opponent's turn). `done` is called once the Burst finishes resolving.
 function triggerBurst(card, side, done, allowChoice){
   done = done || function(){};
-  const bz = card.burst; if (!bz){ done(); return; }
+  // The caller already popped this shield off the shield zone and handed it over, so this function owns
+  // it: any Burst path that doesn't put the card somewhere (hand/field/base) must trash it, or the card
+  // silently ceases to exist and every "N cards in your trash" effect is off.
+  const finish = ()=>{
+    const kept = side.hand.includes(card) || side.field.includes(card) || side.base===card
+              || side.trash.includes(card) || side.exile.includes(card)
+              || side.deck.includes(card) || side.shields.includes(card)
+              || (side.field.some(u=>u.pilotCard===card) || (side.base && side.base.pilotCard===card));
+    if (!kept) sendToTrash(card, side);
+    done();
+  };
+  const bz = card.burst; if (!bz){ finish(); return; }
   const sideCls = side===G.player ? 'me' : 'ai';
   sound('burst');
   flashCard(card, (side===G.player?'YOUR':'ENEMY')+' BURST');
-  if (bz.kind==='tohand'){ if (side.hand.length<HAND_MAX){ side.hand.push(card); log(`Burst! <b>${card.name}</b> is added to ${who(side)} hand.`, sideCls); if (side===G.player) revealDraw(card, 'BURST'); } done(); return; }
+  if (bz.kind==='tohand'){ if (side.hand.length<HAND_MAX){ side.hand.push(card); log(`Burst! <b>${card.name}</b> is added to ${who(side)} hand.`, sideCls); if (side===G.player) revealDraw(card, 'BURST'); } finish(); return; }
   if (bz.kind==='deploy'){
-    if (card.type==='base'){ side.base=card; card.rested=false; card.sick=false; log(`Burst! ${who(side)} deploys base <b>${card.name}</b>.`, sideCls); runTrigger(card, side, parseTrigger(card.effect,'Deploy'), 'Deploy'); }
+    if (card.type==='base'){ sendToTrash(side.base, side); side.base=card; card.rested=false; card.sick=false; log(`Burst! ${who(side)} deploys base <b>${card.name}</b>.`, sideCls); runTrigger(card, side, parseTrigger(card.effect,'Deploy'), 'Deploy'); }
     else if (side.field.length<FIELD_MAX){ card.rested=false; card.sick=true; side.field.push(card); log(`Burst! ${who(side)} deploys <b>${card.name}</b>.`, sideCls); runTrigger(card, side, parseTrigger(card.effect,'Deploy'), 'Deploy'); }
-    done(); return;
+    finish(); return;
   }
-  if (bz.kind==='draw'){ log(`Burst! ${who(side)} draws ${bz.amount}.`, sideCls); for(let i=0;i<bz.amount;i++) draw(side); done(); return; }
+  if (bz.kind==='draw'){ log(`Burst! ${who(side)} draws ${bz.amount}.`, sideCls); for(let i=0;i<bz.amount;i++) draw(side); finish(); return; }
   if (bz.kind==='damage'){
     const foe=side===G.player?G.enemy:G.player;
     const cands=foe.field.filter(c=>c.hp>0);
-    if (!cands.length){ done(); return; }
-    const apply=(t)=>{ log(`Burst! <b>${card.name}</b> deals ${bz.amount} to <b>${t.name}</b>.`, sideCls); damage(t,bz.amount,foe); render(); done(); };
+    if (!cands.length){ finish(); return; }
+    const apply=(t)=>{ log(`Burst! <b>${card.name}</b> deals ${bz.amount} to <b>${t.name}</b>.`, sideCls); damage(t,bz.amount,foe); render(); finish(); };
     if (allowChoice && side===G.player && cands.length>=2) promptTargetChoice(cands, `<b>Burst — ${card.name}</b><br>Tap an enemy Unit to deal ${bz.amount} damage.`, apply);
     else apply([...cands].sort((a,b)=>b.ap-a.ap)[0]);
     return;
   }
   if (bz.kind==='main' && bz.action){
     log(`Burst! <b>${card.name}</b> activates.`, sideCls);
-    if (allowChoice && side===G.player) burstResolvePlayer(card, side, bz.action, done);
-    else { applyCommand({name:card.name, action:bz.action}, side, autoTarget(bz.action, side)); done(); }
+    if (allowChoice && side===G.player) burstResolvePlayer(card, side, bz.action, finish);
+    else { applyCommand({name:card.name, action:bz.action}, side, autoTarget(bz.action, side)); finish(); }
     return;
   }
-  done();
+  finish();
 }
 // Resolve a player Burst's 【Main】 that needs a target — pick interactively when there's a choice.
 function burstResolvePlayer(card, side, act, done){
@@ -5358,7 +5380,7 @@ function aiMainStep(){
   if (drawC && ai.hand.length<=4){ const i=ai.hand.indexOf(drawC); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,drawC); sendToTrash(drawC,ai); flashCard(drawC,'ENEMY COMMAND'); for(let k=0;k<drawC.action.amount;k++) draw(ai); log(`${who(G.enemy)} plays <b>${drawC.name}</b>.`, 'ai'); return true; }
   // deploy a base if it improves the guard
   const baseC = ai.hand.find(c=>c.type==='base' && canAfford(ai,c) && (!ai.base || c.hp>ai.base.hp));
-  if (baseC){ const i=ai.hand.indexOf(baseC); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,baseC); baseC.rested=false; baseC.sick=false; ai.base=baseC; flashCard(baseC,'ENEMY BASE'); log(`${who(G.enemy)} deploys base <b>${baseC.name}</b>.`, 'ai'); runTrigger(baseC, ai, parseTrigger(baseC.effect,'Deploy'), 'Deploy'); return true; }
+  if (baseC){ const i=ai.hand.indexOf(baseC); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,baseC); baseC.rested=false; baseC.sick=false; sendToTrash(ai.base, ai); ai.base=baseC; flashCard(baseC,'ENEMY BASE'); log(`${who(G.enemy)} deploys base <b>${baseC.name}</b>.`, 'ai'); runTrigger(baseC, ai, parseTrigger(baseC.effect,'Deploy'), 'Deploy'); return true; }
   // deploy a unit — on top of raw stats, prefer a body whose Link Pilot is already in hand (so it can
   // pair + attack the same turn) and one that brings a Deploy effect (removal, tokens, etc.).
   if (ai.field.length<FIELD_MAX){
