@@ -1854,7 +1854,13 @@ function linkMatches(u, p){
     // so only treat as a trait link when the parenthetical spans the entire entry.
     const tm = e.match(/^\(([^)]+)\)\s*(?:trait)?$/i);
     if (tm) return ptrait.includes(tm[1].toLowerCase());
-    return e.toLowerCase() === pname;                   // otherwise a specific Pilot name
+    const el = e.toLowerCase();
+    if (el === pname) return true;                      // otherwise a specific Pilot name
+    // The Link line names the character while the Pilot card carries a qualifier — "Lockon Stratos"
+    // vs "Lockon Stratos (Neil)", "Garrod Ran" vs "Garrod Ran & Tiffa Adill", "Elan Ceres" vs
+    // "Elan Ceres (Enhanced Person Number 4)". Same character, so the Link is satisfied. Only a
+    // qualifier suffix counts — never a bare prefix, so "Char" can't match "Charlotte".
+    return pname.startsWith(el + ' (') || pname.startsWith(el + ' &') || pname.startsWith(el + ', ');
   });
 }
 
@@ -3227,7 +3233,10 @@ function makeCard(def, owner){
               cost: def.cost, lv: def.lv, trait: def.trait, effect: def.effect, img: def.img };
   c.burst = parseBurst(def.effect);
   if (def.type === 'unit' || def.type === 'base'){
-    c.baseAp = def.ap; c.baseHp = def.hp; c.ap = def.ap; c.hp = def.hp; c.maxHp = def.hp; c.baseLv = def.lv;
+    // A couple of scraped entries are missing AP entirely — coerce rather than let NaN spread. 0 AP is
+    // a real printed value in this game (e.g. Moebius), so this never invents power.
+    const dAp = (typeof def.ap === 'number') ? def.ap : 0, dHp = (typeof def.hp === 'number') ? def.hp : 1;
+    c.baseAp = dAp; c.baseHp = dHp; c.ap = dAp; c.hp = dHp; c.maxHp = dHp; c.baseLv = def.lv;
     c.rested = false; c.sick = true; c.tempAp = 0; c.pilot = null; c.linked = false;
     c.link = parseLink(def.link);
     c.blitz = hasKeyword(def.effect, 'blitz');
@@ -3559,7 +3568,22 @@ function buildDeck(owner){
 
 // ---- real competitive decklists (1st-place lists, GD04 Phantom Aria era) ----
 // Each `dg` is the tcgtopdecks export: copies "n" cardId, entries joined by "a".
-const CARD_BY_ID = new Map(GUNDAM_CARDS.map(c=>[c.id,c]));
+// Several ids appear more than once (a later set re-prints a card, or an import overlaps an earlier
+// one). The LAST entry wins so genuine updates take effect — but a field the winner leaves blank
+// falls back to an earlier entry, otherwise a re-print with an empty `link` silently strips a Link
+// condition the card really has (GD05-006 Hashmal).
+const CARD_BY_ID = (()=>{
+  const m = new Map();
+  const blank = v => v === undefined || v === null || v === '';
+  for (const c of GUNDAM_CARDS){
+    const prev = m.get(c.id);
+    if (!prev){ m.set(c.id, c); continue; }
+    const merged = Object.assign({}, prev, c);
+    for (const k of Object.keys(prev)) if (blank(merged[k]) && !blank(prev[k])) merged[k] = prev[k];
+    m.set(c.id, merged);
+  }
+  return m;
+})();
 const PRESET_DECKS = [
   // Only the official September 2026 starter decks are shipped as presets.
   // (Custom decks you build in the Deck Builder are stored separately and are unaffected.)
@@ -3899,6 +3923,7 @@ function startGame(){
                      firstPlayer:'player', skipDrawSide:null,
                      player:makeSide('player'), enemy:makeSide('enemy') });
   G.setup = {};
+  G.setupSeq = (G.setupSeq||0) + 1;     // invalidate any deferred setup step still in flight
   el('overlay').classList.add('hidden');
   setupChooseDeck();
 }
@@ -3910,6 +3935,7 @@ function setupBackBtn(label, fn){
   return `<button onclick="window._sb_${setupBackBtn._n}()" style="position:absolute;top:10px;left:12px;background:#252242;color:#cfd0e8;border:1px solid #4a4670;border-radius:8px;padding:7px 14px;cursor:pointer;font-size:12px">← ${label}</button>`;
 }
 function setupBackToTitle(){
+  bumpSetupSeq();
   closeSetupModal();
   el('overlay').classList.remove('hidden');
   el('startBtn').style.display='inline-block';
@@ -3917,6 +3943,7 @@ function setupBackToTitle(){
   el('backToBattleBtn').style.display='none';
 }
 function setupBackToDecks(){
+  bumpSetupSeq();
   G.player=makeSide('player'); G.enemy=makeSide('enemy');   // wipe any dealt hands/shields
   G.firstPlayer='player'; G.skipDrawSide=null; G.setup={};
   setupChooseDeck();
@@ -3931,6 +3958,10 @@ function setupModal(html, maxW){
   return m;
 }
 function closeSetupModal(){ const m=el('setupModal'); if(m) m.style.display='none'; }
+// Setup runs one deferred step (the AI's turn-order pick waits ~1.3s). Navigating away — Back, or
+// starting over from the title — must invalidate it, or the stale callback deals hands from a
+// G.setup that has already been wiped.
+function bumpSetupSeq(){ return (G.setupSeq = (G.setupSeq||0) + 1); }
 function setupMiniCard(c){
   const has = !!c.img;
   const img = has ? `background-image:url('${c.img}');background-size:cover;background-position:center top` : 'background:linear-gradient(160deg,#1a2440,#0d1628)';
@@ -4137,7 +4168,8 @@ function setupDiceRoll(){
     // AI randomly chooses to go first (tempo) or second (+1 EX Resource).
     const aiFirst = Math.random()<0.5;
     el('orderBtns').innerHTML=`<p style="color:#aab;font-size:13px">The AI chooses to take the <b>${aiFirst?'first':'second'}</b> turn${aiFirst?'':' (+1 EX Resource)'}.</p>`;
-    setTimeout(()=>setupOrderChosen(aiFirst?'enemy':'player'), 1300);
+    const seq = G.setupSeq||0;
+    setTimeout(()=>{ if ((G.setupSeq||0)!==seq) return; setupOrderChosen(aiFirst?'enemy':'player'); }, 1300);
   }
 }
 function setupOrderChosen(first){
@@ -4146,7 +4178,8 @@ function setupOrderChosen(first){
   setupDealHands();
 }
 function setupDealHands(){
-  const pp=G.setup.playerPreset, ep=G.setup.enemyPreset;
+  const pp=G.setup && G.setup.playerPreset, ep=G.setup && G.setup.enemyPreset;
+  if (!pp || !ep){ setupBackToDecks(); return; }   // navigated away mid-setup — start from the decks
   G.playerDeckName=pp.name; G.enemyDeckName=ep.name;
   el('playerName').textContent=pp.name+' (YOU)';
   el('enemyName').textContent=ep.name+' (AI)';
