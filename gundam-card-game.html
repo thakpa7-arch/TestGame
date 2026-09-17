@@ -1964,7 +1964,10 @@ function parseClause(raw){
   // again this turn. "All players each…" gives the opponent one too (Psycho Zaku).
   if (/\bresources?\b/.test(t) && /set (?:it|them) as active/.test(t)){
     const rm = t.match(/(\d+)\s+(?:of your |rested )*resources?/);
-    return { kind:'resActive', amount: rm?+rm[1]:1, both:/all players/.test(t) };
+    return { kind:'resActive', amount: rm?+rm[1]:1, both:/all players/.test(t),
+      // "if you have not set one of your Resources as active with an effect this turn" (Battlefield
+      // Emotions) — a once-per-turn gate across ALL of that player's resource-readying effects.
+      noPriorResActive: /(?:if you have )?not set (?:one of your|any of your)? ?resources? as active with an effect this turn/.test(t) };
   }
   if ((d=t.match(/place (\d+)?\s*ex resource/))) return { kind:'exResource', amount:+(d[1]||1) };
   if ((d=t.match(/place (\d+) (?:rested )?resource/))) return { kind:'resourceRamp', amount:+d[1] };
@@ -2798,9 +2801,14 @@ function runTrigger(card, side, act, label){
     const inner = pilotMainAction(card);
     if (inner) runTrigger(card, side, inner, label);
   } else if (act.kind==='resActive'){
-    const bump=(s)=>{ const before=s.resAvail; s.resAvail=Math.min(totalRes(s), s.resAvail+(act.amount||1)); return s.resAvail-before; };
-    const mine=bump(side); if (act.both) bump(foe);
-    log(`${label}: <b>${name}</b> sets ${mine} Resource${mine===1?'':'s'} active${act.both?' (both players)':''}.`, cls);
+    if (act.noPriorResActive && side.resActiveTurn===G.turnNumber){
+      log(`${label}: <b>${name}</b> — you already set a Resource active with an effect this turn.`, cls);
+    } else {
+      const bump=(s)=>{ const before=s.resAvail; s.resAvail=Math.min(totalRes(s), s.resAvail+(act.amount||1));
+        if (s.resAvail>before) s.resActiveTurn=G.turnNumber; return s.resAvail-before; };
+      const mine=bump(side); if (act.both) bump(foe);
+      log(`${label}: <b>${name}</b> sets ${mine} Resource${mine===1?'':'s'} active${act.both?' (both players)':''}.`, cls);
+    }
   } else if (act.kind==='exResource'){
     side.ex+=act.amount; side.resAvail+=act.amount; log(`${label}: <b>${name}</b> places ${act.amount} EX Resource.`, cls);
   } else if (act.kind==='resourceRamp'){
@@ -4568,7 +4576,10 @@ function activatePickTarget(u, costUnit){
   if (act.scope==='friendly' || act.scope==='enemy'){
     // Respect the ability's target restriction (e.g. V-Dash "enemy Unit with 4 or less HP").
     const cands = act.scope==='enemy' ? enemyTargets(G.enemy, act) : friendlyTargets(G.player, act);
-    if (!cands.length){ flashPrompt('No valid target for that ability.'); return; }
+    // Bail out cleanly: reached from the cost-picking step, leaving G.mode on 'activate-cost' would
+    // wedge the board with no way to cancel. Nothing has been paid yet, so just drop the activation.
+    if (!cands.length){ G.mode='idle'; G.pending=null; G.activateCands=null; G.activateCostPicked=null; G.activateCostNeed=null;
+      flashPrompt('No valid target for that ability.'); clearSel(); render(); return; }
     G.mode='activate-target'; G.pending=u; G.activateCands=cands.map(c=>c.uid); G.activateCostUnit=costUnit;
     setPrompt(`${u.name}: tap ${act.scope==='enemy'?'an enemy':'a friendly'} unit to target.`);
     closeInspect(); render(); return;
@@ -4941,10 +4952,10 @@ function fieldClick(uidv){
       // 【Attack】 effects (Marida's ping, etc.) resolve at declaration so YOU pick their targets,
       // then the Block Step and battle follow.
       resolveAttackTriggers(atk, G.player, ()=>{
-        if (atk.hp<=0){ clearSel(); render(); checkEnd(); return; }
+        if (!attackerStillOut(atk, G.player)){ clearSel(); render(); checkEnd(); return; }
         // Action Step for this individual attack: use an 【Action】 ability/command before it resolves.
         offerPlayerActionStep(atk, ()=>{
-          if (atk.hp<=0 || atk.rested){ clearSel(); render(); checkEnd(); return; }   // an Action may have changed things
+          if (!attackerStillOut(atk, G.player) || atk.rested){ clearSel(); render(); checkEnd(); return; }   // an Action may have changed things
           const tgt2 = G.enemy.field.find(c=>c.uid===uidv);
           if (!tgt2 || effUntargetable(tgt2) || (!tgt2.rested && !canHitActive(atk, tgt2))){ atk.rested=true; clearSel(); render(); checkEnd(); return; }
           const blockers = G.enemy.field.filter(b=>effBlocker(b) && !b.rested && b.hp>0);
@@ -4967,10 +4978,10 @@ function attackDirect(){
   if (cantHitPlayer(atk)){ flashPrompt(`${atk.name} can't attack the enemy player directly — pick a rested enemy unit.`); return; }
   declareAttack(atk, G.player);   // on-attack self-buffs (AP+/High-Maneuver) BEFORE the block step
   resolveAttackTriggers(atk, G.player, ()=>{
-    if (atk.hp<=0){ clearSel(); render(); checkEnd(); return; }
+    if (!attackerStillOut(atk, G.player)){ clearSel(); render(); checkEnd(); return; }
     // Action Step for this attack before it resolves.
     offerPlayerActionStep(atk, ()=>{
-      if (atk.hp<=0 || atk.rested){ clearSel(); render(); checkEnd(); return; }
+      if (!attackerStillOut(atk, G.player) || atk.rested){ clearSel(); render(); checkEnd(); return; }
       if (cantHitPlayer(atk)){ atk.rested=true; clearSel(); render(); checkEnd(); return; }   // an Action removed its direct-attack
       // Defender may block a direct attack with an active <Blocker> (unless attacker has High-Maneuver)
       const blockers = G.enemy.field.filter(b=>effBlocker(b) && !b.rested && b.hp>0);
@@ -5184,6 +5195,10 @@ function pilotAttackAction(atk){
 // 【Attack】 effects that pick a target (enemy damage, etc.) from the Unit and its Pilot. Resolved
 // when the attack is DECLARED — before the Block Step — so the player chooses targets (Marida,
 // Kshatriya-style). Self-buffs were already applied by declareAttack(), so they're skipped here.
+// An attacker can leave the battlefield DURING its own 【Attack】 trigger — a self-sacrifice, or an
+// effect that returns it to hand (Quess's Jagd Doga). It has full HP and isn't rested, so an hp/rested
+// check misses it; every step of an attack must confirm it is still standing on the field.
+function attackerStillOut(atk, atkSide){ return !!(atk && atk.hp>0 && atkSide && atkSide.field.includes(atk)); }
 function resolveAttackTriggers(atk, atkSide, done){
   const acts=[];
   const add=(act, slot)=>{
@@ -5195,7 +5210,7 @@ function resolveAttackTriggers(atk, atkSide, done){
   add(pilotAttackAction(atk), 'atkPilotOnceTurn');
   let i=0;
   (function next(){
-    if (i>=acts.length || atk.hp<=0){ done(); return; }
+    if (i>=acts.length || !attackerStillOut(atk, atkSide)){ done(); return; }
     const a=acts[i++];
     if (atkSide===G.player) resolvePlayerTrigger(atk, atkSide, a, 'Attack', next);
     else { runTrigger(atk, atkSide, a, 'Attack'); next(); }
@@ -5269,6 +5284,8 @@ function preventsWeakBattleDamage(u, foeUnit, side){
   return true;
 }
 function battle(atk, def, atkSide, defSide){
+  // A blocker prompt resolves asynchronously — by now the attacker may have left the battlefield.
+  if (!attackerStillOut(atk, atkSide)){ clearSel(); render(); checkEnd(); return; }
   atk.rested=true;
   fxLunge(atk);
   // <Support N>: an active friendly Unit may rest to give the attacker +N AP this turn.
@@ -5944,11 +5961,11 @@ function resolveAiAttack(atk, done, forced){
 }
 function resolveAiAttackInner(atk, done, forced){
   // The player's Action step may have rested/destroyed the attacker — if so, the attack fizzles.
-  if (atk.hp<=0 || atk.rested){ render(); done(); return; }
+  if (!attackerStillOut(atk, G.enemy) || atk.rested){ render(); done(); return; }
   declareAttack(atk, G.enemy);   // AI on-attack self-buffs (AP+/High-Maneuver) BEFORE the block step
   // 【Attack】 effects (e.g. Marida's ping) resolve at declaration, before the Block Step.
   resolveAttackTriggers(atk, G.enemy, ()=>{
-    if (atk.hp<=0 || atk.rested){ render(); done(); return; }
+    if (!attackerStillOut(atk, G.enemy) || atk.rested){ render(); done(); return; }
     const pl=G.player;
     // Units may only attack a RESTED enemy unit (or any unit if granted <attack active>), or the player directly.
     const attackable = pl.field.filter(u=>u.hp>0 && !effUntargetable(u) && (u.rested || canHitActive(atk,u)));
@@ -5983,7 +6000,10 @@ function resolveAiAttackInner(atk, done, forced){
   });
 }
 
-function aiDirectHit(atk, done){ atk.rested=true; strikePlayer(atk, G.player, ()=>{ render(); if(done) done(); }); }
+function aiDirectHit(atk, done){
+  if (!attackerStillOut(atk, G.enemy)){ render(); if(done) done(); return; }
+  atk.rested=true; strikePlayer(atk, G.player, ()=>{ render(); if(done) done(); });
+}
 
 // Let the player choose ONE token spec to deploy (e.g. Striker Pack: Sword OR Launcher Strike).
 function promptTokenChoice(specs, cb){
