@@ -4678,6 +4678,18 @@ function restCostCands(u, side){
 function startActivate(u){
   if (!activateReady(u)){ flashPrompt(`${u.name}'s ability isn't available.`); return; }
   const cost=u.activate.cost;
+  // "Choose 1 of your Unit tokens and 1 enemy Unit" — BOTH halves belong to the controller, so pick the
+  // token first (Qubeley ST13-001). It rides along in the costUnit slot, which a resource cost leaves free.
+  if (u.activate.action && u.activate.action.kind==='tokenDuel'){
+    const toks = G.player.field.filter(x=>x.token && x.hp>0);
+    if (toks.length>1){
+      G.mode='activate-cost'; G.pending=u; G.activateCands=toks.map(t=>t.uid);
+      G.activateCostPicked=[]; G.activateCostNeed=1; G.activatePickVerb='send into the duel';
+      setPrompt(`${u.name}: tap one of YOUR Unit tokens to send into the duel.`);
+      closeInspect(); render(); return;
+    }
+    return activatePickTarget(u, toks[0]||null);
+  }
   // "Rest N of your other (trait) Unit(s)" cost: let the player pick WHICH Unit(s) to rest first.
   if (cost.type==='restUnit'){
     const need = cost.count||1;
@@ -4840,14 +4852,18 @@ function applyActivateEffect(u, target, side, costUnit){
     const t=target||u; t.dmgReduce=(t.dmgReduce||0)+a.amount; log(`<b>${u.name}</b>: <b>${t.name}</b> ${a.amount>=99?"can't receive battle damage":"reduces damage by "+a.amount} this turn.`, cls);
   } else if (a.kind==='tokenDuel'){
     // Damage step only: the chosen token and the enemy Unit hit each other simultaneously.
-    const tok = side.field.filter(x=>x.token && x.hp>0).sort((x,y)=>effAp(y)-effAp(x))[0];
+    // The controller's chosen token arrives via costUnit; fall back to the biggest for the AI.
+    const tok = (costUnit && costUnit.token && costUnit.hp>0 && side.field.includes(costUnit))
+      ? costUnit
+      : side.field.filter(x=>x.token && x.hp>0).sort((x,y)=>effAp(y)-effAp(x))[0];
     const foeU = target || rankTarget(enemyTargets(foe,{kind:'damage'}), {kind:'damage'});
     if (!tok || !foeU){ log(`<b>${u.name}</b>: no Unit token or no enemy Unit to duel.`, cls); }
     else {
       log(`<b>${u.name}</b>: <b>${tok.name}</b> and <b>${foeU.name}</b> trade damage.`, cls);
       const ta=effAp(tok), fa=effAp(foeU);
-      if (side.field.includes(tok)) damage(foeU, ta, foe, 'battle');
-      if (foe.field.includes(foeU) || fa>0) damage(tok, fa, side, 'battle');
+      // This IS a battle (just the damage step), so battle-damage prevention applies to both sides.
+      if (side.field.includes(tok) && !preventsWeakBattleDamage(foeU, tok, foe)) damage(foeU, ta, foe, 'battle');
+      if ((foe.field.includes(foeU) || fa>0) && !preventsWeakBattleDamage(tok, foeU, side)) damage(tok, fa, side, 'battle');
     }
   } else if (a.kind==='gd05AxisDeploy'){
     gd05AxisDeploy(side, u);                              // Axis: player chooses the (Neo Zeon) Unit to deploy; AI auto-picks
@@ -4957,7 +4973,7 @@ function fieldClick(uidv){
 
   if (G.mode==='activate-cost'){
     const u=G.pending;
-    if (G.activateCands && !G.activateCands.includes(uidv)){ flashPrompt('Tap a highlighted Unit of yours to rest.'); return; }
+    if (G.activateCands && !G.activateCands.includes(uidv)){ flashPrompt(`Tap a highlighted Unit of yours to ${G.activatePickVerb||'rest'}.`); return; }
     const costUnit=G.player.field.find(c=>c.uid===uidv); if(!costUnit) return;
     const need=G.activateCostNeed||1;
     if (need>1){
@@ -4972,7 +4988,7 @@ function fieldClick(uidv){
       const picks=G.activateCostPicked; G.activateCostPicked=null; G.activateCostNeed=null; G.activateCands=null;
       activatePickTarget(u, picks); return;
     }
-    G.activateCands=null; activatePickTarget(u, costUnit); return;
+    G.activateCands=null; G.activatePickVerb=null; activatePickTarget(u, costUnit); return;
   }
   if (G.mode==='activate-target'){
     const u=G.pending, scope=u.activate.action.scope;
