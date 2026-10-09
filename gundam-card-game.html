@@ -3420,9 +3420,17 @@ function parseTokenSpecs(text){
   let m;
   while ((m=re.exec(text))){
     const stats=m[5]||'';
+    // "deploy 1 to 2 [Token]" — the count is a range the controller chooses within. m.index sits on the
+    // upper bound (the digit next to the bracket), so the lower bound is the "1 to " just before it.
+    const range = text.slice(0, m.index).match(/(\d+)\s*to\s*$/);
     const ap=(stats.match(/AP\s*(\d+)/i)||[])[1];
     const hp=(stats.match(/HP\s*(\d+)/i)||[])[1];
-    specs.push({ count:+m[1], rested:!!m[2], name:m[3].trim(), trait:m[4].trim(),
+    // Store the trait in the same shape card data uses — "(Long-Range Weapon)", not the bare words —
+    // because every trait test in the engine looks for '(' + trait + ')'.
+    const traitRaw = m[4].trim();
+    const trait = /^\(.*\)$/.test(traitRaw) ? traitRaw
+      : '(' + traitRaw.split(/\)\s*\(/).join(') (').replace(/^\(|\)$/g,'') + ')';
+    specs.push({ count:+m[1], min: range?+range[1]:null, rested:!!m[2], name:m[3].trim(), trait,
       ap: ap!=null?+ap:1, hp: hp!=null?+hp:1,
       blocker:/<\s*blocker/i.test(stats), first:/<\s*first[-\s]?strike/i.test(stats), high:/<\s*high[-\s]?maneuver/i.test(stats),
       restrict: stats });
@@ -3459,6 +3467,23 @@ function makeToken(spec, owner){
 // Score a token spec for the AI's auto-pick of a "deploy A or B" choice.
 function tokenScore(sp){ return sp.ap + sp.hp + (sp.blocker?2:0) + (sp.first?1:0) + (sp.high?1:0); }
 // Deploy the token(s) described by a token action onto `side`'s field (respecting FIELD_MAX).
+// "Deploy 1 to N [Token]" is a choice of how many. The player is asked; the AI takes the maximum
+// (more bodies is effectively always better for it). Returns specs with `count` pinned.
+function chooseTokenCount(specs, side, name, done){
+  const ranged = (specs||[]).find(sp=>sp && sp.min!=null && sp.count>sp.min);
+  if (!ranged || side!==G.player){ done(specs); return; }
+  const fix=(n)=>done(specs.map(sp=>sp===ranged ? Object.assign({}, sp, { count:n }) : sp));
+  el('blockMsg').innerHTML = `<b>${name}</b>: deploy how many <b>${ranged.name}</b> tokens?`;
+  const wrap=el('blockBtns'); wrap.innerHTML='';
+  const room = Math.max(0, FIELD_MAX - side.field.length);
+  for (let n=ranged.min; n<=ranged.count; n++){
+    const b=document.createElement('button');
+    b.innerHTML = `${n}${n>room?' (only '+room+' will fit)':''}`;
+    b.onclick=()=>{ el('blockModal').classList.remove('show'); fix(n); };
+    wrap.appendChild(b);
+  }
+  el('blockModal').classList.add('show');
+}
 function deployTokens(act, side, name, label, cls){
   let specs=act.specs, names=[]; const tokens=[];
   // "If you have no (X) Unit tokens in play" — only one such token may exist (e.g. Striker Pack).
@@ -3508,6 +3533,11 @@ function deployTokensInteractive(card, side, act, label, after){
   if (act.tokenLimit && hasTraitToken(side, act.tokenLimit)){
     log(`${label}: <b>${card.name}</b> — you already have a (${act.tokenLimit}) Unit token in play.`, cls);
     fin(); return;
+  }
+  if ((act.specs||[]).some(sp=>sp && sp.min!=null && sp.count>sp.min) && side===G.player){
+    chooseTokenCount(act.specs, side, card.name, (chosen)=>
+      deployTokensInteractive(card, side, Object.assign({}, act, { specs:chosen }), label, after));
+    return;
   }
   const queue = tokenMakerQueue(act, side);
   const placed=[];
@@ -5590,7 +5620,10 @@ function pairDeployHook(side){
     const specs = parseTokenSpecs(src.effect);
     if (!specs.length) continue;
     src.pairTokTurn = G.turnNumber;
-    deployTokens({ kind:'token', specs }, side, src.name, 'Pair', side===G.player?'me':'ai');
+    chooseTokenCount(specs, side, src.name, (chosen)=>{
+      deployTokens({ kind:'token', specs:chosen }, side, src.name, 'Pair', side===G.player?'me':'ai');
+      render();
+    });
   }
 }
 // 【Deploy】"You may pair 1 [(Trait) / named] Pilot card from your hand with this Unit." — a free
