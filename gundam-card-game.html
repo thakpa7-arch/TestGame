@@ -1598,12 +1598,24 @@ function pickExileCards(u, cands, n){
   modal.appendChild(box); document.body.appendChild(modal);
 }
 // Player "look at top N, add a matching card to hand, return the rest".
+// The Lv cap for a "lower than this Unit" dig. A Pilot's 【When Paired】 resolves with the Pilot as the
+// source card, so walk to the Unit it is paired with; a Unit's own trigger uses itself.
+function digLvCap(card, side, act){
+  if (!act || !act.maxLvSelf) return null;
+  if (card && card.type==='unit') return card.lv||0;
+  const host = side && [...side.field, side.base].filter(Boolean).find(u=>u.pilotCard===card);
+  return host ? (host.lv||0) : (card && card.lv) || 0;
+}
+function digPickable(c, side, act, cap){
+  return matchFilter(c, act.filter) && (cap==null || (c.lv||0) <= cap);
+}
 function playerDig(card, side, act, after){
   const n=Math.min(act.amount, side.deck.length);
   if(!n){ if(after)after(); return; }
   const top=side.deck.splice(side.deck.length-n, n);
-  showLookAtTop(top, `${card.name}: top ${n} — add a ${act.filter||'card'} to your hand`,
-    c=>matchFilter(c,act.filter)&&side.hand.length<HAND_MAX, true, (chosen)=>{
+  const cap = digLvCap(card, side, act);
+  showLookAtTop(top, `${card.name}: top ${n} — add a ${act.filter||'card'}${cap!=null?' Lv.'+cap+' or lower':''} to your hand`,
+    c=>digPickable(c, side, act, cap)&&side.hand.length<HAND_MAX, true, (chosen)=>{
       if(chosen){ top.splice(top.indexOf(chosen),1); side.hand.push(chosen); log(`<b>${card.name}</b>: you add <b>${chosen.name}</b> to hand.`,'me'); }
       shuffle(top);
       if(act.dest==='top'){ for(const c of top) side.deck.push(c); } else { for(const c of top) side.deck.unshift(c); }
@@ -1673,6 +1685,25 @@ function debuffAllEnemy(card, side, act, label){
   const cls=side===G.player?'me':'ai', foe=side===G.player?G.enemy:G.player;
   for (const u of foe.field){ u.tempAp=(u.tempAp||0)-act.amount; u.ap=effAp(u); }
   if (foe.field.length) log(`${label}: <b>${card.name}</b> — all enemy Units get AP-${act.amount} this turn.`, cls);
+}
+// "Destroy all Units that are Lv.N or lower" — resolves on both sides at once (or enemy-only when the
+// text says so). Units are collected first, then destroyed, so the list can't shift mid-resolution.
+function destroyAll(card, side, act, label){
+  const cls=side===G.player?'me':'ai', foe=side===G.player?G.enemy:G.player, f=act.filter||{};
+  const inRange=u=>u && u.hp>0 && (f.maxLv==null||(u.lv||0)<=f.maxLv)
+    && (f.maxAp==null||effAp(u)<=f.maxAp) && (f.maxHp==null||u.hp<=f.maxHp);
+  const list=[];
+  for (const u of [...foe.field]) if (inRange(u)) list.push([u,foe]);
+  if (act.scope!=='all-enemy') for (const u of [...side.field]) if (inRange(u)) list.push([u,side]);
+  const what = `all${act.scope==='all-enemy'?' enemy':''} Units${f.maxLv!=null?' Lv.'+f.maxLv+' or lower':''}`;
+  if (!list.length){ log(`${label}: <b>${card.name}</b> — no ${what} to destroy.`, cls); return; }
+  log(`${label}: <b>${card.name}</b> destroys ${what} (${list.length}).`, cls);
+  for (const [u,owner] of list){
+    const i=owner.field.indexOf(u); if(i<0) continue;        // an earlier 【Destroyed】 already removed it
+    owner.field.splice(i,1); fx('die', u.uid); sendToTrash(u, owner);
+    fireDestroyed(u, owner);
+  }
+  render();
 }
 function damageAll(card, side, act, label){
   const cls=side===G.player?'me':'ai', foe=side===G.player?G.enemy:G.player, f=act.filter||{};
@@ -1873,10 +1904,15 @@ function parseTrigger(effect, kw){
   // so a paired/linked-only trigger doesn't fire when the Unit isn't paired/linked.
   // A trailing 【Once per Turn】 is a usage limit, not another trigger — absorb it so the effect text
   // after it is still read (e.g. 【Attack】【Once per Turn】…).
-  const m = pl.match(new RegExp('(【[^】]*】)?\\s*【\\s*'+kw+'[^】]*】(?:\\s*/\\s*【[^】]*】)*(?:\\s*【[^】]*Once per Turn[^】]*】)?\\s*([^【]*)','i'));
+  const m = pl.match(new RegExp('(【[^】]*】)?\\s*【\\s*'+kw+'([^】]*)】(?:\\s*/\\s*【[^】]*】)*(?:\\s*【[^】]*Once per Turn[^】]*】)?\\s*([^【]*)','i'));
   if (m){
-    let act = parseClause(m[2]);
+    let act = parseClause(m[3]);
     const gate = (m[1]||'').toLowerCase();
+    // The trigger bracket itself may carry a requirement after a separator — 【When Paired･(Newtype)
+    // Pilot】 only fires for a (Newtype) Pilot. Without this the qualifier was swallowed by [^】]* and
+    // the trigger fired on ANY pairing (Zeong GD04-017, Abyss Gundam GD05-046).
+    const qual = (m[2]||'').match(/\(([^)]+)\)\s*pilot/i);
+    if (act && qual) act = { kind:'cond', cond:{ type:'pairedPilotTrait', trait:qual[1].toLowerCase() }, inner:act };
     if (act && /during pair/.test(gate)) act = { kind:'cond', cond:{ type:'paired' }, inner:act };
     else if (act && /during link/.test(gate)) act = { kind:'cond', cond:{ type:'linked' }, inner:act };
     return act;
@@ -2022,7 +2058,10 @@ function parseClause(raw){
     // Wording like "reveal a number of cards equal to…" must not become a literal filter string.
     const flt = (flt0 && /\([^)]+\)|\b(unit|pilot|base|command|blue|red|green|white|purple)\b/i.test(flt0)) ? flt0 : null;
     const dest = /to the top/.test(t.split('add')[1]||'') ? 'top' : 'bottom';
-    return { kind:'dig', amount:n, filter: flt, dest };
+    // "…whose Lv. is equal to or lower than this Unit" (Haman Karn) — a cap read off the Unit carrying
+    // the trigger at resolution time, not a fixed number.
+    const selfLv = /lv\.? is equal to or lower than this unit/.test(t);
+    return { kind:'dig', amount:n, filter: flt, dest, maxLvSelf: selfLv };
   }
   // Dig-and-deploy: "Look at the top N cards. You may deploy 1 [filter] Unit card (that is Lv.X or lower)
   // among them. Return the remaining cards … to the bottom." (GQuuuuuuX GD02-038) — a free deploy.
@@ -2131,6 +2170,13 @@ function parseClause(raw){
   // (Paptimus Scirocco ST14-011) — a variable debuff counted at resolution time.
   if (/reduce its ap/.test(t) && /number of rested enemy units/.test(t))
     return { kind:'debuff', amount:0, perRestedEnemy:true, scope:'enemy', dur:'battle', filter:null };
+  // "Destroy all Units that are Lv.N or lower." — a board wipe. "all Units" with no "enemy" hits BOTH
+  // sides, including your own (Widespread Annihilation GD05-114).
+  if (/destroy all (?:enemy )?units?/.test(t)){
+    const lv=t.match(/lv\.?(\d+) or lower/), ap=t.match(/(\d+) or less ap/), hp=t.match(/(\d+) or less hp/);
+    return { kind:'destroyAll', scope:/all enemy units?/.test(t)?'all-enemy':'all-both',
+             filter:{ maxLv: lv?+lv[1]:null, maxAp: ap?+ap[1]:null, maxHp: hp?+hp[1]:null } };
+  }
   // Destroy an enemy Unit ("Destroy it." / "Destroy that Unit").
   if (/\bdestroy it\b|destroy that unit/.test(t)) return { kind:'destroy', filter:targetFilter(t) };
   if (/return it to .*hand|return that unit to .*hand|return them to .*hand/.test(t)){ return { kind:'bounce', filter:targetFilter(t) }; }
@@ -2405,6 +2451,11 @@ function condMet(cond, side, source, other){
   const foe = side===G.player?G.enemy:G.player;
   switch(cond.type){
     case 'and':            return cond.conds.every(c=>condMet(c, side, source, other));
+    case 'pairedPilotTrait': {
+      // `source` is whichever card carries the trigger: the Unit (check its Pilot) or the Pilot itself.
+      const pc = source && (source.type==='pilot' ? source : source.pilotCard);
+      return !!(pc && (pc.trait||'').toLowerCase().includes('('+cond.trait+')'));
+    }
     case 'trashName':      return side.trash.some(c=>(c.name||'').toLowerCase().includes(cond.name.toLowerCase()));
     case 'yourTurn':       return G.turn===side.who;
     case 'oppTurn':        return G.turn!==side.who;
@@ -2835,6 +2886,8 @@ function runTrigger(card, side, act, label){
     const had=side.hand.length; autoDiscard(side, act.discard, name);
     if (had>0){ for(let i=0;i<act.draw;i++) draw(side); }
     log(`${label}: <b>${name}</b> — discard ${act.discard}${had>0?', draw '+act.draw:' (no draw)'}.`, cls);
+  } else if (act.kind==='destroyAll'){
+    destroyAll(card, side, act, label);
   } else if (act.kind==='damage' && (act.scope==='all-enemy' || act.scope==='all-both')){
     damageAll(card, side, act, label);
   } else if (act.kind==='debuff' && act.scope==='all-enemy'){
@@ -2917,7 +2970,8 @@ function runTrigger(card, side, act, label){
     const n=Math.min(act.amount, side.deck.length);
     if(n){
       const top=side.deck.splice(side.deck.length-n, n);
-      const pick=[...top].filter(c=>matchFilter(c,act.filter)).sort((a,b)=>cardValue(b)-cardValue(a))[0];
+      const cap=digLvCap(card, side, act);
+      const pick=[...top].filter(c=>digPickable(c, side, act, cap)).sort((a,b)=>cardValue(b)-cardValue(a))[0];
       if(pick && side.hand.length<HAND_MAX){ top.splice(top.indexOf(pick),1); side.hand.push(pick); log(`${label}: <b>${name}</b> looks at top ${n} — adds <b>${pick.name}</b> to hand.`, cls); }
       else log(`${label}: <b>${name}</b> looks at top ${n} — no match.`, cls);
       shuffle(top);
@@ -3092,6 +3146,7 @@ function resolvePlayerTrigger(card, side, act, label, after){
     setPrompt(`${card.name}: tap up to ${G.pending.max} of your Unit${G.pending.max>1?'s':''} to give AP+${act.amount} (Cancel to finish).`);
     render(); return;
   }
+  if (act.kind==='destroyAll'){ destroyAll(card, side, act, label); fin(); return; }
   // Board-wide debuff (Norn) applies to every enemy Unit with no choice.
   if (act.kind==='debuff' && act.scope==='all-enemy'){ debuffAllEnemy(card, side, act, label); fin(); return; }
   const enemyKinds = (act.kind==='damage' && act.scope!=='all-enemy' && act.scope!=='all-both') || ['rest','bounce','bounceDeck','destroy','debuff','stun'].includes(act.kind);
@@ -4573,6 +4628,14 @@ function activateReady(u){
   if (u.activate.requireLink && !u.linked) return false;
   if (u.activate.requirePair && !u.pilot)  return false;
   if (u.activate.customReady && !u.activate.customReady(u, side)) return false;
+  // "Choose 1 of your Unit tokens and 1 enemy Unit" needs both halves to exist, or the cost and the
+  // 【Once per Turn】 use are spent for nothing (Qubeley ST13-001).
+  const act = u.activate.action;
+  if (act && act.kind==='tokenDuel'){
+    const foe = side===G.player ? G.enemy : G.player;
+    if (!side.field.some(x=>x.token && x.hp>0)) return false;
+    if (!foe.field.some(x=>x.hp>0)) return false;
+  }
   return activateCostPayable(u, side);
 }
 // Begin activation: pay nothing yet if a target is needed, else resolve immediately.
