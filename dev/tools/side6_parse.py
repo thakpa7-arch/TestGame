@@ -9,6 +9,7 @@ def text(frag):
     t = re.sub(r'[ \t\r\n]+', ' ', t)
     t = re.sub(r'\(\s+', '(', t); t = re.sub(r'\s+\)', ')', t)
     t = re.sub(r'<\s+', '<', t); t = re.sub(r'\s+>', '>', t)
+    t = re.sub(r'(\w)<', r'\1 <', t)          # keep the space before a <Keyword>
     t = re.sub(r'【\s+', '【', t); t = re.sub(r'\s+】', '】', t)
     return t.strip()
 
@@ -21,7 +22,8 @@ def stat(s, label):
     m = re.search(r'>' + re.escape(label) + r'</div><div[^>]*>([^<]*)</div>', s)
     if not m: return None
     v = m.group(1).strip()
-    return int(v) if re.fullmatch(r'\d+', v) else None
+    mm = re.fullmatch(r'\+?(\d+)', v)          # Pilots print their bonuses as "+2" / "+1"
+    return int(mm.group(1)) if mm else None
 
 def parse(path):
     s = open(path, encoding='utf-8', errors='replace').read()
