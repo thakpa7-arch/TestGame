@@ -1,0 +1,52 @@
+# Fetches GD06 "Stardust Trails" spoiler pages from the public card sites (which the Claude cloud
+# sandbox cannot reach) and commits the raw responses under dev/gd06-raw/ for offline parsing.
+name: fetch-gd06
+on:
+  workflow_dispatch:
+    inputs:
+      urls:
+        description: "Extra URLs to fetch (space-separated), on top of the built-in list"
+        required: false
+        default: ""
+permissions:
+  contents: write
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch spoiler pages
+        shell: bash
+        run: |
+          set +e
+          mkdir -p dev/gd06-raw
+          UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36"
+          fetch() {  # fetch <slug> <url>
+            local slug="$1" url="$2"
+            curl -sSL -m 60 -A "$UA" -H "Accept: text/html,application/json;q=0.9,*/*;q=0.8" \
+                 -o "dev/gd06-raw/$slug" -w "$slug %{http_code} %{size_download}B %{url_effective}\n" "$url" \
+                 >> dev/gd06-raw/_fetch.log 2>&1 || echo "$slug FAILED" >> dev/gd06-raw/_fetch.log
+          }
+          : > dev/gd06-raw/_fetch.log
+          fetch exburst-GD06.html            "https://exburst.dev/gundam/series/GD06"
+          fetch exburst-GD06-api.json        "https://exburst.dev/api/gundam/series/GD06"
+          fetch exburst-cards-GD06.json      "https://exburst.dev/api/gundam/cards?series=GD06"
+          fetch deckodex-spoilers.html       "https://deckodex.com/gundam/spoilers"
+          fetch gct-gd06.html                "https://gundamcollectortools.com/spoilers/gundam/gd06"
+          fetch gundamcardgg-gd06.html       "https://gundamcard.gg/stardust-trailsgd06/"
+          fetch side6-spoilers.html          "https://side-6.com/en/spoilers/"
+          fetch tcgtopdecks-gd06.html        "https://tcgtopdecks-hq.com/cards/gundam-cg-gd-06-cards-stardust-trails/"
+          fetch official-GD06-list.html      "https://www.gundam-gcg.com/en/cards/index.php?search=true&series%5B%5D=GD06"
+          fetch official-products.html       "https://www.gundam-gcg.com/en/products/gd06.html"
+          for u in ${{ github.event.inputs.urls }}; do
+            fetch "extra-$(echo "$u" | sed 's#[^A-Za-z0-9._-]#_#g' | cut -c1-80)" "$u"
+          done
+          cat dev/gd06-raw/_fetch.log
+      - name: Commit the raw pages
+        shell: bash
+        run: |
+          git config user.name "fetch-gd06 bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add dev/gd06-raw
+          git commit -m "dev/gd06-raw: fetched GD06 spoiler pages [skip ci]" || echo "nothing to commit"
+          git push
