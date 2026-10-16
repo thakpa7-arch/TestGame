@@ -13,7 +13,9 @@ import json, re, sys
 def main():
     args = sys.argv[1:]
     src, setcode = args[0], args[1]
-    html_path = args[args.index('--html')+1] if '--html' in args else '/home/user/TestGame/gundam-card-game.html'
+    import os
+    default_html = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'gundam-card-game.html')
+    html_path = args[args.index('--html')+1] if '--html' in args else os.path.normpath(default_html)
     out_path  = args[args.index('--out')+1]  if '--out'  in args else html_path
     sw_path   = args[args.index('--bump-sw')+1] if '--bump-sw' in args else None
 

@@ -6,18 +6,18 @@
 set -euo pipefail
 SET="$1"; SRC="$2"
 PAD="$(cd "$(dirname "$0")" && pwd)"
-GAME="/home/user/TestGame/gundam-card-game.html"
+GAME="$PAD/../gundam-card-game.html"
 cd "$PAD"
 echo "== 1. convert $SET"
-python3 -I tools/gcg2sim.py "$SRC" "$SET" --out "gd06/${SET}_sim.json"
+python3 -I tools/gcg2sim.py "$SRC" "$SET" --out "$PAD/${SET}_sim.json"
 echo "== 2. import into the game"
-python3 -I tools/import_set.py "gd06/${SET}_sim.json" "$SET" --html "$GAME" --bump-sw /home/user/TestGame/sw.js
+python3 -I tools/import_set.py "$PAD/${SET}_sim.json" "$SET" --html "$GAME" --bump-sw "$PAD/../sw.js"
 echo "== 3. regenerate game.js"
 python3 -I mkgame.py
 echo "== 4. every card instantiates and parses"
 node run_cards.js | tail -2
 echo "== 5. coverage: printed clauses in $SET with no parsed effect"
-node cover.js "gd06/${SET}_sim.json" | sed -n '3,80p'
+node cover.js "$PAD/${SET}_sim.json" | sed -n '3,80p'
 echo "== 6. mechanics suites"
 node keywords_check.js | tail -2; node while_check.js | grep -E "failures"; node qub2.js | tail -1
 echo "== 7. auto-build a $SET test deck and add it as a preset (if enough legal cards)"
