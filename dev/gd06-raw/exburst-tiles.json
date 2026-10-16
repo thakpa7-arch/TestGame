@@ -1,0 +1,1042 @@
+[
+{
+"id": "GD06-001",
+"name": "Gundam GP01Fb",
+"cost": "4 cost",
+"color": "Blue",
+"type": "UNIT",
+"rarity": "LR"
+},
+{
+"id": "GD06-002",
+"name": "Infinite Justice Gundam",
+"cost": "6 cost",
+"color": "Blue",
+"type": "UNIT",
+"rarity": "LR"
+},
+{
+"id": "GD06-003",
+"name": "GQuuuuuuX (Omega Psycommu Released)",
+"cost": "4 cost",
+"color": "Blue",
+"type": "UNIT",
+"rarity": "LR"
+},
+{
+"id": "GD06-004",
+"name": "Gundam GP01",
+"cost": "2 cost",
+"color": "Blue",
+"type": "UNIT",
+"rarity": "R"
+},
+{
+"id": "GD06-005",
+"name": "Akatsuki (Shiranui)",
+"cost": "5 cost",
+"color": "Blue",
+"type": "UNIT",
+"rarity": "R"
+},
+{
+"id": "GD06-006",
+"name": "GQuuuuuuX (Omega Psycommu)",
+"cost": "3 cost",
+"color": "Blue",
+"type": "UNIT",
+"rarity": "R"
+},
+{
+"id": "GD06-007",
+"name": "Kikeroga (MS Mode) (GQ)",
+"cost": "5 cost",
+"color": "Blue",
+"type": "UNIT",
+"rarity": "R"
+},
+{
+"id": "GD06-008",
+"name": "Powered GM",
+"cost": "2 cost",
+"color": "Blue",
+"type": "UNIT",
+"rarity": "U"
+},
+{
+"id": "GD06-009",
+"name": "GM Custom",
+"cost": "2 cost",
+"color": "Blue",
+"type": "UNIT",
+"rarity": "U"
+},
+{
+"id": "GD06-010",
+"name": "GM Cannon II",
+"cost": "2 cost",
+"color": "Blue",
+"type": "UNIT",
+"rarity": "U"
+},
+{
+"id": "GD06-011",
+"name": "Red Gundam",
+"cost": "4 cost",
+"color": "Blue",
+"type": "UNIT",
+"rarity": "U"
+},
+{
+"id": "GD06-012",
+"name": "Z'Gok",
+"cost": "2 cost",
+"color": "Blue",
+"type": "UNIT",
+"rarity": "C"
+},
+{
+"id": "GD06-013",
+"name": "Zaku II F2 (EFSF)",
+"cost": "1 cost",
+"color": "Blue",
+"type": "UNIT",
+"rarity": "C"
+},
+{
+"id": "GD06-014",
+"name": "GM Type C",
+"cost": "1 cost",
+"color": "Blue",
+"type": "UNIT",
+"rarity": "C"
+},
+{
+"id": "GD06-015",
+"name": "Waldfeld's Gaia Gundam",
+"cost": "3 cost",
+"color": "Blue",
+"type": "UNIT",
+"rarity": "C"
+},
+{
+"id": "GD06-016",
+"name": "Dom Trooper",
+"cost": "2 cost",
+"color": "Blue",
+"type": "UNIT",
+"rarity": "C"
+},
+{
+"id": "GD06-017",
+"name": "GQuuuuuuX",
+"cost": "2 cost",
+"color": "Blue",
+"type": "UNIT",
+"rarity": "C"
+},
+{
+"id": "GD06-018",
+"name": "Elpeo Ple's Qubeley Mk-II",
+"cost": "2 cost",
+"color": "Green",
+"type": "UNIT",
+"rarity": "LR"
+},
+{
+"id": "GD06-019",
+"name": "Turn X",
+"cost": "7 cost",
+"color": "Green",
+"type": "UNIT",
+"rarity": "LR"
+},
+{
+"id": "GD06-020",
+"name": "Hamma-Hamma",
+"cost": "3 cost",
+"color": "Green",
+"type": "UNIT",
+"rarity": "R"
+},
+{
+"id": "GD06-021",
+"name": "Turn X (Top)",
+"cost": "3 cost",
+"color": "Green",
+"type": "UNIT",
+"rarity": "R"
+},
+{
+"id": "GD06-022",
+"name": "Merrybell's Bandit",
+"cost": "4 cost",
+"color": "Green",
+"type": "UNIT",
+"rarity": "R"
+},
+{
+"id": "GD06-023",
+"name": "Galluss J",
+"cost": "1 cost",
+"color": "Green",
+"type": "UNIT",
+"rarity": "U"
+},
+{
+"id": "GD06-024",
+"name": "R-Jarja",
+"cost": "4 cost",
+"color": "Green",
+"type": "UNIT",
+"rarity": "U"
+},
+{
+"id": "GD06-025",
+"name": "Re-GZ",
+"cost": "2 cost",
+"color": "Green",
+"type": "UNIT",
+"rarity": "U"
+},
+{
+"id": "GD06-026",
+"name": "Stero's Mahiroo",
+"cost": "3 cost",
+"color": "Green",
+"type": "UNIT",
+"rarity": "U"
+},
+{
+"id": "GD06-027",
+"name": "Mashymre's Zssa",
+"cost": "2 cost",
+"color": "Green",
+"type": "UNIT",
+"rarity": "C"
+},
+{
+"id": "GD06-028",
+"name": "Gaza D",
+"cost": "1 cost",
+"color": "Green",
+"type": "UNIT",
+"rarity": "C"
+},
+{
+"id": "GD06-029",
+"name": "Elpeo Ple's Qubeley Mk-II",
+"cost": "3 cost",
+"color": "Green",
+"type": "UNIT",
+"rarity": "C"
+},
+{
+"id": "GD06-030",
+"name": "Mahiroo",
+"cost": "2 cost",
+"color": "Green",
+"type": "UNIT",
+"rarity": "C"
+},
+{
+"id": "GD06-031",
+"name": "Zssan",
+"cost": "2 cost",
+"color": "Green",
+"type": "UNIT",
+"rarity": "C"
+},
+{
+"id": "GD06-032",
+"name": "Bellona",
+"cost": "1 cost",
+"color": "Green",
+"type": "UNIT",
+"rarity": "C"
+},
+{
+"id": "GD06-033",
+"name": "ZZ Gundam",
+"cost": "8 cost",
+"color": "Red",
+"type": "UNIT",
+"rarity": "LR"
+},
+{
+"id": "GD06-034",
+"name": "Gundam Bael",
+"cost": "6 cost",
+"color": "Red",
+"type": "UNIT",
+"rarity": "LR"
+},
+{
+"id": "GD06-035",
+"name": "Zeta Gundam",
+"cost": "4 cost",
+"color": "Red",
+"type": "UNIT",
+"rarity": "R"
+},
+{
+"id": "GD06-036",
+"name": "Gundam Vidar",
+"cost": "2 cost",
+"color": "Red",
+"type": "UNIT",
+"rarity": "R"
+},
+{
+"id": "GD06-037",
+"name": "Reginlaze Julia",
+"cost": "4 cost",
+"color": "Red",
+"type": "UNIT",
+"rarity": "R"
+},
+{
+"id": "GD06-038",
+"name": "Gundam Kimaris Vidar",
+"cost": "6 cost",
+"color": "Red",
+"type": "UNIT",
+"rarity": "R"
+},
+{
+"id": "GD06-039",
+"name": "Neo Core Fighter",
+"cost": "2 cost",
+"color": "Red",
+"type": "UNIT",
+"rarity": "U"
+},
+{
+"id": "GD06-040",
+"name": "Gundam Mk-II",
+"cost": "2 cost",
+"color": "Red",
+"type": "UNIT",
+"rarity": "U"
+},
+{
+"id": "GD06-041",
+"name": "Neo Lorrnoke's Windam (Jet Striker)",
+"cost": "3 cost",
+"color": "Red",
+"type": "UNIT",
+"rarity": "U"
+},
+{
+"id": "GD06-042",
+"name": "Destroy Gundam (MA Mode)",
+"cost": "6 cost",
+"color": "Red",
+"type": "UNIT",
+"rarity": "U"
+},
+{
+"id": "GD06-043",
+"name": "Julieta's Reginlaze",
+"cost": "3 cost",
+"color": "Red",
+"type": "UNIT",
+"rarity": "U"
+},
+{
+"id": "GD06-044",
+"name": "Core Top",
+"cost": "2 cost",
+"color": "Red",
+"type": "UNIT",
+"rarity": "C"
+},
+{
+"id": "GD06-045",
+"name": "Core Base",
+"cost": "2 cost",
+"color": "Red",
+"type": "UNIT",
+"rarity": "C"
+},
+{
+"id": "GD06-046",
+"name": "Hyaku-Shiki",
+"cost": "3 cost",
+"color": "Red",
+"type": "UNIT",
+"rarity": "C"
+},
+{
+"id": "GD06-047",
+"name": "Windam",
+"cost": "1 cost",
+"color": "Red",
+"type": "UNIT",
+"rarity": "C"
+},
+{
+"id": "GD06-048",
+"name": "Helmwige Reincar",
+"cost": "2 cost",
+"color": "Red",
+"type": "UNIT",
+"rarity": "C"
+},
+{
+"id": "GD06-049",
+"name": "Gundam GP02A",
+"cost": "4 cost",
+"color": "Purple",
+"type": "UNIT",
+"rarity": "LR"
+},
+{
+"id": "GD06-050",
+"name": "Legend Gundam",
+"cost": "5 cost",
+"color": "Purple",
+"type": "UNIT",
+"rarity": "LR"
+},
+{
+"id": "GD06-051",
+"name": "GFreD",
+"cost": "5 cost",
+"color": "Purple",
+"type": "UNIT",
+"rarity": "LR"
+},
+{
+"id": "GD06-052",
+"name": "Val Walo",
+"cost": "4 cost",
+"color": "Purple",
+"type": "UNIT",
+"rarity": "R"
+},
+{
+"id": "GD06-053",
+"name": "Xavier's Gyan Hakuji-Packs (GQ)",
+"cost": "3 cost",
+"color": "Purple",
+"type": "UNIT",
+"rarity": "R"
+},
+{
+"id": "GD06-054",
+"name": "GFreD",
+"cost": "6 cost",
+"color": "Purple",
+"type": "UNIT",
+"rarity": "R"
+},
+{
+"id": "GD06-055",
+"name": "Gundam GP02A",
+"cost": "2 cost",
+"color": "Purple",
+"type": "UNIT",
+"rarity": "U"
+},
+{
+"id": "GD06-056",
+"name": "Xamel",
+"cost": "3 cost",
+"color": "Purple",
+"type": "UNIT",
+"rarity": "U"
+},
+{
+"id": "GD06-057",
+"name": "Karius' Rick Dom II",
+"cost": "2 cost",
+"color": "Purple",
+"type": "UNIT",
+"rarity": "U"
+},
+{
+"id": "GD06-058",
+"name": "Blast Impulse Gundam",
+"cost": "2 cost",
+"color": "Purple",
+"type": "UNIT",
+"rarity": "U"
+},
+{
+"id": "GD06-059",
+"name": "Dom Tropen",
+"cost": "2 cost",
+"color": "Purple",
+"type": "UNIT",
+"rarity": "C"
+},
+{
+"id": "GD06-060",
+"name": "Zaku II F2",
+"cost": "1 cost",
+"color": "Purple",
+"type": "UNIT",
+"rarity": "C"
+},
+{
+"id": "GD06-061",
+"name": "Dra-C",
+"cost": "1 cost",
+"color": "Purple",
+"type": "UNIT",
+"rarity": "C"
+},
+{
+"id": "GD06-062",
+"name": "Gyan Hakuji-Packs (GQ)",
+"cost": "2 cost",
+"color": "Purple",
+"type": "UNIT",
+"rarity": "C"
+},
+{
+"id": "GD06-063",
+"name": "GFreD",
+"cost": "1 cost",
+"color": "Purple",
+"type": "UNIT",
+"rarity": "C"
+},
+{
+"id": "GD06-064",
+"name": "Altron Gundam (EW)",
+"cost": "3 cost",
+"color": "White",
+"type": "UNIT",
+"rarity": "LR"
+},
+{
+"id": "GD06-065",
+"name": "SUMO Gold Type",
+"cost": "4 cost",
+"color": "White",
+"type": "UNIT",
+"rarity": "LR"
+},
+{
+"id": "GD06-066",
+"name": "Shadow Gundam",
+"cost": "4 cost",
+"color": "White",
+"type": "UNIT",
+"rarity": "R"
+},
+{
+"id": "GD06-067",
+"name": "Gundam Sandrock Custom (EW)",
+"cost": "4 cost",
+"color": "White",
+"type": "UNIT",
+"rarity": "R"
+},
+{
+"id": "GD06-068",
+"name": "Gundam Heavyarms Custom (EW)",
+"cost": "3 cost",
+"color": "White",
+"type": "UNIT",
+"rarity": "R"
+},
+{
+"id": "GD06-069",
+"name": "SUMO Silver Type",
+"cost": "3 cost",
+"color": "White",
+"type": "UNIT",
+"rarity": "R"
+},
+{
+"id": "GD06-070",
+"name": "Eagail",
+"cost": "5 cost",
+"color": "White",
+"type": "UNIT",
+"rarity": "R"
+},
+{
+"id": "GD06-071",
+"name": "Shining Gundam (Meikyo Shisui)",
+"cost": "5 cost",
+"color": "White",
+"type": "UNIT",
+"rarity": "U"
+},
+{
+"id": "GD06-072",
+"name": "Gundam Deathscythe Hell (EW)",
+"cost": "3 cost",
+"color": "White",
+"type": "UNIT",
+"rarity": "U"
+},
+{
+"id": "GD06-073",
+"name": "Wing Gundam Zero (EW)",
+"cost": "2 cost",
+"color": "White",
+"type": "UNIT",
+"rarity": "U"
+},
+{
+"id": "GD06-074",
+"name": "Flat",
+"cost": "2 cost",
+"color": "White",
+"type": "UNIT",
+"rarity": "U"
+},
+{
+"id": "GD06-075",
+"name": "Serpent",
+"cost": "2 cost",
+"color": "White",
+"type": "UNIT",
+"rarity": "C"
+},
+{
+"id": "GD06-076",
+"name": "WaDom",
+"cost": "4 cost",
+"color": "White",
+"type": "UNIT",
+"rarity": "C"
+},
+{
+"id": "GD06-077",
+"name": "Cannon Illfuto",
+"cost": "2 cost",
+"color": "White",
+"type": "UNIT",
+"rarity": "C"
+},
+{
+"id": "GD06-078",
+"name": "WaD",
+"cost": "1 cost",
+"color": "White",
+"type": "UNIT",
+"rarity": "C"
+},
+{
+"id": "GD06-079",
+"name": "Muttowooo",
+"cost": "2 cost",
+"color": "White",
+"type": "UNIT",
+"rarity": "C"
+},
+{
+"id": "GD06-080",
+"name": "Kou Uraki",
+"cost": "1 cost",
+"color": "Blue",
+"type": "PILOT",
+"rarity": "R"
+},
+{
+"id": "GD06-081",
+"name": "Amate Yuzuriha (Machu)",
+"cost": "1 cost",
+"color": "Blue",
+"type": "PILOT",
+"rarity": "R"
+},
+{
+"id": "GD06-082",
+"name": "Athrun Zala",
+"cost": "1 cost",
+"color": "Blue",
+"type": "PILOT",
+"rarity": "U"
+},
+{
+"id": "GD06-083",
+"name": "Challia Bull (GQ)",
+"cost": "1 cost",
+"color": "Blue",
+"type": "PILOT",
+"rarity": "C"
+},
+{
+"id": "GD06-084",
+"name": "Elpeo Ple",
+"cost": "1 cost",
+"color": "Green",
+"type": "PILOT",
+"rarity": "R"
+},
+{
+"id": "GD06-085",
+"name": "Gym Ghingnham",
+"cost": "1 cost",
+"color": "Green",
+"type": "PILOT",
+"rarity": "U"
+},
+{
+"id": "GD06-086",
+"name": "Mashymre Cello",
+"cost": "1 cost",
+"color": "Green",
+"type": "PILOT",
+"rarity": "C"
+},
+{
+"id": "GD06-087",
+"name": "Merrybell Gadget",
+"cost": "1 cost",
+"color": "Green",
+"type": "PILOT",
+"rarity": "C"
+},
+{
+"id": "GD06-088",
+"name": "Judau Ashta",
+"cost": "1 cost",
+"color": "Red",
+"type": "PILOT",
+"rarity": "R"
+},
+{
+"id": "GD06-089",
+"name": "McGillis Fareed",
+"cost": "1 cost",
+"color": "Red",
+"type": "PILOT",
+"rarity": "U"
+},
+{
+"id": "GD06-090",
+"name": "Vidar",
+"cost": "1 cost",
+"color": "Red",
+"type": "PILOT",
+"rarity": "U"
+},
+{
+"id": "GD06-091",
+"name": "Roux Louka",
+"cost": "1 cost",
+"color": "Red",
+"type": "PILOT",
+"rarity": "C"
+},
+{
+"id": "GD06-092",
+"name": "Neo Lorrnoke",
+"cost": "1 cost",
+"color": "Red",
+"type": "PILOT",
+"rarity": "C"
+},
+{
+"id": "GD06-093",
+"name": "Anavel Gato",
+"cost": "1 cost",
+"color": "Purple",
+"type": "PILOT",
+"rarity": "R"
+},
+{
+"id": "GD06-094",
+"name": "Nyaan",
+"cost": "1 cost",
+"color": "Purple",
+"type": "PILOT",
+"rarity": "R"
+},
+{
+"id": "GD06-095",
+"name": "Kelley Layzner",
+"cost": "1 cost",
+"color": "Purple",
+"type": "PILOT",
+"rarity": "U"
+},
+{
+"id": "GD06-096",
+"name": "Xavier Olivette",
+"cost": "1 cost",
+"color": "Purple",
+"type": "PILOT",
+"rarity": "C"
+},
+{
+"id": "GD06-097",
+"name": "Harry Ord",
+"cost": "1 cost",
+"color": "White",
+"type": "PILOT",
+"rarity": "R"
+},
+{
+"id": "GD06-098",
+"name": "Duo Maxwell",
+"cost": "1 cost",
+"color": "White",
+"type": "PILOT",
+"rarity": "U"
+},
+{
+"id": "GD06-099",
+"name": "Chang Wufei",
+"cost": "1 cost",
+"color": "White",
+"type": "PILOT",
+"rarity": "C"
+},
+{
+"id": "GD06-100",
+"name": "Corin Nander",
+"cost": "1 cost",
+"color": "White",
+"type": "PILOT",
+"rarity": "C"
+},
+{
+"id": "GD06-101",
+"name": "The Gundam Says",
+"cost": "2 cost",
+"color": "Blue",
+"type": "COMMAND",
+"rarity": "R"
+},
+{
+"id": "GD06-102",
+"name": "A Miracle",
+"cost": "3 cost",
+"color": "Blue",
+"type": "COMMAND",
+"rarity": "U"
+},
+{
+"id": "GD06-103",
+"name": "Restore the Front Line",
+"cost": "1 cost",
+"color": "Blue",
+"type": "COMMAND",
+"rarity": "C"
+},
+{
+"id": "GD06-104",
+"name": "Steady Support",
+"cost": "1 cost",
+"color": "Blue",
+"type": "COMMAND",
+"rarity": "C"
+},
+{
+"id": "GD06-105",
+"name": "Grace Under Pressure",
+"cost": "3 cost",
+"color": "Green",
+"type": "COMMAND",
+"rarity": "R"
+},
+{
+"id": "GD06-106",
+"name": "Presence Detected",
+"cost": "1 cost",
+"color": "Green",
+"type": "COMMAND",
+"rarity": "U"
+},
+{
+"id": "GD06-107",
+"name": "Wheel Spoke Formation",
+"cost": "1 cost",
+"color": "Green",
+"type": "COMMAND",
+"rarity": "C"
+},
+{
+"id": "GD06-108",
+"name": "On Edge",
+"cost": "1 cost",
+"color": "Green",
+"type": "COMMAND",
+"rarity": "C"
+},
+{
+"id": "GD06-109",
+"name": "God of War Ghingnham",
+"cost": "1 cost",
+"color": "Green",
+"type": "COMMAND",
+"rarity": "C"
+},
+{
+"id": "GD06-110",
+"name": "Familial Love",
+"cost": "1 cost",
+"color": "Red",
+"type": "COMMAND",
+"rarity": "R"
+},
+{
+"id": "GD06-111",
+"name": "Steely Loyalty",
+"cost": "1 cost",
+"color": "Red",
+"type": "COMMAND",
+"rarity": "R"
+},
+{
+"id": "GD06-112",
+"name": "Rivalry with Roux",
+"cost": "1 cost",
+"color": "Red",
+"type": "COMMAND",
+"rarity": "C"
+},
+{
+"id": "GD06-113",
+"name": "Unsanctioned Ordnance",
+"cost": "4 cost",
+"color": "Red",
+"type": "COMMAND",
+"rarity": "C"
+},
+{
+"id": "GD06-114",
+"name": "Alphaciders",
+"cost": "1 cost",
+"color": "Purple",
+"type": "COMMAND",
+"rarity": "R"
+},
+{
+"id": "GD06-115",
+"name": "Teaching New Techniques",
+"cost": "3 cost",
+"color": "Purple",
+"type": "COMMAND",
+"rarity": "U"
+},
+{
+"id": "GD06-116",
+"name": "Afterglow of Zeon",
+"cost": "5 cost",
+"color": "Purple",
+"type": "COMMAND",
+"rarity": "C"
+},
+{
+"id": "GD06-117",
+"name": "Veterans Joining Forces",
+"cost": "1 cost",
+"color": "Purple",
+"type": "COMMAND",
+"rarity": "C"
+},
+{
+"id": "GD06-118",
+"name": "Infinite Variations",
+"cost": "2 cost",
+"color": "White",
+"type": "COMMAND",
+"rarity": "R"
+},
+{
+"id": "GD06-119",
+"name": "Sturm und Drang",
+"cost": "1 cost",
+"color": "White",
+"type": "COMMAND",
+"rarity": "U"
+},
+{
+"id": "GD06-120",
+"name": "Hoping for Peace",
+"cost": "1 cost",
+"color": "White",
+"type": "COMMAND",
+"rarity": "C"
+},
+{
+"id": "GD06-121",
+"name": "Crybaby Poe",
+"cost": "1 cost",
+"color": "White",
+"type": "COMMAND",
+"rarity": "C"
+},
+{
+"id": "GD06-122",
+"name": "Albion",
+"cost": "1 cost",
+"color": "Blue",
+"type": "BASE",
+"rarity": "U"
+},
+{
+"id": "GD06-123",
+"name": "Endra",
+"cost": "2 cost",
+"color": "Green",
+"type": "BASE",
+"rarity": "U"
+},
+{
+"id": "GD06-124",
+"name": "Aspite",
+"cost": "1 cost",
+"color": "Green",
+"type": "BASE",
+"rarity": "C"
+},
+{
+"id": "GD06-125",
+"name": "Argama",
+"cost": "1 cost",
+"color": "Red",
+"type": "BASE",
+"rarity": "U"
+},
+{
+"id": "GD06-126",
+"name": "Skipjack-class Warship",
+"cost": "1 cost",
+"color": "Red",
+"type": "BASE",
+"rarity": "C"
+},
+{
+"id": "GD06-127",
+"name": "Yomagn'tho",
+"cost": "2 cost",
+"color": "Purple",
+"type": "BASE",
+"rarity": "U"
+},
+{
+"id": "GD06-128",
+"name": "Gwaden",
+"cost": "1 cost",
+"color": "Purple",
+"type": "BASE",
+"rarity": "C"
+},
+{
+"id": "GD06-129",
+"name": "5th Luna",
+"cost": "3 cost",
+"color": "Purple",
+"type": "BASE",
+"rarity": "C"
+},
+{
+"id": "GD06-130",
+"name": "Soleil",
+"cost": "1 cost",
+"color": "White",
+"type": "BASE",
+"rarity": "U"
+}
+]
