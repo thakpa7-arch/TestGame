@@ -1,0 +1,1275 @@
+<!DOCTYPE html><html  class="" lang="en"><head><meta charset="utf-8"><link rel="preconnect" href="https://cdn.exburst.dev" crossorigin><style data-exb-lcp-cover>:root{--top-page-cover-art-height:14.5rem;--top-page-cover-meta-height:4.5rem}.top-page-cover{position:relative;min-block-size:calc(var(--top-page-cover-art-height) + var(--top-page-cover-meta-height));padding-block-start:var(--top-page-cover-art-height);min-inline-size:0}.top-page-cover__art-frame{position:absolute;inset-block-start:0;inset-inline:0;block-size:var(--top-page-cover-art-height);overflow:hidden}.top-page-cover__media,.top-page-cover__picture,.top-page-cover__image{position:absolute;inset:0}.top-page-cover__picture,.top-page-cover__image{display:block;inline-size:100%;block-size:100%;object-fit:cover}</style><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Reginlaze Julia | GD06-037 | R Card | Gundam Card Game</title><script type="importmap">{"imports":{"#entry":"/_nuxt/r0ae02ab39b13cc4930af/DIY2yEPZ.js"}}</script><script data-hid="exb-accent-boot">;(function restoreAccent(choices, key, next) {
+  var v = typeof next === 'string' ? next : 'yellow'
+  var r = document.documentElement
+  if (typeof next !== 'string') {
+    try {
+      v = localStorage.getItem(key) || v
+    } catch (e) {}
+  }
+  var m = /^#([0-9a-fA-F]{6})$/.exec(v)
+  if (m) {
+    var h = m[1].toLowerCase()
+    var n = parseInt(h, 16)
+    var L = 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)
+    // Light ink on a dark custom colour must read at 4.5:1 (mirrors fillForLightInk;
+    // embedded alone before paint, so it cannot import it). Luminance cap 0.173.
+    var fill = '#' + h
+    if (L <= 140) {
+      // prettier-ignore
+      for (var k = 0, f = function (c) { c /= 255; return c < 0.04 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4) }, m; k < 100; k++) {
+        // prettier-ignore
+        m = [n >> 16, (n >> 8) & 255, n & 255].map(function (c) { return Math.round(c * (1 - k / 100)) })
+        if (0.2126 * f(m[0]) + 0.7152 * f(m[1]) + 0.0722 * f(m[2]) <= 0.173) break
+      }
+      // prettier-ignore
+      fill = '#' + m.map(function (c) { return ('0' + c.toString(16)).slice(-2) }).join('')
+    }
+    r.setAttribute('data-accent', 'custom')
+    r.style.setProperty('--personal-accent', fill)
+    r.style.setProperty('--personal-accent-picked', '#' + h)
+    r.style.setProperty('--personal-accent-ink', L > 140 ? 'var(--sticker-ink)' : 'var(--ink)')
+    return
+  }
+  if (choices.indexOf(v) < 0 && v !== 'acid') v = 'yellow'
+  r.setAttribute('data-accent', v)
+  r.style.removeProperty('--personal-accent')
+  r.style.removeProperty('--personal-accent-picked')
+  r.style.removeProperty('--personal-accent-ink')
+})(["yellow","coral","violet","blue","teal","gold","orange"],"exb-accent");</script><script data-hid="exb-android-viewport">(function(){try{var u=navigator.userAgent;if(!/\bAndroid\b/i.test(u))return;if(/\bGecko\/\d/.test(u))document.documentElement.setAttribute("data-exb-no-bottom-inset",'');var c="width=device-width, initial-scale=1";var f=function(){var m=document.querySelector('meta[name="viewport"]');if(!m)return false;if(m.getAttribute('content')!==c)m.setAttribute('content',c);return true};if(f())return;var o=new MutationObserver(function(){if(f())o.disconnect()});o.observe(document.documentElement,{childList:true,subtree:true});document.addEventListener('DOMContentLoaded',function(){f();o.disconnect()})}catch(e){}})();</script><script data-hid="exb-account-paint">(function(){
+function readHint(){try{var raw=localStorage.getItem('exb-user-display');var hint=raw?JSON.parse(raw):null;if(hint&&typeof hint.userName==='string'&&hint.userName)return hint;return null}catch(e){return null}}
+function returning(){try{return localStorage.getItem('exb-had-session')==='1'||!!readHint()}catch(e){return false}}
+// A known member whose session expired keeps the avatar cover but expects no
+// restore: no refresh request, no member-chrome reserve.
+function sessionExpected(){try{if(localStorage.getItem('exb-had-session')==='1')return true;var h=readHint();return !!(h&&!h.expired)}catch(e){return false}}
+function avatarFromHint(hint){if(!hint)return'';var u=hint.userAvatar||hint.avatar||hint.user_avatar||'';return typeof u==='string'&&u?u:''}
+function smallAvatar(u){if(!u||typeof u!=='string')return'';var LEGACY='https://exburst.dev/userAvatars/';var SD=LEGACY+'sd/';if(u.indexOf(SD)===0)return LEGACY+u.slice(SD.length);if(u.indexOf(LEGACY)===0)return u;try{var url=new URL(u);var host=url.hostname;if(host!=='cdn.exburst.dev'&&host.slice(-16)!=='.cdn.exburst.dev')return u;url.searchParams.set('width','80');url.searchParams.set('height','80');url.searchParams.set('aspect_ratio','1:1');url.searchParams.set('crop','face');url.searchParams.set('quality','85');url.searchParams.set('format','auto');return url.toString()}catch(e){return u}}
+if(!returning())return;
+// data-* (not class): useHead owns html.class (exb-shell-scroll). Adding a
+// boot class to classList before hydrate caused Hydration mismatches for
+// every returning member and remounted shell chrome.
+try{document.documentElement.setAttribute('data-exb-boot-member','1')}catch(e){}
+// Start the session refresh now, overlapping the JS download; auth.js
+// refresh() adopts this response once (takeBootRefresh). Same hint gate as
+// the client, so anonymous visitors still make no auth request. The route is
+// idempotency-exempt; the key only keeps a front shipped before that API
+// change from getting a 400.
+if(sessionExpected()){try{document.documentElement.setAttribute('data-exb-boot-session','1')}catch(e){}
+try{if(!window.__exbBootRefresh&&window.fetch){window.__exbBootRefresh=fetch('/api/v1/auth/refresh',{method:'POST',credentials:'include',headers:{Accept:'application/json','Idempotency-Key':'boot'+Date.now().toString(36)+Math.random().toString(36).slice(2)}})}}catch(e){}}
+var hint0=readHint();var avatar0=smallAvatar(avatarFromHint(hint0));if(avatar0){try{var css=document.createElement('style');css.id='exb-boot-avatar-css';css.textContent='html[data-exb-boot-member] [data-poc-auth-control]:not(.exb-account-hinted)::after,html[data-exb-boot-member] [data-shell-account-control]::after{background-image:url('+JSON.stringify(avatar0)+');background-size:cover;background-position:center;background-color:transparent}';(document.head||document.documentElement).appendChild(css);var pre=document.createElement('link');pre.rel='preload';pre.as='image';pre.href=avatar0;(document.head||document.documentElement).appendChild(pre)}catch(e){}}
+})();</script><script data-hid="exb-ad-paint">(function(){var h=document.documentElement,st=null,seen=true,member=false;try{st=localStorage.getItem('exb-ad-free');seen=!!localStorage.getItem('hasSeenAds');member=localStorage.getItem('exb-had-session')==='1';if(!member){var d=JSON.parse(localStorage.getItem('exb-user-display')||'null');member=!!(d&&d.userName&&!d.expired)}}catch(e){}if(st==='1')return;if(st!=='0'&&member)return;h.setAttribute('data-exb-ads','1');if(seen)h.setAttribute('data-exb-ad-seen','1')})();</script><style data-hid="exb-entry">:root {
+ 
+ --bg: #0f0f0f;
+ --surface: #1a1a1a;
+ --surface-2: #2a2a2a;
+ --surface-3: #303030;
+ 
+ --hero-void: #0f0f0f;
+ --line: #404040;
+ --line-strong: #4a4a4a;
+ 
+ --surface-outline: var(--line);
+ --surface-outline-width: 1px;
+ 
+ --surface-outline-selected: var(--brand);
+ --surface-outline-selected-width: 2px;
+ 
+ --border-subtle: var(--line);
+ 
+ --ink: #fff;
+ --ink-2: #d4d4d4;
+ --ink-3: #a3a3a3;
+ 
+ --ink-4: #999;
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ --brand: #fffd00;
+ --brand-ink: #1a1206;
+ 
+ --primary-font-color: var(--brand-ink);
+ 
+ --brand-deep: #f8b800;
+ 
+ --sticker: #fffd00;
+ --sticker-deep: #f8b800;
+ --sticker-ink: #1a1206;
+ 
+ --action: var(--brand);
+ --action-ink: var(--brand-ink);
+ --action-soft: color-mix(in oklch, var(--action) 12%, transparent);
+ --action-line: color-mix(in oklch, var(--action) 35%, transparent);
+ 
+ --state-new: #e03030;
+ 
+ --state-active: #fffd00;
+ 
+ --state-active-soft: color-mix(in oklch, var(--state-active) 14%, transparent);
+ --state-active-line: color-mix(in oklch, var(--state-active) 40%, transparent);
+ 
+ --state-new-soft: color-mix(in oklch, var(--state-new) 14%, transparent);
+ 
+ --tcg-blue: #0e5a8a;
+ --tcg-rainbow: linear-gradient(
+ 45deg,
+ #f00,
+ #ff7300,
+ #fffb00,
+ #48ff00,
+ #00ffd5,
+ #002bff,
+ #7a00ff,
+ #ff00c8,
+ #f00
+ );
+ --swatch-rainbow: conic-gradient(
+ from 0deg,
+ #f00,
+ #ff7300,
+ #fffb00,
+ #48ff00,
+ #00ffd5,
+ #002bff,
+ #7a00ff,
+ #ff00c8,
+ #f00
+ );
+ 
+ --state-fresh: #4ade80;
+ --accent-warm: #a16207;
+ --accent-cool: #1e40af;
+ 
+ --accent-warm-soft: color-mix(in oklch, var(--accent-warm) 16%, transparent);
+ --accent-cool-soft: color-mix(in oklch, var(--accent-cool) 16%, transparent);
+ 
+ --platform-x: #1d9bf0;
+ --platform-reddit: #ff4500;
+ --platform-discord: #5865f2;
+ --platform-patreon: #ff424d;
+ --platform-youtube: #f00;
+ --platform-twitch: #9146ff;
+ 
+ --platform-discord-soft: color-mix(in oklch, var(--platform-discord) 14%, var(--surface-2));
+ 
+ --roulette-swatch-0: #e94d4d;
+ --roulette-swatch-1: #e98c4d;
+ --roulette-swatch-2: #e9c84d;
+ --roulette-swatch-3: #7fd14d;
+ --roulette-swatch-4: #4dc9b6;
+ --roulette-swatch-5: #4d8ee9;
+ --roulette-swatch-6: #7d4de9;
+ --roulette-swatch-7: #c44de9;
+ --roulette-swatch-8: #e94da3;
+ --roulette-swatch-9: #4ddfe9;
+ 
+ --tone-blue-soft: color-mix(in oklch, var(--blue) 12%, transparent);
+ --tone-blue-line: color-mix(in oklch, var(--blue) 35%, transparent);
+ --tone-red-soft: color-mix(in oklch, var(--red) 12%, transparent);
+ --tone-red-line: color-mix(in oklch, var(--red) 35%, transparent);
+ --tone-success-soft: color-mix(in oklch, var(--success) 12%, transparent);
+ --tone-success-line: color-mix(in oklch, var(--success) 35%, transparent);
+ --tone-gold-soft: color-mix(in oklch, var(--gold) 12%, transparent);
+ --tone-gold-line: color-mix(in oklch, var(--gold) 35%, transparent);
+ --tone-fresh-line-mix: color-mix(in oklch, var(--state-fresh) 25%, var(--line));
+ --tone-action-deep: color-mix(in oklch, var(--action) 35%, black);
+ 
+ --action-hover: color-mix(in oklch, var(--action) 88%, white 12%);
+ 
+ --accent-warm-hover: color-mix(in oklch, var(--accent-warm) 86%, black 14%);
+ 
+ --action-tinted-surface: color-mix(in oklch, var(--action) 14%, var(--surface-2));
+ 
+ --tone-spotlight-fallback: linear-gradient(
+ 135deg,
+ color-mix(in oklch, var(--accent-cool) 30%, var(--surface-2)),
+ color-mix(in oklch, var(--accent-warm) 24%, var(--surface-3))
+ );
+ 
+ --accent-emphasis: color-mix(in oklch, var(--accent) 80%, white);
+ 
+ --accent: #fffd00;
+ --accent-ink: #1a1206;
+ --accent-soft: color-mix(in oklch, var(--accent) 12%, transparent);
+ --accent-line: color-mix(in oklch, var(--accent) 35%, transparent);
+ 
+ --scrollbar-thumb: var(--brand);
+ --scrollbar-thumb-hover: var(--brand-deep);
+ --scrollbar-track: transparent;
+ 
+ 
+ --btn-secondary-bg: #000;
+ 
+ --brand-hover: color-mix(in srgb, var(--brand) 90%, black);
+ 
+ --brand-tint: color-mix(in srgb, var(--brand) 25%, var(--bg));
+ 
+ --hover-wash: rgba(99, 102, 241, 0.1);
+ 
+ --state-save: #15803d;
+ --state-save-hover: #166534;
+ 
+ --danger-fill: #dc2626;
+ --danger-fill-hover: #b91c1c;
+ 
+ --deck-step-add: #28a745;
+ --deck-step-remove: #dc3545;
+ --deck-step-over: #f44;
+ --deck-step-off: #666;
+ --deck-step-count-bg: rgb(0 0 0 / 80%);
+ --deck-step-chips-bg: rgb(10 10 10 / 95%);
+ 
+ --texture-ex: url('https://cdn.exburst.dev/icon/ex_pattern.png');
+ --texture-ex-dim: color-mix(in srgb, var(--line-strong) 62%, transparent);
+ 
+ --texture-ex-dim-panel: color-mix(in srgb, var(--surface-2) 77%, transparent);
+ 
+ --texture-ex-tint-hue: 8%;
+ --texture-ex-tint: color-mix(
+ in srgb,
+ color-mix(in srgb, var(--brand) var(--texture-ex-tint-hue), black) 15%,
+ transparent
+ );
+ 
+ --grid-line: rgba(255, 255, 255, 0.03);
+ --grid-size: 80px;
+ --grid-classic-image:
+ conic-gradient(from 90deg at 1px 1px, transparent 25%, var(--grid-line) 0),
+ linear-gradient(
+ 45deg,
+ transparent calc(50% - 0.5px),
+ var(--grid-line) 0 calc(50% + 0.5px),
+ transparent 0
+ ),
+ linear-gradient(
+ -45deg,
+ transparent calc(50% - 0.5px),
+ var(--grid-line) 0 calc(50% + 0.5px),
+ transparent 0
+ );
+ --grid-classic-size:
+ var(--grid-size) var(--grid-size), calc(2 * var(--grid-size)) calc(2 * var(--grid-size)),
+ calc(2 * var(--grid-size)) calc(2 * var(--grid-size));
+ --grid-classic-position: -0.5px -0.5px, 0 0, 0 0;
+ 
+ --title-scrim: linear-gradient(
+ 90deg,
+ color-mix(in srgb, var(--bg) 96%, transparent) 0%,
+ color-mix(in srgb, var(--bg) 82%, transparent) 55%,
+ color-mix(in srgb, var(--bg) 55%, transparent) 100%
+ );
+ --title-shadow: 0 1px 2px rgba(0, 0, 0, 0.9), 0 0 12px rgba(0, 0, 0, 0.6);
+ 
+ 
+ 
+ 
+ --burst-yellow: var(--brand);
+ --burst-yellow-ink: var(--brand-ink);
+ --burst-red: var(--action);
+ --burst-red-ink: var(--action-ink);
+ --burst-red-soft: var(--action-soft);
+ --burst-red-line: var(--action-line);
+ 
+ --ink-1: var(--ink);
+ --surface-1: var(--surface);
+ --surface-0: var(--bg);
+ --surface-line: var(--line);
+ --ink-on-action: var(--action-ink);
+ --accent-purple: var(--accent);
+ 
+ --purple: #6d28d9;
+ --blue: #1e40af;
+ --red: #991b1b;
+ --gold: #a16207;
+ --green: #15803d;
+ --success: #22c55e;
+ --warn: #f59e0b;
+ --warn-soft: color-mix(in oklch, var(--warn) 14%, var(--surface-2));
+ --warn-line: color-mix(in oklch, var(--warn) 42%, transparent);
+ --danger: #ef4444;
+ --danger-soft: color-mix(in oklch, var(--danger) 16%, transparent);
+ --info: #60a5fa;
+ 
+ --gig-die-accent: #f3ed75;
+ --gig-die-ink: #fff6a0;
+ --gig-die-origin-opp: #4aa8ff;
+ --gig-die-origin-opp-ink: #bfe9ff;
+ 
+ --white: #fff;
+ --black: #000;
+ 
+ --henshin-gold: #fddc05;
+ --henshin-gold-shade: #e6b800;
+ --henshin-plum: #3a2a3b;
+ --henshin-plum-lit: #6f4459;
+ --henshin-plum-shade: #4d3a49;
+ --henshin-silver: #dfe8e5;
+ --henshin-red: #e0463a;
+ --henshin-green: #6fd267;
+ --henshin-green-glow: #dcf7d3;
+ 
+ --ark-black: #141416;
+ --ark-black-2: #24242a;
+ --ark-red: #8e0d12;
+ --ark-red-shade: #5e080c;
+ --ark-hot: #ff2a2f;
+ --ark-white: #f4f4f2;
+ 
+ --purple-deep: #1a0a30;
+ --blue-deep: #0a1530;
+ --red-deep: #2a0505;
+ --gold-deep: #2a1a05;
+ --green-deep: #052a10;
+ 
+ 
+ --ex-coin-gold-light: #ffd700;
+ --ex-coin-gold-mid: #ffa500;
+ --ex-coin-gold-dark: #cc8400;
+ --ex-coin-rim: #daa520;
+ --ex-coin-ridge: #b8860b;
+ --ex-coin-center: #ffd700;
+ --gold-bright: #fbbf24;
+ 
+ --medal-gold: #f5b301;
+ --medal-silver: #c9ced6;
+ --medal-bronze: #d08a4a;
+ --blue-bright: #60a5fa;
+ --red-bright: #f87171;
+ --green-bright: #4ade80;
+ --purple-bright: #a78bfa;
+ 
+ --teal-bright: #22d3ee;
+ 
+ --card-chip-want: #ff7ab6;
+ 
+ --card-pip-red: #d24a4a;
+ --card-pip-red-line: #b13b3b;
+ --card-pip-blue: #4a7ed2;
+ --card-pip-blue-line: #3b62b1;
+ --card-pip-green: #4ab15a;
+ --card-pip-green-line: #3b8f48;
+ 
+ --card-pip-yellow: #ffd500;
+ --card-pip-yellow-line: #d9b400;
+ --card-pip-purple: #9658c4;
+ --card-pip-purple-line: #7a45a3;
+ --card-pip-black: #2c2c2c;
+ --card-pip-black-line: #111;
+ --card-pip-white: #f3f0e8;
+ --card-pip-white-line: #cfc8b3;
+ --card-pip-orange: #d8853a;
+ --card-pip-orange-line: #b76d2c;
+ 
+ --avatar-bg-gold: #e3ca5a;
+ --avatar-bg-coral: #e37e65;
+ 
+ --radius-sm: 4px;
+ --radius: 8px;
+ 
+ --radius-md: 8px;
+ --radius-lg: 12px;
+ --radius-pill: 9999px;
+ 
+ --ratio-card: 5 / 7;
+ 
+ --ratio-card-landscape: 7 / 5;
+ --ratio-card-square: 1 / 1;
+ 
+ --shadow-1: 0 2px 8px rgba(0, 0, 0, 0.15);
+ --shadow-2: 0 4px 12px rgba(0, 0, 0, 0.2);
+ --shadow-3: 0 8px 24px rgba(0, 0, 0, 0.4);
+ 
+ --edge-highlight: inset 0 0 0 transparent;
+ 
+ --shadow-elev-2: var(--shadow-2);
+ 
+ --shadow-up-1: 0 -2px 6px -2px rgba(0, 0, 0, 0.25);
+ --shadow-up-2: 0 -6px 16px -8px rgba(0, 0, 0, 0.45);
+ --shadow-up-3: 0 -10px 24px -10px rgba(0, 0, 0, 0.55);
+ 
+ --measure-narrow: 440px;
+ --measure-text: 65ch;
+ --measure-form: 720px;
+ --measure-page: 1440px;
+ --measure-wide: 1600px;
+ 
+ --measure-sheet-max: 75%;
+ 
+ --space-1: 0.25rem;
+ --space-2: 0.5rem;
+ --space-3: 0.75rem;
+ --space-4: 1rem;
+ --space-5: 1.5rem;
+ --space-6: 2rem;
+ --space-7: 3rem;
+ 
+ --page-section-gap: var(--space-4);
+ 
+ 
+ --nameplate-max-width: 120px;
+ --nameplate-avatar-box: 50px;
+ --nameplate-chip-overhang: 14px;
+ --nameplate-glow-halo: 15px;
+ --nameplate-row-min-height: 68px;
+ 
+ --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+ --font-editorial: 'Fraunces', georgia, serif;
+ --font-mono: ui-monospace, sfmono-regular, 'SF Mono', menlo, monospace;
+ 
+ --font-display: 'Archivo Black', 'Inter', system-ui, -apple-system, sans-serif;
+ 
+ 
+ 
+ 
+ --text-micro: 0.8125rem;
+ 
+ --text-secondary: 0.8125rem;
+ --text-caption: 0.875rem;
+ --text-body: 1rem;
+ --text-h3: 1.125rem;
+ --text-h2: 1.4rem;
+ --text-h1: 1.75rem;
+ --text-display: 2.25rem;
+ 
+ --text-page-title: 2rem;
+ --text-section-title: 1.5rem;
+ 
+ --text-hero: 3.5rem;
+ 
+ --text-hero-sm: 2.5rem;
+ 
+ 
+ 
+ 
+ --leading-tight: 1.2;
+ --leading-body: 1.6;
+ --leading-loose: 1.7;
+ 
+ --motion-fast: 150ms;
+ --motion-base: 220ms;
+ --motion-slow: 320ms;
+ 
+ --motion-normal: var(--motion-base);
+ --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+ 
+ 
+ --focus: var(--accent-text, var(--accent, #f5a524));
+ --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px var(--focus);
+ 
+ --focus-ring-inset: inset 0 0 0 2px var(--focus), inset 0 0 0 4px var(--bg);
+ 
+ --holo-edge: conic-gradient(
+ from 200deg,
+ hsl(330deg 90% 82%),
+ hsl(40deg 95% 80%),
+ hsl(180deg 85% 80%),
+ hsl(265deg 85% 84%),
+ hsl(330deg 90% 82%)
+ );
+ --holo-sheen: linear-gradient(
+ 110deg,
+ transparent 28%,
+ hsl(330deg 90% 80% / 14%) 36%,
+ hsl(40deg 95% 78% / 34%) 43%,
+ hsl(0deg 0% 100% / 44%) 50%,
+ hsl(180deg 85% 78% / 34%) 57%,
+ hsl(265deg 85% 82% / 14%) 64%,
+ transparent 72%
+ );
+ 
+ --topnav-h: 60px;
+ --breadcrumbs-h-mobile: calc(var(--space-6) + var(--space-2));
+ --tabbar-height: 60px;
+ 
+ --mobile-tabbar-own-h: 67px;
+ --mobile-tabbar-h: var(--mobile-tabbar-own-h);
+ 
+ --reward-panel-inline-size: 232px;
+ 
+ --toast-panel-max-inline-size: 360px;
+ --reward-panel-block-size: 50px;
+ --reward-panel-radius: var(--radius-lg);
+ --reward-panel-surface: var(--surface-1);
+ --reward-panel-border: color-mix(in srgb, var(--accent, var(--brand)) 45%, var(--line));
+ --reward-panel-shadow:
+ 0 1px 0 var(--line-soft, var(--line)) inset, 0 8px 18px -10px rgba(0, 0, 0, 0.28);
+ --reward-panel-padding-block: 10px;
+ --reward-panel-padding-inline: var(--space-3);
+ 
+ --reward-stack-gap: var(--space-2);
+ 
+ --reward-anchor-desktop: calc(var(--safe-bottom) + var(--space-5));
+ 
+ --reward-anchor-mobile: calc(
+ var(--safe-bottom) + var(--space-4) + var(--mobile-tabbar-h) + var(--ad-band-creative-h)
+ );
+ 
+ --xp-hud-clearance: calc(var(--reward-panel-block-size) + var(--reward-stack-gap));
+ 
+ 
+ --z-sticky: 50;
+ 
+ --z-header: 70;
+ --z-action-bar: 80;
+ 
+ --z-modal: 1000;
+ 
+ --z-toast: 5000;
+ 
+ --z-reward: 6000;
+ 
+ --z-maintenance: 9000;
+ 
+ --z-sign-out: 8000;
+ 
+ --z-tooltip: 9500;
+ 
+ 
+ --rainbow-shop: linear-gradient(90deg, #ff5f6d, #ffc371, #6ce5e8, #c8a2c8, #ff5f6d);
+ 
+ --cover-scrim: linear-gradient(
+ to top,
+ rgba(0, 0, 0, 0.88) 0%,
+ rgba(0, 0, 0, 0.62) 38%,
+ rgba(0, 0, 0, 0.28) 70%,
+ rgba(0, 0, 0, 0.18) 100%
+ );
+ 
+ --cover-scrim-soft: linear-gradient(
+ to top,
+ rgba(0, 0, 0, 0.62) 0%,
+ rgba(0, 0, 0, 0.34) 45%,
+ rgba(0, 0, 0, 0.12) 100%
+ );
+ 
+ 
+ 
+ --ad-mobile-banner-w: 320px;
+ --ad-mobile-banner-h: 50px;
+ 
+ --ad-band-creative-h: var(--ad-mobile-banner-h);
+ --ad-banner-w: 468px;
+ --ad-banner-h: 60px;
+ --ad-leaderboard-w: 728px;
+ --ad-leaderboard-h: 90px;
+ 
+ --ad-leaderboard-wide-w: 970px;
+ 
+ --ad-mrec-lg-w: 336px;
+ --ad-mrec-lg-h: 280px;
+ 
+ --ad-mrec-w: 300px;
+ --ad-mrec-h: 250px;
+ 
+ --ad-rail-w: 160px;
+ --ad-rail-h: 600px;
+ 
+ --ad-rail-gap: var(--space-4);
+ --ad-rail-sticky-top: 0px;
+ 
+ --ad-support-line-h: 1.25rem;
+ 
+ --ad-half-page-w: 300px;
+ --ad-half-page-h: 600px;
+ --ad-min-viewport: 1300px;
+ 
+ --safe-top: env(safe-area-inset-top, 0px);
+ --safe-bottom: env(safe-area-inset-bottom, 0px);
+ 
+ --safe-bottom-max: env(safe-area-max-inset-bottom, env(safe-area-inset-bottom, 0px));
+ --safe-bottom-shift: calc(env(safe-area-inset-bottom, 0px) - var(--safe-bottom-max));
+ --safe-left: env(safe-area-inset-left, 0px);
+ --safe-right: env(safe-area-inset-right, 0px);
+}
+:root[data-exb-no-bottom-inset] {
+ --safe-bottom: 0px;
+ --safe-bottom-max: 0px;
+ --safe-bottom-shift: 0px;
+}
+@media (width >= 1920px) {
+ :root {
+ --ad-rail-w: 300px;
+ }
+}
+@media (prefers-contrast: more) {
+ :root {
+ --ink-2: #e5e5e5;
+ --ink-3: #c4c4c4;
+ --ink-4: #b3b3b3;
+ --line: #5c5c5c;
+ --line-strong: #6e6e6e;
+ --border-subtle: var(--line);
+ }
+}
+@media (prefers-reduced-motion: reduce) {
+ :root {
+ --motion-fast: 0ms;
+ --motion-base: 80ms;
+ --motion-slow: 80ms;
+ }
+}
+:root {
+ --palette-yellow: #fffd00;
+ 
+ --palette-coral: #ff7470;
+ --palette-violet: #b58aff;
+ --palette-blue: #58a6ff;
+ --palette-teal: #3ed6c0;
+ --palette-gold: #e8b95b;
+ --palette-orange: #ff974d;
+ --palette-acid: #f4ec3d;
+}
+:root[data-accent='coral'] {
+ --personal-accent: var(--palette-coral);
+}
+:root[data-accent='violet'] {
+ --personal-accent: var(--palette-violet);
+}
+:root[data-accent='blue'] {
+ --personal-accent: var(--palette-blue);
+}
+:root[data-accent='teal'] {
+ --personal-accent: var(--palette-teal);
+}
+:root[data-accent='gold'] {
+ --personal-accent: var(--palette-gold);
+}
+:root[data-accent='orange'] {
+ --personal-accent: var(--palette-orange);
+}
+:root[data-accent='acid'] {
+ --personal-accent: var(--palette-acid);
+}
+:root[data-accent='custom'] {
+ --brand-ink: var(--personal-accent-ink);
+}
+:root[data-accent]:not([data-accent='yellow']) {
+ --brand: var(--personal-accent);
+ --accent: var(--personal-accent);
+ --state-active: var(--personal-accent);
+ --primary-font-color: var(--brand-ink);
+ --brand-deep: color-mix(in srgb, var(--brand) 95%, black 5%);
+}
+*,
+*::before,
+*::after {
+ box-sizing: border-box;
+}
+html,
+body {
+ margin: 0;
+ padding: 0;
+}
+html {
+ text-size-adjust: 100%;
+ 
+ -webkit-tap-highlight-color: transparent;
+}
+body {
+ min-height: 100%;
+ line-height: 1.5;
+ -webkit-font-smoothing: antialiased;
+ -moz-osx-font-smoothing: grayscale;
+ text-rendering: optimizelegibility;
+}
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+ margin: 0;
+ font-weight: inherit;
+ font-size: inherit;
+}
+p,
+figure,
+blockquote,
+dl,
+dd {
+ margin: 0;
+}
+ul[role='list'],
+ol[role='list'] {
+ list-style: none;
+ margin: 0;
+ padding: 0;
+}
+img,
+picture,
+video,
+canvas,
+svg {
+ display: block;
+ max-width: 100%;
+}
+button,
+input,
+select,
+textarea {
+ font: inherit;
+ color: inherit;
+}
+button {
+ background: none;
+ border: 0;
+ padding: 0;
+ cursor: pointer;
+}
+a {
+ color: inherit;
+ text-decoration: none;
+}
+:focus:not(:focus-visible) {
+ outline: none;
+}
+:focus-visible {
+ outline: none;
+ box-shadow: var(--focus-ring);
+ border-radius: var(--radius-sm);
+}
+html,
+body,
+#app {
+ height: 100%;
+}
+body {
+ background: var(--bg);
+ color: var(--ink);
+ font-family: var(--font-body);
+ font-size: 16px;
+ font-feature-settings: 'cv11', 'ss01';
+ 
+}
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+ color: var(--ink);
+ letter-spacing: -0.01em;
+ line-height: 1.2;
+}
+a {
+ color: var(--accent-text, var(--accent));
+ transition: color var(--motion-fast) var(--ease-out-expo);
+}
+@media (hover: hover) {
+ a:hover {
+ color: var(--accent-emphasis);
+ }
+}
+::selection {
+ background: var(--accent-soft);
+ color: var(--ink);
+}
+.stack > * + * {
+ margin-top: var(--stack-gap, var(--space-4));
+}
+.cluster {
+ display: flex;
+ flex-wrap: wrap;
+ gap: var(--cluster-gap, var(--space-2));
+ align-items: center;
+}
+.inline-stack {
+ display: inline-flex;
+ align-items: center;
+ gap: var(--stack-gap, var(--space-2));
+}
+.grow {
+ flex-grow: 1;
+}
+.page-flow {
+ display: flex;
+ flex-direction: column;
+ gap: var(--page-section-gap);
+ padding-block: var(--page-section-gap);
+}
+.surface--quiet {
+ border: 1px solid var(--line);
+ border-radius: var(--radius-lg);
+ background: var(--surface);
+}
+.only-mobile {
+ display: contents;
+}
+.only-desktop {
+ display: none;
+}
+@media (width >= 1024px) {
+ .only-mobile {
+ display: none;
+ }
+ .only-desktop {
+ display: contents;
+ }
+}
+.visually-hidden,
+.sr-only {
+ position: absolute !important;
+ width: 1px !important;
+ height: 1px !important;
+ padding: 0 !important;
+ margin: -1px !important;
+ overflow: hidden !important;
+ clip: rect(0, 0, 0, 0) !important;
+ white-space: nowrap !important;
+ border: 0 !important;
+}
+.tcg-rainbow-btn,
+.btn.tcg-rainbow-btn {
+ position: relative;
+ background: var(--tcg-blue);
+ border-color: transparent;
+ color: var(--white);
+ font-weight: 700;
+ z-index: 0;
+}
+.tcg-rainbow-btn::after {
+ content: '';
+ position: absolute;
+ 
+ inset: 0;
+ border-radius: inherit;
+ padding: 2px;
+ background: var(--tcg-rainbow);
+ background-size: 400%;
+ animation: tcg-rainbow-sweep 20s linear infinite;
+ mask-image: linear-gradient(var(--white) 0 0), linear-gradient(var(--white) 0 0);
+ mask-clip: content-box, border-box;
+ mask-composite: exclude;
+ pointer-events: none;
+}
+.tcg-rainbow-btn:disabled::after {
+ display: none;
+}
+@keyframes tcg-rainbow-sweep {
+ 0%,
+ 100% {
+ background-position: 0% 0;
+ }
+ 50% {
+ background-position: 400% 0;
+ }
+}
+@media (hover: hover) {
+ .tcg-rainbow-btn:hover:not(:disabled),
+ .btn.tcg-rainbow-btn:hover:not(:disabled) {
+ background: color-mix(in srgb, var(--tcg-blue) 88%, var(--white));
+ border-color: transparent;
+ color: var(--white);
+ }
+ .tcg-rainbow-btn:hover:not(:disabled)::after {
+ animation-duration: 10s;
+ }
+}
+@media (prefers-reduced-motion: reduce) {
+ .tcg-rainbow-btn::after {
+ animation: none;
+ }
+}
+.surface--sticker-calm {
+ background: var(--surface);
+ border: 1px solid var(--line);
+ border-radius: var(--radius-lg);
+ box-shadow: var(--shadow-1);
+}
+.surface--sticker-outline {
+ outline: var(--surface-outline-width) solid var(--surface-outline);
+ outline-offset: 0;
+}
+.surface--shimmer {
+ position: relative;
+}
+.surface--shimmer::before {
+ content: '';
+ position: absolute;
+ inset: 0;
+ z-index: 2;
+ pointer-events: none;
+ border-radius: inherit;
+ clip-path: inset(0 round var(--radius-lg));
+ background: linear-gradient(
+ -65deg,
+ transparent 0%,
+ transparent 49%,
+ var(--white) 49%,
+ var(--white) 55%,
+ transparent 55%,
+ transparent 100%
+ );
+ background-size: 220% 220%;
+ background-position: 130% 130%;
+ background-repeat: no-repeat;
+}
+.surface--shimmer-revealed::before {
+ animation: pack-serial-flash 1.7s ease-out 0.15s 1 forwards;
+}
+@keyframes pack-serial-flash {
+ from {
+ background-position: 130% 130%;
+ }
+ to {
+ background-position: -130% -130%;
+ }
+}
+@media (prefers-reduced-motion: reduce) {
+ .surface--shimmer-revealed::before {
+ animation: none;
+ }
+}
+.rarity-shimmer::after {
+ content: '';
+ position: absolute;
+ inset: 0;
+ z-index: 5;
+ pointer-events: none;
+ border-radius: inherit;
+ background: linear-gradient(
+ 112deg,
+ transparent 34%,
+ var(--white) 44%,
+ var(--white) 50%,
+ transparent 60%
+ );
+ opacity: 0.32;
+ transform: translateX(-70%);
+ animation: rarity-shimmer-sweep 4.2s cubic-bezier(0.3, 0.6, 0.3, 1) infinite;
+}
+@keyframes rarity-shimmer-sweep {
+ 
+ 0% {
+ transform: translateX(-70%);
+ }
+ 45%,
+ 100% {
+ transform: translateX(70%);
+ }
+}
+@media (prefers-reduced-motion: reduce) {
+ .rarity-shimmer::after {
+ animation: none;
+ transform: translateX(8%);
+ opacity: 0.22;
+ }
+}
+.section-note {
+ margin: var(--space-2) 0 0;
+ color: var(--ink-3);
+ font-size: var(--text-micro);
+}
+.classic-texture {
+ --classic-texture-dim: var(--texture-ex-dim);
+ background-color: var(--bg);
+ background-image:
+ linear-gradient(var(--texture-ex-tint), var(--texture-ex-tint)),
+ linear-gradient(var(--classic-texture-dim), var(--classic-texture-dim)), var(--texture-ex);
+ background-repeat: repeat;
+}
+.classic-texture--panel {
+ --classic-texture-dim: var(--texture-ex-dim-panel);
+}
+.classic-grid {
+ background-color: var(--surface);
+ background-image: var(--grid-classic-image);
+ background-position: var(--grid-classic-position);
+ background-size: var(--grid-classic-size);
+}
+input:where(
+ :not(
+ [type='checkbox'],
+ [type='radio'],
+ [type='range'],
+ [type='color'],
+ [type='file'],
+ [type='button'],
+ [type='submit'],
+ [type='reset'],
+ [type='image']
+ )
+ ):focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+ border-color: var(--brand);
+}
+html.reduce-motion *,
+html.reduce-motion *::before,
+html.reduce-motion *::after {
+ animation-duration: 0.001ms !important;
+ animation-delay: 0ms !important;
+ animation-iteration-count: 1 !important;
+}
+html.reduce-motion {
+ scroll-behavior: auto !important;
+}
+html {
+ scrollbar-width: thin;
+ scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+html.exb-document-scroll,
+html.exb-shell-scroll {
+ scrollbar-gutter: stable;
+}
+@supports selector(::-webkit-scrollbar) {
+ 
+ @supports not (-moz-appearance: none) {
+ html {
+ scrollbar-width: auto;
+ scrollbar-color: auto;
+ }
+ ::-webkit-scrollbar {
+ width: 6px;
+ height: 6px;
+ }
+ ::-webkit-scrollbar-track {
+ background: var(--scrollbar-track);
+ }
+ ::-webkit-scrollbar-thumb {
+ background-color: var(--scrollbar-thumb);
+ border-radius: 9999px;
+ }
+ ::-webkit-scrollbar-thumb:hover,
+ ::-webkit-scrollbar-thumb:active {
+ background-color: var(--scrollbar-thumb-hover);
+ }
+ ::-webkit-scrollbar-corner {
+ background: transparent;
+ }
+ }
+}
+@media (width < 1024px) {
+ 
+ html.exb-doc-scroll,
+ html.exb-doc-scroll body {
+ block-size: 100%;
+ overflow: visible;
+ }
+ html.exb-doc-scroll body {
+ display: flex;
+ flex-direction: column;
+ }
+ html.exb-doc-scroll body > #app,
+ 
+ 
+ html.exb-doc-scroll body > #__nuxt,
+ 
+ html.exb-doc-scroll #__nuxt > #app {
+ display: flex;
+ flex: 1 0 auto;
+ flex-direction: column;
+ block-size: auto;
+ min-block-size: 0;
+ overflow: visible;
+ }
+ html.exb-doc-scroll #app .shell,
+ html.exb-doc-scroll .exb-nuxt-app .shell {
+ position: static;
+ flex: 1 0 auto;
+ block-size: auto;
+ max-block-size: none;
+ min-block-size: 0;
+ overflow: clip visible;
+ }
+ 
+ html.exb-doc-scroll .exb-nuxt-app {
+ position: static;
+ inset: auto;
+ flex: 1 0 auto;
+ block-size: auto;
+ max-block-size: none;
+ min-block-size: 0;
+ overflow: visible;
+ }
+ html.exb-doc-scroll .host-shell-region,
+ html.exb-doc-scroll .exb-nuxt-app .host-shell-scroll {
+ flex: 1 0 auto;
+ min-block-size: 0;
+ overflow: visible;
+ scrollbar-gutter: auto;
+ }
+ 
+ html.exb-doc-scroll .shell .shell__body,
+ html.exb-doc-scroll .exb-nuxt-app .shell__body {
+ flex: 1 0 auto;
+ min-block-size: 0;
+ max-block-size: none;
+ overflow: clip visible;
+ scrollbar-gutter: auto;
+ overscroll-behavior: auto;
+ }
+ html.exb-doc-scroll .shell .shell__page--fill,
+ html.exb-doc-scroll .exb-nuxt-app .host-shell-page--fill {
+ flex: 1 0 auto;
+ min-block-size: 0;
+ }
+ 
+ html.exb-doc-scroll .card-list-panel--mobile,
+ html.exb-doc-scroll .card-list-panel--mobile .card-list-panel__main {
+ flex: 1 0 auto;
+ block-size: auto;
+ min-block-size: 0;
+ overflow: visible;
+ scrollbar-gutter: auto;
+ }
+ 
+ html.exb-doc-scroll .coll-card-browser {
+ flex: 1 0 auto;
+ block-size: auto;
+ min-block-size: 0;
+ overflow: visible;
+ scrollbar-gutter: auto;
+ overscroll-behavior-y: auto;
+ }
+ 
+ html.exb-doc-scroll #shell-page-chrome:not(:empty) {
+ position: sticky;
+ inset-block-end: calc(
+ var(--mobile-tabbar-h) + var(--mtab-safe-bottom, var(--safe-bottom)) + var(--mtab-bottom, 0px)
+ );
+ z-index: var(--z-sticky);
+ flex-shrink: 0;
+ margin-block-end: 0;
+ background: var(--surface);
+ }
+ html.exb-doc-scroll .shell:not(.shell--no-mtab) #shell-page-chrome ~ .shell__anchor-reserve {
+ display: block;
+ }
+ 
+ html.exb-doc-scroll .exb-nuxt-app .shell #shell-page-chrome:not(:empty),
+ html.exb-doc-scroll .exb-nuxt-app .host-shell-region .host-shell-scroll {
+ margin-block-end: 0;
+ }
+ 
+ html.exb-doc-scroll .exb-nuxt-app .host-shell-region .host-shell-scroll {
+ overflow: visible;
+ }
+ 
+ 
+ html.exb-doc-scroll body > #ncmp__tool {
+ block-size: 0;
+ padding-block: 0;
+ }
+}
+.tabbar {
+ position: fixed;
+ inset-block-end: calc(
+ var(--mtab-bottom, 0px) + var(--mtab-safe-shift, var(--safe-bottom-shift, 0px))
+ );
+ inset-inline: 0;
+ z-index: var(--z-sticky);
+ display: grid;
+ grid-auto-flow: column;
+ grid-auto-columns: 1fr;
+ grid-template-rows: auto;
+ box-sizing: border-box;
+ background: var(--surface);
+ border-top: 1px solid var(--line);
+ padding: var(--space-1) var(--space-1);
+ padding-bottom: calc(
+ var(--space-1) + var(--mtab-safe-bottom, var(--safe-bottom-max, var(--safe-bottom)))
+ );
+ padding-inline: calc(var(--space-1) + var(--safe-left)) calc(var(--space-1) + var(--safe-right));
+}
+.tabbar__group {
+ min-inline-size: 0;
+}
+.tabbar > :where(:not(.tabbar__tab, .tabbar__group)) {
+ position: absolute;
+ inset-block-start: 0;
+ inset-inline: 0;
+}
+.tabbar__tab {
+ position: relative;
+ display: flex;
+ flex-direction: column;
+ align-items: center;
+ gap: 0.15rem;
+ padding: var(--space-2) var(--space-1);
+ min-height: 56px;
+ color: var(--ink-3);
+ text-decoration: none;
+ 
+ border-radius: 0;
+ font-size: var(--text-micro);
+ background: transparent;
+ border: 0;
+ font-family: inherit;
+ cursor: pointer;
+}
+summary.tabbar__tab {
+ list-style: none;
+}
+summary.tabbar__tab::-webkit-details-marker {
+ display: none;
+}
+.tabbar__label {
+ font-weight: 500;
+ font-size: var(--text-micro);
+ white-space: nowrap;
+}</style><style data-hid="host-shell-header-visibility"> [data-host-persistent-shell] > .host-shell__desktop, [data-host-persistent-shell] .host-shell__trail { display: none !important; } @media (width >= 1024px) { [data-host-persistent-shell] > .host-shell__mobile, [data-host-persistent-shell] > .host-shell__tabbar { display: none !important; } [data-host-persistent-shell] > .host-shell__desktop, [data-host-persistent-shell] .host-shell__trail { display: flex !important; } } </style><style data-hid="exb-document-scroll-gutter">html.exb-document-scroll{overflow-y:scroll;scrollbar-gutter:stable both-edges}</style><style data-hid="exb-host-cls-critical">/* shell scroll owner: overflow-y: scroll; overscroll-behavior-x: none */ html,body,#__nuxt{overflow:hidden;max-inline-size:100%;block-size:100%}.exb-nuxt-app--shell-scroll,.exb-nuxt-app--shell-scroll .shell,.exb-nuxt-app--shell-scroll .shell__body,.exb-nuxt-app--shell-scroll .host-shell-scroll{overflow-x:clip;max-inline-size:100%;min-inline-size:0}.exb-nuxt-app--shell-scroll .host-home-snapshot{max-inline-size:100%;min-inline-size:0;overflow:visible} .exb-nuxt-app--shell-scroll .host-shell-scroll{position:relative;display:flex;flex-direction:column;overflow-y: scroll;min-block-size:0;flex:1;scrollbar-gutter:stable both-edges}.exb-nuxt-app--shell-scroll .shell__body{flex:1 0 auto}.exb-nuxt-app--shell-scroll .host-shell-page{inline-size:100%;min-inline-size:0;min-block-size:0;flex-shrink:0;max-inline-size:var(--measure-page);margin-inline:auto}.host-shell-page--fill{display:flex;flex:1;flex-direction:column;min-block-size:0;min-height:0;max-inline-size:none;margin-inline:0}.exb-nuxt-app--collection-wide .host-shell-page{max-inline-size:none}.top-page-cover__overlay-icon{inset-block-start:auto!important;inset-block-end:var(--space-3)!important;inset-inline-start:var(--space-3)!important;transform:none!important;inline-size:12.5rem!important;block-size:6.25rem!important}.top-page-cover[data-cover-scope^="home:"] .top-page-cover__overlay-icon{inset-block-start:50%!important;inset-block-end:auto!important;inset-inline-start:50%!important;transform:translate(-50%,-50%)!important;inline-size:auto!important;width:auto!important;block-size:6.25rem!important;height:6.25rem!important;max-inline-size:50%!important;max-block-size:6.25rem!important;aspect-ratio:auto!important}.top-page-cover[data-cover-scope^="series:"] .top-page-cover__overlay-icon{inset-block-start:50%!important;inset-block-end:auto!important;inset-inline-start:50%!important;transform:translate(-50%,-50%)!important;inline-size:auto!important;width:auto!important;block-size:calc(100% - 2 * var(--space-2))!important;height:calc(100% - 2 * var(--space-2))!important;max-inline-size:calc(100% - 2 * var(--space-2))!important;max-block-size:calc(100% - 2 * var(--space-2))!important;aspect-ratio:auto!important}.top-page-cover__title{inline-size:80%!important;max-inline-size:min(80%,44rem)!important}.top-page-cover__title .sticker-word{min-inline-size:0!important;max-inline-size:100%!important;inline-size:auto!important;height:auto!important;block-size:auto!important}@media(width < 720px){.top-page-cover__overlay-icon{inset-block-start:50%!important;inset-block-end:auto!important;inset-inline-start:50%!important;transform:translate(-50%,-50%)!important;inline-size:8.75rem!important;block-size:4.375rem!important}}[data-poc-auth-control].topnav__signin,[data-shell-account-control].topnav__signin,.host-account-chrome:not(.host-account-chrome--compact){display:inline-flex;align-items:center;min-inline-size:5.125rem;min-block-size:44px;flex-shrink:0}[data-poc-auth-control].mtop__account-signin,[data-shell-account-control].mtop__account-signin,.host-account-chrome--compact{min-inline-size:44px;max-inline-size:44px}html[data-exb-boot-member] [data-poc-auth-control]:not(.exb-account-hinted),html[data-exb-boot-member] [data-shell-account-control]{color:transparent!important;background:transparent!important;background-image:none!important;border:0!important;box-shadow:none!important;font-size:0!important;line-height:0!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;padding:4px!important;text-decoration:none!important;min-inline-size:5.125rem;min-block-size:44px}html[data-exb-boot-member] [data-poc-auth-control].mtop__account-signin:not(.exb-account-hinted),html[data-exb-boot-member] [data-shell-account-control].mtop__account-signin{min-inline-size:44px}/* Session restore expected (data-exb-boot-session), mobile bar: reserve the member-only EX coin (36px, after   the language menu) and bell (44px, after the account disc) so neither   pushes the icon row when the session resolves. Same gaps as .mtop. */html[data-exb-boot-session] .mtop__lang{margin-inline-end:calc(36px + var(--space-2))}html[data-exb-boot-session] [data-poc-auth-control].mtop__account-signin:not(.exb-account-hinted),html[data-exb-boot-session] [data-shell-account-control].mtop__account-signin{margin-inline-end:calc(44px + var(--space-2))}@media(width < 400px){html[data-exb-boot-session] .mtop__lang{margin-inline-end:calc(36px + var(--space-1))}html[data-exb-boot-session] [data-poc-auth-control].mtop__account-signin:not(.exb-account-hinted),html[data-exb-boot-session] [data-shell-account-control].mtop__account-signin{margin-inline-end:calc(44px + var(--space-1))}}/* The cover disc must be a full 40px circle: hide the Sign-in icon/label   (a transparent 20px icon still took flex space and squeezed the disc into   a 24x40 oval) and keep the disc from shrinking in the 44px mobile box. */html[data-exb-boot-member] [data-poc-auth-control]:not(.exb-account-hinted)>*,html[data-exb-boot-member] [data-shell-account-control]>*{display:none!important}html[data-exb-boot-member] [data-poc-auth-control].mtop__account-signin:not(.exb-account-hinted),html[data-exb-boot-member] [data-shell-account-control].mtop__account-signin{padding:2px!important}html[data-exb-boot-member] [data-poc-auth-control]:not(.exb-account-hinted)::after,html[data-exb-boot-member] [data-shell-account-control]::after{content:"";display:block;inline-size:40px;block-size:40px;border-radius:9999px;border:2px solid #fff;box-sizing:border-box;background:#1c1c20;pointer-events:none;flex:none}[data-poc-auth-control].exb-account-hinted{display:inline-flex!important;align-items:center;justify-content:flex-end;gap:4px;padding:4px!important;border:0!important;background:transparent!important;text-decoration:none!important;color:inherit!important;font-size:0!important;line-height:0!important}[data-poc-auth-control].exb-account-hinted.mtop__account-signin{justify-content:center;gap:0;padding:0!important}.exb-account-hint-slot{display:inline-flex;align-items:center;justify-content:center;inline-size:40px;block-size:40px;flex-shrink:0}.exb-account-hint-caret{display:block;inline-size:14px;block-size:14px;flex-shrink:0;opacity:0}.exb-account-hint-avatar,.exb-account-hint-ghost,.exb-account-hint-initial{display:block;inline-size:40px;block-size:40px;border-radius:9999px;border:2px solid #fff;box-sizing:border-box;object-fit:cover}.exb-account-hint-ghost{background:var(--surface-2,#1c1c20)}.exb-account-hint-initial{display:grid;place-items:center;background:var(--surface-3,#24242a);color:var(--ink,#fafafa);font-size:14px;font-weight:800;line-height:1}.exb-account-boot-cover{position:absolute;inset:0;z-index:2;display:flex;align-items:center;justify-content:flex-end;gap:4px;padding:4px;pointer-events:none;box-sizing:border-box}.exb-account-boot-cover--compact{justify-content:center;gap:0;padding:0}.exb-account-vue-root{display:flex;align-items:center;justify-content:inherit;min-inline-size:100%;min-block-size:100%}details.poc-language-switch,.host-language-menu{display:inline-flex;align-items:center;min-inline-size:44px;min-block-size:44px;flex-shrink:0;vertical-align:middle}.topnav__notif-wrap,.host-notif-chrome{display:inline-flex;align-items:center;justify-content:center;position:relative;min-inline-size:44px;min-block-size:44px;flex-shrink:0}.mtop__notif-wrap.host-notif-chrome--compact{inline-size:44px;block-size:44px;flex:0 0 44px}.daily-dose__rating{min-block-size:132px;display:flex;flex-direction:column;align-items:stretch;justify-content:center;min-inline-size:0;container-type:inline-size;container-name:daily-rating;overflow-x:clip}.daily-dose__rating .card-rating{inline-size:100%;max-inline-size:100%;flex:0 0 auto;min-inline-size:0;box-sizing:border-box;margin-inline:0;align-items:stretch;padding-inline:0}.daily-dose__rating .card-rating__chrome{inline-size:100%;min-inline-size:0}.daily-dose__rating .card-rating__head,.daily-dose__rating .card-rating__title{justify-content:center;text-align:center;inline-size:100%;max-inline-size:100%;padding-inline:var(--space-2);box-sizing:border-box}.daily-dose__rating .card-rating__title{font-size:clamp(.65rem,4.8cqi,var(--text-micro));letter-spacing:clamp(.02em,.55cqi,.06em);overflow-wrap:break-word;white-space:normal}.daily-dose__rating .card-rating__daily-banner{display:flex;flex-wrap:nowrap;align-items:center;gap:var(--space-1);inline-size:calc(100% + 2px);max-inline-size:none;margin-inline:-1px;margin-block-start:calc(var(--space-3) * -1 - 1px);padding-inline:var(--space-2);padding-block:var(--space-2);box-sizing:border-box;min-inline-size:0;border-start-start-radius:var(--radius-lg);border-start-end-radius:var(--radius-lg)}.daily-dose__rating .card-rating__daily-banner-text{flex:1 1 auto;min-inline-size:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:clamp(var(--text-micro),5.2cqi,var(--text-caption));letter-spacing:.03em;text-align:start;overflow-wrap:normal}.daily-dose__rating .card-rating__daily-banner-bonus{flex:0 0 auto;margin-inline-start:0;max-inline-size:38%}.daily-dose__rating .card-rating__daily-banner-bonus .level-display__digit,.daily-dose__rating .card-rating__daily-banner-bonus .level-display__word{block-size:1.15rem;max-block-size:1.15rem}.daily-dose__rating .card-rating__daily-banner-plus{font-size:var(--text-caption)}.daily-dose__rating .card-rating__aggregate{display:flex;justify-content:center;align-items:center;inline-size:100%;padding-inline:var(--space-2);box-sizing:border-box}.daily-dose__rating .card-rating__action{display:flex;flex-flow:column nowrap;align-items:center;justify-content:center;gap:var(--space-2);inline-size:100%;padding-inline:var(--space-2);box-sizing:border-box}.daily-dose__rating .card-rating__interactive{display:flex;flex:0 0 auto;flex-wrap:nowrap;justify-content:center;align-items:center;margin-inline:auto;inline-size:100%;max-inline-size:100%;min-inline-size:0;gap:1px;overflow:clip}.daily-dose__rating .card-rating__action-text,.daily-dose__rating .card-rating__nudge{flex:0 1 auto;justify-content:center;text-align:center;inline-size:100%;white-space:normal;overflow:visible;text-overflow:unset;overflow-wrap:break-word}@media(max-width:760px){.daily-dose__grid{grid-template-columns:minmax(0,1fr)!important}.daily-dose__card{grid-template-columns:minmax(0,1fr)!important;grid-template-areas:'art' 'rating'!important;justify-items:center;gap:var(--space-3);min-block-size:0}.daily-dose__card-art{inline-size:min(100%,168px)}.daily-dose__rating{inline-size:100%;justify-self:stretch}.daily-dose__rating .card-rating{padding-block:var(--space-2);padding-inline:0;gap:var(--space-2)}.daily-dose__rating .card-rating__daily-banner{margin-block-start:calc(var(--space-2) * -1 - 1px)}.daily-dose__rating .card-rating__star{position:relative;flex:1 1 0;min-inline-size:22px;max-inline-size:40px;inline-size:auto;block-size:auto;aspect-ratio:1}.daily-dose__rating .card-rating__star::before{content:'';position:absolute;inset:calc((min(100%,44px) - 44px) / 2)}.daily-dose__rating .card-rating__star-svg{inline-size:70%;block-size:70%}.daily-dose__rating .card-rating__score{font-size:var(--text-h2)}}@container daily-rating (max-width:168px){.daily-dose__rating .card-rating__star{max-inline-size:32px}.daily-dose__rating .card-rating__score{font-size:var(--text-h3)}}.daily-dose__deck-archetype,.host-daily-archetype{position:static!important;inset:auto!important;display:flex!important;flex-wrap:wrap;justify-content:flex-start;gap:2px;margin-block-start:var(--space-1);pointer-events:none}.tour-band--compact .tournament-list-row__legend{flex:0 1 auto!important;flex-basis:auto!important;inline-size:auto!important;block-size:auto!important;max-inline-size:min(100%,14rem)!important}.explore > .season-strip.season-strip--upcoming{display:none!important}.explore__hero-sets--with-next > .host-hero-next-strip{display:grid!important}/* Intrinsic tile floors, mobile-first. A desktop 280px floor first-painted   then @media(width < 720px) to 150px shoved the season strip (home CLS). */.feat-set,.explore__hero-set.feat-set{position:relative;display:block;min-block-size:150px!important;overflow:hidden}.feat-set__art{position:absolute;inset:0}.feat-set__foot{position:absolute;inset-inline:0;inset-block-end:0;display:flex;flex-wrap:wrap;align-items:flex-end;min-block-size:66px}.feat-set--compact{min-block-size:210px!important}.feat-set--compact:not(.feat-set--inline) .feat-set__foot{justify-content:flex-end!important;overflow:visible!important;row-gap:var(--space-3)!important;min-block-size:66px}.feat-set__meta{display:flex!important;flex-wrap:wrap!important;align-items:flex-start!important;column-gap:var(--space-3)!important;row-gap:var(--space-3)!important}.feat-set__cta{margin-inline-start:0!important}.explore__hero--solo .explore__hero-sets--with-next{display:grid!important;grid-template-columns:minmax(0,1fr)!important;grid-template-rows:auto auto!important;align-items:stretch!important;block-size:auto!important;min-block-size:0!important}.explore__hero--solo .explore__hero-sets--with-next > .explore__hero-set,.explore__hero--solo .explore__hero-sets--with-next > .host-hero-next-strip{align-self:stretch!important;block-size:auto!important;min-block-size:150px!important}.explore__hero--solo .explore__hero-sets--with-next > .explore__hero-set--upcoming,.explore__hero--solo .explore__hero-sets--with-next > .feat-set--compact,.explore__hero--solo .explore__hero-sets--with-next > .host-hero-next-strip{block-size:auto!important;min-block-size:150px!important}.explore__hero--solo .explore__hero-sets--with-next > .explore__hero-set--upcoming{display:flex!important}.explore__hero--solo .explore__hero-sets--with-next > .explore__hero-set--upcoming > .explore__upcoming-gallery,.explore__hero--solo .explore__hero-sets--with-next > .explore__hero-set--upcoming.explore__upcoming-gallery > .feat-set{flex:1 1 auto!important;min-inline-size:0!important}@media(width >= 720px){.feat-set,.explore__hero-set.feat-set{min-block-size:280px!important}.feat-set--compact{min-block-size:156px!important}.feat-set__meta{display:flex;flex-wrap:wrap}.feat-set__cta{margin-inline-start:auto}.explore__hero--solo .explore__hero-sets--with-next{grid-template-columns:minmax(0,1.7fr) minmax(14rem,.8fr)!important;grid-template-rows:auto!important}.explore__hero--solo .explore__hero-sets--with-next > .explore__hero-set{min-block-size:280px!important}.explore__hero--solo .explore__hero-sets--with-next > .explore__hero-set--upcoming,.explore__hero--solo .explore__hero-sets--with-next > .feat-set--compact,.explore__hero--solo .explore__hero-sets--with-next > .host-hero-next-strip{min-block-size:190px!important}}/* Mobile-first season strip: reserve the final 390 footprint without waiting   on @media(width < 720px). A base 46px floor first-painted at ~16px content   height, then jumped to 94px when the mobile rule applied (home CLS). */.season-strip.season-strip--spoiler.season-strip--with-cover,.season-strip.season-strip--with-cover{display:grid!important;grid-template-columns:56px minmax(0,1fr)!important;align-items:center;box-sizing:border-box;min-block-size:94px!important;padding:var(--space-3) var(--space-4);border-radius:var(--radius-lg)}.season-strip--with-cover .season-strip__cover{flex-shrink:0;inline-size:56px!important;block-size:72px!important}.season-strip--with-cover .season-strip__body{display:grid!important;min-inline-size:0;gap:var(--space-1)}@media(width >= 720px){.season-strip.season-strip--spoiler.season-strip--with-cover,.season-strip.season-strip--with-cover{display:flex!important;flex-wrap:wrap;grid-template-columns:unset;min-block-size:46px!important;padding:var(--space-2) var(--space-4);border-radius:var(--radius-pill)}.season-strip--with-cover .season-strip__cover{inline-size:30px!important;block-size:30px!important}.season-strip--with-cover .season-strip__body{display:contents!important}}.tab-bar{min-block-size:52px}</style><style data-hid="exb-game-theme">:root:not([data-accent]),:root[data-accent='yellow']{--brand:#45727d;--brand-ink:var(--ink);--primary-font-color:var(--ink);--brand-deep:color-mix(in srgb, #45727d 95%, black 5%);--accent:#45727d;--accent-ink:var(--ink);--state-active:#45727d;--texture-ex-tint-hue:20%;--action-text:#8faab1;--brand-text:#8faab1;--accent-text:#8faab1;--state-active-text:#8faab1}</style><style data-hid="exb-host-ads-critical">.shell__mad{display:none}@media (width < 1024px){html[data-exb-ads][data-exb-ad-seen] .shell[data-host-persistent-shell]:has(> .shell__mad){--ad-band-h:calc(var(--ad-band-creative-h,50px) + max(0px,calc(var(--safe-bottom,0px) - var(--vv-bottom-gap,0px))));--ad-band-box-h:calc(var(--ad-band-creative-h,50px) + max(0px,calc(var(--safe-bottom-max,var(--safe-bottom,0px)) - var(--vv-bottom-gap,0px))));--mtab-bottom:calc(var(--ad-band-h) + var(--vv-bottom-gap,0px));--mtab-safe-bottom:0px;--mtab-safe-shift:0px}html[data-exb-ads][data-exb-ad-seen] .shell__mad{position:fixed;inset-inline:0;inset-block-end:calc(var(--vv-bottom-gap,0px) + var(--safe-bottom-shift,0px));z-index:var(--z-sticky);display:flex;justify-content:center;align-items:flex-start;box-sizing:border-box;block-size:var(--ad-band-box-h);padding-block-end:max(0px,calc(var(--safe-bottom-max,var(--safe-bottom,0px)) - var(--vv-bottom-gap,0px)));padding-inline:var(--safe-left,0px) var(--safe-right,0px);background:var(--surface);overflow:hidden}.shell__mad .adslot--mobile-band{block-size:var(--ad-band-creative-h,50px);min-block-size:0;max-block-size:var(--ad-band-creative-h,50px);overflow:hidden}}@media (width >= 1920px){:root{--ad-rail-w:300px}}@media (width >= 1280px) and (height >= 680px){html[data-exb-ads] .shell--rails-page .shell__body{display:grid;grid-template-columns:var(--ad-rail-w,160px) minmax(0,var(--measure-page,1440px)) var(--ad-rail-w,160px);justify-content:center;column-gap:var(--ad-rail-gap,16px);align-items:start}html[data-exb-ads] .shell--rails-page .shell__body>*{grid-column:2;grid-row:1;min-inline-size:0;margin-inline:0}html[data-exb-ads] .shell--rails-page .shell__body:has(>.host-shell-page--fill){grid-template-rows:minmax(0,1fr)}html[data-exb-ads] .shell--rails-page .shell__body>.host-shell-page--fill{align-self:stretch;min-block-size:0}html[data-exb-ads] .shell--rails-page .shell__body>.page-rail-ads__rail--left{grid-column:1;grid-row:1;position:sticky;inset-block-start:var(--ad-rail-sticky-top,0px);align-self:start;z-index:var(--z-sticky,50);inline-size:var(--ad-rail-w,160px)}html[data-exb-ads] .shell--rails-page .shell__body>.page-rail-ads__rail--right{grid-column:3;grid-row:1;position:sticky;inset-block-start:var(--ad-rail-sticky-top,0px);align-self:start;z-index:var(--z-sticky,50);inline-size:var(--ad-rail-w,160px)}}@media (width >= 1060px) and (height >= 680px){html[data-exb-ads] .shell--rails-text .shell__body{display:grid;grid-template-columns:var(--ad-rail-w,160px) minmax(0,var(--measure-text,65ch)) var(--ad-rail-w,160px);justify-content:center;column-gap:var(--ad-rail-gap,16px);align-items:start}html[data-exb-ads] .shell--rails-text .shell__body>*{grid-column:2;grid-row:1;min-inline-size:0;margin-inline:0}html[data-exb-ads] .shell--rails-text .shell__body:has(>.host-shell-page--fill){grid-template-rows:minmax(0,1fr)}html[data-exb-ads] .shell--rails-text .shell__body>.host-shell-page--fill{align-self:stretch;min-block-size:0}html[data-exb-ads] .shell--rails-text .shell__body>.page-rail-ads__rail--left{grid-column:1;grid-row:1;position:sticky;inset-block-start:var(--ad-rail-sticky-top,0px);align-self:start;z-index:var(--z-sticky,50);inline-size:var(--ad-rail-w,160px)}html[data-exb-ads] .shell--rails-text .shell__body>.page-rail-ads__rail--right{grid-column:3;grid-row:1;position:sticky;inset-block-start:var(--ad-rail-sticky-top,0px);align-self:start;z-index:var(--z-sticky,50);inline-size:var(--ad-rail-w,160px)}}html:not([data-exb-ads]) :is(.page-inline-ad,.tournament-list__ad,.feed__ad,.deck-feed__ad,.what-to-play__ad){display:none!important}</style><style>.smart-image[data-v-2c40e78a]{background:var(--surface-2);max-width:100%;display:block;position:relative}.smart-image__media[data-v-2c40e78a]{-o-object-fit:cover;object-fit:cover;width:100%;height:100%;display:block}.smart-image--mask[data-v-2c40e78a]{background:var(--surface)}.smart-image--fallback[data-v-2c40e78a]{overflow:hidden}.smart-image__fallback-sizer[data-v-2c40e78a]{visibility:hidden;max-width:100%;display:block}.smart-image__fallback[data-v-2c40e78a]{background:var(--surface-2) url(https://cdn.exburst.dev/icon/logoex.png) center/auto 40% no-repeat;border-radius:inherit;justify-content:center;align-items:center;display:flex;position:absolute;inset:0;overflow:hidden}.smart-image__fallback--card[data-v-2c40e78a]{background:var(--surface-3) url(https://cdn.exburst.dev/icon/exburstcardback.png?width=360&quality=80&format=auto) center/cover no-repeat;align-items:flex-end}.smart-image__fallback-label[data-v-2c40e78a]{inline-size:100%;color:var(--white);font-size:var(--text-micro);text-align:center;overflow-wrap:anywhere;background:linear-gradient(#0000,#00000080 45%,#000000db);padding:24% 8% 8%;font-weight:700;line-height:1.2}.smart-image--loading[data-v-2c40e78a]{background-color:var(--surface-3)}</style><style>.henshin-loader[data-v-f5124893]{--henshin-mark:6rem;--henshin-track-h:4px;--henshin-gap:var(--space-4);align-content:center;align-items:center;gap:var(--space-3) var(--henshin-gap);min-block-size:10rem;inline-size:100%;padding:var(--space-4);grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);display:grid}.henshin-loader--boot[data-v-f5124893]{--henshin-mark:8rem;--henshin-gap:var(--space-5);min-block-size:100%}.henshin-loader--inline[data-v-f5124893]{--henshin-mark:3.5rem;--henshin-track-h:3px;--henshin-gap:var(--space-3);min-block-size:0;padding:var(--space-2)}.henshin-loader__mark[data-v-f5124893]{inline-size:var(--henshin-mark);aspect-ratio:1;grid-column:2}.henshin-loader__track[data-v-f5124893]{block-size:var(--henshin-track-h);background:var(--line);border-radius:999px;position:relative;overflow:hidden}.henshin-loader__fill[data-v-f5124893]{border-radius:inherit;background:var(--henshin-gold);transition:transform .16s linear;position:absolute;inset:0;transform:scaleX(0)}.henshin-loader__retry[data-v-f5124893]{pointer-events:auto;grid-column:1/-1;justify-self:center}.henshin-loader__track--left .henshin-loader__fill[data-v-f5124893]{transform-origin:100%}.henshin-loader__track--right .henshin-loader__fill[data-v-f5124893]{transform-origin:0}@media (prefers-reduced-motion:reduce){.henshin-loader__fill[data-v-f5124893]{transition:none}}</style><style>.icon-discord[data-v-7a362fb5]{flex-shrink:0;display:block}</style><style>.btn{justify-content:center;align-items:center;gap:var(--space-2);font-family:inherit;font-size:var(--text-caption);border-radius:var(--radius);white-space:nowrap;cursor:pointer;transition:transform var(--motion-fast) var(--ease-out-expo);border:1px solid #0000;font-weight:500;line-height:1;text-decoration:none;display:inline-flex;position:relative}.btn[disabled]{opacity:.5;cursor:not-allowed}.btn:focus-visible{box-shadow:var(--focus-ring);outline:none}.btn:active:not([disabled]){transform:translateY(1px)}.btn--sm{min-height:36px;padding:0 var(--space-3)}.btn--sm:before{content:"";position:absolute;inset:-4px}.btn--md{min-height:40px;padding:0 var(--space-4)}.btn--md:before{content:"";position:absolute;inset:-2px}.btn--lg{min-height:44px;padding:0 var(--space-5);font-size:var(--text-body)}.btn--primary,.btn--sticker{background:var(--brand);border-color:var(--brand);color:var(--brand-ink)}@media (hover:hover){.btn--primary:hover:not([disabled]),.btn--sticker:hover:not([disabled]){background:var(--brand-hover);border-color:var(--brand-hover);color:var(--brand-ink)}}.btn--secondary{background:var(--btn-secondary-bg);border-color:var(--brand);color:var(--ink)}@media (hover:hover){.btn--secondary:hover:not([disabled]){background:var(--brand);border-color:var(--brand);color:var(--brand-ink)}}.btn--ghost{background:var(--surface);border-color:var(--line);color:var(--ink)}@media (hover:hover){.btn--ghost:hover:not([disabled]){background:var(--surface-2);border-color:var(--brand);color:var(--ink)}}.btn--subtle{color:var(--ink-3);background:0 0;border-color:#0000}@media (hover:hover){.btn--subtle:hover:not([disabled]){background:var(--surface-2);color:var(--ink)}}.btn--save{background:var(--state-save);border-color:var(--state-save);color:var(--white)}@media (hover:hover){.btn--save:hover:not([disabled]){background:var(--state-save-hover);border-color:var(--state-save-hover);color:var(--white)}}.btn--danger{background:var(--danger-fill);border-color:var(--danger-fill);color:var(--white)}@media (hover:hover){.btn--danger:hover:not([disabled]){background:var(--danger-fill-hover);border-color:var(--danger-fill-hover);color:var(--white)}}</style><style>.page-inline-ad[data-v-0fede864]{width:100%;max-width:100%;margin-block:var(--space-3) var(--space-4);padding-inline:var(--space-3);box-sizing:border-box;justify-content:center;display:none}.page-inline-ad--inline[data-v-0fede864]{width:auto;margin-block:0;padding-inline:0}@media (min-width:1024px){.page-inline-ad[data-v-0fede864]{display:flex}}.page-inline-ad--on-all[data-v-0fede864],.page-inline-ad--on-mobile[data-v-0fede864]{display:flex}@media (min-width:1024px){.page-inline-ad--on-mobile[data-v-0fede864]{display:none}}@media not (min-width:1024px){.page-inline-ad--on-desktop[data-v-0fede864]{display:none}.page-inline-ad--boundary[data-v-0fede864]{margin-block:var(--space-4);padding-inline:0}}.page-inline-ad__reserve[data-v-0fede864]{max-inline-size:100%;flex:0 auto;margin-block-end:calc(var(--space-1) + var(--ad-support-line-h));display:inline-block}.page-inline-ad__reserve--banner[data-v-0fede864]{inline-size:var(--ad-banner-w);block-size:var(--ad-banner-h)}.page-inline-ad__reserve--leaderboard[data-v-0fede864]{inline-size:var(--ad-leaderboard-w);block-size:var(--ad-leaderboard-h)}.page-inline-ad__reserve--inline[data-v-0fede864]{inline-size:var(--ad-mrec-lg-w);block-size:var(--ad-mrec-lg-h)}@media (min-width:1024px){.page-inline-ad__reserve--inline[data-v-0fede864]{inline-size:var(--ad-leaderboard-w);block-size:var(--ad-leaderboard-h)}}@media (min-width:1200px){.page-inline-ad__reserve--inline[data-v-0fede864],.page-inline-ad__reserve--leaderboard[data-v-0fede864]{inline-size:var(--ad-leaderboard-wide-w)}}</style><style>.card-rating-skeleton[data-v-aee7034b]{gap:var(--space-1);flex-direction:column;min-block-size:2rem;display:flex}.card-rating-skeleton--daily[data-v-aee7034b]{min-block-size:4.75rem}.card-rating-skeleton__daily[data-v-aee7034b]{align-items:center;gap:var(--space-1);min-block-size:1.5rem;padding:2px 0;display:flex}.card-rating__row[data-v-aee7034b]{align-items:center;gap:var(--space-2);flex-wrap:wrap;min-block-size:2rem;display:flex}.card-rating-skeleton--stack .card-rating__row[data-v-aee7034b]{justify-content:center;align-items:center;gap:var(--space-1);flex-flow:column;inline-size:100%}.card-rating__interactive[data-v-aee7034b]{flex:none;align-items:center;gap:0;display:inline-flex}.card-rating-skeleton--stack .card-rating__interactive[data-v-aee7034b]{justify-content:center;margin-inline:auto}.card-rating__sk-block[data-v-aee7034b],.card-rating__sk-line[data-v-aee7034b]{background:var(--surface-3);border-radius:var(--radius-sm);flex:none;display:inline-block}.card-rating__sk-block--star[data-v-aee7034b]{border-radius:var(--radius-sm);block-size:32px;inline-size:32px}.card-rating__sk-block--exp[data-v-aee7034b]{block-size:1.75rem;inline-size:5.5rem}.card-rating__sk-block--score[data-v-aee7034b]{block-size:1.5rem;inline-size:2.25rem}.card-rating__sk-line--count[data-v-aee7034b]{block-size:.75rem;inline-size:4.5rem}.card-rating__sk-line--daily-text[data-v-aee7034b]{flex:auto;block-size:.75rem;min-inline-size:0}.card-rating__sk-block--daily-exp[data-v-aee7034b]{block-size:1rem;inline-size:4.5rem}</style><link rel="stylesheet" href="/_nuxt/r0ae02ab39b13cc4930af/entry.vbudJx-5.css" crossorigin><link rel="stylesheet" href="/_nuxt/r0ae02ab39b13cc4930af/SemanticIconMedia.Cf_GXvu_.css" crossorigin><link rel="stylesheet" href="/_nuxt/r0ae02ab39b13cc4930af/HostCardDetail.xcrsaIKJ.css" crossorigin><link rel="stylesheet" href="/_nuxt/r0ae02ab39b13cc4930af/CardDetail.CPFcyQgj.css" crossorigin><link rel="stylesheet" href="/_nuxt/r0ae02ab39b13cc4930af/UserNamePlate.D5LWmSQJ.css" crossorigin><link rel="stylesheet" href="/_nuxt/r0ae02ab39b13cc4930af/PageHeader.B1IojvQn.css" crossorigin><link rel="stylesheet" href="/_nuxt/r0ae02ab39b13cc4930af/ReportButton.Cmj4Y3ba.css" crossorigin><link rel="stylesheet" href="/_nuxt/r0ae02ab39b13cc4930af/TabBar.B21-z_az.css" crossorigin><link rel="stylesheet" href="/_nuxt/r0ae02ab39b13cc4930af/CardRating.CSgTeF3j.css" crossorigin><link rel="stylesheet" href="/_nuxt/r0ae02ab39b13cc4930af/LevelDisplay.CeIpTHSc.css" crossorigin><link rel="stylesheet" href="/_nuxt/r0ae02ab39b13cc4930af/MarketPriceBadge.B4EYxWbR.css" crossorigin><link rel="stylesheet" href="/_nuxt/r0ae02ab39b13cc4930af/TranslatedCardImage.DJ0lylK3.css" crossorigin><link rel="stylesheet" href="/_nuxt/r0ae02ab39b13cc4930af/EffectText.D9JMrOYL.css" crossorigin><meta name="msapplication-TileImage" content="/apple-touch-icon.png"><link rel="icon" href="/favicon.ico" type="image/png" sizes="192x192" data-hid="exb-favicon"><link rel="apple-touch-icon" href="/apple-touch-icon.png" data-hid="exb-apple-touch-icon"><script type="application/ld+json" data-hid="host-breadcrumb-ld">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"ExBurst","item":"https://exburst.dev/"},{"@type":"ListItem","position":2,"name":"Gundam Card Game","item":"https://exburst.dev/gundam/"},{"@type":"ListItem","position":3,"name":"Card List","item":"https://exburst.dev/gundam/cardlist"},{"@type":"ListItem","position":4,"name":"Reginlaze Julia","item":"https://exburst.dev/gundam/cards/GD06-037"}]}</script><link rel="canonical" href="https://exburst.dev/gundam/cards/GD06-037"><meta property="og:site_name" content="ExBurst.dev"><meta property="og:title" content="Reginlaze Julia | GD06-037 | R Card | Gundam Card Game"><meta property="og:description" content="Reginlaze Julia (GD06-037) is a Gundam Card Game card, UNIT, R, Red, cost 4. See the effect, printings, price, and decks using it on ExBurst."><meta name="twitter:title" content="Reginlaze Julia | GD06-037 | R Card | Gundam Card Game"><meta name="twitter:description" content="Reginlaze Julia (GD06-037) is a Gundam Card Game card, UNIT, R, Red, cost 4. See the effect, printings, price, and decks using it on ExBurst."><meta name="description" content="Reginlaze Julia (GD06-037) is a Gundam Card Game card, UNIT, R, Red, cost 4. See the effect, printings, price, and decks using it on ExBurst."><meta name="robots" content="index, follow"><meta property="og:type" content="product"><meta property="og:image" content="https://api-og.exburst.dev/api/v1/gundam/cards/GD06-037/og.png?r=42"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image"><script type="application/ld+json">{"@context":"https://schema.org","name":"Reginlaze Julia","image":"https://cdn.exburst.dev/cards/gundam-en/GD06-037.webp?v=5a95a1e0431a9cdf","description":"Reginlaze Julia (GD06-037) is a Gundam Card Game card, UNIT, R, Red, cost 4. See the effect, printings, price, and decks using it on ExBurst.","@type":"CreativeWork","identifier":"GD06-037"}</script></head><body><!--teleport start anchor--><!----><!--teleport anchor--><div id="__nuxt"><!--[--><div id="app" class="exb-nuxt-app exb-nuxt-app--card-detail" data-v-542bf2a4><div class="shell--rails-page shell" data-host-persistent-shell data-v-542bf2a4><div class="sr-only host-route-announcer" aria-live="polite" data-v-542bf2a4>Card</div><header class="mtop host-shell__mobile shell__mtop" aria-label="ExBurst" data-v-542bf2a4 data-v-34fd2c67><!----><div class="game-selector game-selector--compact" data-v-34fd2c67 data-v-b9e39cb9><button type="button" class="game-selector__trigger" aria-expanded="false" aria-haspopup="true" aria-label="Gundam Card Game" data-v-b9e39cb9><!--[--><img src="https://cdn.exburst.dev/icon/og/gundam_s3_ex_icon.webp?width=32&amp;height=32&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto" srcset="https://cdn.exburst.dev/icon/og/gundam_s3_ex_icon.webp?width=32&amp;height=32&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 32w, https://cdn.exburst.dev/icon/og/gundam_s3_ex_icon.webp?width=64&amp;height=64&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 64w, https://cdn.exburst.dev/icon/og/gundam_s3_ex_icon.webp?width=96&amp;height=96&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 96w" sizes="32px" alt="" class="game-selector__icon" width="32" height="32" loading="eager" fetchpriority="low" decoding="sync" data-v-b9e39cb9><span class="sr-only" data-v-b9e39cb9>Gundam Card Game</span><!--]--></button><!----></div><a href="/gundam/explore" class="mtop__explore" aria-label="Explore" data-v-34fd2c67><!--[--><span class="semantic-icon" aria-hidden="true" style="--si-size:30px;" data-v-34fd2c67 data-v-0b598ea5><img sizes="30px" class="semantic-icon__img" src="https://cdn.exburst.dev/nav/nav-explore.png?v=20260915a&amp;width=64&amp;height=64&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto" srcset="https://cdn.exburst.dev/nav/nav-explore.png?v=20260915a&amp;width=64&amp;height=64&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 64w, https://cdn.exburst.dev/nav/nav-explore.png?v=20260915a&amp;width=128&amp;height=128&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 128w, https://cdn.exburst.dev/nav/nav-explore.png?v=20260915a&amp;width=192&amp;height=192&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 192w" alt width="64" height="64" loading="eager" fetchpriority="low" decoding="sync" draggable="false" data-v-0b598ea5 data-v-ad4d445f></span><!--]--></a><span class="mtop__spacer" aria-hidden="true" data-v-34fd2c67></span><a href="https://discord.com/invite/nvB83e62Cb" class="discord-nav" target="_blank" rel="noopener noreferrer" aria-label="Follow on Discord" title="Follow on Discord" data-v-34fd2c67 data-v-a5f4beaa><svg width="20" height="20" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" class="icon-discord" data-v-a5f4beaa data-v-7a362fb5><path fill="#5865F2" d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z" data-v-7a362fb5></path></svg></a><button type="button" class="lang-menu-trigger mtop__lang" aria-label="Language settings" data-v-34fd2c67 data-v-f97ad598><img class="lang-menu-trigger__flag" src="https://cdn.exburst.dev/icon/flags/gb.svg" alt="" width="22" height="17" loading="eager" decoding="sync" fetchpriority="low" data-v-f97ad598><span class="sr-only" data-v-f97ad598>English</span></button><!----><button type="button" aria-label="Search" class="icon-btn" style="--icon-btn-size:36px;" data-v-34fd2c67 data-v-9dd90486><!--[--><svg width="18" height="18" viewbox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-v-34fd2c67><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.35-4.35"></path></svg><!--]--><!----></button><a href="/gundam/auth/signin" class="mtop__account-signin" rel="nofollow" aria-label="Login / Register" data-shell-account-control data-v-34fd2c67><!--[--><svg width="20" height="20" viewbox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-v-34fd2c67><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><line x1="19" y1="8" x2="19" y2="14"></line><line x1="22" y1="11" x2="16" y2="11"></line></svg><!--]--></a></header><header class="topnav classic-texture classic-texture--panel host-shell__desktop shell__topnav" role="banner" data-v-542bf2a4 data-v-2fcb57f0><div class="game-selector" data-v-2fcb57f0 data-v-b9e39cb9><button type="button" class="game-selector__trigger" aria-expanded="false" aria-haspopup="true" aria-label="Gundam Card Game" data-v-b9e39cb9><!--[--><img src="https://cdn.exburst.dev/icon/og/gundam_s3_ex_icon.webp?width=32&amp;height=32&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto" srcset="https://cdn.exburst.dev/icon/og/gundam_s3_ex_icon.webp?width=32&amp;height=32&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 32w, https://cdn.exburst.dev/icon/og/gundam_s3_ex_icon.webp?width=64&amp;height=64&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 64w, https://cdn.exburst.dev/icon/og/gundam_s3_ex_icon.webp?width=96&amp;height=96&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 96w" sizes="32px" alt="" class="game-selector__icon" width="32" height="32" loading="eager" fetchpriority="low" decoding="sync" data-v-b9e39cb9><span class="sr-only" data-v-b9e39cb9>Gundam Card Game</span><!--]--></button><!----></div><a href="/gundam/" class="topnav__home" aria-label="Home" data-v-2fcb57f0><!--[--><span class="semantic-icon" aria-hidden="true" style="--si-size:28px;" data-v-2fcb57f0 data-v-0b598ea5><img sizes="28px" class="semantic-icon__img" src="https://cdn.exburst.dev/nav/nav-home.png?v=20260915a&amp;width=64&amp;height=64&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto" srcset="https://cdn.exburst.dev/nav/nav-home.png?v=20260915a&amp;width=64&amp;height=64&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 64w, https://cdn.exburst.dev/nav/nav-home.png?v=20260915a&amp;width=128&amp;height=128&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 128w, https://cdn.exburst.dev/nav/nav-home.png?v=20260915a&amp;width=192&amp;height=192&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 192w" alt width="64" height="64" loading="eager" fetchpriority="low" decoding="sync" draggable="false" data-v-0b598ea5 data-v-ad4d445f></span><!--]--></a><nav class="topnav__primary" aria-label="Primary" data-v-2fcb57f0><!--[--><div class="nav-dropdown" data-v-2fcb57f0 data-v-956ca667><button type="button" class="nav-dropdown__trigger" aria-expanded="false" aria-controls="nav-menu-build" data-v-956ca667><span class="semantic-icon nav-dropdown__icon" aria-hidden="true" style="--si-size:24px;" data-v-956ca667 data-v-0b598ea5><img sizes="24px" class="semantic-icon__img" src="https://cdn.exburst.dev/nav/nav-new-deck.png?v=20260915a&amp;width=64&amp;height=64&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto" srcset="https://cdn.exburst.dev/nav/nav-new-deck.png?v=20260915a&amp;width=64&amp;height=64&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 64w, https://cdn.exburst.dev/nav/nav-new-deck.png?v=20260915a&amp;width=128&amp;height=128&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 128w, https://cdn.exburst.dev/nav/nav-new-deck.png?v=20260915a&amp;width=192&amp;height=192&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 192w" alt width="64" height="64" loading="eager" fetchpriority="low" decoding="sync" draggable="false" data-v-0b598ea5 data-v-ad4d445f></span><span class="nav-dropdown__label" data-v-956ca667>Build</span><svg width="16" height="16" viewbox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="nav-dropdown__caret nav-dropdown__caret--collapsed" data-v-956ca667><path d="m6 9 6 6 6-6"></path></svg><svg width="16" height="16" viewbox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="nav-dropdown__caret nav-dropdown__caret--expanded" data-v-956ca667><path d="m18 15-6-6-6 6"></path></svg></button><div id="nav-menu-build" class="nav-dropdown__panel" style="display:none;" data-v-956ca667><!--[--><div class="nav-dropdown__column" data-nav-column data-v-956ca667><span id="nav-menu-build-decks" class="nav-dropdown__heading" data-v-956ca667>Decks</span><ul class="nav-dropdown__list" aria-labelledby="nav-menu-build-decks" data-v-956ca667><!--[--><li data-v-956ca667><a href="/gundam/deckbuilder?new=1" class="nav-dropdown__item" data-nav-item data-v-956ca667><!--[--><span class="nav-dropdown__item-icon" aria-hidden="true" data-v-956ca667><!----></span><span class="nav-dropdown__item-title" data-v-956ca667>Deck Builder</span><span class="nav-dropdown__item-desc" data-v-956ca667>Create and edit decks</span><!--]--></a></li><li data-v-956ca667><a href="/gundam/deckbuilder" class="nav-dropdown__item" data-nav-item data-v-956ca667><!--[--><span class="nav-dropdown__item-icon" aria-hidden="true" data-v-956ca667><!----></span><span class="nav-dropdown__item-title" data-v-956ca667>Resume Deck Builder</span><span class="nav-dropdown__item-desc" data-v-956ca667>Pick up your last draft</span><!--]--></a></li><li data-v-956ca667><a href="/gundam/mydecks" class="nav-dropdown__item" data-nav-item data-v-956ca667><!--[--><span class="nav-dropdown__item-icon" aria-hidden="true" data-v-956ca667><!----></span><span class="nav-dropdown__item-title" data-v-956ca667>My Decks</span><span class="nav-dropdown__item-desc" data-v-956ca667>View and manage your decks</span><!--]--></a></li><li data-v-956ca667><a href="/gundam/starter-decks" class="nav-dropdown__item" data-nav-item data-v-956ca667><!--[--><span class="nav-dropdown__item-icon" aria-hidden="true" data-v-956ca667><!----></span><span class="nav-dropdown__item-title" data-v-956ca667>Starter Decks</span><span class="nav-dropdown__item-desc" data-v-956ca667>Official starter decklists</span><!--]--></a></li><li data-v-956ca667><a href="/gundam/match-log" class="nav-dropdown__item" data-nav-item data-v-956ca667><!--[--><span class="nav-dropdown__item-icon" aria-hidden="true" data-v-956ca667><!----></span><span class="nav-dropdown__item-title" data-v-956ca667>Match Log</span><span class="nav-dropdown__item-desc" data-v-956ca667>Record your wins and losses</span><!--]--></a></li><!--]--><!----></ul></div><div class="nav-dropdown__column" data-nav-column data-v-956ca667><span id="nav-menu-build-cards" class="nav-dropdown__heading" data-v-956ca667>Cards</span><ul class="nav-dropdown__list" aria-labelledby="nav-menu-build-cards" data-v-956ca667><!--[--><li data-v-956ca667><a href="/gundam/cardlist" class="nav-dropdown__item" data-nav-item data-v-956ca667><!--[--><span class="nav-dropdown__item-icon" aria-hidden="true" data-v-956ca667><!----></span><span class="nav-dropdown__item-title" data-v-956ca667>Card List</span><span class="nav-dropdown__item-desc" data-v-956ca667>Browse all available cards</span><!--]--></a></li><li data-v-956ca667><a href="/gundam/collection" class="nav-dropdown__item" data-nav-item data-v-956ca667><!--[--><span class="nav-dropdown__item-icon" aria-hidden="true" data-v-956ca667><!----></span><span class="nav-dropdown__item-title" data-v-956ca667>My Collection</span><span class="nav-dropdown__item-desc" data-v-956ca667>Track your card collection</span><!--]--></a></li><li data-v-956ca667><a href="/gundam/series" class="nav-dropdown__item" data-nav-item data-v-956ca667><!--[--><span class="nav-dropdown__item-icon" aria-hidden="true" data-v-956ca667><!----></span><span class="nav-dropdown__item-title" data-v-956ca667>Sets</span><span class="nav-dropdown__item-desc" data-v-956ca667>Every set and its cards</span><!--]--></a></li><li data-v-956ca667><a href="/gundam/prices" class="nav-dropdown__item" data-nav-item data-v-956ca667><!--[--><span class="nav-dropdown__item-icon" aria-hidden="true" data-v-956ca667><!----></span><span class="nav-dropdown__item-title" data-v-956ca667>Price Tracker</span><span class="nav-dropdown__item-desc" data-v-956ca667>Card prices and trends</span><!--]--></a></li><!--]--><!----></ul></div><div class="nav-dropdown__column" data-nav-column data-v-956ca667><span id="nav-menu-build-play" class="nav-dropdown__heading" data-v-956ca667>Play</span><ul class="nav-dropdown__list" aria-labelledby="nav-menu-build-play" data-v-956ca667><!--[--><li data-v-956ca667><a href="/gundam/pack-opening" class="nav-dropdown__item" data-nav-item data-v-956ca667><!--[--><span class="nav-dropdown__item-icon" aria-hidden="true" data-v-956ca667><!----></span><span class="nav-dropdown__item-title" data-v-956ca667>Pack Opening</span><span class="nav-dropdown__item-desc" data-v-956ca667>Open server-generated boosters</span><!--]--></a></li><li data-v-956ca667><a href="/gundam/draft" class="nav-dropdown__item" data-nav-item data-v-956ca667><!--[--><span class="nav-dropdown__item-icon" aria-hidden="true" data-v-956ca667><!----></span><span class="nav-dropdown__item-title" data-v-956ca667>Draft</span><span class="nav-dropdown__item-desc" data-v-956ca667>Draft boosters with friends</span><!--]--></a></li><li data-v-956ca667><a href="/gundam/cube" class="nav-dropdown__item" data-nav-item data-v-956ca667><!--[--><span class="nav-dropdown__item-icon" aria-hidden="true" data-v-956ca667><!----></span><span class="nav-dropdown__item-title" data-v-956ca667>Cube</span><span class="nav-dropdown__item-desc" data-v-956ca667>Draft from a curated card pool</span><!--]--></a></li><li data-v-956ca667><a href="/gundam/print-proxies" class="nav-dropdown__item" data-nav-item data-v-956ca667><!--[--><span class="nav-dropdown__item-icon" aria-hidden="true" data-v-956ca667><!----></span><span class="nav-dropdown__item-title" data-v-956ca667>Print Proxies</span><span class="nav-dropdown__item-desc" data-v-956ca667>Print proxy card sheets at home</span><!--]--></a></li><!--]--><!----></ul></div><!--]--></div></div><div class="nav-dropdown" data-v-2fcb57f0 data-v-956ca667><button type="button" class="nav-dropdown__trigger" aria-expanded="false" aria-controls="nav-menu-community" data-v-956ca667><span class="semantic-icon nav-dropdown__icon" aria-hidden="true" style="--si-size:24px;" data-v-956ca667 data-v-0b598ea5><img sizes="24px" class="semantic-icon__img" src="https://cdn.exburst.dev/nav/nav-users.png?v=20260915a&amp;width=64&amp;height=64&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto" srcset="https://cdn.exburst.dev/nav/nav-users.png?v=20260915a&amp;width=64&amp;height=64&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 64w, https://cdn.exburst.dev/nav/nav-users.png?v=20260915a&amp;width=128&amp;height=128&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 128w, https://cdn.exburst.dev/nav/nav-users.png?v=20260915a&amp;width=192&amp;height=192&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 192w" alt width="64" height="64" loading="eager" fetchpriority="low" decoding="sync" draggable="false" data-v-0b598ea5 data-v-ad4d445f></span><span class="nav-dropdown__label" data-v-956ca667>Community</span><svg width="16" height="16" viewbox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="nav-dropdown__caret nav-dropdown__caret--collapsed" data-v-956ca667><path d="m6 9 6 6 6-6"></path></svg><svg width="16" height="16" viewbox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="nav-dropdown__caret nav-dropdown__caret--expanded" data-v-956ca667><path d="m18 15-6-6-6 6"></path></svg></button><div id="nav-menu-community" class="nav-dropdown__panel" style="display:none;" data-v-956ca667><!--[--><div class="nav-dropdown__column" data-nav-column data-v-956ca667><span id="nav-menu-community-people" class="nav-dropdown__heading" data-v-956ca667>Decks and players</span><ul class="nav-dropdown__list" aria-labelledby="nav-menu-community-people" data-v-956ca667><!--[--><li data-v-956ca667><a href="/gundam/decklists" class="nav-dropdown__item" data-nav-item data-v-956ca667><!--[--><span class="nav-dropdown__item-icon" aria-hidden="true" data-v-956ca667><!----></span><span class="nav-dropdown__item-title" data-v-956ca667>Public Decks</span><span class="nav-dropdown__item-desc" data-v-956ca667>Browse community decks</span><!--]--></a></li><li data-v-956ca667><a href="/gundam/leaderboard" class="nav-dropdown__item" data-nav-item data-v-956ca667><!--[--><span class="nav-dropdown__item-icon" aria-hidden="true" data-v-956ca667><!----></span><span class="nav-dropdown__item-title" data-v-956ca667>Leaderboard</span><span class="nav-dropdown__item-desc" data-v-956ca667>ExBurst.DEV Player Rankings</span><!--]--></a></li><li data-v-956ca667><a href="/gundam/bounties" class="nav-dropdown__item" data-nav-item data-v-956ca667><!--[--><span class="nav-dropdown__item-icon" aria-hidden="true" data-v-956ca667><!----></span><span class="nav-dropdown__item-title" data-v-956ca667>Bounties</span><span class="nav-dropdown__item-desc" data-v-956ca667>Community requests and rewards</span><!--]--></a></li><!--]--><!----></ul></div><div class="nav-dropdown__column" data-nav-column data-v-956ca667><span id="nav-menu-community-read" class="nav-dropdown__heading" data-v-956ca667>Read and watch</span><ul class="nav-dropdown__list" aria-labelledby="nav-menu-community-read" data-v-956ca667><!--[--><li data-v-956ca667><a href="/gundam/articles" class="nav-dropdown__item" data-nav-item data-v-956ca667><!--[--><span class="nav-dropdown__item-icon" aria-hidden="true" data-v-956ca667><!----></span><span class="nav-dropdown__item-title" data-v-956ca667>Articles</span><span class="nav-dropdown__item-desc" data-v-956ca667>Strategy guides and content</span><!--]--></a></li><li data-v-956ca667><a href="/gundam/videos" class="nav-dropdown__item" data-nav-item data-v-956ca667><!--[--><span class="nav-dropdown__item-icon" aria-hidden="true" data-v-956ca667><!----></span><span class="nav-dropdown__item-title" data-v-956ca667>Video Content</span><span class="nav-dropdown__item-desc" data-v-956ca667>Community video content</span><!--]--></a></li><li data-v-956ca667><a href="/gundam/news" class="nav-dropdown__item" data-nav-item data-v-956ca667><!--[--><span class="nav-dropdown__item-icon" aria-hidden="true" data-v-956ca667><!----></span><span class="nav-dropdown__item-title" data-v-956ca667>News</span><span class="nav-dropdown__item-desc" data-v-956ca667>Set releases and announcements</span><!--]--></a></li><li data-v-956ca667><a href="/gundam/guides" class="nav-dropdown__item" data-nav-item data-v-956ca667><!--[--><span class="nav-dropdown__item-icon" aria-hidden="true" data-v-956ca667><!----></span><span class="nav-dropdown__item-title" data-v-956ca667>Guides</span><span class="nav-dropdown__item-desc" data-v-956ca667>Learn the game step by step</span><!--]--></a></li><li data-v-956ca667><a href="/gundam/rules" class="nav-dropdown__item" data-nav-item data-v-956ca667><!--[--><span class="nav-dropdown__item-icon" aria-hidden="true" data-v-956ca667><!----></span><span class="nav-dropdown__item-title" data-v-956ca667>Rules</span><span class="nav-dropdown__item-desc" data-v-956ca667>Official game and tournament rules</span><!--]--></a></li><li data-v-956ca667><a href="/gundam/explore" class="nav-dropdown__item" data-nav-item data-v-956ca667><!--[--><span class="nav-dropdown__item-icon" aria-hidden="true" data-v-956ca667><!----></span><span class="nav-dropdown__item-title" data-v-956ca667>Explore</span><span class="nav-dropdown__item-desc" data-v-956ca667>What is new across every game</span><!--]--></a></li><!--]--><!----></ul></div><!--]--></div></div><div class="nav-dropdown" data-v-2fcb57f0 data-v-956ca667><button type="button" class="nav-dropdown__trigger" aria-expanded="false" aria-controls="nav-menu-competitive" data-v-956ca667><span class="semantic-icon nav-dropdown__icon" aria-hidden="true" style="--si-size:24px;" data-v-956ca667 data-v-0b598ea5><img sizes="24px" class="semantic-icon__img" src="https://cdn.exburst.dev/nav/nav-tournaments.png?v=20260915a&amp;width=64&amp;height=64&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto" srcset="https://cdn.exburst.dev/nav/nav-tournaments.png?v=20260915a&amp;width=64&amp;height=64&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 64w, https://cdn.exburst.dev/nav/nav-tournaments.png?v=20260915a&amp;width=128&amp;height=128&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 128w, https://cdn.exburst.dev/nav/nav-tournaments.png?v=20260915a&amp;width=192&amp;height=192&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 192w" alt width="64" height="64" loading="eager" fetchpriority="low" decoding="sync" draggable="false" data-v-0b598ea5 data-v-ad4d445f></span><span class="nav-dropdown__label" data-v-956ca667>Competitive</span><svg width="16" height="16" viewbox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="nav-dropdown__caret nav-dropdown__caret--collapsed" data-v-956ca667><path d="m6 9 6 6 6-6"></path></svg><svg width="16" height="16" viewbox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="nav-dropdown__caret nav-dropdown__caret--expanded" data-v-956ca667><path d="m18 15-6-6-6 6"></path></svg></button><div id="nav-menu-competitive" class="nav-dropdown__panel" style="display:none;" data-v-956ca667><!--[--><div class="nav-dropdown__column" data-nav-column data-v-956ca667><span id="nav-menu-competitive-events" class="nav-dropdown__heading" data-v-956ca667>Events</span><ul class="nav-dropdown__list" aria-labelledby="nav-menu-competitive-events" data-v-956ca667><!--[--><li data-v-956ca667><a href="/gundam/tournaments" class="nav-dropdown__item" data-nav-item data-v-956ca667><!--[--><span class="nav-dropdown__item-icon" aria-hidden="true" data-v-956ca667><!----></span><span class="nav-dropdown__item-title" data-v-956ca667>Tournament Hub</span><span class="nav-dropdown__item-desc" data-v-956ca667>Your competitive destination</span><!--]--></a></li><li data-v-956ca667><a href="/gundam/tournaments/upcoming" class="nav-dropdown__item" data-nav-item data-v-956ca667><!--[--><span class="nav-dropdown__item-icon" aria-hidden="true" data-v-956ca667><!----></span><span class="nav-dropdown__item-title" data-v-956ca667>Find Tournaments</span><span class="nav-dropdown__item-desc" data-v-956ca667>Upcoming tournaments to join</span><!--]--></a></li><li data-v-956ca667><a href="/gundam/tournaments/results" class="nav-dropdown__item" data-nav-item data-v-956ca667><!--[--><span class="nav-dropdown__item-icon" aria-hidden="true" data-v-956ca667><!----></span><span class="nav-dropdown__item-title" data-v-956ca667>Tournament Results</span><span class="nav-dropdown__item-desc" data-v-956ca667>Browse past tournament winners</span><!--]--></a></li><li data-v-956ca667><a href="/gundam/tournaments/personal" class="nav-dropdown__item" data-nav-item data-v-956ca667><!--[--><span class="nav-dropdown__item-icon" aria-hidden="true" data-v-956ca667><!----></span><span class="nav-dropdown__item-title" data-v-956ca667>My Tournaments</span><span class="nav-dropdown__item-desc" data-v-956ca667>Tournaments you manage or joined</span><!--]--></a></li><!--]--><!----></ul></div><div class="nav-dropdown__column" data-nav-column data-v-956ca667><span id="nav-menu-competitive-meta" class="nav-dropdown__heading" data-v-956ca667>Meta</span><ul class="nav-dropdown__list" aria-labelledby="nav-menu-competitive-meta" data-v-956ca667><!--[--><li data-v-956ca667><a href="/gundam/tournaments/meta" class="nav-dropdown__item" data-nav-item data-v-956ca667><!--[--><span class="nav-dropdown__item-icon" aria-hidden="true" data-v-956ca667><!----></span><span class="nav-dropdown__item-title" data-v-956ca667>Meta Analysis</span><span class="nav-dropdown__item-desc" data-v-956ca667>Competitive meta insights</span><!--]--></a></li><li data-v-956ca667><a href="/gundam/tournaments/deck-samples" class="nav-dropdown__item" data-nav-item data-v-956ca667><!--[--><span class="nav-dropdown__item-icon" aria-hidden="true" data-v-956ca667><!----></span><span class="nav-dropdown__item-title" data-v-956ca667>Best Decks to Play</span><span class="nav-dropdown__item-desc" data-v-956ca667>Top performing archetypes</span><!--]--></a></li><li data-v-956ca667><a href="/gundam/what-to-play" class="nav-dropdown__item" data-nav-item data-v-956ca667><!--[--><span class="nav-dropdown__item-icon" aria-hidden="true" data-v-956ca667><!----></span><span class="nav-dropdown__item-title" data-v-956ca667>What to Play</span><span class="nav-dropdown__item-desc" data-v-956ca667>Pick a deck for your next event</span><!--]--></a></li><li data-v-956ca667><a href="/gundam/banlist" class="nav-dropdown__item" data-nav-item data-v-956ca667><!--[--><span class="nav-dropdown__item-icon" aria-hidden="true" data-v-956ca667><!----></span><span class="nav-dropdown__item-title" data-v-956ca667>Ban List</span><span class="nav-dropdown__item-desc" data-v-956ca667>Banned and restricted cards</span><!--]--></a></li><li data-v-956ca667><a href="/gundam/tournaments/champions" class="nav-dropdown__item" data-nav-item data-v-956ca667><!--[--><span class="nav-dropdown__item-icon" aria-hidden="true" data-v-956ca667><!----></span><span class="nav-dropdown__item-title" data-v-956ca667>Champions</span><span class="nav-dropdown__item-desc" data-v-956ca667>Tournament winners wall</span><!--]--></a></li><!--]--><!----></ul></div><!--]--></div></div><!--]--></nav><span class="topnav__sep" aria-hidden="true" data-v-2fcb57f0></span><div class="topnav__links" data-v-2fcb57f0><a href="https://www.patreon.com/exburst" class="header-link" target="_blank" rel="noopener noreferrer" aria-label="Support my work (opens in a new tab)" title="Support my work" data-testid="shell-support" data-v-2fcb57f0 data-v-e1784ce5><svg width="16" height="16" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" class="icon-patreon" data-v-e1784ce5 data-v-ddcf73b1><path fill="#F96854" d="M14.82 2.41c3.96 0 7.18 3.24 7.18 7.21 0 3.96-3.22 7.18-7.18 7.18-3.97 0-7.21-3.22-7.21-7.18 0-3.97 3.24-7.21 7.21-7.21M2 21.6h3.5V2.41H2V21.6" data-v-ddcf73b1></path></svg><span class="header-link__label" aria-hidden="true" data-v-e1784ce5>Support my work</span><svg width="14" height="14" viewbox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="header-link__ext" data-v-e1784ce5><path d="M15 3h6v6"></path><path d="M10 14 21 3"></path><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"></path></svg></a><a href="https://discord.com/invite/nvB83e62Cb" class="discord-nav" target="_blank" rel="noopener noreferrer" aria-label="Follow on Discord" title="Follow on Discord" data-v-2fcb57f0 data-v-a5f4beaa><svg width="20" height="20" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" class="icon-discord" data-v-a5f4beaa data-v-7a362fb5><path fill="#5865F2" d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z" data-v-7a362fb5></path></svg></a><button type="button" class="report-nav" aria-label="Report a problem with the site" title="Report a problem with the site" data-testid="shell-report" data-v-2fcb57f0 data-v-f01e5940><svg width="18" height="18" viewbox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="report-nav__icon" data-v-f01e5940><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg><!----></button></div><div class="topnav__ad" data-v-2fcb57f0><!----></div><div class="topnav__right" data-v-2fcb57f0><!----><!----><button type="button" aria-label="Search" class="icon-btn topnav__search" style="--icon-btn-size:36px;" data-v-2fcb57f0 data-v-9dd90486><!--[--><svg width="18" height="18" viewbox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-v-2fcb57f0><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.35-4.35"></path></svg><!--]--><!----></button><!----><div class="topnav__notif-wrap" data-v-2fcb57f0><button type="button" aria-label="Notifications" aria-pressed="false" class="icon-btn" style="--icon-btn-size:36px;" id="notif-trigger" data-v-2fcb57f0 data-v-9dd90486><!--[--><svg width="18" height="18" viewbox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-v-2fcb57f0><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></svg><!--]--><!----></button><!----></div><button type="button" class="lang-menu-trigger topnav__lang" aria-label="Language settings" data-v-2fcb57f0 data-v-f97ad598><img class="lang-menu-trigger__flag" src="https://cdn.exburst.dev/icon/flags/gb.svg" alt="" width="22" height="17" loading="eager" decoding="sync" fetchpriority="low" data-v-f97ad598><span class="sr-only" data-v-f97ad598>English</span></button><a href="/gundam/auth/signin" class="btn btn--secondary btn--sm topnav__signin" rel="nofollow" data-shell-account-control data-v-2fcb57f0><!--[--><svg width="16" height="16" viewbox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-v-2fcb57f0><rect x="5" y="11" width="14" height="9" rx="1.5"></rect><path d="M8 11V7.5a4 4 0 0 1 8 0V11"></path></svg><span data-v-2fcb57f0>Login / Register</span><!--]--></a></div></header><div class="host-shell-region" aria-busy="false" data-v-542bf2a4><div class="host-shell-scroll" data-host-shell-scroll data-v-542bf2a4><!----><main id="main-content" class="shell__body" tabindex="0" data-v-542bf2a4><!----><div class="host-shell-page--fill host-shell-page" data-v-542bf2a4><nav class="host-shell__trail crumbs" data-v-542bf2a4 aria-label="Breadcrumb" data-v-dcc60e43><ol class="crumbs__list" data-v-dcc60e43><!--[--><li class="crumbs__item" data-v-dcc60e43><a href="/" class="crumbs__link" data-v-dcc60e43><!--[-->ExBurst<!--]--></a><span class="crumbs__sep" aria-hidden="true" data-v-dcc60e43>/</span></li><li class="crumbs__item" data-v-dcc60e43><a href="/gundam/" class="crumbs__link" data-v-dcc60e43><!--[-->Gundam Card Game<!--]--></a><span class="crumbs__sep" aria-hidden="true" data-v-dcc60e43>/</span></li><li class="crumbs__item" data-v-dcc60e43><a href="/gundam/cardlist" class="crumbs__link" data-v-dcc60e43><!--[-->Card List<!--]--></a><span class="crumbs__sep" aria-hidden="true" data-v-dcc60e43>/</span></li><li class="crumbs__item" data-v-dcc60e43><span class="crumbs__current" aria-current="page" data-v-dcc60e43>Reginlaze Julia</span><!----></li><!--]--></ol></nav><!--[--><div class="host-card-detail" data-host-card-detail data-v-a2d3d9b9><!--[--><div class="card-detail" data-v-a2d3d9b9><header class="page-header page-header--mobile-centered card-detail__header" data-v-d61bafd8><div class="page-header__row" data-v-d61bafd8><div class="page-header__back" data-v-d61bafd8><!--[--><button type="button" class="page-header__back-btn" aria-label="Back"><svg width="18" height="18" viewbox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg><span class="page-header__back-label">Back</span></button><!--]--></div><div class="page-header__identity" data-v-d61bafd8><!----><div class="page-header__copy" data-v-d61bafd8><h1 class="page-header__heading" data-v-d61bafd8>Reginlaze Julia</h1><!----></div></div><div class="page-header__actions" data-v-d61bafd8><!--[--><!----><span class="card-detail-more" data-v-ae791f90><button type="button" class="banner-action-chip" aria-expanded="false" aria-controls="card-detail-more-menu" aria-haspopup="true" aria-label="More actions" data-v-ae791f90><svg width="18" height="18" viewbox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-v-ae791f90><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg></button><!----></span><!--]--></div></div><!----></header><div class="page-inline-ad page-inline-ad--band" data-v-0fede864><div class="page-inline-ad__reserve page-inline-ad__reserve--leaderboard" aria-hidden="true" data-v-0fede864></div></div><article class="card-detail__article" aria-label="Reginlaze Julia"><div class="card-detail__left"><figure class="card-detail__art card-art-navigator" data-v-1f884de7><!--[--><button type="button" class="card-detail__art-button" aria-label="View card art fullscreen"><div class="translated-card-image translated-card-image--full card-detail__img" data-v-cef62854><span class="smart-image translated-card-image__img" data-v-cef62854 data-v-2c40e78a><img class="smart-image__media" style="opacity:1;" src="https://cdn.exburst.dev/cards/gundam-en/GD06-037.webp?v=5a95a1e0431a9cdf&amp;width=480&amp;quality=88&amp;format=webp" srcset="https://cdn.exburst.dev/cards/gundam-en/GD06-037.webp?v=5a95a1e0431a9cdf&amp;width=480&amp;quality=88&amp;format=webp 480w" sizes="480px" alt="Reginlaze Julia - Gundam Card Game card" width="480" height="672" loading="eager" fetchpriority="high" decoding="sync" data-v-2c40e78a><!----><!----></span></div></button><!--]--><!----><!----></figure><div class="card-detail__lang-row"><div class="card-game-lang-block card-game-lang-block--below-art" data-v-dcffcc4a><!----><div class="card-game-lang" role="img" aria-label="English" data-v-dcffcc4a><span class="card-game-lang__btn card-game-lang__btn--active card-game-lang__btn--static" data-v-dcffcc4a><img class="card-game-lang__flag" src="https://cdn.exburst.dev/icon/flags/gb.svg" alt="English" width="28" height="22" loading="eager" decoding="sync" data-v-dcffcc4a></span></div></div><!----><!----></div><!----><section class="card-rating" aria-label="Rate this card" aria-busy="true"><h2 class="sr-only">Rate this card</h2><div class="card-rating-skeleton" aria-hidden="true" data-v-aee7034b><!----><div class="card-rating__row" data-v-aee7034b><div class="card-rating__interactive" data-v-aee7034b><!--[--><span class="card-rating__sk-block card-rating__sk-block--star" data-v-aee7034b></span><span class="card-rating__sk-block card-rating__sk-block--star" data-v-aee7034b></span><span class="card-rating__sk-block card-rating__sk-block--star" data-v-aee7034b></span><span class="card-rating__sk-block card-rating__sk-block--star" data-v-aee7034b></span><span class="card-rating__sk-block card-rating__sk-block--star" data-v-aee7034b></span><!--]--></div><span class="card-rating__sk-block card-rating__sk-block--exp" data-v-aee7034b></span><span class="card-rating__sk-block card-rating__sk-block--score" data-v-aee7034b></span><span class="card-rating__sk-line card-rating__sk-line--count" data-v-aee7034b></span></div></div></section></div><div class="card-detail__meta"><div class="card-detail__cardno-row"><p class="card-detail__cardno">GD06-037</p><!----><!----></div><!----><p class="card-detail__p4-answer">Reginlaze Julia is a R UNIT card from Gundam Card Game - GD06.</p><!----><!--[--><nav class="tab-bar card-detail__tabs" aria-label="Card details" role="tablist" data-v-991688ac><!--[--><!--[--><button id="card-detail-GD06-037-tab-effect" type="button" class="tab-bar__tab--active tab-bar__tab" aria-selected="true" aria-controls="card-detail-GD06-037-panel-effect" tabindex="0" role="tab" data-v-991688ac><!----><span class="tab-bar__label" data-v-991688ac>Effects</span><!----><!----></button><!--]--><!--[--><button id="card-detail-GD06-037-tab-metadata" type="button" class="tab-bar__tab" aria-selected="false" aria-controls="card-detail-GD06-037-panel-metadata" tabindex="-1" role="tab" data-v-991688ac><!----><span class="tab-bar__label" data-v-991688ac>Metadata</span><!----><!----></button><!--]--><!--[--><button id="card-detail-GD06-037-tab-rulings" type="button" class="tab-bar__tab" aria-selected="false" aria-controls="card-detail-GD06-037-panel-rulings" tabindex="-1" role="tab" data-v-991688ac><!----><span class="tab-bar__label" data-v-991688ac>Rulings</span><!----><!----></button><!--]--><!--[--><button id="card-detail-GD06-037-tab-used-in" type="button" class="tab-bar__tab" aria-selected="false" aria-controls="card-detail-GD06-037-panel-used-in" tabindex="-1" role="tab" data-v-991688ac><!----><span class="tab-bar__label" data-v-991688ac>Used in</span><!----><!----></button><!--]--><!--[--><button id="card-detail-GD06-037-tab-comments" type="button" class="tab-bar__tab" aria-selected="false" aria-controls="card-detail-GD06-037-panel-comments" tabindex="-1" role="tab" data-v-991688ac><!----><span class="tab-bar__label" data-v-991688ac>Comments</span><!----><!----></button><!--]--><!--]--></nav><section id="card-detail-GD06-037-panel-effect" class="card-detail__tab-panel" role="tabpanel" aria-labelledby="card-detail-GD06-037-tab-effect" tabindex="0" style=""><div class="card-detail__facts"><dl class="card-detail__stats"><!--[--><div class="card-detail__stat--number card-detail__stat"><dt class="card-detail__stat-label">Level</dt><dd class="card-detail__stat-value" translate="no"><span class="card-detail__num"><!----><span class="card-detail__num-text">6</span></span></dd></div><div class="card-detail__stat--number card-detail__stat"><dt class="card-detail__stat-label">Cost</dt><dd class="card-detail__stat-value" translate="no"><span class="card-detail__num"><!----><span class="card-detail__num-text">4</span></span></dd></div><div class="card-detail__stat--number card-detail__stat"><dt class="card-detail__stat-label">AP</dt><dd class="card-detail__stat-value" translate="no"><span class="card-detail__num"><!----><span class="card-detail__num-text">4</span></span></dd></div><div class="card-detail__stat--number card-detail__stat"><dt class="card-detail__stat-label">HP</dt><dd class="card-detail__stat-value" translate="no"><span class="card-detail__num"><!----><span class="card-detail__num-text">4</span></span></dd></div><div class="card-detail__stat--string card-detail__stat"><dt class="card-detail__stat-label">Link</dt><dd class="card-detail__stat-value" translate="no"><!--[-->[Julieta Juris]<!--]--></dd></div><div class="card-detail__stat--string card-detail__stat"><dt class="card-detail__stat-label">Type</dt><dd class="card-detail__stat-value" translate="no"><!--[-->UNIT<!--]--></dd></div><div class="card-detail__stat--rarity-badge card-detail__stat"><dt class="card-detail__stat-label">Rarity</dt><dd class="card-detail__stat-value" translate="no"><span class="card-detail__rarity"><span class="semantic-icon" aria-hidden="true" style="--si-size:18px;" data-v-0b598ea5><svg width="18" height="18" viewbox="0 0 24 24" aria-hidden="true" data-v-0b598ea5 data-v-ad4d445f><!----><!----><rect class="printed-rarity-badge__plate" x="3.518770949720672" y="5.5" width="16.962458100558656" height="13" rx="1.8" fill="#ffffff" stroke="#8d9298" stroke-width="0.6"></rect><!----><text class="printed-rarity-badge__label" x="12" y="12.25" fill="#141414" stroke="none" stroke-width="0" paint-order="stroke" stroke-linejoin="round" text-anchor="middle" dominant-baseline="middle" font-family="Arial, Helvetica, sans-serif" font-weight="900" font-size="12.35" letter-spacing="-.2">R</text><!----><!----></svg></span><span>Rare</span></span></dd></div><div class="card-detail__stat--color-pills card-detail__stat"><dt class="card-detail__stat-label">Colors</dt><dd class="card-detail__stat-value" translate="no"><!--[--><span class="card-detail__pip" style="--swatch-bg:#FF0000;" title="Red"><span class="card-detail__pip-dot" aria-hidden="true"></span> Red</span><!--]--></dd></div><!--]--><!--[--><div class="card-detail__stat card-detail__legality-stat card-detail__legality-stat--loading"><dt class="card-detail__stat-label">Standard</dt><dd class="card-detail__stat-value"><span class="card-detail__legality-badge" role="status" aria-label="Standard: Checking Standard legality…" title="Standard: Checking Standard legality…"><!----><span>Checking Standard legality…</span></span></dd></div><!--]--></dl><div class="card-detail__stat card-detail__stat--traits"><span class="card-detail__stat-label">Traits</span><ul class="card-detail__chips" aria-label="Traits"><!--[--><li class="card-detail__chip-item"><button type="button" class="card-detail__chip card-detail__chip--action" aria-label="Trait: Gjallarhorn">Gjallarhorn</button></li><!--]--></ul></div></div><!----><div class="card-detail__rules-wrap" data-v-93e35695><div class="card-detail__rules" data-v-93e35695><section class="card-detail__rule" aria-label="Effect" data-v-93e35695><h2 class="card-detail__rule-title" data-v-93e35695>Effect</h2><p class="effect-text" data-v-93e35695 data-v-79a52f6e><!--[--><!--[--><!--[-->During your turn, while this Unit is battling a damaged enemy Unit, it gains<!--]--><!--]--><!--[--><button type="button" class="effect-text__link--bracket effect-text__link" aria-label="Search for First Strike" data-v-79a52f6e>[First Strike]</button><!--]--><!--[--><!--[-->.
+
+(While this Unit is attacking, it deals damage before the enemy Unit.)
+<!--]--><!--]--><!--[--><button type="button" class="effect-text__pill" style="--pill-color:#f472b6;--pill-bg:rgba(244, 114, 182, 0.2);--pill-hover-bg:#f472b6;--pill-ink:var(--white);" title="An effect that remains active while a Pilot is paired with this Unit." aria-label="An effect that remains active while a Pilot is paired with this Unit." data-v-79a52f6e>During Pair</button><!--]--><!--[--><!--[-->Enemy Units can&#39;t be set as active by enemy effects.<!--]--><!--]--><!--]--></p><!----></section><!----><!----></div><!----></div></section><!----><!----><!----><!----><!--]--></div></article><div class="page-inline-ad page-inline-ad--boundary page-inline-ad--on-all" data-v-0fede864><div class="page-inline-ad__reserve page-inline-ad__reserve--inline" aria-hidden="true" data-v-0fede864></div></div><!----><!--teleport start--><!--teleport end--></div><!--]--></div><!--]--></div></main><!----></div><!----></div><div id="shell-page-chrome" class="shell__page-chrome" data-v-542bf2a4></div><div class="shell__anchor-reserve" aria-hidden="true" data-v-542bf2a4></div><nav class="tabbar host-shell__tabbar shell__mtab" aria-label="Primary mobile" data-v-542bf2a4 data-v-98c9a987><!----><!--[--><!--[--><a href="/gundam/" class="tabbar__tab" id="mobile-tab-home" data-v-98c9a987><!--[--><span class="semantic-icon" aria-hidden="true" style="--si-size:22px;" data-v-98c9a987 data-v-0b598ea5><img sizes="22px" class="semantic-icon__img" src="https://cdn.exburst.dev/nav/nav-home.png?v=20260915a&amp;width=64&amp;height=64&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto" srcset="https://cdn.exburst.dev/nav/nav-home.png?v=20260915a&amp;width=64&amp;height=64&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 64w, https://cdn.exburst.dev/nav/nav-home.png?v=20260915a&amp;width=128&amp;height=128&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 128w, https://cdn.exburst.dev/nav/nav-home.png?v=20260915a&amp;width=192&amp;height=192&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 192w" alt width="64" height="64" loading="eager" fetchpriority="low" decoding="sync" draggable="false" data-v-0b598ea5 data-v-ad4d445f></span><span class="tabbar__label" data-v-98c9a987>Home</span><!--]--></a><!--]--><!--[--><details class="tabbar__group" name="mobile-primary" data-group-id="cards" data-v-98c9a987><summary id="mobile-tab-cards" class="tabbar__tab" aria-controls="mobile-tab-menu-cards" data-warm-paths="/gundam/series /gundam/print-proxies /gundam/pack-opening /gundam/prices /gundam/draft /gundam/cube /gundam/cardlist /gundam/collection" data-v-98c9a987><span class="semantic-icon" aria-hidden="true" style="--si-size:22px;" data-v-98c9a987 data-v-0b598ea5><img sizes="22px" class="semantic-icon__img" src="https://cdn.exburst.dev/nav/nav-cardlist.png?v=20260915a&amp;width=64&amp;height=64&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto" srcset="https://cdn.exburst.dev/nav/nav-cardlist.png?v=20260915a&amp;width=64&amp;height=64&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 64w, https://cdn.exburst.dev/nav/nav-cardlist.png?v=20260915a&amp;width=128&amp;height=128&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 128w, https://cdn.exburst.dev/nav/nav-cardlist.png?v=20260915a&amp;width=192&amp;height=192&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 192w" alt width="64" height="64" loading="eager" fetchpriority="low" decoding="sync" draggable="false" data-v-0b598ea5 data-v-ad4d445f></span><span class="tabbar__label" data-v-98c9a987>Cards</span></summary><section id="mobile-tab-menu-cards" class="tabbar__submenu" aria-label="Cards" data-v-98c9a987><h2 class="tabbar__submenu-title" data-v-98c9a987>Cards</h2><div class="tabbar__submenu-grid" data-v-98c9a987><!--[--><a href="/gundam/series" class="tabbar__submenu-item" data-v-98c9a987><!--[--><span class="tabbar__submenu-icon" aria-hidden="true" data-v-98c9a987><!----></span><span class="tabbar__submenu-label" data-v-98c9a987>Series</span><!--]--></a><a href="/gundam/print-proxies" class="tabbar__submenu-item" data-v-98c9a987><!--[--><span class="tabbar__submenu-icon" aria-hidden="true" data-v-98c9a987><!----></span><span class="tabbar__submenu-label" data-v-98c9a987>Print Proxies</span><!--]--></a><a href="/gundam/pack-opening" class="tabbar__submenu-item" data-v-98c9a987><!--[--><span class="tabbar__submenu-icon" aria-hidden="true" data-v-98c9a987><!----></span><span class="tabbar__submenu-label" data-v-98c9a987>Pack Opening</span><!--]--></a><a href="/gundam/prices" class="tabbar__submenu-item" data-v-98c9a987><!--[--><span class="tabbar__submenu-icon" aria-hidden="true" data-v-98c9a987><!----></span><span class="tabbar__submenu-label" data-v-98c9a987>Price Tracker</span><!--]--></a><a href="/gundam/draft" class="tabbar__submenu-item" data-v-98c9a987><!--[--><span class="tabbar__submenu-icon" aria-hidden="true" data-v-98c9a987><!----></span><span class="tabbar__submenu-label" data-v-98c9a987>Draft</span><!--]--></a><a href="/gundam/cube" class="tabbar__submenu-item" data-v-98c9a987><!--[--><span class="tabbar__submenu-icon" aria-hidden="true" data-v-98c9a987><!----></span><span class="tabbar__submenu-label" data-v-98c9a987>Cube</span><!--]--></a><a href="/gundam/cardlist" class="tabbar__submenu-item tabbar__submenu-item--accent tabbar__submenu-item--accent-start" data-v-98c9a987><!--[--><span class="tabbar__submenu-icon" aria-hidden="true" data-v-98c9a987><!----></span><span class="tabbar__submenu-label" data-v-98c9a987>Card List</span><!--]--></a><a href="/gundam/collection" class="tabbar__submenu-item tabbar__submenu-item--accent" data-v-98c9a987><!--[--><span class="tabbar__submenu-icon" aria-hidden="true" data-v-98c9a987><!----></span><span class="tabbar__submenu-label" data-v-98c9a987>My Collection</span><!--]--></a><!--]--></div></section></details><!--]--><!--[--><details class="tabbar__group" name="mobile-primary" data-group-id="decks" data-v-98c9a987><summary id="mobile-tab-decks" class="tabbar__tab" aria-controls="mobile-tab-menu-decks" data-warm-paths="/gundam/match-log /gundam/starter-decks /gundam/what-to-play /gundam/decklists /gundam/mydecks /gundam/deckbuilder?new=1" data-v-98c9a987><span class="semantic-icon" aria-hidden="true" style="--si-size:22px;" data-v-98c9a987 data-v-0b598ea5><img sizes="22px" class="semantic-icon__img" src="https://cdn.exburst.dev/nav/nav-mydecks.png?v=20260915a&amp;width=64&amp;height=64&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto" srcset="https://cdn.exburst.dev/nav/nav-mydecks.png?v=20260915a&amp;width=64&amp;height=64&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 64w, https://cdn.exburst.dev/nav/nav-mydecks.png?v=20260915a&amp;width=128&amp;height=128&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 128w, https://cdn.exburst.dev/nav/nav-mydecks.png?v=20260915a&amp;width=192&amp;height=192&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 192w" alt width="64" height="64" loading="eager" fetchpriority="low" decoding="sync" draggable="false" data-v-0b598ea5 data-v-ad4d445f></span><span class="tabbar__label" data-v-98c9a987>Decks</span></summary><section id="mobile-tab-menu-decks" class="tabbar__submenu" aria-label="Decks" data-v-98c9a987><h2 class="tabbar__submenu-title" data-v-98c9a987>Decks</h2><div class="tabbar__submenu-grid" data-v-98c9a987><!--[--><a href="/gundam/match-log" class="tabbar__submenu-item" data-v-98c9a987><!--[--><span class="tabbar__submenu-icon" aria-hidden="true" data-v-98c9a987><!----></span><span class="tabbar__submenu-label" data-v-98c9a987>Match Log</span><!--]--></a><a href="/gundam/starter-decks" class="tabbar__submenu-item" data-v-98c9a987><!--[--><span class="tabbar__submenu-icon" aria-hidden="true" data-v-98c9a987><!----></span><span class="tabbar__submenu-label" data-v-98c9a987>Starter Decks</span><!--]--></a><a href="/gundam/what-to-play" class="tabbar__submenu-item" data-v-98c9a987><!--[--><span class="tabbar__submenu-icon" aria-hidden="true" data-v-98c9a987><!----></span><span class="tabbar__submenu-label" data-v-98c9a987>What to play</span><!--]--></a><a href="/gundam/decklists" class="tabbar__submenu-item tabbar__submenu-item--accent tabbar__submenu-item--accent-start" data-v-98c9a987><!--[--><span class="tabbar__submenu-icon" aria-hidden="true" data-v-98c9a987><!----></span><span class="tabbar__submenu-label" data-v-98c9a987>Public Decks</span><!--]--></a><a href="/gundam/mydecks" class="tabbar__submenu-item tabbar__submenu-item--accent" data-v-98c9a987><!--[--><span class="tabbar__submenu-icon" aria-hidden="true" data-v-98c9a987><!----></span><span class="tabbar__submenu-label" data-v-98c9a987>My Decks</span><!--]--></a><a href="/gundam/deckbuilder?new=1" class="tabbar__submenu-item tabbar__submenu-item--cta" data-v-98c9a987><!--[--><span class="tabbar__submenu-icon" aria-hidden="true" data-v-98c9a987><!----></span><span class="tabbar__submenu-label" data-v-98c9a987>Deck Builder</span><!--]--></a><!--]--></div></section></details><!--]--><!--[--><details class="tabbar__group" name="mobile-primary" data-group-id="compete" data-v-98c9a987><summary id="mobile-tab-compete" class="tabbar__tab" aria-controls="mobile-tab-menu-compete" data-warm-paths="/gundam/tournaments/deck-samples /gundam/tournaments/personal /gundam/tournaments /gundam/tournaments/meta" data-v-98c9a987><span class="semantic-icon" aria-hidden="true" style="--si-size:22px;" data-v-98c9a987 data-v-0b598ea5><img sizes="22px" class="semantic-icon__img" src="https://cdn.exburst.dev/nav/nav-tournaments.png?v=20260915a&amp;width=64&amp;height=64&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto" srcset="https://cdn.exburst.dev/nav/nav-tournaments.png?v=20260915a&amp;width=64&amp;height=64&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 64w, https://cdn.exburst.dev/nav/nav-tournaments.png?v=20260915a&amp;width=128&amp;height=128&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 128w, https://cdn.exburst.dev/nav/nav-tournaments.png?v=20260915a&amp;width=192&amp;height=192&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 192w" alt width="64" height="64" loading="eager" fetchpriority="low" decoding="sync" draggable="false" data-v-0b598ea5 data-v-ad4d445f></span><span class="tabbar__label" data-v-98c9a987>Compete</span></summary><section id="mobile-tab-menu-compete" class="tabbar__submenu" aria-label="Compete" data-v-98c9a987><h2 class="tabbar__submenu-title" data-v-98c9a987>Compete</h2><div class="tabbar__submenu-grid" data-v-98c9a987><!--[--><a href="/gundam/tournaments/deck-samples" class="tabbar__submenu-item" data-v-98c9a987><!--[--><span class="tabbar__submenu-icon" aria-hidden="true" data-v-98c9a987><!----></span><span class="tabbar__submenu-label" data-v-98c9a987>Best Decks to Play</span><!--]--></a><a href="/gundam/tournaments/personal" class="tabbar__submenu-item" data-v-98c9a987><!--[--><span class="tabbar__submenu-icon" aria-hidden="true" data-v-98c9a987><!----></span><span class="tabbar__submenu-label" data-v-98c9a987>My Tournaments</span><!--]--></a><a href="/gundam/tournaments" class="tabbar__submenu-item tabbar__submenu-item--accent tabbar__submenu-item--accent-start" data-v-98c9a987><!--[--><span class="tabbar__submenu-icon" aria-hidden="true" data-v-98c9a987><!----></span><span class="tabbar__submenu-label" data-v-98c9a987>Tournament Hub</span><!--]--></a><a href="/gundam/tournaments/meta" class="tabbar__submenu-item tabbar__submenu-item--accent" data-v-98c9a987><!--[--><span class="tabbar__submenu-icon" aria-hidden="true" data-v-98c9a987><!----></span><span class="tabbar__submenu-label" data-v-98c9a987>Meta Analysis</span><!--]--></a><!--]--></div></section></details><!--]--><!--]--><button type="button" class="tabbar__tab tabbar__tab--more" aria-expanded="false" aria-controls="mobile-more-sheet" aria-label="More" data-v-98c9a987><span class="semantic-icon" aria-hidden="true" style="--si-size:22px;" data-v-98c9a987 data-v-0b598ea5><img sizes="22px" class="semantic-icon__img" src="https://cdn.exburst.dev/nav/nav-layers.png?v=20260915a&amp;width=64&amp;height=64&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto" srcset="https://cdn.exburst.dev/nav/nav-layers.png?v=20260915a&amp;width=64&amp;height=64&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 64w, https://cdn.exburst.dev/nav/nav-layers.png?v=20260915a&amp;width=128&amp;height=128&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 128w, https://cdn.exburst.dev/nav/nav-layers.png?v=20260915a&amp;width=192&amp;height=192&amp;aspect_ratio=1%3A1&amp;crop=center&amp;quality=90&amp;format=auto 192w" alt width="64" height="64" loading="eager" fetchpriority="low" decoding="sync" draggable="false" data-v-0b598ea5 data-v-ad4d445f></span><span class="tabbar__label" data-v-98c9a987>More</span></button><!----></nav><!--[--><div class="shell__mad"><!----></div><!----><!--]--></div><!----></div><!--]--></div><div id="teleports"></div><script>window.__NUXT__={};window.__NUXT__.config={public:{appRelease:"r0ae02ab39b13cc4930af",sitemapLastmod:"2026-10-16",seoApexIndexable:true,rumSampleRate:.25},app:{baseURL:"/",buildId:"r0ae02ab39b13cc4930af",buildAssetsDir:"/_nuxt/r0ae02ab39b13cc4930af/",cdnURL:""}}</script><script type="application/json" data-nuxt-data="nuxt-app" data-ssr="true" id="__NUXT_DATA__">[["ShallowReactive",1],{"data":2,"state":44,"once":1125,"_errors":1126,"serverRendered":24,"path":1124},["ShallowReactive",3],{"card-detail:gundam:en:GD06-037":4},{"card":5,"rating":41},{"id":6,"cardno":7,"name":8,"image":9,"cost":10,"maxCopies":11,"colors":12,"type":14,"rarity":15,"rarityDisplay":15,"set":16,"series":16,"trait":17,"archetypes":18,"stats":19,"seriesName":16,"effect":22,"effectJa":11,"trigger":23,"published":24,"marketPrice":11,"tcgplayerLink":11,"source":25,"counter":11,"block":26,"link":27,"generateResources":11,"rarityType":11,"isEddiable":11,"sourceTitle":28,"rulings":29,"notes":11,"notesUrl":11,"mainLanguage":11,"translations":35,"translationLanguages":36,"game":37,"sharedKey":7,"isPrimary":24,"variantOf":11,"variantLabel":11,"collectionOnly":38,"hasCommunityTranslation":38,"linkTypes":39},"gundam:GD06-037","GD06-037","Reginlaze Julia","https:\u002F\u002Fcdn.exburst.dev\u002Fcards\u002Fgundam-en\u002FGD06-037.webp?v=5a95a1e0431a9cdf",4,null,[13],"Red","UNIT","R","GD06","Gjallarhorn",[17],{"power":10,"counter":11,"ap":10,"generatedEnergy":11,"level":20,"attribute":21,"powerCost":11,"dmg":11,"hp":11,"life":11},6,"Space Earth","During your turn, while this Unit is battling a damaged enemy Unit, it gains\u003CFirst Strike>.\n\r\n(While this Unit is attacking, it deals damage before the enemy Unit.)\n【During Pair】Enemy Units can't be set as active by enemy effects.",{"kind":11,"text":11,"key":11},true,"Stardust Trails [GD06]","2","[Julieta Juris]","Mobile Suit Gundam IRON-BLOODED ORPHANS",[30],{"number":31,"date":32,"question":33,"answer":34},"Q509","October 16, 2026","This Unit attacks a damaged enemy Unit and gains \u003CFirst Strike>. Then, that damaged Unit recovers HP, and Unit being battled is no longer damaged. At this time, does this Unit lose \u003CFirst Strike>?","Yes, it does.",[],[],"gundam",false,[40],"name",{"average":42,"count":10,"your":11,"isDaily":38,"expBonus":43},5,100,["Reactive",45],{"$sexb-site-mode":46,"$sv4-host-game-seed":49,"$sexb-breadcrumb-current":1123},{"status":47,"bypass":38,"serverBlocked":38},{"mode":48},"normal",{"segment":37,"gameId":37,"config":50,"navConfig":1063},["Reactive",51],{"version":52,"gameId":37,"holoRarities":53,"cardOverlay":60,"stats":64,"name":153,"seriesGallery":154,"metafy":157,"series":159,"mainThemeColor":248,"gameBackground":249,"dailyHeroCover":250,"branding":259,"enableScorePointTracker":38,"leaderboard":261,"nav":262,"cardDerivedFields":436,"cardlist":449,"cardDetail":692,"deckbuilder":802,"limited":858,"playtest":860,"simulators":913,"upcomingReleases":950,"officialLinks":951,"rulesDocuments":965,"translations":970,"synergy":989,"cardArtZone":993,"cardBookmarks":997,"cardNumberGlyph":1001,"iconography":1003,"collectionPreview":1057,"homeSpotlight":1059},1,[15,54,55,56,57,58,59],"R+","R++","LR","LR+","LR++","LKR+",{"topLeft":61,"topRight":62,"captionBottom":63,"deckCaption":38},20,0,12,{"charts":65,"tallies":98,"keywordTallies":103,"probabilities":110,"pulse":144},[66,71,75,80,85,87,91,95],{"key":67,"group":68,"labelKey":67,"source":67,"kind":69,"min":62,"max":70},"cost","curve","numeric",7,{"key":72,"group":68,"labelKey":72,"source":73,"kind":69,"min":52,"max":74,"overflow":38},"level","stats.level",8,{"key":76,"group":77,"labelKey":78,"source":79,"kind":69,"min":62,"max":70},"power","units","hp","stats.power",{"key":81,"group":82,"labelKey":81,"source":83,"kind":84},"color","composition","colors","category",{"key":86,"group":82,"labelKey":86,"source":86,"kind":84,"wide":24},"type",{"key":88,"group":77,"labelKey":89,"source":67,"kind":69,"min":62,"max":70,"filter":90},"unit-cost","unitCost",{"source":86,"value":14},{"key":92,"group":77,"labelKey":93,"source":73,"kind":69,"min":52,"max":74,"overflow":38,"filter":94},"unit-level","unitLevel",{"source":86,"value":14},{"key":96,"group":77,"labelKey":96,"source":97,"kind":69,"min":62,"max":20},"ap","stats.ap",[99],{"key":100,"filterKey":101,"labelKey":102},"links","link","deckView.stats.charts.links",[104],{"key":105,"labelKey":106,"source":107,"keywords":108},"keywords","deckView.stats.charts.keywords","effect",[109],"Burst",[111,122,134],{"key":112,"labelKey":113,"targets":114,"draws":121,"mulligan":42},"t1unit1","turn1UnitCost1",[115,117],{"source":67,"op":116,"value":52},"lte",{"source":86,"op":118,"value":119},"in",[14,120],"BASE",{"first":42,"second":20},{"key":123,"labelKey":124,"targets":125,"draws":133},"t2playable","turn2Playable",[126,128,130,131],{"source":67,"op":127,"value":52},"gte",{"source":67,"op":116,"value":129},2,{"source":73,"op":116,"value":129},{"source":86,"op":118,"value":132},[14,120],{"first":20,"second":70},{"key":135,"labelKey":136,"targets":137,"draws":143},"t2playable7","turn2Playable7",[138,139,140,141],{"source":67,"op":127,"value":52},{"source":67,"op":116,"value":129},{"source":73,"op":116,"value":129},{"source":86,"op":118,"value":142},[14,120],{"first":70,"second":70},{"resource":145},[146,147,150],{"key":67,"costChartKey":67},{"key":72,"labelKey":81,"costChartKey":72,"curveLabelKey":148,"mode":149,"colorField":83,"maxCategories":129},"curveLevel","colorRatio",{"key":100,"labelKey":100,"mode":151,"generatorField":101,"hintKey":152},"generatorRatio","tipLinks","Gundam Card Game",{"coverArtTransform":155},{"mirrorX":24,"translateX":156},-12,{"gameSlug":158},"gundam-card-game",{"GD01!":160,"GD02!":165,"GD03!":170,"GD04!":176,"GD05!":182,"EB01!":188,"ST01!":192,"ST02!":197,"ST03!":202,"ST04!":207,"ST05!":212,"ST06!":217,"ST07!":222,"ST08!":227,"ST09!":232,"ST10!":236,"T!":240,"R!":242,"B!":244,"P!":246},{"name":161,"releaseDate":162,"series_source":163},"GD01 Newtype Rising","2025-07-26",[164],"Newtype Rising [GD01]",{"name":166,"releaseDate":167,"series_source":168},"GD02 Dual Impact","2025-10-25",[169],"Dual Impact [GD02]",{"name":171,"releaseDate":172,"series_source":173},"GD03 Steel Requiem","2026-01-31",[174,175],"Steel Requiem[GD03]","Booster Pack Steel Requiem [GD03] Release Event",{"name":177,"releaseDate":178,"series_source":179},"GD04 Phantom Aria","2026-04-25",[180,181],"Phantom Aria [GD04]","Booster Pack Phantom Aria [GD04] Release Event Commemorative Items for Participants",{"name":183,"releaseDate":184,"series_source":185},"GD05 Freedom Ascension","2026-07-25",[186,187],"Booster [GD05] Freedom Ascension","Booster Pack Freedom Ascension [GD05] Release Event Commemorative Items for Participants",{"name":189,"series_source":190},"EB01 Eternal Nexus",[191],"Eternal Nexus [EB01]",{"name":193,"series_source":194},"ST01 Heroic Beginings",[195,196],"Heroic Beginnings [ST01]","Heroic Beginnings [ST01] Bonus Pack",{"name":198,"series_source":199},"ST02 Wings of Advance",[200,201],"Wings of Advance [ST02]","Wings of Advance [ST02] Bonus Pack",{"name":203,"series_source":204},"ST03 Zeon's Rush",[205,206],"Zeon's Rush [ST03]","Zeon's Rush [ST03] Bonus Pack",{"name":208,"series_source":209},"ST04 SEED Strike",[210,211],"SEED Strike [ST04]","SEED Strike [ST04] Bonus Pack",{"name":213,"series_source":214},"ST05 Iron Bloom",[215,216],"Iron Bloom [ST05]","Iron Bloom [ST05] Bonus Pack",{"name":218,"series_source":219},"ST06 Clan Unity",[220,221],"Clan Unity [ST06]","Clan Unity [ST06] Bonus Pack",{"name":223,"series_source":224},"ST07 Celestial Drive",[225,226],"Celestial Drive [ST07]","Celestial Drive [ST07] Bonus Pack",{"name":228,"series_source":229},"ST08 Flash of Radiance",[230,231],"Flash of Radiance [ST08]","Flash of Radiance [ST08] Bonus Pack",{"name":233,"series_source":234},"ST09 Ultimate Deck Destiny Ignition",[235],"Destiny Ignition [ST09]",{"name":237,"series_source":238},"ST10 Generation Pulse",[239],"Generation Pulse [ST10]",{"name":241},"Tokens",{"name":243},"Ressources",{"name":245},"Bases",{"name":247},"Promos","#45727D","https:\u002F\u002Fcdn.exburst.dev\u002Fgundam\u002Fassets\u002Fgd03-bg.webp",{"desktop":251,"mobile":256},{"fit":252,"focusX":253,"focusY":254,"scale":255},"cover",0.38,0.5,1.2,{"fit":252,"position":257,"focusX":258},"centre",0.68,{"logo":260},"https:\u002F\u002Fcdn.exburst.dev\u002Ficon\u002Fgundam\u002Flogo.png",{"hasPackHighlights":24},{"quick":263,"primaryCta":304,"primary":308,"account":416,"admin":431},[264,267,269,271,273,275,278,280,282,285,287,288,290,291,294,297,299,301,303],{"id":265,"tier":266},"new-deck","primary",{"id":268,"tier":266},"cardlist",{"id":270,"tier":266},"decklists",{"id":272,"tier":266},"mydecks",{"id":274,"tier":266},"collection",{"id":276,"newSince":277},"starter-decks","2026-10-08",{"id":279,"tier":266},"deck-samples",{"id":281,"newSince":277},"what-to-play",{"id":283,"tier":266,"newSince":284},"price-tracker","2026-10-09",{"id":286,"tier":266},"results","upcoming",{"id":289,"newSince":277},"meta","leaderboard",{"id":292,"tier":266,"newSince":293},"banlist","2026-09-28",{"id":295,"tier":296,"newSince":293},"match-log","more",{"id":298,"tier":296,"newSince":293},"draft",{"id":300,"tier":296,"newSince":293},"cube",{"id":302,"tier":296},"pack-opening","how-to-play",{"id":265,"label":305,"route":306,"icon":307},"New deck","\u002Fdeckbuilder?new=1","IconPlus",[309,349,374,397],{"id":310,"label":311,"icon":312,"items":313},"cards","Cards","IconCards",[314,319,324,328,332,336,340,345],{"id":315,"label":316,"route":317,"desc":318},"series-gallery","Series","\u002Fseries","Browse cards by set and series",{"id":320,"label":321,"route":322,"desc":323},"print-proxies","Print Proxies","\u002Fprint-proxies","Print proxy card sheets at home",{"id":302,"label":325,"route":326,"desc":327},"Pack Opening","\u002Fpack-opening","Booster simulator - open packs and pull cards",{"id":283,"label":329,"route":330,"desc":331},"Price Tracker","\u002Fprices","Live TCGPlayer market data",{"id":298,"label":333,"route":334,"desc":335},"Draft","\u002Fdraft","Booster draft - open packs, pick, pass, build",{"id":300,"label":337,"route":338,"desc":339},"Cube","\u002Fcube","Draft from a curated card pool",{"id":268,"label":341,"route":342,"variant":343,"desc":344},"Card List","\u002Fcardlist","accent","Browse all available cards",{"id":274,"label":346,"route":347,"authPrompt":24,"variant":343,"desc":348},"My Collection","\u002Fcollection","Track your card collection",{"id":350,"label":351,"icon":352,"items":353},"decks","Decks","IconDecks",[354,358,362,366,370],{"id":295,"label":355,"route":356,"authPrompt":24,"desc":357},"Match Log","\u002Fmatch-log","Your matches and deck W\u002FL",{"id":276,"label":359,"route":360,"desc":361},"Starter Decks","\u002Fstarter-decks","Official leftover starter lists",{"id":281,"label":363,"route":364,"desc":365},"What to play","\u002Fwhat-to-play","Every leader or archetype you can build",{"id":270,"label":367,"route":368,"variant":343,"desc":369},"Public Decks","\u002Fdecklists","Browse decks from other players",{"id":272,"label":371,"route":372,"authPrompt":24,"variant":343,"desc":373},"My Decks","\u002Fmydecks","View and manage your decks",{"id":375,"label":376,"icon":377,"items":378},"compete","Compete","IconPodium",[379,383,388,393],{"id":279,"label":380,"route":381,"desc":382},"Best Decks to Play","\u002Ftournaments\u002Fdeck-samples","Top performers right now",{"id":384,"label":385,"route":386,"authPrompt":24,"desc":387},"personal","My Tournaments","\u002Ftournaments\u002Fpersonal","Your registrations",{"id":389,"label":390,"route":391,"variant":343,"desc":392},"tournaments","Tournament Hub","\u002Ftournaments","All tournaments",{"id":289,"label":394,"route":395,"variant":343,"desc":396},"Meta Analysis","\u002Ftournaments\u002Fmeta","What is winning",{"id":398,"label":399,"icon":400,"items":401},"community","Community","IconCommunity",[402,407,412],{"id":403,"label":404,"route":405,"desc":406},"articles","Articles","\u002Farticles","Strategy, news, and guides",{"id":408,"label":409,"route":410,"desc":411},"videos","Videos","\u002Fvideos","Creator videos shared on ExBurst",{"id":290,"label":413,"route":414,"desc":415},"Leaderboard","\u002Fleaderboard","Top players and rankings",[417,421,425,426,427],{"id":418,"label":419,"route":420},"profile","My Profile","\u002Fprofile",{"id":422,"label":423,"route":424,"auth":24},"profile-customize","Customize profile","\u002Fprofile?customize=nameplate",{"id":272,"label":371,"route":372},{"id":274,"label":346,"route":347},{"id":428,"label":429,"route":430},"my-articles","My Articles","\u002Farticles\u002Fmy-articles",[432],{"id":433,"label":434,"route":435},"admin","Admin Panel","\u002Fadmin",[437],{"key":438,"from":101,"emptyValue":439,"unmatchedValue":440,"categories":441},"linkTypes","none","unknown",[442,444],{"value":40,"pattern":443},"\\[[^\\]]+\\]",{"value":445,"pattern":446,"remove":447},"trait","\\([^()]+\\)\\s*Trait\\b",[448],"\\[[^\\]]*\\]",{"search":450,"quickFilters":517,"v3FilterProperties":518,"filters":519,"sorts":611,"defaultSort":613,"thumbnail":688,"ariaLabelKey":690,"alternates":691,"seriesFromSource":24},{"fields":451,"advancedFields":453},[40,452,107,445,101],"cardno",[454,458,462,465,468,472,476,480,483,489,492,495,498,501,506,510,514],{"key":40,"path":40,"aliases":455,"labelKey":457},[456],"n","cards.filters.name",{"key":83,"path":83,"aliases":459,"labelKey":461},[81,460],"c","cards.filters.colors",{"key":107,"path":107,"aliases":463,"labelKey":464},[],"cards.filters.keywords",{"key":86,"path":86,"aliases":466},[467],"t",{"key":469,"path":469,"aliases":470},"rarity",[471],"r",{"key":473,"path":473,"aliases":474},"set",[475],"s",{"key":445,"path":445,"aliases":477},[478,479],"traits","x",{"key":101,"path":101,"aliases":481},[100,482],"l",{"key":484,"path":438,"aliases":485,"labelKey":488},"linktype",[486,487],"linktypes","lt","cards.filters.linkTypes",{"key":67,"path":67,"aliases":490},[491],"o",{"key":96,"path":97,"aliases":493},[494],"a",{"key":72,"path":73,"aliases":496},[497],"v",{"key":78,"path":79,"aliases":499},[500],"h",{"key":502,"path":503,"aliases":504},"zones","stats.attribute",[505],"z",{"key":507,"path":507,"aliases":508},"block",[509],"b",{"key":511,"path":511,"aliases":512},"source",[513],"gi",{"key":105,"path":107,"aliases":515},[516],"kw",[83,86,72,67,469,473],{"color":83,"categorydata":86,"rarity":469,"seriesname":473,"attributedata":502,"trait":445,"link":101,"cost":67,"apdata":96,"level":72,"hp":78,"blockicon":507,"effectdata":105},[520,536,540,543,552,565,567,570,572,574,578,580,587,589,591],{"key":83,"labelKey":461,"from":83,"type":521,"separator":522,"sortValues":523,"optionOrder":524,"palette":529,"tier":535},"multi-string","\u002F","natural",[525,526,13,527,528],"Blue","Green","White","Purple",{"red":530,"blue":531,"green":532,"purple":533,"white":534},"#FF0000","#0000FF","#008000","#800080","#F3F0E8","standard",{"key":67,"labelKey":537,"from":67,"type":538,"separator":11,"sortValues":539,"tier":535},"cards.filters.cost","multi-number","asc",{"key":72,"labelKey":541,"from":73,"type":538,"separator":11,"sortValues":539,"iconToken":542,"tier":535},"cards.filters.level","semantic.cost",{"key":86,"labelKey":544,"from":86,"type":521,"separator":11,"sortValues":523,"optionOrder":545,"tier":535},"cards.filters.type",[14,546,547,120,548,549,550,551],"PILOT","COMMAND","RESOURCE","EX BASE","EX RESOURCE","TOKEN",{"key":469,"labelKey":553,"from":469,"type":521,"separator":11,"sortValues":523,"optionOrder":554,"printScoped":24,"tier":535},"cards.filters.rarity",[555,556,557,558,559,560,15,54,55,56,561,562,59,57,58,563,564],"C","C+","C++","U","U+","U++","LKC+","LKU+","P","P+",{"key":473,"labelKey":566,"from":473,"type":521,"separator":11,"sortValues":523,"printScoped":24,"tier":535},"cards.filters.set",{"key":445,"labelKey":568,"from":445,"type":521,"separator":522,"sortValues":523,"iconToken":569,"tier":535},"cards.filters.trait","semantic.tag",{"key":96,"labelKey":571,"from":97,"type":538,"sortValues":539,"iconToken":542,"tier":535},"cards.filters.ap",{"key":78,"labelKey":573,"from":79,"type":538,"sortValues":539,"iconToken":542,"tier":535},"cards.filters.hp",{"key":502,"labelKey":575,"from":503,"type":521,"sortValues":523,"separator":576,"iconToken":569,"tier":577},"cards.filters.zones"," ","advanced",{"key":101,"labelKey":579,"from":101,"type":521,"sortValues":523,"separator":522,"iconToken":569,"tier":535},"cards.filters.link",{"key":484,"labelKey":488,"from":438,"type":521,"sortValues":523,"optionOrder":581,"valueLabels":582,"iconToken":569,"tier":535},[40,445,440],{"name":583,"trait":584,"-":585,"unknown":586},"cards.filters.linkTypeName","cards.filters.linkTypeTrait","cards.filters.linkTypeNone","cards.filters.linkTypeUnknown",{"key":507,"labelKey":588,"from":507,"type":521,"sortValues":523,"iconToken":569,"tier":577},"cards.filters.block",{"key":511,"labelKey":590,"from":511,"type":521,"sortValues":523,"iconToken":569,"printScoped":24,"tier":577},"cards.filters.source",{"key":105,"labelKey":464,"from":107,"type":592,"sortValues":523,"iconToken":569,"options":593,"tier":535},"keyword-in-text",[594,595,596,597,598,599,600,601,109,602,603,604,605,606,607,608,609,610],"Repair","Breach","Support","Blocker","First Strike","High-Maneuver","Activate･Main","Activate･Action","Deploy","Destroyed","When Paired","During Pair","When Linked","During Link","Once per Turn","Pilot","Suppression",[612,615,619,622,625,628,631,634,637,640,643,646,649,653,656,659,663],{"key":613,"labelKey":614,"field":73,"direction":539,"nullsLast":24},"level-asc","cards.sort.levelAsc",{"key":616,"labelKey":617,"field":73,"direction":618,"nullsLast":24},"level-desc","cards.sort.levelDesc","desc",{"key":620,"labelKey":621,"field":452,"direction":539,"nullsLast":24},"id-asc","cards.sort.idAsc",{"key":623,"labelKey":624,"field":452,"direction":618,"nullsLast":24},"id-desc","cards.sort.idDesc",{"key":626,"labelKey":627,"field":40,"direction":539,"nullsLast":24},"name-asc","cards.sort.nameAsc",{"key":629,"labelKey":630,"field":40,"direction":618,"nullsLast":24},"name-desc","cards.sort.nameDesc",{"key":632,"labelKey":633,"field":67,"direction":539,"nullsLast":24},"cost-asc","cards.sort.costAsc",{"key":635,"labelKey":636,"field":67,"direction":618,"nullsLast":24},"cost-desc","cards.sort.costDesc",{"key":638,"labelKey":639,"field":97,"direction":539,"nullsLast":24},"ap-asc","cards.sort.apAsc",{"key":641,"labelKey":642,"field":97,"direction":618,"nullsLast":24},"ap-desc","cards.sort.apDesc",{"key":644,"labelKey":645,"field":79,"direction":539,"nullsLast":24},"hp-asc","cards.sort.hpAsc",{"key":647,"labelKey":648,"field":79,"direction":618,"nullsLast":24},"hp-desc","cards.sort.hpDesc",{"key":650,"labelKey":651,"field":652,"direction":539,"nullsLast":24,"perPrint":24},"price-asc","cards.sort.priceAsc","marketPrice",{"key":654,"labelKey":655,"field":652,"direction":618,"nullsLast":24,"perPrint":24},"price-desc","cards.sort.priceDesc",{"key":469,"labelKey":657,"field":469,"direction":539,"ladder":658,"nullsLast":24},"cards.sort.rarityAsc",[555,556,557,558,559,560,15,54,55,56,561,562,59,57,58,563,564],{"key":660,"labelKey":661,"field":469,"direction":618,"ladder":662,"nullsLast":24},"rarity-desc","cards.sort.rarityDesc",[555,556,557,558,559,560,15,54,55,56,561,562,59,57,58,563,564],{"key":664,"labelKey":665,"field":666,"fallbackField":473,"direction":539,"ladder":667,"nullsLast":24},"newest","cards.sort.newest","catalogSet",[16,668,669,670,671,672,673,674,675,676,677,678,679,680,681,682,683,684,685,686,687],"ST11","ST12","ST13","ST14","GD05","EB01","ST10","GD04","ST09","GD03","ST07","ST08","GD02","ST06","ST05","GD01","ST01","ST02","ST03","ST04",{"primaryStat":11,"primaryStatLabelKey":11,"colors":689},{"from":83,"separator":11,"renderAs":439},"cards.cardLabel",{"enabled":24},{"stats":693,"sections":714,"effectText":720},[694,697,699,701,703,706,708,711],{"key":72,"labelKey":695,"from":73,"format":696},"cards.detail.stats.level","number",{"key":67,"labelKey":698,"from":67,"format":696},"cards.detail.stats.cost",{"key":96,"labelKey":700,"from":97,"format":696},"cards.detail.stats.ap",{"key":78,"labelKey":702,"from":79,"format":696},"cards.detail.stats.hp",{"key":101,"labelKey":704,"from":101,"format":705},"cards.detail.stats.link","string",{"key":86,"labelKey":707,"from":86,"format":705},"cards.detail.stats.type",{"key":469,"labelKey":709,"from":469,"format":710},"cards.detail.stats.rarity","rarity-badge",{"key":83,"labelKey":712,"from":83,"format":713},"cards.detail.stats.colors","color-pills",[107,715,716,717,718,511,719],"rulings","archetypes","series","sourceTitle","printings",{"cardEffectColumn":107,"cardTriggerColumn":721,"removeFirstNumber":38,"knownTags":722,"tagColors":754,"tagDescriptions":763,"gameColors":795,"traitsColumn":445,"traitsDelimiter":522},"trigger",[723,724,725,726,727,728,729,730,731,732,733,734,735,736,737,738,739,740,741,742,743,744,745,746,747,748,749,750,751,752,753],"Raid","Impact","Damage","Step","Sniper","Double Attack","Double Block","Once Per Turn","Activate: Main","During Your Turn","During Opponent's Turn","When Played","When Attacking","When Blocking","When Sidelined","If On The Front line","If In The Energy Line","Switch To Resting","Main","On Block","On Play","On Retire","Opponent's Turn","Rest this card","Retire this card","Trigger","When In Energy Line","When in Energy Line","When in Outside Area","When in Frontline","Your Turn",{"【Repair】":755,"【Repair 1】":755,"【Repair 2】":755,"【Repair 3】":755,"【Breach】":755,"【Breach 1】":755,"【Breach 2】":755,"【Breach 3】":755,"【Breach 4】":755,"【Breach 5】":755,"【Support】":755,"【Support 1】":755,"【Support 2】":755,"【Support 3】":755,"【Blocker】":755,"【Pilot】":755,"【Suppression】":755,"【First Strike】":756,"【High-Maneuver】":755,"【Activate･Main】":757,"【Activate･Action】":757,"【Main】":757,"【Action】":756,"【Burst】":758,"【Deploy】":757,"【Attack】":757,"【Destroyed】":757,"【When Paired】":759,"【During Pair】":760,"【When Linked】":761,"【During Link】":761,"【Once per Turn】":762},"#ffffff","#f59e0b","#77b2b1","#f97316","#ec4899","#f472b6","#fbbf24","#ef4444",{"【Repair】":764,"【Repair 1】":765,"【Repair 2】":766,"【Repair 3】":767,"【Breach】":768,"【Breach 1】":769,"【Breach 2】":770,"【Breach 3】":771,"【Breach 4】":772,"【Breach 5】":773,"【Support】":774,"【Support 1】":775,"【Support 2】":776,"【Support 3】":777,"【Blocker】":778,"【Pilot】":779,"【First Strike】":780,"【High-Maneuver】":781,"【Activate･Main】":782,"【Activate･Action】":783,"【Main】":784,"【Action】":785,"【Burst】":786,"【Deploy】":787,"【Attack】":788,"【Destroyed】":789,"【When Paired】":790,"【During Pair】":791,"【When Linked】":792,"【During Link】":793,"【Once per Turn】":794},"At the end of your turn, this Unit recovers HP equal to the Repair amount.","At the end of your turn, this Unit recovers 1 HP.","At the end of your turn, this Unit recovers 2 HP.","At the end of your turn, this Unit recovers 3 HP.","When this Unit destroys an enemy Unit with battle damage, deal damage to the first card in the opponent's shield area.","When this Unit destroys an enemy Unit with battle damage, deal 1 damage to the first card in the opponent's shield area.","When this Unit destroys an enemy Unit with battle damage, deal 2 damage to the first card in the opponent's shield area.","When this Unit destroys an enemy Unit with battle damage, deal 3 damage to the first card in the opponent's shield area.","When this Unit destroys an enemy Unit with battle damage, deal 4 damage to the first card in the opponent's shield area.","When this Unit destroys an enemy Unit with battle damage, deal 5 damage to the first card in the opponent's shield area.","【Activate･Main】Rest this Unit: Choose another friendly unit. It gets AP+ equal to the Support amount this turn.","【Activate･Main】Rest this Unit: Choose another friendly unit. It gets AP+1 this turn.","【Activate･Main】Rest this Unit: Choose another friendly unit. It gets AP+2 this turn.","【Activate･Main】Rest this Unit: Choose another friendly unit. It gets AP+3 this turn.","You can rest this Unit to redirect an enemy attack to it instead of the original target.","This effect applies to the named Pilot.","This Unit deals battle damage before the enemy when attacking.","While this Unit is attacking, enemy Units cannot activate Blocker.","An activated effect that can only be used during your main phase while not attacking.","An activated effect that can only be used during action steps.","A Command card effect that can be activated during your main phase while no Units are attacking.","A Command card effect that can be activated during action steps.","An effect that can be activated when this card is destroyed as a Shield, without paying its cost.","An effect that activates when this card is deployed to the battlefield.","An effect that activates when this Unit declares an attack during your attack step.","An effect that activates when this Unit or Base is destroyed and placed into the trash.","An effect that activates when a Pilot is paired with this Unit.","An effect that remains active while a Pilot is paired with this Unit.","An effect that activates when a pilot meeting the link condition is set.","An effect that remains active while a pilot meeting the link condition is set.","This effect can only be activated once per turn.",[796,797,798,799,800],{"name":528,"code":533},{"name":13,"code":530},{"name":525,"code":531},{"name":526,"code":532},{"name":527,"code":801},"#FFFFFF",{"deckTagFilters":803,"mainTypes":808,"imageExport":809,"listRowColorWash":24,"listRowArtwork":24,"deckSize":824,"slotStats":826,"maxCopies":10,"hasSideboard":24,"sideboardSize":833,"colorLock":834,"nonCountingTypes":835,"formats":837,"deckTypes":840,"archetype":847,"tcgplayer":855,"upgrade":856},[804,806],{"filter":445,"labelKey":805},"deckbuilder.tagFilters.traits",{"filter":101,"labelKey":807},"deckbuilder.tagFilters.links",[14,547,546,120],{"typeLabels":810,"colorPalette":815,"composition":822,"typeOrder":823},{"UNIT":811,"PILOT":812,"COMMAND":813,"BASE":814},"UNITS","PILOTS","COMMANDS","BASES",{"Green":816,"White":817,"Yellow":818,"Blue":819,"Purple":820,"Red":821},"#7caf61","#e5e8ec","#efd351","#54a8dc","#bd8ddd","#f37779","dual-curve",[14,546,547,120],{"min":825,"max":825},50,[827,830],{"key":72,"source":73,"label":828,"labelPosition":829},"Lv.","before",{"key":67,"source":67,"label":831,"labelPosition":832},"COST","after",10,{"enabled":24,"maxColors":129},[548,550,549,551,836],"UNIT TOKEN",[838],{"id":535,"labelKey":839},"deckbuilder.formats.standard",[841,842,843,844,845,846],"aggro","midrange","control","combo","tempo","toolbox",{"label":848,"rule":851,"max":11},{"singular":849,"plural":850},"Main Card","Main Cards",{"column":469,"values":852,"matchMode":853,"identifier":854,"namePath":40},[56,57,58],"eq","variantOfOrId",{"productlineId":153},{"column":469,"rules":857},[58,57,59,562,561,56,55,54,15,560,559,558,557,556,555],{"packSize":63,"packs":10,"singleton":38,"draftDeckMin":859},30,{"startingHand":42,"drawPerTurn":52,"mulligan":861,"resourceDecks":863,"layout":870,"zones":877,"counters":895,"tokens":902,"exile":905,"stack":907,"play":909},{"type":862,"maxUses":52},"shuffle",[864],{"zone":865,"field":86,"values":866,"generate":867},"resourceDeck",[548,550],{"count":833,"name":868,"image":869},"Resource","https:\u002F\u002Fcdn.exburst.dev\u002Fgundam\u002Fcards\u002Fsd\u002FRP-017.webp",{"columns":871,"rows":872,"areas":873},"1fr 1fr 1fr 1fr","1fr 1fr 1fr",[874,875,876],"library frontLine frontLine removalArea","shieldArea frontLine frontLine baseSection","discard hand hand hand",[878,882,886,889,892],{"id":879,"labelKey":880,"kind":881,"capacity":20},"frontLine","playtest.zone.frontLine","row",{"id":883,"labelKey":884,"kind":885,"faceDown":24},"shieldArea","playtest.zone.shieldArea","pile",{"id":887,"labelKey":888,"kind":881,"capacity":52},"baseSection","playtest.zone.baseSection",{"id":865,"labelKey":890,"kind":885,"faceDown":24,"display":891},"playtest.zone.resourceDeck","hidden",{"id":893,"labelKey":894,"kind":885},"removalArea","playtest.zone.removalArea",[896,899],{"id":897,"labelKey":898,"default":62,"startingFirst":52,"startingSecond":52,"min":62,"max":833,"perTurn":52},"resources","playtest.counter.resources",{"id":900,"labelKey":901,"default":62,"min":62,"max":42,"burnable":24},"exResources","playtest.counter.exResources",{"types":903,"zone":879,"stats":904},[551,836],[96,78],{"zone":893,"label":906},"remove",{"title":908},"pair",{"costField":67,"pay":910,"zones":911},{"counter":897},{"UNIT":879,"PILOT":879,"BASE":887,"COMMAND":912},"discard",[914,923,930,935,943],{"id":915,"group":916,"iconUrl":917,"labelKey":918,"descriptionKey":919,"url":920,"kind":921,"format":915,"urlParam":922},"wingtable","ai","https:\u002F\u002Fwww.wingtable.net\u002Fstatic\u002Fmedia\u002Fmetal-white.6e077edc.png","simulators.wingtable.label","simulators.wingtable.description","https:\u002F\u002Fwingtable.net\u002Fgcg\u002Fimport?svc=exburst","url-deck","id",{"id":924,"group":925,"labelKey":926,"descriptionKey":927,"url":928,"kind":921,"format":924,"urlParam":929},"zumbosim","automated","simulators.zumbosim.label","simulators.zumbosim.description","https:\u002F\u002Fplay.zumbosim.com\u002Fhostgame","decklist",{"id":931,"group":925,"labelKey":932,"descriptionKey":933,"url":934,"kind":101},"mobileSuitArena","simulators.mobileSuitArena.label","simulators.mobileSuitArena.description","https:\u002F\u002Fmobilesuitarena.com\u002F",{"id":936,"labelKey":937,"descriptionKey":938,"url":934,"kind":939,"format":940,"learnMoreUrl":941,"learnMoreKey":942},"mobileSuitArenaShuffle","simulators.msaShuffleFixer.label","simulators.msaShuffleFixer.description","clipboard","msa-shuffle-fixer","https:\u002F\u002Fmsafixer.com","simulators.msaShuffleFixer.learnMore",{"id":944,"group":945,"labelKey":946,"descriptionKey":947,"url":948,"kind":101,"creditKey":949},"tabletop","other","simulators.tabletop.label","simulators.tabletop.description","https:\u002F\u002Fsteamcommunity.com\u002Fsharedfiles\u002Ffiledetails\u002F?id=3675958265","simulators.tabletop.creditGundam",[],[952,957,961],{"id":953,"label":954,"url":955,"kind":956},"official-site","Official site","https:\u002F\u002Fwww.gundam-gcg.com\u002Fen\u002F","site",{"id":958,"label":959,"url":960,"kind":958},"rules","Rules & FAQ","https:\u002F\u002Fwww.gundam-gcg.com\u002Fen\u002Frules\u002F",{"id":303,"label":962,"url":963,"kind":964},"How to play","https:\u002F\u002Fwww.gundam-gcg.com\u002Fen\u002Fwelcome\u002Fplayguide.php","howToPlay",{"gameRules":966,"tournamentRules":968},{"label":967,"landingPageUrl":960},"Comprehensive Rules",{"label":969,"landingPageUrl":960},"Organized Play Tournament Rules Manual",{"enabled":24,"defaultLanguage":971,"fallbackLanguage":971,"originalImageLanguage":971,"allowTranslatedImageUploads":24,"allowOverlayToggle":24,"translationCardIdColumn":452,"translationTextScopeColumn":972,"translationAvailabilityColumn":973,"imageColumn":974,"translatableColumns":975,"overlayColumns":977,"multiLanguageDisplayColumns":978,"languages":979,"renderers":987},"en","originalid","approved_translation_languages","image",[40,107,445,101,976],"attributedata",[40,107],[40,107,445,101,976],[980,983],{"code":971,"label":981,"flag":982},"English","EN",{"code":984,"label":985,"flag":986},"ja","Japanese","JP",{"fields":988},[],{"enabled":24,"colorRule":990,"excludedCategories":991,"specialBottomCategories":992},"mono",[548,551,836,550,549],[],{"x":994,"y":995,"w":996,"h":859},11,17,79,[998,1000],{"column":73,"prefix":999},"L",{"column":67,"prefix":555},{"column":507,"equals":1002,"glyph":1002},"β",{"rarities":1004},{"C":1005,"C+":1009,"C++":1012,"U":1015,"U+":1018,"U++":1021,"R":1024,"R+":1027,"R++":1030,"LR":1033,"LKC+":1036,"LKU+":1039,"LKR+":1042,"LR+":1045,"LR++":1048,"P":1051,"P+":1054},{"kind":1006,"name":1007,"label":1008},"svg","rarity.gundam-c","Common",{"kind":1006,"name":1010,"label":1011},"rarity.gundam-c-plus","Common (+)",{"kind":1006,"name":1013,"label":1014},"rarity.gundam-c-plus-plus","Common (++)",{"kind":1006,"name":1016,"label":1017},"rarity.gundam-u","Uncommon",{"kind":1006,"name":1019,"label":1020},"rarity.gundam-u-plus","Uncommon (+)",{"kind":1006,"name":1022,"label":1023},"rarity.gundam-u-plus-plus","Uncommon (++)",{"kind":1006,"name":1025,"label":1026},"rarity.gundam-r","Rare",{"kind":1006,"name":1028,"label":1029},"rarity.gundam-r-plus","Rare (+)",{"kind":1006,"name":1031,"label":1032},"rarity.gundam-r-plus-plus","Rare (++)",{"kind":1006,"name":1034,"label":1035},"rarity.gundam-lr","Legend Rare",{"kind":1006,"name":1037,"label":1038},"rarity.gundam-lkc-plus","Link Common (+)",{"kind":1006,"name":1040,"label":1041},"rarity.gundam-lku-plus","Link Uncommon (+)",{"kind":1006,"name":1043,"label":1044},"rarity.gundam-lkr-plus","Link Rare (+)",{"kind":1006,"name":1046,"label":1047},"rarity.gundam-lr-plus","Legend Rare (+)",{"kind":1006,"name":1049,"label":1050},"rarity.gundam-lr-plus-plus","Legend Rare (++)",{"kind":1006,"name":1052,"label":1053},"rarity.gundam-p","Promo",{"kind":1006,"name":1055,"label":1056},"rarity.gundam-p-plus","Promo (+)",{"wishRarities":1058},[57,58,54,557],{"cardImages":1060},[1061,1062],"https:\u002F\u002Fcdn.exburst.dev\u002Fcards\u002Fgundam-en\u002FGD01-025.webp","https:\u002F\u002Fcdn.exburst.dev\u002Fcards\u002Fgundam-en\u002FGD01-003.webp",{"primaryCta":1064,"primary":1065,"account":1094,"admin":1100,"quick":1102},{"id":265,"label":305,"route":306,"icon":307},[1066,1076,1083,1089],{"id":310,"label":311,"icon":312,"items":1067},[1068,1069,1070,1071,1072,1073,1074,1075],{"id":315,"label":316,"route":317,"auth":38,"admin":38,"authPrompt":38,"desc":318},{"id":320,"label":321,"route":322,"auth":38,"admin":38,"authPrompt":38,"desc":323},{"id":302,"label":325,"route":326,"auth":38,"admin":38,"authPrompt":38,"desc":327},{"id":283,"label":329,"route":330,"auth":38,"admin":38,"authPrompt":38,"desc":331},{"id":298,"label":333,"route":334,"auth":38,"admin":38,"authPrompt":38,"desc":335},{"id":300,"label":337,"route":338,"auth":38,"admin":38,"authPrompt":38,"desc":339},{"id":268,"label":341,"route":342,"auth":38,"admin":38,"authPrompt":38,"desc":344,"variant":343},{"id":274,"label":346,"route":347,"auth":38,"admin":38,"authPrompt":24,"desc":348,"variant":343},{"id":350,"label":351,"icon":352,"items":1077},[1078,1079,1080,1081,1082],{"id":295,"label":355,"route":356,"auth":38,"admin":38,"authPrompt":24,"desc":357},{"id":276,"label":359,"route":360,"auth":38,"admin":38,"authPrompt":38,"desc":361},{"id":281,"label":363,"route":364,"auth":38,"admin":38,"authPrompt":38,"desc":365},{"id":270,"label":367,"route":368,"auth":38,"admin":38,"authPrompt":38,"desc":369,"variant":343},{"id":272,"label":371,"route":372,"auth":38,"admin":38,"authPrompt":24,"desc":373,"variant":343},{"id":375,"label":376,"icon":377,"items":1084},[1085,1086,1087,1088],{"id":279,"label":380,"route":381,"auth":38,"admin":38,"authPrompt":38,"desc":382},{"id":384,"label":385,"route":386,"auth":38,"admin":38,"authPrompt":24,"desc":387},{"id":389,"label":390,"route":391,"auth":38,"admin":38,"authPrompt":38,"desc":392,"variant":343},{"id":289,"label":394,"route":395,"auth":38,"admin":38,"authPrompt":38,"desc":396,"variant":343},{"id":398,"label":399,"icon":400,"items":1090},[1091,1092,1093],{"id":403,"label":404,"route":405,"auth":38,"admin":38,"authPrompt":38,"desc":406},{"id":408,"label":409,"route":410,"auth":38,"admin":38,"authPrompt":38,"desc":411},{"id":290,"label":413,"route":414,"auth":38,"admin":38,"authPrompt":38,"desc":415},[1095,1096,1097,1098,1099],{"id":418,"label":419,"route":420,"auth":38,"admin":38,"authPrompt":38},{"id":422,"label":423,"route":424,"auth":24,"admin":38,"authPrompt":38},{"id":272,"label":371,"route":372,"auth":38,"admin":38,"authPrompt":38},{"id":274,"label":346,"route":347,"auth":38,"admin":38,"authPrompt":38},{"id":428,"label":429,"route":430,"auth":38,"admin":38,"authPrompt":38},[1101],{"id":433,"label":434,"route":435,"auth":38,"admin":38,"authPrompt":38},[1103,1104,1105,1106,1107,1108,1110,1111,1112,1113,1114,1115,1116,1117,1118,1119,1120,1121,1122],{"id":265,"tier":266,"newSince":11,"isNew":38},{"id":268,"tier":266,"newSince":11,"isNew":38},{"id":270,"tier":266,"newSince":11,"isNew":38},{"id":272,"tier":266,"newSince":11,"isNew":38},{"id":274,"tier":266,"newSince":11,"isNew":38},{"id":276,"tier":1109,"newSince":277,"isNew":38},"secondary",{"id":279,"tier":266,"newSince":11,"isNew":38},{"id":281,"tier":1109,"newSince":277,"isNew":38},{"id":283,"tier":266,"newSince":284,"isNew":38},{"id":286,"tier":266,"newSince":11,"isNew":38},{"id":287,"tier":1109,"newSince":11,"isNew":38},{"id":289,"tier":1109,"newSince":277,"isNew":38},{"id":290,"tier":1109,"newSince":11,"isNew":38},{"id":292,"tier":266,"newSince":293,"isNew":38},{"id":295,"tier":296,"newSince":293,"isNew":38},{"id":298,"tier":296,"newSince":293,"isNew":38},{"id":300,"tier":296,"newSince":293,"isNew":38},{"id":302,"tier":296,"newSince":11,"isNew":38},{"id":303,"tier":1109,"newSince":11,"isNew":38},{"path":1124,"label":8},"\u002Fgundam\u002Fcards\u002FGD06-037",["Set"],["ShallowReactive",1127],{"card-detail:gundam:en:GD06-037":-1}]</script><script id="exb-boot-guard-copy" type="application/json" data-hid="exb-boot-guard-copy">{"slow":"This page is still loading. Your connection may be slow.","failed":"This page could not finish loading. Check your connection, then reload.","reload":"Reload","game":"gundam"}</script><script type="application/json" id="exb-entry-plan">{"entry":"/_nuxt/r0ae02ab39b13cc4930af/DIY2yEPZ.js","preloads":["/_nuxt/r0ae02ab39b13cc4930af/DIY2yEPZ.js","/_nuxt/r0ae02ab39b13cc4930af/CYtfOYgs.js","/_nuxt/r0ae02ab39b13cc4930af/oa1GkvJV.js","/_nuxt/r0ae02ab39b13cc4930af/-3JTZLgh.js","/_nuxt/r0ae02ab39b13cc4930af/BS6QVZds.js"],"waitMs":2500}</script><script data-exb-boot-guard>(function(w,d,o){
+if(w.__exbBootGuard)return;
+var shown='',sent=false,timer=0,deferred=false,start=0,progress=0;
+function now(){return w.performance&&w.performance.now?w.performance.now():0}
+function mounted(){var r=d.getElementById('__nuxt');return !!(r&&r.__vue_app__)}
+function data(){var n=d.getElementById(o.copyId);
+try{return (n&&JSON.parse(n.textContent||'{}'))||{}}catch(e){return {}}}
+function copy(){var c={},k,j=data();
+for(k in o.copy)c[k]=typeof j[k]==='string'&&j[k]?j[k]:o.copy[k];
+return c}
+function nav(){try{return w.performance.getEntriesByType('navigation')[0]||null}catch(e){return null}}
+function servedBy(n){var s={},t=(n&&n.serverTiming)||[],i;
+for(i=0;i<t.length;i++)s[t[i].name]=1;
+return s.gateway_edge?'EDGE':s.gateway_lookup||s.gateway_body?'STORED':s.document_total?'RENDER':'UNKNOWN'}
+function beacon(state){if(sent)return;sent=true;
+try{var n=nav(),m={},f,r='none',x=w.innerWidth||0,t=n&&n.type;
+if(n&&n.responseStart>0)m.TTFB=Math.round(n.responseStart);
+f=w.performance.getEntriesByName('first-contentful-paint')[0];
+if(f)m.FCP=Math.round(f.startTime);
+if(!m.TTFB&&!m.FCP)return;
+if(d.referrer){try{r=new URL(d.referrer).origin===w.location.origin?'internal':'external'}catch(e){}}
+var g=data().game;
+var body=JSON.stringify({v:2,kind:'boot-'+state,game:typeof g==='string'&&/^[a-z]{1,16}$/.test(g)?g:null,cache:servedBy(n),device:x<768?'mobile':x<1024?'tablet':'desktop',
+nav:t==='navigate'||t==='reload'||t==='back_forward'||t==='prerender'?t:'other',entry:r,reason:'none',rate:1,metrics:m});
+if(!(w.navigator.sendBeacon&&w.navigator.sendBeacon(o.beacon,new Blob([body],{type:'application/json'}))))
+w.fetch(o.beacon,{method:'POST',body:body,keepalive:true,headers:{'Content-Type':'application/json'}}).catch(function(){})}catch(e){}}
+function hide(){var n=d.getElementById(o.noticeId);if(n&&n.parentNode)n.parentNode.removeChild(n);shown=''}
+function stop(){if(timer){w.clearInterval(timer);timer=0}}
+function show(state){
+if(shown==='failed'||shown===state||!d.body)return;
+if(d.hidden){if(state==='failed')deferred=true;return}
+var c=copy(),n=d.getElementById(o.noticeId),p,b;
+if(!n){n=d.createElement('div');n.id=o.noticeId;n.setAttribute('data-nosnippet','');
+n.style.cssText='position:fixed;z-index:var(--z-toast,2147483000);inset-inline:0;bottom:calc(var(--safe-bottom,0px) + '+(w.matchMedia&&w.matchMedia('(max-width:1023.98px)').matches?'var(--tabbar-height,0px) + ':'')+'var(--space-3,12px));margin-inline:auto;inline-size:fit-content;max-inline-size:calc(100% - 24px);box-sizing:border-box;display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-3,12px);padding:var(--space-3,12px) var(--space-4,16px);border:1px solid var(--surface-line,GrayText);border-radius:var(--radius-md,8px);background:var(--surface-2,Canvas);color:var(--ink,CanvasText);font:var(--text-body,1rem)/1.4 var(--font-body,system-ui,sans-serif);box-shadow:var(--shadow-2,none)';
+p=d.createElement('p');p.style.cssText='margin:0;flex:1 1 16em';
+b=d.createElement('button');b.type='button';
+b.style.cssText='flex:none;font:inherit;font-weight:600;cursor:pointer;padding:var(--space-2,8px) var(--space-4,16px);border:1px solid var(--surface-line,ButtonBorder);border-radius:var(--radius-sm,6px);background:var(--action,ButtonFace);color:var(--ink-on-action,ButtonText)';
+b.onclick=function(){b.disabled=true;w.location.reload()};
+n.appendChild(p);n.appendChild(b);d.body.appendChild(n)}
+n.setAttribute('role',state==='failed'?'alert':'status');
+n.setAttribute('data-state',state);
+n.firstChild.textContent=c[state];n.lastChild.textContent=c.reload;
+shown=state;beacon(state)}
+function check(){
+if(mounted()){stop();if(shown==='slow')hide();return}
+var t=now();
+if(!d.hidden&&t-start>=o.slowMs&&t-progress>=o.stallMs)show('slow')}
+function fail(){stop();if(!mounted())show('failed')}
+function done(){stop();deferred=false;if(shown)hide()}
+w.__exbBootGuard={fail:fail,done:done};
+w.addEventListener('error',function(e){var t=e&&e.target;
+if(t&&t.tagName==='SCRIPT'&&t.getAttribute&&t.getAttribute('data-exb-entry'))fail()},true);
+d.addEventListener('visibilitychange',function(){if(d.hidden)return;
+if(deferred){deferred=false;if(!mounted())show('failed');return}
+start=now()});
+try{new w.PerformanceObserver(function(){progress=now()}).observe({type:'resource'})}catch(e){}
+timer=w.setInterval(check,1000);
+})(window,document,{"slowMs":15000,"stallMs":5000,"copyId":"exb-boot-guard-copy","noticeId":"exb-boot-guard","beacon":"/api/v1/rum","copy":{"slow":"This page is still loading. Your connection may be slow.","failed":"This page could not finish loading. Check your connection, then reload.","reload":"Reload"}});</script><script type="module" src="/exb-entry-boot.js?v=2" fetchpriority="low" data-exb-entry="/_nuxt/r0ae02ab39b13cc4930af/DIY2yEPZ.js"></script></body></html>
