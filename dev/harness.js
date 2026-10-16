@@ -79,6 +79,7 @@ src += '\nglobal.__G = { ' + [
   'activateCostPayable','linkDenyBlockerHook','battleBounceHook','effectRest','preventsWeakBattleDamage',
   'gatedAttackAction','pairFromHand','pilotMainAction','triggerBurst','burstResolvePlayer','returnToHand',
   'doShieldToHand','attackerStillOut','effFirstStrike','effHighManeuver','whileKwAmount','handReduction','totalRes','levelOk','shuffle','cardValue','plain','FIELD_MAX','HAND_MAX',
+  'grantKeyword','payCost','settleEx','deckOutCheck','deckColorIssue','makeRoom','deployFromHand','reanimate','finishEndPhase','applySupport','applyToTarget','aiBlockStep','RES_AREA_MAX','EX_MAX',
 ].map(n=>n+':typeof '+n+'!=="undefined"?'+n+':undefined').join(',') + ' };\n';
 
 try { eval.call(null, src); } catch(e){ console.error('LOAD FAILED:', e.message, '\n', e.stack); process.exit(1); }

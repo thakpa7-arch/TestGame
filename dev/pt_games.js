@@ -18,7 +18,7 @@ function check(tag, base){
     if (s.resAvail<0) viol(tag,`${w} resAvail<0 (${s.resAvail})`);
     if (s.resAvail>s.resMax+s.ex) viol(tag,`${w} resAvail>total (${s.resAvail}/${s.resMax+s.ex})`);
     if (s.field.length>6) viol(tag,`${w} field>6 (${s.field.length})`);
-    if (s.hand.length>10) viol(tag,`${w} hand>10 (${s.hand.length})`);
+    if (s.hand.length>10 && G.turn!==s.who) viol(tag,`${w} hand>10 (${s.hand.length})`);   // the hand may exceed 10 during your own turn (4-8-4)
     if (s.shields.length>A.SHIELD_MAX) viol(tag,`${w} shields>${A.SHIELD_MAX}`);
     if (s.base && s.base.type!=='base') viol(tag,`${w} non-base in base zone: ${s.base.name}`);
     for (const u of s.field){

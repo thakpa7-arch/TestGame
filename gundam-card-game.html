@@ -656,22 +656,23 @@
   <h2>THA GUNDAM TCG SIM</h2>
   <p id="introText">A tactical duel built on the real <b>Gundam Card Game</b> card pool. You <b>choose</b> one of
      seven <b>1st-place competitive decklists</b> (GD04 Phantom Aria era); the AI takes a different one.
-     You then <b>roll for turn order</b>, may <b>mulligan</b> your opening hand, and may redraw your Shields.
+     You then <b>roll for turn order</b> and may <b>mulligan</b> your opening hand once.
      Every card is genuine — real names, art, costs, AP/HP and effect text.</p>
   <button id="startBtn">START BATTLE</button>
   <button id="backToBattleBtn" class="gold" style="display:none">◀ Back to Battle</button>
   <div class="rules">
     <b>How to win (official):</b> you defeat your opponent the moment a Unit deals them battle damage
     while they have <b>no Shields left</b> — so break all 6 <span class="badge">🛡 Shields</span>, then land one more hit.
-    Running out of cards to draw (<b>deck-out</b>) is also an instant loss.<br><br>
+    A player whose <b>deck runs out</b> of cards loses at once.<br><br>
     <b>Turn phases (official order):</b>
     <span class="badge">1 Start</span> ready rested cards ·
-    <span class="badge">2 Draw</span> draw 1 ·
+    <span class="badge">2 Draw</span> draw 1 (both players draw on their first turn) ·
     <span class="badge">3 Resource</span> place 1 from your 10-card Resource Deck ·
     <span class="badge">4 Main</span> deploy / pair / play / attack ·
-    <span class="badge">5 End</span>.<br>
-    The player going second gets an <b>EX Resource</b> (gold) for tempo. Each side also starts with 6
-    face-down <b>Shields</b> and an <b>EX Base</b>.<br><br>
+    <span class="badge">5 End</span> Action step · Repair · discard down to <b>10 cards</b> in hand.<br>
+    The player going second gets an <b>EX Resource</b> (gold) — it is removed once it pays for something.
+    Each side also starts with 6 face-down <b>Shields</b> and an <b>EX Base</b> (0 AP / 3 HP).
+    Limits: 6 Units in the battle area (a 7th replaces one of yours), 1 Base, 15 Resources.<br><br>
     <b>Playing a card costs two things:</b> its <span class="badge" style="background:rgba(58,40,6,.92);color:var(--gold)">Lv</span>
     is a requirement — you must have that many <i>total</i> resources in your area — and its
     <span class="badge">Cost</span> is paid by resting that many active resources. A Lv 6 / Cost 4 Unit can't
@@ -681,10 +682,11 @@
     pilot matches the Unit's <b>Link</b>, that Unit can attack the turn it's paired. (Play a Unit first, then tap
     the Pilot — it pairs automatically if you have just one Unit.) <b>Commands</b> are one-shot
     effects. <b>Bases</b> guard your Shields: while your Base stands, direct attacks hit it first.<br><br>
-    <b>Combat:</b> attacking <b>rests</b> your Unit. An attacker may strike <b>the enemy player or a
-    <span style="color:#fca5a5">rested</span> enemy Unit</b> — never an active one. Units trade AP simultaneously.
-    A direct hit on the player goes to their <b>Base</b> first, then breaks one <b>Shield</b>; a broken shield is
-    revealed and its <span class="badge">【Burst】</span> may trigger. With no shields left, the next hit wins.<br><br>
+    <b>Combat (official steps):</b> declaring an attack <b>rests</b> your Unit. An attacker may strike <b>the enemy player or a
+    <span style="color:#fca5a5">rested</span> enemy Unit</b> — never an active one. Then the defender may <b>block</b>,
+    both players get an <b>Action step</b>, and damage is dealt: Units trade AP simultaneously.
+    A direct hit on the player goes to their <b>Base</b> first (which hits back with its AP), then breaks one <b>Shield</b>; a broken shield is
+    revealed and its <span class="badge">【Burst】</span> may trigger. With no Base and no shields left, the next hit wins.<br><br>
     <b>Keywords modeled:</b> <span class="badge">&lt;Blocker&gt;</span> intercept an attack ·
     <span class="badge">&lt;First Strike&gt;</span> deal damage first when attacking ·
     <span class="badge">&lt;High-Maneuver&gt;</span> can't be blocked ·
@@ -1230,7 +1232,9 @@ GUNDAM_CARDS.push(
 );
 
 for (const _c of GUNDAM_CARDS){ if (GD05_IMG[_c.id]) _c.img = GD05_IMG[_c.id]; }
-const SHIELD_MAX = 6, RES_MAX = 10, HAND_START = 5, HAND_MAX = 10, FIELD_MAX = 6;
+// RES_MAX is the 10-card resource deck; effects can place more, up to 15 Resources in the area, at most 5 of
+// them EX (4-4-2). The hand limit only applies in the end phase's hand step (4-8-4).
+const SHIELD_MAX = 6, RES_MAX = 10, RES_AREA_MAX = 15, EX_MAX = 5, HAND_START = 5, HAND_MAX = 10, FIELD_MAX = 6;
 const FACTIONS = {
   player: { name: 'E.F.S.F. (YOU)', colors: ['Blue','White'], signatures: [] },
   enemy:  { name: 'ZEON (AI)',      colors: ['Green','Red'],  signatures: ['Wing Gundam Zero'] },
@@ -1760,7 +1764,7 @@ function playerDig(card, side, act, after){
   const top=side.deck.splice(side.deck.length-n, n);
   const cap = digLvCap(card, side, act);
   showLookAtTop(top, `${card.name}: top ${n} — add a ${act.filter||'card'}${cap!=null?' Lv.'+cap+' or lower':''} to your hand`,
-    c=>digPickable(c, side, act, cap)&&side.hand.length<HAND_MAX, true, (chosen)=>{
+    c=>digPickable(c, side, act, cap), true, (chosen)=>{
       if(chosen){ top.splice(top.indexOf(chosen),1); side.hand.push(chosen); log(`<b>${card.name}</b>: you add <b>${chosen.name}</b> to hand.`,'me'); }
       shuffle(top);
       if(act.dest==='top'){ for(const c of top) side.deck.push(c); } else { for(const c of top) side.deck.unshift(c); }
@@ -1785,34 +1789,36 @@ function digDeploy(card, side, act, after){
     else { runTrigger(c, side, parseTrigger(c.effect,'Deploy'), 'Deploy'); onUnitDeployed(c, side, null, true); render(); done(); }
   };
   const cands=top.filter(fits);
-  if (!cands.length || side.field.length>=FIELD_MAX){
-    const why = side.field.length>=FIELD_MAX ? 'battle area is full' : `no ${act.filter||'Unit'}${act.maxLv?` (Lv.${act.maxLv} or lower)`:''} among them`;
-    log(`<b>${card.name}</b>: looks at the top ${n} — ${why}, nothing deployed.`, side===G.player?'me':'ai');
+  if (!cands.length){
+    log(`<b>${card.name}</b>: looks at the top ${n} — no ${act.filter||'Unit'}${act.maxLv?` (Lv.${act.maxLv} or lower)`:''} among them, nothing deployed.`, side===G.player?'me':'ai');
     putBack(); render(); done(); return;
   }
+  const decline=()=>{ putBack(); render(); done(); };
   if (side===G.player)
     showLookAtTop(top, `${card.name}: you may deploy a ${act.filter||'Unit'}${act.maxLv?` (Lv.${act.maxLv} or lower)`:''}`,
-      c=>fits(c)&&side.field.length<FIELD_MAX, true, (chosen)=>{ if(chosen) deploy(chosen); else { putBack(); render(); done(); } });
-  else deploy(cands.sort((a,b)=>(b.baseAp+b.baseHp)-(a.baseAp+a.baseHp))[0]);
+      fits, true, (chosen)=>{ if(chosen) makeRoom(side, 1, card.name, ok=>{ if(ok) deploy(chosen); else decline(); }); else decline(); });
+  else { const best=cands.sort((a,b)=>(b.baseAp+b.baseHp)-(a.baseAp+a.baseHp))[0];
+    makeRoom(side, 1, card.name, ok=>{ if(ok) deploy(best); else decline(); }, {optional:true, worth:cardValue(best)}); }
 }
 // Deploy a Unit from the trash, paying its cost (player picks; AI auto-picks the strongest affordable).
 function reanimate(card, side, act, after){
   const fits=c=>c.type==='unit' && !c.token && matchFilter(c,act.filter) && (act.maxLv==null||(c.lv||0)<=act.maxLv);
   const cands=side.trash.filter(c=>fits(c) && effectiveCost(side,c)<=side.resAvail) ;
   const done=()=>{ if(after)after(); };
-  if (!cands.length || side.field.length>=FIELD_MAX){ done(); return; }
-  const deploy=(c)=>{ side.trash.splice(side.trash.indexOf(c),1); side.resAvail-=effectiveCost(side,c); resetUnit(c); c.rested=false; c.sick=!c.blitz; side.field.push(c);
+  if (!cands.length){ done(); return; }
+  const deploy=(c)=>{ side.trash.splice(side.trash.indexOf(c),1); payCost(side, effectiveCost(side,c)); resetUnit(c); c.rested=false; c.sick=!c.blitz; side.field.push(c);
     log(`<b>${card.name}</b>: deploys <b>${c.name}</b> from trash.`, side===G.player?'me':'ai');
     if (side===G.player) resolvePlayerTrigger(c, side, parseTrigger(c.effect,'Deploy'), 'Deploy', ()=>{ render(); done(); });
     else { runTrigger(c, side, parseTrigger(c.effect,'Deploy'), 'Deploy'); done(); } };
-  if (side===G.player) showLookAtTop(cands.slice(0,10), `${card.name}: deploy a Unit from your trash (pay its cost)`, ()=>true, true, (chosen)=>{ if(chosen) deploy(chosen); else done(); });
-  else deploy(cands.sort((a,b)=>(b.baseAp+b.baseHp)-(a.baseAp+a.baseHp))[0]);
+  if (side===G.player) showLookAtTop(cands.slice(0,10), `${card.name}: deploy a Unit from your trash (pay its cost)`, ()=>true, true, (chosen)=>{ if(chosen) makeRoom(side, 1, card.name, ok=>{ if(ok) deploy(chosen); else done(); }); else done(); });
+  else { const best=cands.sort((a,b)=>(b.baseAp+b.baseHp)-(a.baseAp+a.baseHp))[0];
+    makeRoom(side, 1, card.name, ok=>{ if(ok) deploy(best); else done(); }, {optional:true, worth:cardValue(best)}); }
 }
 // Deploy a matching Unit from HAND for free (Full Frontal's 【When Paired】). "You may" → can decline.
 function deployFromHand(card, side, act, after){
   const done=()=>{ if(after) after(); };
   const cands=side.hand.filter(c=>c.type==='unit' && matchFilter(c, act.filter));
-  if (!cands.length || side.field.length>=FIELD_MAX){ done(); return; }
+  if (!cands.length){ done(); return; }
   const deploy=(c)=>{
     side.hand.splice(side.hand.indexOf(c),1);
     c.rested=false; c.sick=!c.blitz; side.field.push(c);
@@ -1821,8 +1827,9 @@ function deployFromHand(card, side, act, after){
     if (side===G.player) resolvePlayerTrigger(c, side, parseTrigger(c.effect,'Deploy'), 'Deploy', ()=>{ render(); done(); });
     else { runTrigger(c, side, parseTrigger(c.effect,'Deploy'), 'Deploy'); done(); }
   };
-  if (side===G.player) showLookAtTop(cands.slice(0,10), `${card.name}: you may deploy a Unit from your hand (free)`, ()=>true, true, (chosen)=>{ if(chosen) deploy(chosen); else done(); });
-  else deploy(cands.sort((a,b)=>(b.baseAp+b.baseHp)-(a.baseAp+a.baseHp))[0]);
+  if (side===G.player) showLookAtTop(cands.slice(0,10), `${card.name}: you may deploy a Unit from your hand (free)`, ()=>true, true, (chosen)=>{ if(chosen) makeRoom(side, 1, card.name, ok=>{ if(ok) deploy(chosen); else done(); }); else done(); });
+  else { const best=cands.sort((a,b)=>(b.baseAp+b.baseHp)-(a.baseAp+a.baseHp))[0];
+    makeRoom(side, 1, card.name, ok=>{ if(ok) deploy(best); else done(); }, {optional:true, worth:cardValue(best)}); }
 }
 // Deal damage to every Unit in range: foe's field for "all enemy Units", or both fields for "all Units".
 // "All enemy Units get AP-N this turn" — a board-wide debuff (no target choice).
@@ -1898,7 +1905,7 @@ function effUntargetable(u){
 }
 function trashBlocksAttack(u, side){
   if (u.noAttack) return true;                       // a token printed as "can't … attack" (Bit / Funnel)
-  if (u.noAttackTurn === G.turnNumber) return true;  // set active by an effect that bars attacking this turn
+  if (u.noAttackTurn === G.turnSeq) return true;  // set active by an effect that bars attacking this turn
   return !!(u.trashCantAttack && (side.trash||[]).length <= u.trashCantAttack.maxCount);
 }
 // Pile viewer (Trash / Exile): shows card art grouped by type then primary trait, with identical
@@ -2406,12 +2413,14 @@ function friendlyFilter(t){
   return Object.keys(f).length?f:null;
 }
 // Grant a keyword to a Unit for this turn.
+// Keywords without an amount never stack (13-1-4-2, 13-1-5-3…); a gained <Breach N> adds to the one the
+// Unit already has (13-1-2-5).
 function grantKeyword(u, kw, amount){
   if (kw==='first') u.firstStrike=true;
   else if (kw==='high') u.highManeuver=true;
   else if (kw==='blocker') u.blocker=true;
   else if (kw==='suppression') u.suppression=true;
-  else if (kw==='breach') u.breach=Math.max(u.breach||0, amount||1);
+  else if (kw==='breach') u.breach=(u.breach||0) + (amount||1);
 }
 function kwLabel(kw){ return {first:'First Strike',high:'High-Maneuver',blocker:'Blocker',suppression:'Suppression',breach:'Breach'}[kw]||kw; }
 // Extract single-target restrictions from an effect clause (Lv./AP/HP caps, lowest HP, rested/active).
@@ -2547,7 +2556,7 @@ function applyRestBoth(card, side, act, friendly, enemy, label){
 // Do the Shield-to-hand portion of a base/unit effect (shield + optional scry), without the trailing "Then,…".
 function doShieldToHand(card, side, act, label, skipScry){
   const cls=side===G.player?'me':'ai';
-  if (side.shields.length && side.hand.length<HAND_MAX){
+  if (side.shields.length){
     const grabbed=side.shields.pop(); side.hand.push(grabbed);
     log(`${label}: <b>${card.name}</b> adds a Shield to ${who(side)} hand.`, cls);
     // Reveal which card you pulled from your own shield (the player only — hide the AI's).
@@ -2643,7 +2652,7 @@ function condMet(cond, side, source, other){
     case 'friendlyToken':  return side.field.some(u=>u.token && u.hp>0);
     case 'enemyTrash':     return foe.trash.length >= cond.min;
     case 'noFriendlyLv':   return !side.field.some(u=>(u.lv||0) >= cond.min);
-    case 'oppDiscardedThisTurn': return foe.discardedTurn === G.turnNumber;
+    case 'oppDiscardedThisTurn': return foe.discardedTurn === G.turnSeq;
     case 'selfDamaged':      return !!(source && source.hp < effMaxHp(source));
     case 'paired':           return !!(source && source.pilot);    // 【During Pair】 gate (e.g. Char's Zaku Ⅱ)
     case 'linked':           return !!(source && source.linked);   // 【During Link】 gate
@@ -2739,7 +2748,7 @@ function gd05DestroyUnit(u, owner, byOwnNeoZeon){
   else if (owner===G.player && da && da.kind==='scryMill') playerScryMill(u, owner);
   else runTrigger(u, owner, da, 'Destroyed');
   if (byOwnNeoZeon) firePilotDestroyed(u, owner);   // Quess's 【Destroyed】 only fires when destroyed by your own (Neo Zeon) effect
-  if (byOwnNeoZeon && gd05ReturnsOnSelfKill(u) && owner.hand.length<HAND_MAX){
+  if (byOwnNeoZeon && gd05ReturnsOnSelfKill(u)){
     const ti=owner.trash.indexOf(u); if(ti>=0){ owner.trash.splice(ti,1); resetUnit(u); owner.hand.push(u); log(`<b>${u.name}</b> returns from trash to ${owner===G.player?'your':'its'} hand.`, cls); }
   }
 }
@@ -2767,7 +2776,7 @@ function selfSacMillAI(side, card, act){
   log(`<b>${card.name}</b>: the AI destroys its <b>${sac.name}</b>.`, cls);
   gd05DestroyUnit(sac, side, true);                            // its own (Neo Zeon) effect → Axis flag, Quess, trash-return
   const nz=selfSacMillResolve(side, card, act);
-  if (nz.length && side.hand.length<HAND_MAX){
+  if (nz.length){
     const best=[...nz].sort((a,b)=>((b.baseAp||0)+(b.baseHp||0))-((a.baseAp||0)+(a.baseHp||0)))[0];
     const ti=side.trash.indexOf(best); if (ti>=0){ side.trash.splice(ti,1); resetUnit(best); side.hand.push(best); log(`<b>${card.name}</b>: the AI adds <b>${best.name}</b> to its hand.`, cls); }
   }
@@ -2785,7 +2794,7 @@ function selfSacMillPlayer(card, side, act, after){
       log(`<b>${card.name}</b>: you destroy your <b>${pick.name}</b>.`, 'me');
       gd05DestroyUnit(pick, side, true);
       const nz=selfSacMillResolve(side, card, act);
-      if (nz.length && side.hand.length<HAND_MAX){
+      if (nz.length){
         showLookAtTop(nz, `${card.name}: add 1 ${act.retrieveFilter||'Unit'} you placed in your trash to your hand`, ()=>true, true, (chosen)=>{
           if (chosen){ const ti=side.trash.indexOf(chosen); if (ti>=0){ side.trash.splice(ti,1); resetUnit(chosen); side.hand.push(chosen); log(`<b>${card.name}</b>: you add <b>${chosen.name}</b> to hand.`, 'me'); } }
           render(); fin();
@@ -2910,17 +2919,18 @@ function gd05AxisDeploy(side, base, after){
   const cls=side===G.player?'me':'ai';
   const fin=()=>{ if(after) after(); };
   if (!side.neoZeonSelfKill){ log(`<b>${base.name}</b>: no Unit was destroyed by your effect this turn.`, cls); fin(); return; }
-  if (side.field.length>=FIELD_MAX){ fin(); return; }
   const cands=side.hand.filter(c=>c.type==='unit' && (c.lv||0)<=3 && (c.trait||'').toLowerCase().includes('(neo zeon)'));
   if (!cands.length){ fin(); return; }
   const deploy=(c)=>{
     if(!c){ fin(); return; }
+    makeRoom(side, 1, base.name, ok=>{ if(!ok){ fin(); return; }   // a full battle area makes room (11-4-2)
     side.hand.splice(side.hand.indexOf(c),1);
     resetUnit(c);                                   // clear any stale HP/state (e.g. a unit that returned to hand damaged)
     c.rested=false; c.sick=!c.blitz; side.field.push(c);
     sound('deploy'); log(`<b>${base.name}</b>: deploys <b>${c.name}</b> from hand.`, cls);
     if (side===G.player) resolvePlayerTrigger(c, side, parseTrigger(c.effect,'Deploy'), 'Deploy', ()=>{ onUnitDeployed(c, side, ()=>{ render(); fin(); }); });
     else { runTrigger(c, side, parseTrigger(c.effect,'Deploy'), 'Deploy'); onUnitDeployed(c, side, null, true); fin(); }
+    }, {optional:true, worth:cardValue(c)});
   };
   // The active player CHOOSES which (Neo Zeon) Unit to deploy (e.g. the Jagd Doga you just recurred),
   // rather than the game auto-picking the biggest one.
@@ -3027,18 +3037,20 @@ function runTrigger(card, side, act, label){
     const inner = pilotMainAction(card);
     if (inner) runTrigger(card, side, inner, label);
   } else if (act.kind==='resActive'){
-    if (act.noPriorResActive && side.resActiveTurn===G.turnNumber){
+    if (act.noPriorResActive && side.resActiveTurn===G.turnSeq){
       log(`${label}: <b>${name}</b> — you already set a Resource active with an effect this turn.`, cls);
     } else {
       const bump=(s)=>{ const before=s.resAvail; s.resAvail=Math.min(totalRes(s), s.resAvail+(act.amount||1));
-        if (s.resAvail>before) s.resActiveTurn=G.turnNumber; return s.resAvail-before; };
+        if (s.resAvail>before) s.resActiveTurn=G.turnSeq; return s.resAvail-before; };
       const mine=bump(side); if (act.both) bump(foe);
       log(`${label}: <b>${name}</b> sets ${mine} Resource${mine===1?'':'s'} active${act.both?' (both players)':''}.`, cls);
     }
   } else if (act.kind==='exResource'){
-    side.ex+=act.amount; side.resAvail+=act.amount; log(`${label}: <b>${name}</b> places ${act.amount} EX Resource.`, cls);
+    // at most 5 EX and 15 Resources in the area (4-4-2, 4-4-2-1)
+    const add=Math.max(0, Math.min(act.amount, EX_MAX-side.ex, RES_AREA_MAX-side.resMax-side.ex));
+    side.ex+=add; side.resAvail+=add; log(`${label}: <b>${name}</b> places ${add} EX Resource.`, cls);
   } else if (act.kind==='resourceRamp'){
-    side.resMax=Math.min(RES_MAX, side.resMax+act.amount); log(`${label}: <b>${name}</b> places ${act.amount} rested Resource.`, cls);
+    side.resMax=Math.min(RES_AREA_MAX-side.ex, side.resMax+act.amount); log(`${label}: <b>${name}</b> places ${act.amount} rested Resource.`, cls);
   } else if (act.kind==='exBase'){
     if (!side.base || side.base.token){ side.base=exBaseToken(side.who); log(`${label}: <b>${name}</b> deploys an EX Base.`, cls); }
   } else if (act.kind==='grantKillDraw'){
@@ -3076,8 +3088,7 @@ function runTrigger(card, side, act, label){
         // Losing the Pilot's HP can reduce the Unit to 0 — that's a state-based destruction.
         if (card.hp<=0){ const fi=side.field.indexOf(card); if(fi>=0) side.field.splice(fi,1); fx('die',card.uid); log(`<b>${card.name}</b> is destroyed.`, cls); sendToTrash(card, side); runTrigger(card, side, parseTrigger(card.effect,'Destroyed'), 'Destroyed'); }
       }
-      if (side.hand.length<HAND_MAX){ side.hand.push(pc); log(`${label}: <b>${name}</b> returns Pilot <b>${pc.name}</b> to hand.`, cls); }
-      else sendToTrash(pc, side);     // hand full — the Pilot is discarded rather than lost
+      side.hand.push(pc); log(`${label}: <b>${name}</b> returns Pilot <b>${pc.name}</b> to hand.`, cls);
     }
   } else if (act.kind==='setActive'){
     card.rested=false; log(`${label}: <b>${name}</b> is set active.`, cls);
@@ -3141,7 +3152,7 @@ function runTrigger(card, side, act, label){
       const top=side.deck.splice(side.deck.length-n, n);
       const cap=digLvCap(card, side, act);
       const pick=[...top].filter(c=>digPickable(c, side, act, cap)).sort((a,b)=>cardValue(b)-cardValue(a))[0];
-      if(pick && side.hand.length<HAND_MAX){ top.splice(top.indexOf(pick),1); side.hand.push(pick); log(`${label}: <b>${name}</b> looks at top ${n} — adds <b>${pick.name}</b> to hand.`, cls); }
+      if(pick){ top.splice(top.indexOf(pick),1); side.hand.push(pick); log(`${label}: <b>${name}</b> looks at top ${n} — adds <b>${pick.name}</b> to hand.`, cls); }
       else log(`${label}: <b>${name}</b> looks at top ${n} — no match.`, cls);
       shuffle(top);
       if(act.dest==='top'){ for(const c of top) side.deck.push(c); } else { for(const c of top) side.deck.unshift(c); }
@@ -3156,7 +3167,7 @@ function runTrigger(card, side, act, label){
     else log(`${label}: <b>${name}</b> — ${who(foe)} has no ${act.filter||'card'} in their trash to exile.`, cls);
   } else if (act.kind==='trashRetrieve'){
     const cands=side.trash.filter(c=>matchFilter(c,act.filter)&&!c.token);
-    if(cands.length&&side.hand.length<HAND_MAX){
+    if(cands.length){
       cands.sort((a,b)=>cardValue(b)-cardValue(a));
       const best=cands[0]; side.trash.splice(side.trash.indexOf(best),1);
       if(best.type==='unit'||best.type==='base') resetUnit(best);
@@ -3409,16 +3420,17 @@ function resetUnit(u){
 // the Unit — it returns to the owner's hand too (it goes where the Unit goes).
 function returnToHand(u, owner){
   const pilot = u.pilotCard;                 // grab the paired Pilot before resetUnit() clears it
-  if (u.token){                              // the token itself vanishes, but a real Pilot can't
-    if (pilot){ u.pilotCard=null; u.pilot=null; sendToTrash(pilot, owner); }
+  const hand = owner.hand;                   // no hand limit mid-turn (4-8-4)
+  if (u.token){                              // a token leaving the battle area is removed from the game (5-17-2-5)…
+    if (pilot){ u.pilotCard=null; u.pilot=null; hand.push(pilot);   // …but its Pilot goes where the Unit went: the hand (3-3-6)
+      log(`<b>${pilot.name}</b> returns to ${owner===G.player?'your':'its'} hand (the <b>${u.name}</b> token is removed).`, owner===G.player?'me':'ai'); }
     return;
   }
   sound('bounce');
   resetUnit(u);
-  const hand = owner.hand;
-  if (hand.length<HAND_MAX) hand.push(u); else sendToTrash(u, owner);   // no room: it's discarded, not lost
+  hand.push(u);
   if (pilot){
-    if (hand.length<HAND_MAX) hand.push(pilot); else sendToTrash(pilot, owner);
+    hand.push(pilot);
     log(`<b>${pilot.name}</b> returns to ${owner===G.player?'your':'its'} hand with <b>${u.name}</b>.`, owner===G.player?'me':'ai');
   }
 }
@@ -3437,6 +3449,39 @@ function sendToTrash(card, side){
   // if the Unit ever comes back into play)
   if (card.pilotCard) side.trash.push(card.pilotCard);
   refreshTrashStats(side);
+}
+// Battle area excess management (11-4-2): a Unit played or deployed by an effect into a full battle area
+// still arrives — its owner first chooses one Unit already there and places it in the trash. That Unit is
+// NOT destroyed (11-4-2-1), so no 【Destroyed】 effect fires. The AI gives up its least valuable Unit; the
+// player picks from a modal (a modal survives the post-combat clearSel()/render()). `after(true)` runs once
+// there is room. With `opt.optional` ("you may deploy") the AI declines instead — after(false) — when the
+// newcomer is worth less than what it would have to trash; `opt.auto` picks for the player too (used by
+// synchronous resolvers that can't wait for a modal).
+function makeRoom(side, n, label, after, opt){
+  const fin=(okv)=>{ if(after) after(okv!==false); };
+  const need = Math.max(0, side.field.length + n - FIELD_MAX);
+  if (need<=0){ fin(true); return; }
+  const weakest=()=>[...side.field].sort((a,b)=>cardValue(a)-cardValue(b))[0];
+  if (side!==G.player || (opt && opt.auto)){
+    if (opt && opt.optional && side!==G.player && weakest() && cardValue(weakest())>=(opt.worth||0)){ fin(false); return; }
+    for (let k=0;k<need;k++){ const u=weakest(); if(!u) break; trashForRoom(u, side, label); }
+    fin(true); return;
+  }
+  (function next(k){
+    if (k>=need){ render(); fin(true); return; }
+    el('blockMsg').innerHTML=`<b>${label}</b>: battle area full — choose one of YOUR Units to place in the trash (not destroyed) to make room.`;
+    const wrap=el('blockBtns'); wrap.innerHTML='';
+    side.field.forEach(u=>{ const b=document.createElement('button');
+      b.innerHTML=`💥 ${u.name} <span style="opacity:.6;font-size:10px">⚔${effAp(u)}/❤${u.hp}</span>`;
+      b.onclick=()=>{ el('blockModal').classList.remove('show'); trashForRoom(u, side, label); next(k+1); };
+      wrap.appendChild(b); });
+    el('blockModal').classList.add('show');
+  })(0);
+}
+function trashForRoom(u, side, label){
+  const i=side.field.indexOf(u); if(i>=0) side.field.splice(i,1);
+  fx('die', u.uid); sendToTrash(u, side);
+  log(`${label}: <b>${u.name}</b> is placed in the trash to make room (not destroyed).`, side===G.player?'me':'ai');
 }
 // Exile (remove from the game) N cards matching a trait from the trash. Returns how many were exiled.
 function exileFromTrash(side, count, trait){
@@ -3688,19 +3733,11 @@ function deployTokens(act, side, name, label, cls){
     log(`${label}: <b>${name}</b> — you already have a (${act.tokenLimit}) Unit token in play.`, cls);
     return 0;
   }
-  if (specs && specs.length>1 && act.cond==='board')   // e.g. White Base: token chosen by how many Units you have
-    specs = [ specs[Math.min(side.field.length, specs.length-1)] ];
-  // "Deploy A or B" — pick ONE. The player chooses via startCommand; here (AI/auto) take the best.
-  if (specs && specs.length>1 && act.choose)
-    specs = [ [...specs].sort((a,b)=>tokenScore(b)-tokenScore(a))[0] ];
-  if (specs && specs.length){
-    for (const sp of specs){
-      for (let k=0;k<(sp.count||1);k++){ if(side.field.length>=FIELD_MAX) break; const tk=makeToken(sp, side.who); side.field.push(tk); tokens.push(tk); if(!names.includes(tk.name)) names.push(tk.name); }
-    }
-  } else {
-    for (let k=0;k<(act.count||1);k++){ if(side.field.length>=FIELD_MAX) break; const tk=genericToken(side.who); side.field.push(tk); tokens.push(tk); }
-    names.push('Mobile Suit');
-  }
+  // Board-count / "A or B" choices resolve the same way as tokenMakerQueue (AI/auto takes the best).
+  const queue = tokenMakerQueue(act, side);
+  // A full battle area doesn't stop the deploy: Units already there make room (11-4-2, 11-4-2-2).
+  makeRoom(side, queue.length, name, null, {auto:true});
+  for (const mk of queue){ if(side.field.length>=FIELD_MAX) break; const tk=mk(); side.field.push(tk); tokens.push(tk); if(!names.includes(tk.name)) names.push(tk.name); }
   if (tokens.length) log(`${label}: <b>${name}</b> deploys ${tokens.length} token${tokens.length===1?'':'s'} (${names.join(', ')}).`, cls);
   // Each deployed token can trigger a friendly "when one of your (Trait) Units is deployed" listener
   // (e.g. Neo Zeong while linked grants all your Units (Neo Zeon)). Auto-resolved — token deploys
@@ -3738,13 +3775,14 @@ function deployTokensInteractive(card, side, act, label, after){
   }
   const queue = tokenMakerQueue(act, side);
   const placed=[];
+  if (side!==G.player) makeRoom(side, queue.length, card.name, null);   // the AI makes room up front (11-4-2)
   while (queue.length && side.field.length<FIELD_MAX){ const tk=queue.shift()(); side.field.push(tk); placed.push(tk); }
   if (placed.length){
     const names=[...new Set(placed.map(t=>t.name))];
     log(`${label}: <b>${card.name}</b> deploys ${placed.length} token${placed.length===1?'':'s'} (${names.join(', ')}).`, cls);
     for (const tk of placed) onUnitDeployed(tk, side, null, true);
   }
-  if (!queue.length || side!==G.player){ fin(); return; }   // AI just loses the extras
+  if (!queue.length || side!==G.player){ fin(); return; }
   (function nextTok(){
     if (!queue.length){ render(); fin(); return; }
     const mk=queue.shift();
@@ -3893,7 +3931,7 @@ function buildPresetDeck(owner, preset){
 
 // ---- game state ----
 const G = {
-  turn:'player', turnNumber:1, phase:'main', selected:null, mode:'idle', pending:null, pendingHandIdx:-1, over:false,
+  turn:'player', turnNumber:1, phase:'main', selected:null, mode:'idle', pending:null, pendingHandIdx:-1, over:false, turnSeq:1, winner:null,
   actionLock:false, _lockT:null,
   player:null, enemy:null,
 };
@@ -4134,8 +4172,9 @@ function whileKwAmount(u, kw){
 }
 function effFirstStrike(u){ return !!(u && (u.firstStrike || condKeyword(u,'first'))); }
 function effHighManeuver(u){ return !!(u && (u.highManeuver || condKeyword(u,'high'))); }
+// Effective <Repair N>: a gained copy adds its amount to the printed one (13-1-1-2).
 function effRepair(u){
-  let r = Math.max(u.repair||0, whileKwAmount(u,'repair'));
+  let r = (u.repair||0) + whileKwAmount(u,'repair');
   if (u.type==='unit'){
     const texts=[u.effect]; if (u.pilotCard) texts.push(u.pilotCard.effect);
     for (const eff of texts){
@@ -4143,7 +4182,7 @@ function effRepair(u){
       for (const [gate,on] of [['During Link',u.linked],['During Pair',u.pilot]]){
         if (!on) continue;
         const m = plain(eff).match(new RegExp('【\\s*'+gate+'[^】]*】\\s*([^【]*)','i'));
-        if (m){ const mm=m[1].match(/gains?\s*<\s*repair\s*(\d+)/i); if(mm) r=Math.max(r,+mm[1]); }
+        if (m){ const mm=m[1].match(/gains?\s*<\s*repair\s*(\d+)/i); if(mm) r+=+mm[1]; }
       }
     }
     // Team aura: a friendly Unit granting "All your (Trait) Units gain <Repair N>" (e.g. GD01-001).
@@ -4152,7 +4191,7 @@ function effRepair(u){
       for (const src of side.field){
         if (!src || src.hp<=0 || !src.effect) continue;
         const am = plain(src.effect).match(/all your\s*\(([^)]+)\)\s*units gain\s*<\s*repair\s*(\d+)/i);
-        if (am && (u.trait||'').toLowerCase().includes('('+am[1].toLowerCase()+')')) r=Math.max(r,+am[2]);
+        if (am && (u.trait||'').toLowerCase().includes('('+am[1].toLowerCase()+')')) r+=+am[2];
       }
     }
   }
@@ -4161,7 +4200,7 @@ function effRepair(u){
 // Effective <Breach N>: printed innately, granted for the turn (grantKeyword), or granted by a
 // 【During Link/Pair】 clause on the Unit or its Pilot — mirrors effRepair.
 function effBreach(u){
-  let b = Math.max(u.breach||0, whileKwAmount(u,'breach'));
+  let b = (u.breach||0) + whileKwAmount(u,'breach');   // gained copies add up (13-1-2-5)
   if (u.type==='unit'){
     const texts=[u.effect]; if (u.pilotCard) texts.push(u.pilotCard.effect);
     for (const eff of texts){
@@ -4169,7 +4208,7 @@ function effBreach(u){
       for (const [gate,on] of [['During Link',u.linked],['During Pair',u.pilot]]){
         if (!on) continue;
         const m = plain(eff).match(new RegExp('【\\s*'+gate+'[^】]*】\\s*([^【]*)','i'));
-        if (m){ const mm=m[1].match(/gains?\s*<\s*breach\s*(\d+)/i); if(mm) b=Math.max(b,+mm[1]); }
+        if (m){ const mm=m[1].match(/gains?\s*<\s*breach\s*(\d+)/i); if(mm) b+=+mm[1]; }
       }
     }
   }
@@ -4183,7 +4222,7 @@ function effSupport(u){
 }
 // A Unit is a <Blocker> if printed, or via "While you have a (Trait) Pilot in play" (Virtue).
 function effBlocker(u){
-  if (u.noBlockTurn === G.turnNumber) return false;   // an effect switched its <Blocker> off this turn
+  if (u.noBlockTurn === G.turnSeq) return false;   // an effect switched its <Blocker> off this turn
   if (u.blocker) return true;
   if (u.condBlocker){ const side=u.owner==='player'?G.player:G.enemy; return !!(side&&side.field.some(x=>x.pilotCard && (x.pilotCard.trait||'').toLowerCase().includes(u.condBlocker))); }
   if (condKeyword(u, 'blocker')) return true;
@@ -4223,7 +4262,7 @@ function startGame(){
   uid = 1;
   HIST.length=0; try{ const h=document.getElementById('histRibbon'); if(h) h.innerHTML=''; }catch(e){}
   Object.assign(G, { turn:'player', turnNumber:1, phase:'main', selected:null, mode:'idle', pending:null, pendingHandIdx:-1, over:false,
-                     firstPlayer:'player', skipDrawSide:null,
+                     firstPlayer:'player', skipDrawSide:null, turnSeq:1, winner:null,
                      player:makeSide('player'), enemy:makeSide('enemy') });
   G.setup = {};
   G.setupSeq = (G.setupSeq||0) + 1;     // invalidate any deferred setup step still in flight
@@ -4396,12 +4435,14 @@ function renderDeckBuilder(){
   const sc=m.querySelector('#dbSaveCopy');
   if (sc) sc.onclick=()=>{
     if (dbCount()!==50){ alert('A deck must be exactly 50 cards (currently '+dbCount()+').'); return; }
+    if (deckColorIssue(DB.deck)){ alert(deckColorIssue(DB.deck)); return; }
     const dg=Object.entries(DB.deck).filter(([,n])=>n>0).map(([id,n])=>`${n}n${id}`).join('a');
     const ds=customDecks(); ds.push({ name: uniqueDeckName((DB.name||'Custom Deck').trim()||'Custom Deck'), dg }); lsSet('gtcg_customDecks', ds);
     setupChooseDeck();
   };
   el('dbSave').onclick=()=>{
     if (dbCount()!==50){ alert('A deck must be exactly 50 cards (currently '+dbCount()+').'); return; }
+    if (deckColorIssue(DB.deck)){ alert(deckColorIssue(DB.deck)); return; }
     const name=(DB.name||'Custom Deck').trim()||'Custom Deck';
     const dg=Object.entries(DB.deck).filter(([,n])=>n>0).map(([id,n])=>`${n}n${id}`).join('a');
     const ds=customDecks();
@@ -4443,10 +4484,17 @@ function renderDBSide(){
   s.querySelectorAll('.db-row').forEach(r=>r.onclick=()=>{ const d=CARD_BY_ID.get(r.dataset.db); if(d) inspect(makeCard(d,'player')); });
   const cnt=el('dbCount'); if(cnt){ const n=dbCount(); cnt.textContent=`${n}/50`; cnt.style.color = n===50?'#7ee29a':(n>50?'#f88':'#e8d48b'); }
 }
+// Deck construction (6-1-1): exactly 50 cards, at most 4 copies of a card number, one or two colours.
+function deckColorIssue(deckMap){
+  const cols=new Set();
+  for (const [id,n] of Object.entries(deckMap||{})){ if(!n) continue; const d=CARD_BY_ID.get(id); if(d && d.color && d.color!=='-') cols.add(d.color); }
+  return cols.size>2 ? `A deck may use at most two colours (this one has ${[...cols].join(', ')}).` : null;
+}
 function dbAdd(id){
   const d=CARD_BY_ID.get(id); if(!d) return;
   if (dbCount()>=50){ flashPrompt('Deck is full (50 cards).'); return; }
   if ((DB.deck[id]||0)>=4){ flashPrompt(`Max 4 copies of "${d.name}" (${id}).`); return; }
+  if (deckColorIssue(Object.assign({}, DB.deck, {[id]:(DB.deck[id]||0)+1}))){ flashPrompt('A deck may use at most two colours.'); return; }
   DB.deck[id]=(DB.deck[id]||0)+1; renderDBGrid(); renderDBSide();
 }
 function dbRemove(id){
@@ -4477,7 +4525,7 @@ function setupDiceRoll(){
 }
 function setupOrderChosen(first){
   G.firstPlayer = first;
-  G.skipDrawSide = first;                 // the first player skips their opening draw
+  G.skipDrawSide = null;                  // both players draw on their first turn (7-3-1)
   setupDealHands();
 }
 function setupDealHands(){
@@ -4518,7 +4566,7 @@ function setupShieldsStep(){
 function setupFinalize(){
   closeSetupModal();
   const second = G.firstPlayer==='player' ? G.enemy : G.player;
-  second.ex = 1;                          // the player going second gets an EX Resource
+  second.ex = 1; second.resAvail = 1;     // the player going second gets an (active) EX Resource (6-2-4)
   el('overlay').classList.add('hidden');
   el('log').innerHTML='';
   log(`Battle start! <b>${G.playerDeckName}</b> (you) vs <b>${G.enemyDeckName}</b> (AI).`, 'sys');
@@ -4536,37 +4584,56 @@ function aiMulligan(side){
 }
 
 function draw(side, silent){
-  if (side.deck.length===0){
-    if (!silent){ log(`${who(side)} cannot draw — deck-out! Defeat.`, side===G.player?'me':'ai'); endGame(side===G.player?G.enemy:G.player); }
-    return null;
-  }
+  if (side.deck.length===0){ deckOutCheck(side); return null; }
   const c = side.deck.pop();
-  // Hand limit: a card drawn with a full hand can't be held, so it's discarded (it must go somewhere —
-  // otherwise it would leave the game entirely and skew every "N cards in your trash" effect).
-  if (side.hand.length<HAND_MAX) side.hand.push(c);
-  else { sendToTrash(c, side); log(`${who(side)} hand is full — <b>${c.name}</b> is discarded.`, side===G.player?'me':'ai'); }
+  // No hand limit during the turn: the hand is only trimmed to 10 in the end phase's hand step (4-8-4).
+  side.hand.push(c);
   // Reveal the player's own draws (turn draw and effect draws) so you can see what you got — both
   // a log line and a card pop — but never reveal the AI's cards.
   if (!silent && side===G.player && c){ log(`You draw <b>${c.name}</b>.`, 'me'); sound('draw'); revealDraw(c); }
+  deckOutCheck(side);   // 7-3-1-1: taking the last card of the deck loses at once
   return c;
+}
+// Rules management, defeat check (11-2-1-2): a player with no cards in their deck is defeated the moment
+// it happens — whether they drew the last card or an effect milled it.
+function deckOutCheck(side){
+  if (G.over || !side || !side.deck || side.deck.length>0) return false;
+  log(`${who(side)} has no cards left in the deck — defeat!`, side===G.player?'me':'ai');
+  endGame(side===G.player?G.enemy:G.player);
+  return true;
+}
+// Pay a card's or ability's cost by resting active Resources. Ordinary Resources are rested first; any
+// EX Resource that has to be used leaves the game at once (5-17-3-2-3), so it stops counting for Lv.
+function payCost(side, amount){
+  side.resAvail = Math.max(0, side.resAvail - Math.max(0, amount||0));
+  settleEx(side);
+}
+function settleEx(side){
+  if (side.ex>0 && side.resAvail<side.ex){
+    const used=side.ex-side.resAvail; side.ex=side.resAvail;
+    log(`${who(side)} used up ${used} EX Resource${used===1?'':'s'}.`, side===G.player?'me':'ai');
+  }
 }
 
 // Official turn structure: Start Phase → Draw Phase → Resource Phase → Main Phase → End Phase.
 function beginTurn(turn){
   G.turn=turn; G.mode='idle'; G.phase='start'; G.selected=null; G.pending=null; G.pendingHandIdx=-1;
+  G.turnSeq=(G.turnSeq||0)+1;   // unique per turn (turnNumber counts rounds) — 【Once per Turn】 keys off this
   const s=me();
   // 1) Start Phase — Active Step: ready all rested cards; refresh per-turn abilities.
-  for (const u of s.field){ if(u.stunned){ u.stunned=false; } else if(!u.noActive){ u.rested=false; } u.sick=false; u.tempAp=0; u.battleAp=0; u.activatedThisTurn=false; u.canAttackActive=false; u.noDirectTurn=false; u.dmgReduce=0; u.killDrawTurn=0; resetTurnKeywords(u); u.ap=effAp(u); }
-  if (s.base){ s.base.rested=false; s.base.activatedThisTurn=false; }
+  for (const u of s.field){ if(u.stunned){ u.stunned=false; } else if(!u.noActive){ u.rested=false; } u.sick=false; u.tempAp=0; u.battleAp=0; u.canAttackActive=false; u.noDirectTurn=false; u.dmgReduce=0; u.killDrawTurn=0; resetTurnKeywords(u); u.ap=effAp(u); }
+  if (s.base){ s.base.rested=false; }
+  // 【Once per Turn】 abilities (13-2-13-1) are usable once in EVERY turn, so both players' refresh here.
+  for (const sd of [G.player, G.enemy]){ if(!sd) continue; for (const u of sd.field) u.activatedThisTurn=false; if (sd.base) sd.base.activatedThisTurn=false; }
   s.neoZeonSelfKill=false;   // "destroyed by your own (Neo Zeon) effect this turn" resets each turn
-  // 2) Draw Phase — draw 1 (whoever goes first skips their very first draw).
+  // 2) Draw Phase — draw 1. There is no first-turn exception (7-3-1): the player going second is
+  // compensated with the EX Resource instead.
   G.phase='draw';
-  if (G.skipDrawSide===turn) G.skipDrawSide=null;   // first player's opening turn: no draw
-  else draw(s);
+  draw(s);
   if (G.over) return;
-  // 3) Resource Phase — place the top card of the 10-card Resource Deck (active). EX Resource adds +1.
+  // 3) Resource Phase — place the top card of the 10-card Resource Deck (active), if the area has room (4-4-2).
   G.phase='resource';
-  if (s.resourceDeck>0){ s.resourceDeck--; s.resMax=Math.min(RES_MAX, s.resMax+1); }
+  if (s.resourceDeck>0 && s.resMax+s.ex<RES_AREA_MAX){ s.resourceDeck--; s.resMax++; }
   s.resAvail = s.resMax + s.ex;
   s.hadTurn = true;   // resources have now been dealt at least once — safe to reconcile spent EX
   // 4) Main Phase — deploy, pair, activate, play commands, attack.
@@ -4587,9 +4654,13 @@ function endTurn(){
 function finishEndPhase(){
   if (G.over) return;
   const s=me();
-  // Repair Step (regen), then Hand Step (discard down to the hand limit).
+  // End Step: <Repair> ("at the end of your turn") for the turn player's Units (13-1-1-1).
   G.phase='end';
-  for (const u of s.field){ const _r=effRepair(u); if (_r>0 && u.hp>0 && u.hp<effMaxHp(u)){ const _b=u.hp; u.hp=Math.min(effMaxHp(u), u.hp+_r); if(u.hp>_b) floatNum(u.uid,'+'+(u.hp-_b),'#7ee29a'); } u.tempAp=0; u.battleAp=0; u.canAttackActive=false; u.noDirectTurn=false; u.dmgReduce=0; u.killDrawTurn=0; resetTurnKeywords(u); u.ap=effAp(u); }
+  for (const u of s.field){ const _r=effRepair(u); if (_r>0 && u.hp>0 && u.hp<effMaxHp(u)){ const _b=u.hp; u.hp=Math.min(effMaxHp(u), u.hp+_r); if(u.hp>_b) floatNum(u.uid,'+'+(u.hp-_b),'#7ee29a'); } }
+  // Cleanup Step: every "during this turn" effect ends — on BOTH players' cards (7-6-6-1).
+  for (const sd of [G.player, G.enemy]){ if(!sd) continue;
+    for (const u of sd.field){ u.tempAp=0; u.battleAp=0; u.canAttackActive=false; u.noDirectTurn=false; u.dmgReduce=0; u.killDrawTurn=0; resetTurnKeywords(u); u.ap=effAp(u); } }
+  // Hand Step: the turn player discards down to the hand limit (7-6-5).
   while (s.hand.length>HAND_MAX){
     const worst=[...s.hand].sort((a,b)=>cardValue(a)-cardValue(b))[0];
     s.hand.splice(s.hand.indexOf(worst),1); sendToTrash(worst, s);
@@ -4652,7 +4723,7 @@ function playFromHand(uidv, exConfirmed){
   }
 
   if (card.type==='base'){
-    s.hand.splice(idx,1); s.resAvail-=effectiveCost(s,card);
+    s.hand.splice(idx,1); payCost(s, effectiveCost(s,card));
     sendToTrash(s.base, s);   // the outgoing Base is discarded (no-op for the EX Base token)
     s.base = card; card.rested=false; card.sick=false;
     sound('deploy');
@@ -4666,7 +4737,7 @@ function playFromHand(uidv, exConfirmed){
       setPrompt(`Battle area full — tap one of YOUR Units to place in the trash, then ${card.name} deploys.`);
       closeInspect(); render(); return;
     }
-    s.hand.splice(idx,1); s.resAvail-=effectiveCost(s,card);
+    s.hand.splice(idx,1); payCost(s, effectiveCost(s,card));
     card.rested=false; card.sick = !card.blitz;
     s.field.push(card);
     sound('deploy');
@@ -4678,7 +4749,7 @@ function playFromHand(uidv, exConfirmed){
     const myUnits = s.field.filter(u=>u.type==='unit' && !u.pilot && !u.noPilot);
     if (myUnits.length===0){ flashPrompt(`No unpaired Unit available — pilot ${card.name} needs a Unit with no pilot.`); return; }
     if (myUnits.length===1){ // only one possible target: pair it straight away
-      s.hand.splice(idx,1); s.resAvail-=effectiveCost(s,card);
+      s.hand.splice(idx,1); payCost(s, effectiveCost(s,card));
       log(`<b>${card.name}</b> pilots <b>${myUnits[0].name}</b>.`, 'me');
       closeInspect();
       attachPilot(myUnits[0], card, ()=>{ clearSel(); render(); checkEnd(); });
@@ -4771,12 +4842,13 @@ function startCommand(card, handIdx){
   }
   // "Deploy A or B" token command — let the player pick which token to create.
   if (a.kind==='token' && a.choose && a.specs && a.specs.length>1){
-    if (s.field.length>=FIELD_MAX){ flashPrompt('Battle area full (max '+FIELD_MAX+').'); return; }
     commit(card,handIdx); closeInspect();
     promptTokenChoice(a.specs, sp=>{
-      const tk=makeToken(sp, 'player'); s.field.push(tk);
-      log(`<b>${card.name}</b> deploys <b>${tk.name}</b> token (⚔${tk.baseAp}/❤${tk.baseHp}${tk.blocker?' &lt;Blocker&gt;':''}).`, 'me');
-      onUnitDeployed(tk, s, ()=>{ clearSel(); render(); checkEnd(); }, true);   // tokens can trigger ally-deploy listeners
+      makeRoom(s, 1, card.name, ()=>{   // a full battle area makes room instead of refusing (11-4-2)
+        const tk=makeToken(sp, 'player'); s.field.push(tk);
+        log(`<b>${card.name}</b> deploys <b>${tk.name}</b> token (⚔${tk.baseAp}/❤${tk.baseHp}${tk.blocker?' &lt;Blocker&gt;':''}).`, 'me');
+        onUnitDeployed(tk, s, ()=>{ clearSel(); render(); checkEnd(); }, true);   // tokens can trigger ally-deploy listeners
+      });
     });
     return;
   }
@@ -4788,12 +4860,12 @@ function startCommand(card, handIdx){
   if (noEnemyTgt || noAllyTgt){ flashPrompt(`${card.name}: no legal target — can't play it now.`); return; }
   // Everything else resolves through the same interactive resolver as triggered effects. Track it as
   // in-flight so a Cancel while picking a target returns the Command to hand instead of losing it.
-  G.cmdInFlight = { card, cost: effectiveCost(s, card) };
+  G.cmdInFlight = { card, cost: effectiveCost(s, card), exBefore: s.ex };
   commit(card,handIdx); closeInspect();
   resolvePlayerTrigger(card, G.player, a, card.name, ()=>{ G.cmdInFlight=null; clearSel(); render(); checkEnd(); });
 }
 
-function commit(card, handIdx){ G.player.hand.splice(handIdx,1); G.player.resAvail-=effectiveCost(G.player,card); sendToTrash(card, G.player); }
+function commit(card, handIdx){ G.player.hand.splice(handIdx,1); payCost(G.player, effectiveCost(G.player,card)); sendToTrash(card, G.player); }
 
 // Auto-discard the lowest-value card from side's hand (used by AI / no-choice cases).
 function cardValue(c){ if(c.type==='unit') return c.baseAp+c.baseHp; if(c.type==='pilot') return c.pAp+c.pHp; if(c.type==='command'&&c.action) return c.action.kind==='damage'?4:c.action.kind==='draw'?3:1; return 1; }
@@ -4950,7 +5022,7 @@ function resolveActivate(u, target, costUnit){      // player path
 function applyActivateEffect(u, target, side, costUnit){
   let a=u.activate.action; const cost=u.activate.cost, foe = side===G.player?G.enemy:G.player, cls = side===G.player?'me':'ai';
   // Pay the ability's cost.
-  if (cost.resource){ side.resAvail=Math.max(0, side.resAvail-cost.resource); log(`<b>${u.name}</b> pays ${cost.resource} resource${cost.resource===1?'':'s'}.`, cls); }
+  if (cost.resource){ payCost(side, cost.resource); log(`<b>${u.name}</b> pays ${cost.resource} resource${cost.resource===1?'':'s'}.`, cls); }
   if (cost.type==='selfToDeck'){
     const i=side.field.indexOf(u); if(i>=0) side.field.splice(i,1);
     resetUnit(u); side.deck.unshift(u);
@@ -4987,7 +5059,7 @@ function applyActivateEffect(u, target, side, costUnit){
     for (const tk of toks){ const i=side.field.indexOf(tk); if(i>=0) side.field.splice(i,1); fx('die', tk.uid); }
     if (toks.length) log(`<b>${u.name}</b> destroys ${toks.map(t=>'<b>'+t.name+'</b>').join(', ')} as a cost.`, cls);
   }
-  else if (cost.type==='resource'){ side.resAvail=Math.max(0, side.resAvail-cost.amount); log(`<b>${u.name}</b> pays ${cost.amount} resource${cost.amount===1?'':'s'}.`, cls); }
+  else if (cost.type==='resource'){ payCost(side, cost.amount); log(`<b>${u.name}</b> pays ${cost.amount} resource${cost.amount===1?'':'s'}.`, cls); }
   else if (cost.type==='exile'){
     if (G.activatePrepaid){ /* the player already chose & exiled the cards interactively */ }
     else { const n=exileFromTrash(side, cost.count, cost.trait); log(`<b>${u.name}</b> exiles ${n} ${cost.trait?cost.trait+' ':''}card${n===1?'':'s'} from trash.`, cls); }
@@ -5016,12 +5088,14 @@ function applyActivateEffect(u, target, side, costUnit){
       && (a.name==null || (c.name||'').toLowerCase().includes(a.name))
       && (a.minLv==null || (c.lv||0)>=a.minLv) && (a.maxLv==null || (c.lv||0)<=a.maxLv));
     const deploy=(c)=>{
-      if (!c || side.field.length>=FIELD_MAX) return;
+      if (!c) return;
+      makeRoom(side, 1, u.name, ()=>{   // the cost is paid: the deploy is mandatory, so make room (11-4-2)
       side.trash.splice(side.trash.indexOf(c),1); refreshTrashStats(side);
       resetUnit(c); c.rested=false; c.sick=!c.blitz; side.field.push(c); sound('deploy');
       log(`<b>${u.name}</b> deploys <b>${c.name}</b> from the trash.`, cls);
       if (side===G.player) resolvePlayerTrigger(c, side, parseTrigger(c.effect,'Deploy'), 'Deploy', ()=>{ render(); });
       else runTrigger(c, side, parseTrigger(c.effect,'Deploy'), 'Deploy');
+      });
     };
     if (!cands.length) log(`<b>${u.name}</b>: nothing eligible in the trash.`, cls);
     else if (side===G.player && cands.length>1) showLookAtTop(cands, `${u.name}: deploy a Unit from your trash`, ()=>true, true, deploy);
@@ -5146,7 +5220,7 @@ function fieldClick(uidv){
     sendToTrash(victim, G.player);     // placed in trash (not "destroyed" — no Destroyed trigger)
     log(`<b>${victim.name}</b> is placed in the trash to make room.`, 'me');
     const h=G.player.hand.findIndex(c=>c.uid===card.uid);
-    if(h>=0){ G.player.hand.splice(h,1); G.player.resAvail-=effectiveCost(G.player,card); }
+    if(h>=0){ G.player.hand.splice(h,1); payCost(G.player, effectiveCost(G.player,card)); }
     card.rested=false; card.sick=!card.blitz; G.player.field.push(card);
     G.mode='idle'; G.pending=null; sound('deploy');
     log(`You deploy <b>${card.name}</b>${card.blitz?' &lt;Blitz&gt;':''}.`, 'me');
@@ -5172,7 +5246,7 @@ function fieldClick(uidv){
     if (u.pilot){ flashPrompt(`${u.name} already has a pilot — a Unit can hold only one.`); return; }
     if (u.noPilot){ flashPrompt(`${u.name} can't be paired with a pilot.`); return; }
     const card=G.pending, h=G.player.hand.findIndex(c=>c.uid===card.uid); if(h<0) return;
-    G.player.hand.splice(h,1); G.player.resAvail-=effectiveCost(G.player,card);
+    G.player.hand.splice(h,1); payCost(G.player, effectiveCost(G.player,card));
     log(`<b>${card.name}</b> pilots <b>${u.name}</b>.`, 'me');
     G.mode='idle'; G.pending=null;
     attachPilot(u, card, ()=>{ clearSel(); render(); checkEnd(); });
@@ -5308,23 +5382,17 @@ function fieldClick(uidv){
     if (tgt){
       if (effUntargetable(tgt)){ flashPrompt(`${tgt.name} can't be chosen as an attack target.`); return; }
       if (!tgt.rested && !canHitActive(atk, tgt)){ flashPrompt('You can only attack a rested (turned) enemy unit. Attack the shields instead, or a rested unit.'); return; }
-      declareAttack(atk, G.player);   // on-attack self-buffs (AP+/High-Maneuver) BEFORE the block step
-      // 【Attack】 effects (Marida's ping, etc.) resolve at declaration so YOU pick their targets,
-      // then the Block Step and battle follow.
+      declareAttack(atk, G.player);   // attack step (8-2): rest the attacker, on-attack self-buffs
+      // 【Attack】 effects (Marida's ping, etc.) resolve at declaration so YOU pick their targets.
       resolveAttackTriggers(atk, G.player, ()=>{
         if (!attackerStillOut(atk, G.player)){ clearSel(); render(); checkEnd(); return; }
-        // Action Step for this individual attack: use an 【Action】 ability/command before it resolves.
+        // 8-2-4: the attacked Unit left play during the attack step → straight to the battle end step.
+        if (!G.enemy.field.includes(tgt) || tgt.hp<=0){ clearSel(); render(); checkEnd(); return; }
+        // Block step (8-3), then the action step (8-4), then the damage step (8-5).
+        const blk = aiBlockStep(atk, tgt);
         offerPlayerActionStep(atk, ()=>{
-          if (!attackerStillOut(atk, G.player) || atk.rested){ clearSel(); render(); checkEnd(); return; }   // an Action may have changed things
-          const tgt2 = G.enemy.field.find(c=>c.uid===uidv);
-          if (!tgt2 || effUntargetable(tgt2) || (!tgt2.rested && !canHitActive(atk, tgt2))){ atk.rested=true; clearSel(); render(); checkEnd(); return; }
-          const blockers = G.enemy.field.filter(b=>effBlocker(b) && !b.rested && b.hp>0);
-          if (!effHighManeuver(atk) && blockers.length && aiWantsBlock(atk)){
-            const blk = pickAiBlocker(atk, blockers);
-            blk.rested=true; log(`${who(G.enemy)}'s <b>${blk.name}</b> &lt;Blocker&gt; intercepts!`, 'ai');
-            battle(atk, blk, G.player, G.enemy); return;
-          }
-          battle(atk,tgt2,G.player,G.enemy);
+          if (!attackerStillOut(atk, G.player)){ clearSel(); render(); checkEnd(); return; }
+          battle(atk, blk||tgt, G.player, G.enemy);   // battle() ends the battle itself if the target is gone
         });
       });
       return;
@@ -5336,34 +5404,46 @@ function attackDirect(){
   if (G.turn!=='player' || G.mode!=='attack-target' || G.over) return;
   const atk=G.player.field.find(c=>c.uid===G.selected); if(!atk) return;
   if (cantHitPlayer(atk)){ flashPrompt(`${atk.name} can't attack the enemy player directly — pick a rested enemy unit.`); return; }
-  declareAttack(atk, G.player);   // on-attack self-buffs (AP+/High-Maneuver) BEFORE the block step
+  declareAttack(atk, G.player);   // attack step (8-2): rest the attacker, on-attack self-buffs, 【Attack】 effects
   resolveAttackTriggers(atk, G.player, ()=>{
     if (!attackerStillOut(atk, G.player)){ clearSel(); render(); checkEnd(); return; }
-    // Action Step for this attack before it resolves.
+    // Block step (8-3) — the defender may intercept — then the action step (8-4), then the damage step (8-5).
+    const blk = aiBlockStep(atk, null);
     offerPlayerActionStep(atk, ()=>{
-      if (!attackerStillOut(atk, G.player) || atk.rested){ clearSel(); render(); checkEnd(); return; }
-      if (cantHitPlayer(atk)){ atk.rested=true; clearSel(); render(); checkEnd(); return; }   // an Action removed its direct-attack
-      // Defender may block a direct attack with an active <Blocker> (unless attacker has High-Maneuver)
-      const blockers = G.enemy.field.filter(b=>effBlocker(b) && !b.rested && b.hp>0);
-      if (!effHighManeuver(atk) && blockers.length && aiWantsBlock(atk)){
-        const blk = pickAiBlocker(atk, blockers);
-        blk.rested=true; log(`${who(G.enemy)}'s <b>${blk.name}</b> &lt;Blocker&gt; intercepts your attack!`, 'ai');
-        battle(atk, blk, G.player, G.enemy); return;
-      }
-      atk.rested=true;
+      if (!attackerStillOut(atk, G.player)){ clearSel(); render(); checkEnd(); return; }
+      if (blk){ battle(atk, blk, G.player, G.enemy); return; }   // battle() ends the battle itself if the blocker is gone
+      if (cantHitPlayer(atk)){ clearSel(); render(); checkEnd(); return; }   // an effect removed its direct-attack
       strikePlayer(atk, G.enemy, ()=>{ clearSel(); render(); });
     });
   });
+}
+// Block step for an attack by the player (8-3): the AI may rest ONE active <Blocker> to become the attack
+// target — never the attacked Unit itself (8-3-3), never against <High-Maneuver>. Returns the blocker or null.
+function aiBlockStep(atk, target){
+  if (effHighManeuver(atk)) return null;
+  const blockers = G.enemy.field.filter(b=>effBlocker(b) && !b.rested && b.hp>0 && b!==target);
+  if (!blockers.length || !aiWantsBlock(atk)) return null;
+  const blk = pickAiBlocker(atk, blockers);
+  blk.rested=true; log(`${who(G.enemy)}'s <b>${blk.name}</b> &lt;Blocker&gt; intercepts${target?'':' your attack'}!`, 'ai');
+  return blk;
 }
 
 // Resolve an attack aimed at a player: Base soaks first, else a Shield breaks (Burst), else defeat.
 function strikePlayer(atk, defSide, done){
   done = done || function(){};
   const side = defSide===G.player ? 'ai' : 'me';
+  const atkSide = defSide===G.player ? G.enemy : G.player;
   fxLunge(atk);
+  if (defSide.base) applySupport(atk, atkSide, defSide.base);   // <Support> may be used to finish the Base
+  const ap = Math.max(0, atk.ap||0);
+  if (ap<=0){ log(`<b>${atk.name}</b> has 0 AP — no damage is dealt.`, side); done(); return; }   // 5-5-5
   if (defSide.base){
-    const b=defSide.base; b.hp-=atk.ap; floatNum(b.uid,'-'+atk.ap,'#ff6b5e');
-    log(`<b>${atk.name}</b> hits ${who(defSide)}'s <b>${b.name}</b> base for ${atk.ap}.`, side);
+    // Damage step vs a Base (8-5-2-4): the attacker hits the Base and the Base hits back with its AP at the
+    // same time — unless the attacker has <First Strike> and destroys it first (8-5-2-4-2, 13-1-5-2).
+    const b=defSide.base;
+    const hitBase=()=>{ b.hp-=ap; floatNum(b.uid,'-'+ap,'#ff6b5e'); log(`<b>${atk.name}</b> hits ${who(defSide)}'s <b>${b.name}</b> base for ${ap}.`, side); };
+    const hitBack=()=>{ const d=Math.max(0, (b.baseAp!=null ? effAp(b) : b.ap)||0); if (d>0 && atkSide.field.includes(atk)) damage(atk, d, atkSide, 'battle'); };
+    if (effFirstStrike(atk)){ hitBase(); if (b.hp>0) hitBack(); } else { hitBase(); hitBack(); }
     if (b.hp<=0){
       defSide.base=null; fx('die', b.uid); log(`${who(defSide)}'s ${b.name} base is destroyed.`, side); sendToTrash(b, defSide);
       // The base is a shield-area card, so destroying it triggers "on shield break" effects (Sinanju).
@@ -5438,11 +5518,12 @@ function triggerBurst(card, side, done, allowChoice){
   const sideCls = side===G.player ? 'me' : 'ai';
   sound('burst');
   flashCard(card, (side===G.player?'YOUR':'ENEMY')+' BURST');
-  if (bz.kind==='tohand'){ if (side.hand.length<HAND_MAX){ side.hand.push(card); log(`Burst! <b>${card.name}</b> is added to ${who(side)} hand.`, sideCls); if (side===G.player) revealDraw(card, 'BURST'); } finish(); return; }
+  if (bz.kind==='tohand'){ side.hand.push(card); log(`Burst! <b>${card.name}</b> is added to ${who(side)} hand.`, sideCls); if (side===G.player) revealDraw(card, 'BURST'); finish(); return; }
   if (bz.kind==='deploy'){
-    if (card.type==='base'){ sendToTrash(side.base, side); side.base=card; card.rested=false; card.sick=false; log(`Burst! ${who(side)} deploys base <b>${card.name}</b>.`, sideCls); runTrigger(card, side, parseTrigger(card.effect,'Deploy'), 'Deploy'); }
-    else if (side.field.length<FIELD_MAX){ card.rested=false; card.sick=true; side.field.push(card); log(`Burst! ${who(side)} deploys <b>${card.name}</b>.`, sideCls); runTrigger(card, side, parseTrigger(card.effect,'Deploy'), 'Deploy'); }
-    finish(); return;
+    if (card.type==='base'){ sendToTrash(side.base, side); side.base=card; card.rested=false; card.sick=false; log(`Burst! ${who(side)} deploys base <b>${card.name}</b>.`, sideCls); runTrigger(card, side, parseTrigger(card.effect,'Deploy'), 'Deploy'); finish(); return; }
+    // a full battle area makes room for the Burst-deployed Unit (11-4-2)
+    makeRoom(side, 1, card.name, ()=>{ card.rested=false; card.sick=true; side.field.push(card); log(`Burst! ${who(side)} deploys <b>${card.name}</b>.`, sideCls); runTrigger(card, side, parseTrigger(card.effect,'Deploy'), 'Deploy'); finish(); });
+    return;
   }
   if (bz.kind==='draw'){ log(`Burst! ${who(side)} draws ${bz.amount}.`, sideCls); for(let i=0;i<bz.amount;i++) draw(side); finish(); return; }
   if (bz.kind==='damage'){
@@ -5503,6 +5584,7 @@ function autoTarget(action, side){
 // Char Aznable's "if it is a Link Unit, it gains <High-Maneuver>") actually prevents the block.
 function declareAttack(atk, atkSide){
   const cls = atkSide===G.player?'me':'ai';
+  atk.rested = true;   // attack step (8-2-1): the attacker is rested as the attack is declared
   const apply=(act)=>{
     if (!act) return;
     if (act.kind==='selfbuff'){
@@ -5563,7 +5645,7 @@ function resolveAttackTriggers(atk, atkSide, done){
   const acts=[];
   const add=(act, slot)=>{
     if (!act || act.kind==='selfbuff' || act.kind==='selfKeyword') return;
-    if (act.oncePerTurn){ if (atk[slot]===G.turnNumber) return; atk[slot]=G.turnNumber; }
+    if (act.oncePerTurn){ if (atk[slot]===G.turnSeq) return; atk[slot]=G.turnSeq; }
     act.source=atk; acts.push(act);
   };
   add(gatedAttackAction(atk.effect, atk), 'atkOnceTurn');
@@ -5611,17 +5693,18 @@ function onKillMatches(k, victim){
 }
 function applyOnKill(u, side, k){
   if (!k) return;
-  if (k.oncePerTurn){ if (u.onKillTurn===G.turnNumber) return; u.onKillTurn=G.turnNumber; }
+  if (k.oncePerTurn){ if (u.onKillTurn===G.turnSeq) return; u.onKillTurn=G.turnSeq; }
   const cls = side===G.player ? 'me' : 'ai';
   if (k.kind==='readyFriendly'){
     const ok=(x)=>x!==u && x.rested && x.hp>0 && (!k.link || x.linked)
       && (!k.traits || !k.traits.length || k.traits.some(tr=>(x.trait||'').toLowerCase().includes('('+tr+')')));
     const t = side.field.filter(ok).sort((a,b)=>effAp(b)-effAp(a))[0];
-    if (t){ t.rested=false; if (k.noAttack) t.noAttackTurn=G.turnNumber;
+    if (t){ t.rested=false; if (k.noAttack) t.noAttackTurn=G.turnSeq;
       log(`<b>${u.name}</b>: <b>${t.name}</b> is set active${k.noAttack?" (it can't attack this turn)":''}.`, cls); }
     return;
   }
   if (k.kind==='recover'){
+    if (u.hp<=0 || !side.field.includes(u)) return;   // a destroyed Unit has nothing to recover
     const before=u.hp; u.hp=Math.min(effMaxHp(u), u.hp + k.amount);
     if (u.hp>before){ log(`<b>${u.name}</b> recovers ${u.hp-before} HP.`, cls); try{ floatNum(u.uid,'+'+(u.hp-before),'#7ee29a'); }catch(e){} }
   } else if (k.kind==='draw'){
@@ -5637,15 +5720,21 @@ function applyOnKill(u, side, k){
 // AP equal to or less than it, it doesn't receive that damage." (Full Armor Unicorn ST14-006)
 function preventsWeakBattleDamage(u, foeUnit, side){
   if (!u || !u.pairPreventLowAp || !u.pilot || !foeUnit) return false;
-  if (u.preventTurn === G.turnNumber) return false;
+  if (u.preventTurn === G.turnSeq) return false;
   if (effAp(foeUnit) > effAp(u)) return false;
-  u.preventTurn = G.turnNumber;
+  u.preventTurn = G.turnSeq;
   log(`<b>${u.name}</b> doesn't receive battle damage from <b>${foeUnit.name}</b> (once per turn).`, side===G.player?'me':'ai');
   return true;
 }
 function battle(atk, def, atkSide, defSide){
   // A blocker prompt resolves asynchronously — by now the attacker may have left the battlefield.
   if (!attackerStillOut(atk, atkSide)){ clearSel(); render(); checkEnd(); return; }
+  // 8-4-2: an attack target destroyed or moved away before the damage step → battle end step, no damage.
+  const defOut = def.type==='base' ? defSide.base!==def : !defSide.field.includes(def);
+  if (defOut || def.hp<=0){
+    log(`<b>${def.name}</b> is no longer on the battlefield — the attack ends.`, atkSide===G.player?'me':'ai');
+    clearBattleScoped(); clearSel(); render(); checkEnd(); return;
+  }
   atk.rested=true;
   fxLunge(atk);
   // <Support N>: an active friendly Unit may rest to give the attacker +N AP this turn.
@@ -5666,7 +5755,7 @@ function battle(atk, def, atkSide, defSide){
   if (effBreach(atk)>0 && def.type==='unit' && def.hp<=0) breachShield(atk, defSide);
   // "when your (Trait) Unit deals battle damage to an enemy Unit, you may return it to hand" (METEOR)
   if (def.type==='unit' && def.hp>0 && a>0) battleBounceHook(atk, def, atkSide, defSide);
-  if (def.type==='unit' && def.hp<=0 && atk.hp>0){                                            // "when this Unit destroys an enemy Unit…"
+  if (def.type==='unit' && def.hp<=0){                                            // "when this Unit destroys an enemy Unit…" — fires even if the attacker died too (10-1-6-4)
     if (atk.onKill && onKillMatches(atk.onKill, def)) applyOnKill(atk, atkSide, atk.onKill);
     const pk = atk.pilotCard ? parseOnKill(atk.pilotCard.effect) : null;                      // on-kill can live on the paired Pilot (e.g. Amuro)
     if (pk && onKillMatches(pk, def)) applyOnKill(atk, atkSide, pk);
@@ -5685,7 +5774,7 @@ function clearBattleScoped(){
 // Support is a Main-phase ability, so it may only be used on the controller's OWN turn.
 function applySupport(atk, atkSide, def){
   if (atkSide.who !== G.turn) return;            // never on the opponent's turn
-  if (!def || def.type!=='unit' || def.hp<=0 || atk.ap>=def.hp) return;
+  if (!def || (def.type!=='unit' && def.type!=='base') || def.hp<=0 || atk.ap>=def.hp) return;
   const helpers = atkSide.field.filter(u=>effSupport(u)>0 && !u.rested && u.hp>0 && u!==atk);
   if (!helpers.length) return;
   const need = def.hp - atk.ap;
@@ -5773,8 +5862,8 @@ function onceReduceOn(u, side){
 }
 // Rest a Unit as the result of an EFFECT. Gundam Throne Drei shrugs the first one off each turn.
 function effectRest(u, side){
-  if (u.unrestOnce && u.unrestTurn!==G.turnNumber){
-    u.unrestTurn = G.turnNumber;
+  if (u.unrestOnce && u.unrestTurn!==G.turnSeq){
+    u.unrestTurn = G.turnSeq;
     log(`<b>${u.name}</b> is set active again (once per turn).`, side===G.player?'me':'ai');
     u.rested=false; return false;
   }
@@ -5789,8 +5878,8 @@ function damage(u, dmg, side, kind){
     if (dmg<=0) log(`<b>${u.name}</b> reduces the effect damage to 0.`, side===G.player?'me':'ai');
   }
   // 【Once per Turn】 static reduction against any enemy damage (battle or effect).
-  if (u.onceDmgReduce && kind!=='self' && u.onceDmgTurn!==G.turnNumber && onceReduceOn(u, side)){
-    u.onceDmgTurn = G.turnNumber;
+  if (u.onceDmgReduce && kind!=='self' && u.onceDmgTurn!==G.turnSeq && onceReduceOn(u, side)){
+    u.onceDmgTurn = G.turnSeq;
     dmg = Math.max(0, dmg - u.onceDmgReduce);
     log(`<b>${u.name}</b> reduces the damage by ${u.onceDmgReduce} (once per turn).`, side===G.player?'me':'ai');
   }
@@ -5819,13 +5908,13 @@ function linkDenyBlockerHook(side, linkedUnit){
     const tr = src.linkDenyBlockerTrait; if (!tr) continue;
     if (src.hp<=0) continue;
     if (!(linkedUnit.trait||'').toLowerCase().includes('('+tr+')')) continue;
-    if (src.linkDenyTurn === G.turnNumber) continue;                 // 【Once per Turn】
+    if (src.linkDenyTurn === G.turnSeq) continue;                 // 【Once per Turn】
     const foe = side===G.player ? G.enemy : G.player;
     const cands = foe.field.filter(x=>x.hp>0 && effBlocker(x));
     const t = cands.sort((a,b)=>b.hp-a.hp)[0] || foe.field.filter(x=>x.hp>0).sort((a,b)=>b.hp-a.hp)[0];
     if (!t) continue;
-    src.linkDenyTurn = G.turnNumber;
-    t.noBlockTurn = G.turnNumber;
+    src.linkDenyTurn = G.turnSeq;
+    t.noBlockTurn = G.turnSeq;
     log(`<b>${src.name}</b>: <b>${t.name}</b> can't activate &lt;Blocker&gt; this turn.`, side===G.player?'me':'ai');
   }
 }
@@ -5835,9 +5924,9 @@ function battleBounceHook(atk, def, atkSide, defSide){
   if (!def || def.hp<=0 || def.type!=='unit' || G.turn!==atkSide.who) return;
   for (const src of [...atkSide.field, atkSide.base].filter(Boolean)){
     const tr = src.battleBounceTrait; if (!tr) continue;
-    if (src.hp<=0 || src.bounceTurn===G.turnNumber) continue;
+    if (src.hp<=0 || src.bounceTurn===G.turnSeq) continue;
     if (!(atk.trait||'').toLowerCase().includes('('+tr+')')) continue;
-    src.bounceTurn = G.turnNumber;
+    src.bounceTurn = G.turnSeq;
     const i=defSide.field.indexOf(def); if(i>=0) defSide.field.splice(i,1);
     log(`<b>${src.name}</b>: <b>${def.name}</b> is returned to its owner's hand.`, atkSide===G.player?'me':'ai');
     returnToHand(def, defSide);
@@ -5849,14 +5938,14 @@ function pairDeployHook(side){
   for (const src of [...side.field]){
     if (!src || src.hp<=0 || !src.effect) continue;
     if (!/when you pair a pilot with one of your units/i.test(plain(src.effect))) continue;
-    if (src.pairTokTurn === G.turnNumber) continue;          // 【Once per Turn】
+    if (src.pairTokTurn === G.turnSeq) continue;          // 【Once per Turn】
     const specs = parseTokenSpecs(src.effect);
     if (!specs.length) continue;
-    src.pairTokTurn = G.turnNumber;
-    chooseTokenCount(specs, side, src.name, (chosen)=>{
-      deployTokens({ kind:'token', specs:chosen }, side, src.name, 'Pair', side===G.player?'me':'ai');
-      render();
-    });
+    src.pairTokTurn = G.turnSeq;
+    // The player is asked how many and, on a full battle area, which Unit makes room (11-4-2); the AI
+    // takes the maximum and gives up its least valuable Unit.
+    if (side===G.player) deployTokensInteractive(src, side, { kind:'token', specs }, 'Pair', ()=>render());
+    else chooseTokenCount(specs, side, src.name, (chosen)=>{ deployTokens({ kind:'token', specs:chosen }, side, src.name, 'Pair', 'ai'); render(); });
   }
 }
 // 【Deploy】"You may pair 1 [(Trait) / named] Pilot card from your hand with this Unit." — a free
@@ -5952,6 +6041,7 @@ function refundCommandInFlight(){
   refreshTrashStats(G.player);
   G.player.hand.push(ci.card);
   G.player.resAvail += ci.cost;
+  if (ci.exBefore!=null) G.player.ex = ci.exBefore;   // an EX Resource consumed by the payment comes back too
   log(`<b>${ci.card.name}</b> — cancelled; returned to your hand.`, 'me');
   return true;
 }
@@ -5981,10 +6071,12 @@ function finishMultiDamage(){
   if (p.after) p.after(); else { clearSel(); render(); checkEnd(); }
 }
 
-function checkEnd(){ /* direct hits handle the actual win in attackDirect / aiDirect */ }
+// Rules management backstop (11-1-2): run after player actions — a deck emptied by any effect is a defeat.
+function checkEnd(){ if (G.over || !G.player || !G.enemy) return; deckOutCheck(G.turn==='player'?G.player:G.enemy); deckOutCheck(G.turn==='player'?G.enemy:G.player); }
 
 function endGame(winnerSide){
-  G.over=true; setPrompt(''); render();
+  if (G.over) return;
+  G.over=true; G.winner = winnerSide===G.player ? 'player' : 'enemy'; setPrompt(''); render();
   const win = winnerSide===G.player;
   recordResult(G.playerDeckName, win);   // lifetime W/L per deck, shown on the deck picker
   fx('direct'); setTimeout(()=>sound(win?'win':'lose'), 250);
@@ -6084,7 +6176,7 @@ function aiMainStep(){
     const worthIt = isAoE ? pl.field.length>=2
       : (tgt && (tgt.hp<=dmg.action.amount || aiThreatScore(tgt)>=6));   // a kill, or a scary unit
     if (worthIt){
-      const i=ai.hand.indexOf(dmg); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,dmg); sendToTrash(dmg,ai); flashCard(dmg,'ENEMY COMMAND');
+      const i=ai.hand.indexOf(dmg); ai.hand.splice(i,1); payCost(ai, effectiveCost(ai,dmg)); sendToTrash(dmg,ai); flashCard(dmg,'ENEMY COMMAND');
       if (isAoE){ log(`${who(G.enemy)} plays <b>${dmg.name}</b> (all units).`, 'ai'); damageAll(dmg, ai, dmg.action, dmg.name); }
       else { log(`${who(G.enemy)} plays <b>${dmg.name}</b> on <b>${tgt.name}</b>.`, 'ai'); damage(tgt,dmg.action.amount,pl); }
       return true;
@@ -6092,10 +6184,10 @@ function aiMainStep(){
   }
   // draw if low
   const drawC = ai.hand.find(c=>c.type==='command' && c.action.kind==='draw' && c.action.amount>=2 && canAfford(ai,c));
-  if (drawC && ai.hand.length<=4){ const i=ai.hand.indexOf(drawC); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,drawC); sendToTrash(drawC,ai); flashCard(drawC,'ENEMY COMMAND'); for(let k=0;k<drawC.action.amount;k++) draw(ai); log(`${who(G.enemy)} plays <b>${drawC.name}</b>.`, 'ai'); return true; }
+  if (drawC && ai.hand.length<=4){ const i=ai.hand.indexOf(drawC); ai.hand.splice(i,1); payCost(ai, effectiveCost(ai,drawC)); sendToTrash(drawC,ai); flashCard(drawC,'ENEMY COMMAND'); for(let k=0;k<drawC.action.amount;k++) draw(ai); log(`${who(G.enemy)} plays <b>${drawC.name}</b>.`, 'ai'); return true; }
   // deploy a base if it improves the guard
   const baseC = ai.hand.find(c=>c.type==='base' && canAfford(ai,c) && (!ai.base || c.hp>ai.base.hp));
-  if (baseC){ const i=ai.hand.indexOf(baseC); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,baseC); baseC.rested=false; baseC.sick=false; sendToTrash(ai.base, ai); ai.base=baseC; flashCard(baseC,'ENEMY BASE'); log(`${who(G.enemy)} deploys base <b>${baseC.name}</b>.`, 'ai'); runTrigger(baseC, ai, parseTrigger(baseC.effect,'Deploy'), 'Deploy'); return true; }
+  if (baseC){ const i=ai.hand.indexOf(baseC); ai.hand.splice(i,1); payCost(ai, effectiveCost(ai,baseC)); baseC.rested=false; baseC.sick=false; sendToTrash(ai.base, ai); ai.base=baseC; flashCard(baseC,'ENEMY BASE'); log(`${who(G.enemy)} deploys base <b>${baseC.name}</b>.`, 'ai'); runTrigger(baseC, ai, parseTrigger(baseC.effect,'Deploy'), 'Deploy'); return true; }
   // deploy a unit — on top of raw stats, prefer a body whose Link Pilot is already in hand (so it can
   // pair + attack the same turn) and one that brings a Deploy effect (removal, tokens, etc.).
   if (ai.field.length<FIELD_MAX){
@@ -6107,7 +6199,7 @@ function aiMainStep(){
     // shield-break Burst like Close Combat can't pick it off mid-combat. It loses nothing by waiting.
     const holdForPostCombat = c => AI_LVL==='hard' && !G._aiPostDeploy && !c.blitz && !linkPilotInHand(c);
     const dep = ai.hand.filter(c=>c.type==='unit' && canAfford(ai,c) && !holdForPostCombat(c)).sort((a,b)=>depScore(b)-depScore(a))[0];
-    if (dep){ const i=ai.hand.indexOf(dep); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,dep); dep.rested=false; dep.sick=!dep.blitz; ai.field.push(dep); flashCard(dep,'ENEMY DEPLOY'); log(`${who(G.enemy)} deploys <b>${dep.name}</b>.`, 'ai'); runTrigger(dep, ai, parseTrigger(dep.effect,'Deploy'), 'Deploy'); onUnitDeployed(dep, ai); return true; }
+    if (dep){ const i=ai.hand.indexOf(dep); ai.hand.splice(i,1); payCost(ai, effectiveCost(ai,dep)); dep.rested=false; dep.sick=!dep.blitz; ai.field.push(dep); flashCard(dep,'ENEMY DEPLOY'); log(`${who(G.enemy)} deploys <b>${dep.name}</b>.`, 'ai'); runTrigger(dep, ai, parseTrigger(dep.effect,'Deploy'), 'Deploy'); onUnitDeployed(dep, ai); return true; }
   }
   // pair a pilot — evaluate EVERY (pilot, unit) combination and take the best one. Forming a Link is
   // worth the most (stat boost + the Unit can attack immediately), and most of all on a just-deployed
@@ -6130,17 +6222,17 @@ function aiMainStep(){
       }
     }
     if (bestP){
-      const i=ai.hand.indexOf(bestP); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,bestP);
+      const i=ai.hand.indexOf(bestP); ai.hand.splice(i,1); payCost(ai, effectiveCost(ai,bestP));
       flashCard(bestP,'ENEMY PILOT'); attachPilot(bestU,bestP);
       log(`${who(G.enemy)} pairs <b>${bestP.name}</b> with <b>${bestU.name}</b>.`, 'ai'); return true;
     }
   }
   // buff before attacks
   const buff = ai.hand.find(c=>c.type==='command' && c.action.kind==='buff' && canAfford(ai,c));
-  if (buff && ai.field.some(u=>!u.sick&&!u.rested&&u.ap>0)){ const t=ai.field.filter(u=>!u.sick&&!u.rested&&u.ap>0).sort((a,b)=>b.ap-a.ap)[0]; const i=ai.hand.indexOf(buff); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,buff); sendToTrash(buff,ai); flashCard(buff,'ENEMY COMMAND'); t.tempAp=(t.tempAp||0)+buff.action.amount; t.ap=effAp(t); log(`${who(G.enemy)} empowers <b>${t.name}</b>.`, 'ai'); return true; }
+  if (buff && ai.field.some(u=>!u.sick&&!u.rested&&u.ap>0)){ const t=ai.field.filter(u=>!u.sick&&!u.rested&&u.ap>0).sort((a,b)=>b.ap-a.ap)[0]; const i=ai.hand.indexOf(buff); ai.hand.splice(i,1); payCost(ai, effectiveCost(ai,buff)); sendToTrash(buff,ai); flashCard(buff,'ENEMY COMMAND'); t.tempAp=(t.tempAp||0)+buff.action.amount; t.ap=effAp(t); log(`${who(G.enemy)} empowers <b>${t.name}</b>.`, 'ai'); return true; }
   // token-creating command — play it when there's board room
   const tokCmd = ai.hand.find(c=>c.type==='command' && c.action.kind==='token' && canAfford(ai,c) && !(c.action.tokenLimit && hasTraitToken(ai, c.action.tokenLimit)));
-  if (tokCmd && ai.field.length<FIELD_MAX){ const i=ai.hand.indexOf(tokCmd); ai.hand.splice(i,1); ai.resAvail-=effectiveCost(ai,tokCmd); sendToTrash(tokCmd,ai); flashCard(tokCmd,'ENEMY COMMAND'); deployTokens(tokCmd.action, ai, tokCmd.name, tokCmd.name, 'ai'); return true; }
+  if (tokCmd && ai.field.length<FIELD_MAX){ const i=ai.hand.indexOf(tokCmd); ai.hand.splice(i,1); payCost(ai, effectiveCost(ai,tokCmd)); sendToTrash(tokCmd,ai); flashCard(tokCmd,'ENEMY COMMAND'); deployTokens(tokCmd.action, ai, tokCmd.name, tokCmd.name, 'ai'); return true; }
   return false;
 }
 // Plan which attacker hits which enemy Unit. The point is SEQUENCING: assign the WEAKEST attacker
@@ -6282,7 +6374,7 @@ function collectPlayerActions(attacker){
         if (enemyKinds.includes(c.action?.kind) && c.action.scope!=='all-enemy' && c.action.scope!=='all-both'){
           const cands=enemyTargets(G.enemy, c.action);
           if (!cands.length){ flashPrompt(`${c.name}: no legal target.`); if(afterCb) afterCb(); return; }
-          G.player.hand.splice(h,1); G.player.resAvail-=effectiveCost(G.player,c);
+          G.player.hand.splice(h,1); payCost(G.player, effectiveCost(G.player,c));
           sendToTrash(c,G.player); flashCard(c,'YOUR ACTION');
           if (cands.length>=2){          // let the player choose among the valid targets
             G.mode='action-step-target';
@@ -6293,7 +6385,7 @@ function collectPlayerActions(attacker){
           applyCommand(c, G.player, cands[0]);   // exactly one legal target
           if (afterCb) afterCb(); return;
         }
-        G.player.hand.splice(h,1); G.player.resAvail-=effectiveCost(G.player,c);
+        G.player.hand.splice(h,1); payCost(G.player, effectiveCost(G.player,c));
         sendToTrash(c,G.player); flashCard(c,'YOUR ACTION');
         applyCommand(c, G.player, autoCommandTarget(c, attacker));
         if (afterCb) afterCb();
@@ -6319,47 +6411,49 @@ function offerPlayerActionStep(attacker, cb){
   wrap.appendChild(pass);
   el('blockModal').classList.add('show');
 }
-function resolveAiAttack(atk, done, forced){
-  offerPlayerActionStep(atk, ()=>resolveAiAttackInner(atk, done, forced));
-}
+// An AI attack, in the official order (8-1): attack step (target declared, attacker rested, 【Attack】
+// effects) → block step (the player may intercept) → action step (the player may use 【Action】s) →
+// damage step → battle end.
+function resolveAiAttack(atk, done, forced){ resolveAiAttackInner(atk, done, forced); }
 function resolveAiAttackInner(atk, done, forced){
-  // The player's Action step may have rested/destroyed the attacker — if so, the attack fizzles.
-  if (!attackerStillOut(atk, G.enemy) || atk.rested){ render(); done(); return; }
-  declareAttack(atk, G.enemy);   // AI on-attack self-buffs (AP+/High-Maneuver) BEFORE the block step
-  // 【Attack】 effects (e.g. Marida's ping) resolve at declaration, before the Block Step.
-  resolveAttackTriggers(atk, G.enemy, ()=>{
-    if (!attackerStillOut(atk, G.enemy) || atk.rested){ render(); done(); return; }
-    const pl=G.player;
-    // Units may only attack a RESTED enemy unit (or any unit if granted <attack active>), or the player directly.
-    const attackable = pl.field.filter(u=>u.hp>0 && !effUntargetable(u) && (u.rested || canHitActive(atk,u)));
-    // Honour the planned target (from planAiAttacks) if it's still a legal kill this attacker can reach.
-    let target = (forced && attackable.includes(forced)) ? forced : null;
-    if (!target){
-      // A clean kill destroys the target and survives the counter (or strikes first).
-      const bestKill = attackable.filter(u=> effAp(atk)>=u.hp && (effFirstStrike(atk) || effAp(u)<atk.hp))
-                                 .sort((a,b)=>aiThreatScore(b)-aiThreatScore(a))[0] || null;
-      // Go face when: committing to lethal, the unit can't trade, no worthwhile trade exists, or the
-      // player is low on defenses (close out the game by pressuring shields) unless the trade kills a
-      // very scary threat.
-      const lowDef = !pl.base && pl.shields.length<=2;
-      const goFace = !cantHitPlayer(atk) && (G.aiForceFace || !bestKill || aiThreatScore(bestKill) < 4
-                      || (lowDef && aiThreatScore(bestKill) < 7));
-      target = goFace ? null : bestKill;
-    }
-    // The player may intercept with an active <Blocker> (unless the attacker has High-Maneuver).
+  if (!attackerStillOut(atk, G.enemy)){ render(); done(); return; }
+  const pl=G.player;
+  // Units may only attack a RESTED enemy unit (or any unit if granted <attack active>), or the player directly.
+  const attackable = pl.field.filter(u=>u.hp>0 && !effUntargetable(u) && (u.rested || canHitActive(atk,u)));
+  // Honour the planned target (from planAiAttacks) if it's still a legal kill this attacker can reach.
+  let target = (forced && attackable.includes(forced)) ? forced : null;
+  if (!target){
+    // A clean kill destroys the target and survives the counter (or strikes first).
+    const bestKill = attackable.filter(u=> effAp(atk)>=u.hp && (effFirstStrike(atk) || effAp(u)<atk.hp))
+                               .sort((a,b)=>aiThreatScore(b)-aiThreatScore(a))[0] || null;
+    // Go face when: committing to lethal, the unit can't trade, no worthwhile trade exists, or the
+    // player is low on defenses (close out the game by pressuring shields) unless the trade kills a
+    // very scary threat.
+    const lowDef = !pl.base && pl.shields.length<=2;
+    const goFace = !cantHitPlayer(atk) && (G.aiForceFace || !bestKill || aiThreatScore(bestKill) < 4
+                    || (lowDef && aiThreatScore(bestKill) < 7));
+    target = goFace ? null : bestKill;
+  }
+  if (!target && cantHitPlayer(atk)){ render(); done(); return; }   // nothing it may legally attack
+  declareAttack(atk, G.enemy);   // attack step: rest + on-attack self-buffs
+  resolveAttackTriggers(atk, G.enemy, ()=>{   // 【Attack】 effects (e.g. Marida's ping)
+    if (!attackerStillOut(atk, G.enemy)){ render(); done(); return; }
+    if (target && (!pl.field.includes(target) || target.hp<=0)){ render(); done(); return; }   // 8-2-4
+    // Block step (8-3): the player may intercept with an active <Blocker> — never the attacked Unit itself.
     const blockers = pl.field.filter(b=>effBlocker(b) && !b.rested && b.hp>0 && b!==target);
-    if (!effHighManeuver(atk) && blockers.length){
-      promptPlayerBlock(atk, blockers, target, (blk)=>{
-        if (blk){ blk.rested=true; log(`You intercept with <b>${blk.name}</b> &lt;Blocker&gt;.`, 'me'); battle(atk, blk, G.enemy, G.player); done(); }
-        else if (target){ battle(atk, target, G.enemy, G.player); done(); }
-        else if (!cantHitPlayer(atk)){ aiDirectHit(atk, done); }
-        else done();
+    const afterBlock=(blk)=>{
+      if (blk){ blk.rested=true; log(`You intercept with <b>${blk.name}</b> &lt;Blocker&gt;.`, 'me'); }
+      // Action step (8-4), then the damage step (8-5).
+      offerPlayerActionStep(atk, ()=>{
+        if (!attackerStillOut(atk, G.enemy)){ render(); done(); return; }
+        const def = blk || target;
+        if (def){ battle(atk, def, G.enemy, G.player); done(); return; }   // battle() ends it if `def` is gone
+        if (!cantHitPlayer(atk)){ aiDirectHit(atk, done); return; }
+        done();
       });
-      return;
-    }
-    if (target){ battle(atk, target, G.enemy, G.player); done(); return; }
-    if (!cantHitPlayer(atk)){ aiDirectHit(atk, done); return; }
-    done();
+    };
+    if (!effHighManeuver(atk) && blockers.length) promptPlayerBlock(atk, blockers, target, afterBlock);
+    else afterBlock(null);
   });
 }
 
