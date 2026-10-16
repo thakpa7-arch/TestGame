@@ -1380,8 +1380,19 @@ function parseTrashCantAttack(effect){
   const m = t.match(/this unit can'?t attack while (?:there are )?(\d+) or (?:less|fewer) cards? in your trash/i);
   return m ? { maxCount:+m[1] } : null;
 }
+// "While <cond>, this card in your hand gets cost -N / Lv -N" — a reduction that only exists in hand.
+function handReduction(side, c){
+  const hr = c && c.handReduce; if (!hr || !side) return { cost:0, lv:0 };
+  if (!condMet(hr.cond, side, c)) return { cost:0, lv:0 };
+  if (hr.perTrait){
+    const n = side.field.filter(u=>(u.trait||'').toLowerCase().includes('('+hr.perTrait+')')).length;
+    return { cost: n, lv: n };
+  }
+  return { cost: hr.cost||0, lv: hr.lv||0 };
+}
 function effectiveCost(side, c){
   let cost = c.cost;
+  cost = Math.max(0, cost - handReduction(side, c).cost);
   if (c.trashCostReduce){
     const tcr = c.trashCostReduce, count = trashCount(side, tcr.trait);
     if (tcr.variable) cost = Math.max(0, cost - count);
@@ -2434,13 +2445,26 @@ function parseCondition(t){
   if ((m=t.match(/(\d+) or (?:less|fewer) enemy shields/))) return { type:'enemyShieldsMax', max:+m[1] };
   if ((m=t.match(/(\d+) or more enemy shields/))) return { type:'enemyShields', min:+m[1] };
   if ((m=t.match(/there are (\d+) or more ([a-z\/() ]*?)\s*cards? in your trash/))) return { type:'trash', min:+m[1], trait:(m[2]||'').replace(/[()]/g,'').trim()||null };
+  if ((m=t.match(/you have (?:a|an|another)\s+([a-z\/() ]*?)\s*link unit/))) return { type:'linkUnit', trait:(m[1]||'').replace(/[()]/g,'').trim()||null };
   if (/friendly\s+[a-z\/() ]*?link unit (?:is|are) in play/.test(t)){ const tm=t.match(/friendly\s+([a-z\/() ]*?)\s*link unit/); return { type:'linkUnit', trait:tm?((tm[1]||'').replace(/[()]/g,'').trim()||null):null }; }
   if ((m=t.match(/(?:a|an|another)\s+friendly\s+([a-z\/() ]*?)\s*unit (?:is|are) in play/))) return { type:'friendlyUnit', min:1, trait:(m[1]||'').replace(/[()]/g,'').trim()||null };
   if ((m=t.match(/(\d+) or more (?:friendly )?([a-z\/() ]*?)\s*units?(?: are)? in play/))) return { type:'friendlyUnit', min:+m[1], trait:(m[2]||'').replace(/[()]/g,'').trim()||null };
   if ((m=t.match(/you have (\d+) or more ([a-z\/() ]*?)\s*units?/))) return { type:'friendlyUnit', min:+m[1], trait:(m[2]||'').replace(/[()]/g,'').trim()||null };
-  if ((m=t.match(/you have (?:another|an|a)\s+([a-z\/() ]*?)\s*units?\s+in play/))){ let tr=(m[1]||'').replace(/[()]/g,'').trim(); if(tr.includes('/')) tr=null; return { type:'friendlyUnit', min:1, trait:tr||null }; }
+  if ((m=t.match(/you have (?:another|an|a)\s+([a-z\/() ]*?)\s*units?\s+in play/))){ let tr=(m[1]||'').replace(/[()]/g,'').trim(); if(tr.includes('/')) tr=null; return { type:'friendlyUnit', min:1, trait:tr||null, other:/you have another/.test(t) }; }
   if ((m=t.match(/you have (?:another|an|a)\s+([a-z\/() ]*?)\s*pilot\s+in play/))){ let tr=(m[1]||'').replace(/[()]/g,'').trim(); return { type:'friendlyPilot', trait:tr||null }; }
   if (/this (?:unit )?is damaged/.test(t)) return { type:'selfDamaged' };
+  // Board/self states used by un-bracketed "While …" abilities.
+  if ((m=t.match(/this unit has (\d+) or more ap/))) return { type:'selfAp', min:+m[1] };
+  if ((m=t.match(/this unit has (\d+) hp\b/)) || (m=t.match(/this unit has (\d+) or less hp/))) return { type:'selfHpMax', max:+m[1] };
+  if (/this unit is rested/.test(t)) return { type:'selfRested' };
+  if (/a rested enemy unit is in play/.test(t)) return { type:'enemyRested' };
+  if (/(?:a|your) friendly base is in play|you have a base in play/.test(t)) return { type:'friendlyBase' };
+  if (/you have (?:a|an) unit token in play/.test(t)) return { type:'friendlyToken' };
+  if ((m=t.match(/(?:an |the )?enemy player has (\d+) or more cards in their trash/))) return { type:'enemyTrash', min:+m[1] };
+  if ((m=t.match(/you have no units? that (?:is|are) lv\.?\s*(\d+) or higher in play/))) return { type:'noFriendlyLv', min:+m[1] };
+  if ((m=t.match(/you have (?:a|an) non-(\w+)\s+\(([^)]+)\)\s*pilot in play/))) return { type:'friendlyPilot', trait:m[2].trim(), notColor:m[1] };
+  if ((m=t.match(/(?:another|a|an) friendly ([a-z\/() ]*?)\s*link unit is in play/))) return { type:'linkUnit', trait:(m[1]||'').replace(/[()]/g,'').trim()||null, other:true };
+  if (/your opponent has discarded due to one of your effects/.test(t)) return { type:'oppDiscardedThisTurn' };
   if (/you are attacking a damaged enemy|attacking a damaged enemy/.test(t)) return { type:'attackingDamaged' };
   return null;
 }
@@ -2448,6 +2472,7 @@ function traitMatchUnit(u, trait){ if(!trait) return true; const ct=(u.trait||''
 // Evaluate a parsed condition for `side` (source card excluded when the text says "another").
 function condMet(cond, side, source, other){
   if (!cond) return true;
+  if (!side || !G.player || !G.enemy) return false;      // no board yet (e.g. a card built outside a game)
   const foe = side===G.player?G.enemy:G.player;
   switch(cond.type){
     case 'and':            return cond.conds.every(c=>condMet(c, side, source, other));
@@ -2466,15 +2491,25 @@ function condMet(cond, side, source, other){
     case 'enemyShieldsMax': return foe.shields.length <= cond.max;
     case 'trash':          return trashCount(side, cond.trait) >= cond.min;
     case 'linkUnit':       return side.field.some(u=>u.linked && traitMatchUnit(u,cond.trait));
-    case 'friendlyPilot':  return side.field.some(u=>u.pilotCard && traitMatchUnit({trait:u.pilotCard.trait}, cond.trait));
+    case 'friendlyPilot':  return side.field.some(u=>u.pilotCard && traitMatchUnit({trait:u.pilotCard.trait}, cond.trait)
+                                  && (!cond.notColor || String(u.pilotCard.color||'').toLowerCase()!==cond.notColor));
     case 'friendlyUnit': {
       // "other"/"another"/"friendly" are quantifiers, not traits — exclude the source, drop the filter.
-      let tr=cond.trait, excl=other;
+      let tr=cond.trait, excl=other || !!cond.other;
       if (tr==='other' || tr==='another'){ excl=true; tr=null; }
       else if (tr==='friendly'){ tr=null; }
       const n = side.field.filter(u=>traitMatchUnit(u,tr) && (!excl || u!==source)).length;
       return n >= cond.min;
     }
+    case 'selfAp':         return !!(source && effAp(source) >= cond.min);
+    case 'selfHpMax':      return !!(source && source.hp <= cond.max);
+    case 'selfRested':     return !!(source && source.rested);
+    case 'enemyRested':    return foe.field.some(u=>u.rested && u.hp>0);
+    case 'friendlyBase':   return !!(side.base && !side.base.token);
+    case 'friendlyToken':  return side.field.some(u=>u.token && u.hp>0);
+    case 'enemyTrash':     return foe.trash.length >= cond.min;
+    case 'noFriendlyLv':   return !side.field.some(u=>(u.lv||0) >= cond.min);
+    case 'oppDiscardedThisTurn': return foe.discardedTurn === G.turnNumber;
     case 'selfDamaged':      return !!(source && source.hp < effMaxHp(source));
     case 'paired':           return !!(source && source.pilot);    // 【During Pair】 gate (e.g. Char's Zaku Ⅱ)
     case 'linked':           return !!(source && source.linked);   // 【During Link】 gate
@@ -3322,6 +3357,34 @@ function makeCard(def, owner){
     c.onceDmgReduceLink  = /【\s*during link\s*】[^【]*?【\s*once per turn\s*】[^【]*?receives?\s+damage from an enemy/i.test(plain(def.effect));
     // 【Once per Turn】"When this Unit is rested by an effect, set it as active." (Gundam Throne Drei)
     c.unrestOnce = /when this unit is rested by an effect,?\s*set it as active/i.test(plain(def.effect));
+    // Un-bracketed "While <condition>, …" continuous abilities (read off the text outside any 【…】):
+    //   "…this Unit gains <Keyword>"            -> whileKw   (consulted by condKeyword)
+    //   "…this Unit gets AP+N (and HP+N)"       -> whileBuff (consulted by effAp / effMaxHp)
+    //   "…this card in your hand gets cost -N"  -> handReduce (consulted by effectiveCost / levelOk)
+    {
+      const ungated = plain(def.effect).split('【')[0];
+      const wk=[], wb=[]; let hr=null;
+      for (const sent of ungated.replace(/\bLv\.\s*/gi,'Lv ').split(/(?<=\.)\s+/)){
+        const m = sent.match(/^(?:during your turn,\s*)?while (.+?),\s*(this unit|it|this card in your hand) (gains?|gets)\s*(.+)$/i);
+        if (!m) continue;
+        const cond = parseCondition(m[1].toLowerCase()); if (!cond) continue;
+        const rest = m[4].toLowerCase();
+        if (/^<\s*/.test(rest)){
+          const km = rest.match(/^<\s*([a-z\- ]+?)\s*(\d+)?\s*>/); if (!km) continue;
+          const kw = /first/.test(km[1]) ? 'first' : /high/.test(km[1]) ? 'high' : /breach/.test(km[1]) ? 'breach'
+                   : /blocker/.test(km[1]) ? 'blocker' : /suppression/.test(km[1]) ? 'suppression' : /repair/.test(km[1]) ? 'repair' : null;
+          if (kw) wk.push({ cond, kw, amount: km[2]?+km[2]:0 });
+        } else if (/this card in your hand/i.test(m[2])){
+          const cm = rest.match(/cost\s*[-−]\s*(\d+)/), lm = rest.match(/lv\.?\s*[-−]\s*(\d+)/);
+          const per = rest.match(/for each of your\s*\(([^)]+)\)\s*units?/);
+          hr = { cond, cost: cm?+cm[1]:0, lv: lm?+lm[1]:0, perTrait: per?per[1].toLowerCase():null };
+        } else {
+          const am = rest.match(/ap\s*\+\s*(\d+)/), hm = rest.match(/hp\s*\+\s*(\d+)/);
+          if (am || hm) wb.push({ cond, ap: am?+am[1]:0, hp: hm?+hm[1]:0 });
+        }
+      }
+      c.whileKw = wk; c.whileBuff = wb; c.handReduce = hr;
+    }
     // 【Once per Turn】"During your turn, when your (Trait) Unit deals battle damage to an enemy Unit,
     // you may return the enemy Unit to its owner's hand." (Freedom Gundam METEOR) — a board watcher.
     const bdb = plain(def.effect).match(/when your\s*\(([^)]+)\)\s*unit deals battle damage to an enemy unit,\s*you may return the enemy unit to its owner'?s hand/i);
@@ -3891,6 +3954,10 @@ function effAp(u){
     if (side) ap += per.amount * side.field.filter(x=>(!per.rested || x.rested) && (x.trait||'').toLowerCase().includes(per.trait)).length;
   }
   ap += teamAuraBonus(u, 'ap');
+  if (u.whileBuff && u.whileBuff.length && G.player){
+    const side = u.owner==='player' ? G.player : G.enemy;
+    for (const w of u.whileBuff) if (w.ap && condMet(w.cond, side, u)) ap += w.ap;
+  }
   return Math.max(0, ap);
 }
 // A Unit has <Suppression> if it's printed innately, or conditionally "while damaged" and it is.
@@ -3910,6 +3977,7 @@ function condKeyword(u, kw){
     if (u.linked && clauseGrantsKeyword(eff, kw, 'During Link')) return true;
     if (u.pilot  && clauseGrantsKeyword(eff, kw, 'During Pair')) return true;
     const p = plain(eff);
+    if (eff===u.effect && u.whileKw && u.whileKw.some(w=>w.kw===kw && condMet(w.cond, side, u))) return true;
     let m = p.match(new RegExp('while this unit is\\s*\\(([^)]+)\\)[^.]*gains?\\s*<\\s*'+kw,'i'));
     if (m && utr.includes(('('+m[1]+')').toLowerCase())) return true;
     m = p.match(new RegExp('while you have another\\s*\\(([^)]+)\\)\\s*unit in play[^.]*gains?\\s*<\\s*'+kw,'i'));
@@ -3921,8 +3989,18 @@ function condKeyword(u, kw){
   return false;
 }
 // Effective <Repair N>: printed amount, or one granted 【During Link/Pair】 by the Unit or its Pilot.
+// Amount of a <Keyword N> granted by an un-bracketed "While …" ability whose condition holds now.
+function whileKwAmount(u, kw){
+  if (!u || !u.whileKw || !u.whileKw.length || !G.player) return 0;
+  const side = u.owner==='player' ? G.player : G.enemy;
+  let best = 0;
+  for (const w of u.whileKw) if (w.kw===kw && condMet(w.cond, side, u)) best = Math.max(best, w.amount||1);
+  return best;
+}
+function effFirstStrike(u){ return !!(u && (u.firstStrike || condKeyword(u,'first'))); }
+function effHighManeuver(u){ return !!(u && (u.highManeuver || condKeyword(u,'high'))); }
 function effRepair(u){
-  let r = u.repair||0;
+  let r = Math.max(u.repair||0, whileKwAmount(u,'repair'));
   if (u.type==='unit'){
     const texts=[u.effect]; if (u.pilotCard) texts.push(u.pilotCard.effect);
     for (const eff of texts){
@@ -3948,7 +4026,7 @@ function effRepair(u){
 // Effective <Breach N>: printed innately, granted for the turn (grantKeyword), or granted by a
 // 【During Link/Pair】 clause on the Unit or its Pilot — mirrors effRepair.
 function effBreach(u){
-  let b = u.breach||0;
+  let b = Math.max(u.breach||0, whileKwAmount(u,'breach'));
   if (u.type==='unit'){
     const texts=[u.effect]; if (u.pilotCard) texts.push(u.pilotCard.effect);
     for (const eff of texts){
@@ -3998,6 +4076,10 @@ function effMaxHp(u){
     if (trashCount(side, u.trashBuff.trait) >= u.trashBuff.minCount) hp += u.trashBuff.hpBonus;
   }
   hp += teamAuraBonus(u, 'hp');
+  if (u.whileBuff && u.whileBuff.length && G.player){
+    const side = u.owner==='player' ? G.player : G.enemy;
+    for (const w of u.whileBuff) if (w.hp && condMet(w.cond, side, u)) hp += w.hp;
+  }
   return hp;
 }
 
@@ -4398,7 +4480,7 @@ function finishEndPhase(){
 // Official rule: a card needs BOTH (1) total resources in your area >= its Lv,
 // and (2) enough active (unrested) resources to pay its Cost.
 function totalRes(side){ return side.resMax + side.ex; }                 // resources in the area
-function levelOk(side,c){ return totalRes(side) >= (c.lv||0); }          // Lv requirement gate
+function levelOk(side,c){ return totalRes(side) >= Math.max(0, (c.lv||0) - handReduction(side, c).lv); }   // Lv requirement gate
 function costOk(side,c){ return side.resAvail >= effectiveCost(side,c); } // payable right now
 function canAfford(side,c){ return levelOk(side,c) && costOk(side,c); }
 // Human-readable reason a card can't be played yet (or null if it can).
@@ -5102,7 +5184,7 @@ function fieldClick(uidv){
           const tgt2 = G.enemy.field.find(c=>c.uid===uidv);
           if (!tgt2 || effUntargetable(tgt2) || (!tgt2.rested && !canHitActive(atk, tgt2))){ atk.rested=true; clearSel(); render(); checkEnd(); return; }
           const blockers = G.enemy.field.filter(b=>effBlocker(b) && !b.rested && b.hp>0);
-          if (!atk.highManeuver && blockers.length && aiWantsBlock(atk)){
+          if (!effHighManeuver(atk) && blockers.length && aiWantsBlock(atk)){
             const blk = pickAiBlocker(atk, blockers);
             blk.rested=true; log(`${who(G.enemy)}'s <b>${blk.name}</b> &lt;Blocker&gt; intercepts!`, 'ai');
             battle(atk, blk, G.player, G.enemy); return;
@@ -5128,7 +5210,7 @@ function attackDirect(){
       if (cantHitPlayer(atk)){ atk.rested=true; clearSel(); render(); checkEnd(); return; }   // an Action removed its direct-attack
       // Defender may block a direct attack with an active <Blocker> (unless attacker has High-Maneuver)
       const blockers = G.enemy.field.filter(b=>effBlocker(b) && !b.rested && b.hp>0);
-      if (!atk.highManeuver && blockers.length && aiWantsBlock(atk)){
+      if (!effHighManeuver(atk) && blockers.length && aiWantsBlock(atk)){
         const blk = pickAiBlocker(atk, blockers);
         blk.rested=true; log(`${who(G.enemy)}'s <b>${blk.name}</b> &lt;Blocker&gt; intercepts your attack!`, 'ai');
         battle(atk, blk, G.player, G.enemy); return;
@@ -5436,7 +5518,7 @@ function battle(atk, def, atkSide, defSide){
   // First Strike only triggers on this Unit's attack — i.e. on its owner's turn. The
   // attacker is always the turn player here, so only the attacker's First Strike applies;
   // a defending First Strike Unit gets no priority.
-  const fs = atk.firstStrike ? 'me' : 'both';
+  const fs = effFirstStrike(atk) ? 'me' : 'both';
   log(`<b>${atk.name}</b> (${atk.ap}/${atk.hp}) vs <b>${def.name}</b> (${def.ap}/${def.hp})${fs!=='both'?' — &lt;First Strike&gt;':''}.`, atkSide===G.player?'me':'ai');
   const a=atk.ap, d=def.ap;
   // Only strike units still on their field: a mid-resolution effect (sacrifice, an earlier kill) can
@@ -5812,8 +5894,8 @@ function aiHasLethal(attackers){
   if (!faceable.length) return false;
   const sorted=faceable.sort((a,b)=>effAp(b)-effAp(a));
   const blockers=pl.field.filter(b=>effBlocker(b) && !b.rested && b.hp>0).length;
-  const hm=sorted.filter(u=>u.highManeuver);
-  const normal=sorted.filter(u=>!u.highManeuver);
+  const hm=sorted.filter(u=>effHighManeuver(u));
+  const normal=sorted.filter(u=>!effHighManeuver(u));
   const landing=[...hm, ...normal.slice(blockers)];   // the player blocks the strongest normals
   if (!landing.length) return false;
   let idx=0;
@@ -5943,7 +6025,7 @@ function planAiAttacks(attackers){
     const cands = attackers.filter(a=>!used.has(a.uid)
         && !effUntargetable(tgt) && (tgt.rested || canHitActive(a,tgt))           // can legally attack it
         && effAp(a)>=tgt.hp                              // and kill it
-        && (a.firstStrike || effAp(tgt)<effAp(a) || cantHitPlayer(a)));  // and survive (or it can't go face anyway)
+        && (effFirstStrike(a) || effAp(tgt)<effAp(a) || cantHitPlayer(a)));  // and survive (or it can't go face anyway)
     if (!cands.length) continue;
     // cheapest sufficient killer: a Unit that can't pressure the player anyway first, then lowest AP,
     // so the strongest face-capable attackers are saved for the player's shields.
@@ -6119,7 +6201,7 @@ function resolveAiAttackInner(atk, done, forced){
     let target = (forced && attackable.includes(forced)) ? forced : null;
     if (!target){
       // A clean kill destroys the target and survives the counter (or strikes first).
-      const bestKill = attackable.filter(u=> effAp(atk)>=u.hp && (atk.firstStrike || effAp(u)<atk.hp))
+      const bestKill = attackable.filter(u=> effAp(atk)>=u.hp && (effFirstStrike(atk) || effAp(u)<atk.hp))
                                  .sort((a,b)=>aiThreatScore(b)-aiThreatScore(a))[0] || null;
       // Go face when: committing to lethal, the unit can't trade, no worthwhile trade exists, or the
       // player is low on defenses (close out the game by pressuring shields) unless the trade kills a
@@ -6131,7 +6213,7 @@ function resolveAiAttackInner(atk, done, forced){
     }
     // The player may intercept with an active <Blocker> (unless the attacker has High-Maneuver).
     const blockers = pl.field.filter(b=>effBlocker(b) && !b.rested && b.hp>0 && b!==target);
-    if (!atk.highManeuver && blockers.length){
+    if (!effHighManeuver(atk) && blockers.length){
       promptPlayerBlock(atk, blockers, target, (blk)=>{
         if (blk){ blk.rested=true; log(`You intercept with <b>${blk.name}</b> &lt;Blocker&gt;.`, 'me'); battle(atk, blk, G.enemy, G.player); done(); }
         else if (target){ battle(atk, target, G.enemy, G.player); done(); }
@@ -6226,7 +6308,7 @@ function cardFace(c, ctx){
     const atk=G.player.field.find(u=>u.uid===G.selected);
     if (atk){
       const defDies = atk.ap >= c.hp;
-      const atkDies = (c.ap >= atk.hp) && !(atk.firstStrike && defDies);
+      const atkDies = (c.ap >= atk.hp) && !(effFirstStrike(atk) && defDies);
       const icon = atkDies ? (defDies?'🔁':'💀') : (defDies?'✅':'➖');
       const ttl = atkDies ? (defDies?'Trade — both destroyed':'Your unit dies, target survives') : (defDies?'You destroy it and survive':'Both survive (chip damage)');
       overlays += `<div class="cbt-prev" title="${ttl}">${icon}</div>`;
@@ -6239,8 +6321,8 @@ function cardFace(c, ctx){
   if (isUnit){   // visible keyword chips so granted keywords (e.g. Gyunei Guss's <Blocker>) are obvious
     const kw=[];
     if (effBlocker(c))    kw.push(['blk','🛡','Blocker']);
-    if (c.highManeuver)   kw.push(['','💨','High-Maneuver']);
-    if (c.firstStrike)    kw.push(['','🗡️','First Strike']);
+    if (effHighManeuver(c))   kw.push(['','💨','High-Maneuver']);
+    if (effFirstStrike(c))    kw.push(['','🗡️','First Strike']);
     if (c.suppression)    kw.push(['','💠','Suppression']);
     if (effBreach(c)>0)   kw.push(['','🎯','Breach '+effBreach(c)]);
     if (c.repair>0)       kw.push(['','➕','Repair '+c.repair]);
