@@ -45,7 +45,8 @@ jobs:
           if [ -s dev/gd06-raw/urls.txt ]; then
             mkdir -p dev/gd06-raw/cards
             export UA
-            grep -v '^#' dev/gd06-raw/urls.txt | xargs -P 4 -I{} sh -c 'u="{}"; slug=$(basename "$u"); curl -sSL -m 60 -A "$UA" -o "dev/gd06-raw/cards/$slug.html" -w "$slug %{http_code} %{size_download}B\n" "$u" >> dev/gd06-raw/_cards.log 2>&1; sleep 0.3'
+            # slug = host + card id, so the same card from two sites never collides
+            grep -v '^#' dev/gd06-raw/urls.txt | xargs -P 4 -I{} sh -c 'u="{}"; host=$(echo "$u" | sed -E "s#https?://([^/]+)/.*#\\1#" | cut -d. -f1); slug="$host-$(basename "$u")"; curl -sSL -m 60 -A "$UA" -o "dev/gd06-raw/cards/$slug.html" -w "$slug %{http_code} %{size_download}B\n" "$u" >> dev/gd06-raw/_cards.log 2>&1; sleep 0.3'
             echo "per-card pages: $(ls dev/gd06-raw/cards | wc -l)"; tail -3 dev/gd06-raw/_cards.log
           fi
           cat dev/gd06-raw/_fetch.log
