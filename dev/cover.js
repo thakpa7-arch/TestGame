@@ -13,7 +13,8 @@ const src = process.argv[2] ? JSON.parse(fs.readFileSync(process.argv[2],'utf8')
 const dead={}; const seen=new Set(); let cards=0, clauses=0, deadClauses=0;
 const statics = c => c.blocker||c.breach||c.suppression||c.support||c.repair||c.onKill||c.onShieldBreak
   ||c.effDmgReduce||c.onceDmgReduce||c.unrestOnce||c.pairPreventLowAp||c.battleBounceTrait||c.linkDenyBlockerTrait
-  ||(c.whileKw&&c.whileKw.length)||(c.whileBuff&&c.whileBuff.length)||c.handReduce||c.noDirectAttack||c.trashCostReduce||c.trashCantAttack||c.condBlocker;
+  ||(c.whileKw&&c.whileKw.length)||(c.whileBuff&&c.whileBuff.length)||c.handReduce||c.noDirectAttack||c.trashCostReduce||c.trashCantAttack||c.condBlocker
+  ||c.onAttacked||c.allyKillHeal||c.trashReduce||c.pairDiscount||c.unrestOnBlock||c.onBaseDamage||c.onSpecialMove;
 for (const def of src){
   if (seen.has(def.id)) continue; seen.add(def.id);
   if (IMPLEMENTED.has(def.id.replace(/-p\d$/,''))) continue;
@@ -28,8 +29,10 @@ for (const def of src){
     else if (/^Burst/.test(name)) ok = !!c.burst;
     else if (/^(Main|Action)$/.test(base)) ok = !!(c.action || A.inferCommand(def.effect) || A.parseActivate(def.effect) || c.pilotMode);
     else if (/^During /.test(name)) ok = true;
-    else if (/^Once per Turn$/i.test(base)) ok = !!statics(c) || !!A.parseTrigger(def.effect,'Attack') || /when you pair a pilot/i.test(txt);
-    else ok = !!A.parseTrigger(def.effect, base) || !!(A.gd05Custom && A.gd05Custom(c, base)) || !!(base==='Attack' && A.gatedAttackAction(def.effect, c));
+    else if (/^Once per Turn$/i.test(base)) ok = !!statics(c) || !!A.parseTrigger(def.effect,'Attack') || /when you pair a pilot/i.test(txt)
+      || !!(A.parseActivate(def.effect)||{}).oncePerTurn || !!(c.onKill && c.onKill.oncePerTurn) || !!(c.onShieldBreak && c.onShieldBreak.oncePerTurn);
+    else ok = !!A.parseTrigger(def.effect, base) || !!(A.gd05Custom && A.gd05Custom(c, base))
+      || !!(base==='Attack' && A.gatedAttackAction(def.effect, Object.assign({}, c, { linked:true, pilot:c.pilot||{pAp:0,pHp:0} })));   // a 【During Link/Pair】 gate is satisfied for the check
     if (!ok){ deadClauses++; (dead[base]=dead[base]||[]).push(`${def.id} ${def.name}: ${txt.slice(0,160)}`); }
   }
   // un-bracketed continuous abilities we know we don't model: flag the common shapes

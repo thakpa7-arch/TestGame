@@ -80,6 +80,7 @@ src += '\nglobal.__G = { ' + [
   'gatedAttackAction','pairFromHand','pilotMainAction','triggerBurst','burstResolvePlayer','returnToHand',
   'doShieldToHand','attackerStillOut','effFirstStrike','effHighManeuver','whileKwAmount','handReduction','totalRes','levelOk','shuffle','cardValue','plain','FIELD_MAX','HAND_MAX',
   'grantKeyword','payCost','settleEx','deckOutCheck','deckColorIssue','makeRoom','deployFromHand','reanimate','finishEndPhase','applySupport','applyToTarget','aiBlockStep','RES_AREA_MAX','EX_MAX',
+  'gd06SelfDuel','gd06DigPair','fireAttacked','afterBlockDeclared','commandPlayed','resolveBaseDamagedTrigger','enemyCardDestroyed','trashReduction','parseShieldBreak','activateReady','activateCostPayable','collectPlayerActions','genericToken','clearBattleScoped',
 ].map(n=>n+':typeof '+n+'!=="undefined"?'+n+':undefined').join(',') + ' };\n';
 
 try { eval.call(null, src); } catch(e){ console.error('LOAD FAILED:', e.message, '\n', e.stack); process.exit(1); }

@@ -1364,12 +1364,27 @@ function parseActivateEffect(t){
     const lv=t.match(/lv\.?(\d+) or lower/);
     return { kind:'pairFromTrash', scope:'self', trait: fm?((fm[1]||'').trim().replace(/[()]/g,'').trim()||null):null, maxLv: lv?+lv[1]:null };
   }
-  // "Choose 1 Unit card with "NAME" in its card name that is Lv.N or higher from your trash. Deploy it."
+  // "Choose 1 [(Trait)] Unit card [with "NAME" in its card name] that is Lv.N or higher/lower from your trash. Deploy it."
   if (/from your trash/.test(t) && /\bdeploy it\b/.test(t)){
     const nm=t.match(/with ["'“”]([^"'“”]+)["'“”] in its card name/);
+    const tm=t.match(/choose 1 ((?:\([^)]+\)\s*\/?\s*)+)unit card/);
     const lo=t.match(/lv\.?(\d+) or higher/), hi=t.match(/lv\.?(\d+) or lower/);
-    return { kind:'deployFromTrash', scope:'self', name: nm?nm[1].toLowerCase():null, minLv: lo?+lo[1]:null, maxLv: hi?+hi[1]:null };
+    return { kind:'deployFromTrash', scope:'self', name: nm?nm[1].toLowerCase():null, trait: tm?tm[1].replace(/[()]/g,'').replace(/\s*\/\s*/g,'/').trim():null, minLv: lo?+lo[1]:null, maxLv: hi?+hi[1]:null };
   }
+  // "Deploy 1 (Trait) Unit card that is Lv.N or higher from your hand." (Neo Core Fighter)
+  if (/from your hand/.test(t) && /^deploy 1 /.test(t)){
+    const tm=t.match(/^deploy 1 ((?:\([^)]+\)\s*\/?\s*)*)unit card/); const lo=t.match(/lv\.?(\d+) or higher/);
+    return { kind:'deployFromHandLv', scope:'self', trait: tm&&tm[1]?tm[1].replace(/[()]/g,'').replace(/\s*\/\s*/g,'/').trim()||null:null, minLv: lo?+lo[1]:null };
+  }
+  // "Set all your (Trait)/(Trait) Units with <Blocker> as active. They can't attack during this turn." (SUMO Gold Type)
+  if (/^set all your /.test(t) && /as active/.test(t)){
+    const tm=t.match(/^set all your ((?:\([^)]+\)\s*\/?\s*)*)units/);
+    return { kind:'setActiveAll', scope:'all-friendly', traits:(tm&&tm[1]?tm[1]:'').split('/').map(s=>s.replace(/[()]/g,'').trim()).filter(Boolean), blocker:/with <\s*blocker/.test(t), noAttack:/can'?t attack during this turn/.test(t) };
+  }
+  // "Choose 1 of your (Trait)/(Trait) Units or 1 of your (Trait) Bases. During this battle, battle damage this Unit
+  // would receive is dealt to that Unit/Base instead." (Elpeo Ple's Qubeley Mk-II) — Units are offered as the target.
+  if (/battle damage this unit would receive is dealt to that/.test(t))
+    return { kind:'redirectBattle', scope:'friendly', filter: Object.assign(friendlyFilter(t), { other:true }) };
   // "Choose 1 enemy Base/enemy Shield this Unit is battling. Deal N damage to it." (Moebius)
   if (/enemy base\s*\/\s*enemy shield/.test(t) && (d=t.match(/deal (\d+) damage/)))
     return { kind:'baseShieldDamage', amount:+d[1], scope:'self' };
@@ -1424,6 +1439,9 @@ function parseActivateCost(c){
   if (dm){ const trait=(dm[2]||'').trim().replace(/[()]/g,'').trim()||null; return out({ type:'discard', count:+dm[1], trait }); }
   if (/rest this (base|unit)/.test(c)) return out({ type:'rest' });
   // "Rest N of your (Trait) Unit(s)" — pay by resting that many friendly Units (often from a Base).
+  // "Destroy 2 of your (Trait) Units with unique card names that are Lv.N and this Unit" (Neo Core Fighter GD06-039)
+  const du = c.match(/^destroy (\d+) of your ([a-z\/() \-]*?)\s*units with unique card names that are lv\.?\s*(\d+)(?: and this unit)?$/);
+  if (du){ const trait=(du[2]||'').trim().replace(/[()]/g,'').trim()||null; return out({ type:'destroyUnits', count:+du[1], trait, lv:+du[3], unique:true, plusSelf:/and this unit$/.test(c) }); }
   let rm = c.match(/^rest (\d+) (?:of your |friendly )(?:(other|another)\s+)?([a-z\/() ]*?)\s*units?$/);
   if (rm){ const trait=(rm[3]||'').trim().replace(/[()]/g,'').trim()||null; return out({ type:'restUnit', count:+rm[1], trait, excludeSelf: !!rm[2] }); }
   // "Destroy N friendly Unit token(s)" — pay by destroying your own tokens (Red Gundam 0079).
@@ -1465,7 +1483,8 @@ function parseActivate(effect){
     } else { const eff=parseActivateEffect(body); if(eff){ cost={type:'none'}; action=eff; text=body; } }
   }
   if (!cost || !action) return null;
-  return { phase, cost, text:(text||'').replace(/\s*\(.*$/,'').replace(/\.$/,'').trim(), action, requireLink, requirePair, oncePerTurn };
+  // The label drops reminder text — a parenthetical sentence — but keeps trait tags like "(Alphacide)".
+  return { phase, cost, text:(text||'').replace(/\s*\((?:[^()]*\.[^()]*)\)/g,'').replace(/\s*\(.*$/, m=>/\./.test(m)?'':m).replace(/\.$/,'').trim(), action, requireLink, requirePair, oncePerTurn };
 }
 
 // ---- Trash / Graveyard helpers ----
@@ -1530,7 +1549,15 @@ function handReduction(side, c){
 }
 function effectiveCost(side, c){
   let cost = c.cost;
-  cost = Math.max(0, cost - handReduction(side, c).cost);
+  cost = Math.max(0, cost - handReduction(side, c).cost - trashReduction(side, c).cost);
+  // A Pilot that costs less "when pairing it with" a qualifying Unit (Mashymre Cello / Corin Nander): the
+  // discount applies while such an unpaired Unit is available to pair with.
+  if (c.type==='pilot' && c.pairDiscount && side && side.hand.includes(c)){
+    const pd=c.pairDiscount;
+    const ok=u=>u.type==='unit' && !u.pilot && !u.noPilot && (pd.linkName ? (u.link||[]).some(l=>String(l).toLowerCase().includes(pd.linkName))
+                                                              : ((u.trait||'').toLowerCase().includes('('+pd.trait+')') && (u.lv||0)>=pd.minLv));
+    if (side.field.some(ok)) cost = Math.max(0, cost - pd.amount);
+  }
   if (c.trashCostReduce){
     const tcr = c.trashCostReduce, count = trashCount(side, tcr.trait);
     if (tcr.variable) cost = Math.max(0, cost - count);
@@ -2020,8 +2047,12 @@ function parseBurst(effect){
 function parseShieldBreak(effect){
   const t = plain(effect).toLowerCase();
   if (!/destroys?\s+(?:an?\s+)?enemy['s ]*\s*shield area card/.test(t)) return null;
-  const m = t.match(/deal (\d+) damage/);
-  return m ? { kind:'damage', amount:+m[1] } : null;
+  let m;
+  if ((m = t.match(/deal (\d+) damage/))) return { kind:'damage', amount:+m[1] };
+  // 【During Pair】【Once per Turn】"…choose 1 enemy Unit that is Lv.N or lower. Rest it." (Wing Gundam Zero EW)
+  if ((m = t.match(/choose 1 enemy unit(?: that is lv\.?\s*(\d+) or lower)?\.\s*rest it/)))
+    return { kind:'rest', maxLv: m[1]?+m[1]:null, oncePerTurn:/once per turn/.test(t), requirePair:/【\s*during pair/.test(t) };
+  return null;
 }
 // Pilot names a unit can LINK with (from the card's link field).
 function parseLink(link){ return (link||'').split(/[\/,]/).map(s=>s.trim()).filter(Boolean); }
@@ -2581,6 +2612,9 @@ function parseCondition(t){
   // A specifically-named card sitting in your trash.
   if ((m=t.match(/a card with ["'“”]?([^"'“”.]+?)["'“”]? in its card name is in your trash/))) return { type:'trashName', name:m[1].trim() };
   if (/it is your turn/.test(t)) return { type:'yourTurn' };
+  if (/this unit is battling a damaged enemy unit/.test(t)) return { type:'battlingDamaged' };        // Reginlaze Julia
+  if (/you have drawn with an effect during this turn/.test(t)) return { type:'effectDrew' };         // Kou Uraki
+  if ((m=t.match(/^(?:you have )?(\d+) or more other ([a-z\/() \-]*?)\s*units?(?: are)? in play$/))) return { type:'friendlyUnit', min:+m[1], trait:(m[2]||'').replace(/[()]/g,'').trim()||null, other:true };   // Mahiroo
   if (/it is your opponent's turn|it is the opponent's turn/.test(t)) return { type:'oppTurn' };
   if ((m=t.match(/you are lv\.?\s*(\d+) or higher/))) return { type:'level', min:+m[1] };
   if ((m=t.match(/(\d+) or more enemy units/))) return { type:'enemyUnits', min:+m[1] };
@@ -2644,6 +2678,9 @@ function condMet(cond, side, source, other){
       const n = side.field.filter(u=>traitMatchUnit(u,tr) && (!excl || u!==source)).length;
       return n >= cond.min;
     }
+    case 'battlingDamaged': return !!(G.curBattle && G.curBattle.atk===source && G.curBattle.def && G.curBattle.def.hp < effMaxHp(G.curBattle.def) && G.turn===side.who);
+    case 'effectDrew':      return side.effectDrawTurn === G.turnSeq;
+    case 'trashUnits':      return side.trash.filter(c=>c.type==='unit' && traitMatchUnit(c, cond.trait)).length >= cond.min;
     case 'selfAp':         return !!(source && effAp(source) >= cond.min);
     case 'selfHpMax':      return !!(source && source.hp <= cond.max);
     case 'selfRested':     return !!(source && source.rested);
@@ -2667,7 +2704,114 @@ function gd05Custom(card, label){
   if (card.def==='GD05-093' && (label==='Link' || label==='When Linked')) return { kind:'gd05BaseFromTrash' };
   if (card.def==='GD05-094' && label==='Destroyed') return { kind:'grantReduce', amount:2, scope:'friendly', filter:{ traits:['(neo zeon)'] } };
   if (card.def==='GD05-017' && (label==='Pair' || label==='When Paired')) return { kind:'gd05NuBattle' };
+  // GD06
+  if (card.def==='GD06-021' && label==='Deploy') return { kind:'cloneToken' };                                   // Turn X (Top)
+  if (card.def==='GD06-022' && (label==='Link' || label==='When Linked')) return { kind:'selfDuel', maxAp:3 };    // Merrybell's Bandit
+  if (card.def==='GD06-042' && label==='Deploy') return { kind:'digPair', amount:4, trait:'biological cpu' };     // Destroy Gundam (MA Mode)
+  if (card.def==='GD06-049' && (label==='Pair' || label==='When Paired'))                                        // Gundam GP02A
+    return { kind:'cond', cond:{ type:'trashUnits', trait:'zeon', min:10 }, inner:{ kind:'destroyEnemyBase' } };
   return null;
+}
+// 【When Linked】"Choose 1 enemy Unit with N or less AP. Begin a battle between this Unit and it and only
+// perform the damage step." (Merrybell's Bandit GD06-022). Damage-step only (5-22-3): no attack declaration,
+// no block step, no 【Attack】; <First Strike> still applies (13-1-5-4), and so do Breach / on-kill payoffs.
+function gd06SelfDuel(card, side, act, label, after){
+  const fin=()=>{ if(after) after(); };
+  const foe = side===G.player?G.enemy:G.player, cls=side===G.player?'me':'ai';
+  if (!card || card.hp<=0 || !side.field.includes(card)){ fin(); return; }
+  const targets=foe.field.filter(x=>x.hp>0 && effAp(x)<=act.maxAp && !effUntargetable(x));
+  if (!targets.length){ log(`${label}: <b>${card.name}</b> — no enemy Unit with ${act.maxAp} or less AP.`, cls); fin(); return; }
+  const duel=(pick)=>{
+    if (!pick){ fin(); return; }
+    log(`${label}: <b>${card.name}</b> battles <b>${pick.name}</b> — damage step only.`, cls);
+    G.curBattle={ atk:card, def:pick }; card.ap=effAp(card);
+    const ca=effAp(card), ta=effAp(pick);
+    const hitT=()=>{ if (foe.field.includes(pick) && !preventsWeakBattleDamage(pick, card, foe)) damage(redirectOf(pick, foe), ca, foe, 'battle'); };
+    const hitC=()=>{ if (side.field.includes(card) && !preventsWeakBattleDamage(card, pick, side)) damage(redirectOf(card, side), ta, side, 'battle'); };
+    if (effFirstStrike(card)){ hitT(); if (pick.hp>0) hitC(); } else { hitT(); hitC(); }
+    if (pick.hp<=0){
+      if (effBreach(card)>0) breachShield(card, foe);
+      if (card.onKill && onKillMatches(card.onKill, pick)) applyOnKill(card, side, card.onKill);
+      enemyCardDestroyed(card, side, 'unit');
+    }
+    clearBattleScoped(); render(); checkEnd(); fin();
+  };
+  if (side===G.player && targets.length>1)
+    promptTargetChoice(targets, `<b>${card.name}</b> 【When Linked】<br>Choose an enemy Unit (${act.maxAp} or less AP) to battle — damage step only.`, duel, null);
+  else duel([...targets].sort((a,b)=>aiThreatScore(b)-aiThreatScore(a)).find(x=>effAp(card)>=x.hp || effAp(x)<card.hp) || targets[0]);
+}
+// 【Deploy】"Look at the top N cards of your deck. You may pair 1 (Trait) Pilot card among them with this
+// Unit. Return the remaining cards randomly to the bottom of your deck." (Destroy Gundam MA Mode GD06-042)
+function gd06DigPair(card, side, act, label, after){
+  const fin=()=>{ if(after) after(); };
+  const cls=side===G.player?'me':'ai';
+  const n=Math.min(act.amount, side.deck.length); if(!n){ fin(); return; }
+  const top=side.deck.splice(side.deck.length-n, n);
+  const fits=c=>c.type==='pilot' && (c.trait||'').toLowerCase().includes('('+act.trait+')') && !card.pilot && !card.noPilot && side.field.includes(card);
+  const putBack=()=>{ shuffle(top); for(const c of top) side.deck.unshift(c); };
+  const pair=(p)=>{ top.splice(top.indexOf(p),1); putBack();
+    log(`${label}: <b>${card.name}</b> pairs with <b>${p.name}</b> from the top of the deck.`, cls);
+    attachPilot(card, p, ()=>{ render(); fin(); }); };
+  const cands=top.filter(fits);
+  if (!cands.length){ log(`${label}: <b>${card.name}</b> looks at the top ${n} — no (${act.trait}) Pilot to pair.`, cls); putBack(); render(); fin(); return; }
+  if (side===G.player) showLookAtTop(top, `${card.name}: you may pair a (${act.trait}) Pilot from these with it`, fits, true, (chosen)=>{ if(chosen) pair(chosen); else { putBack(); render(); fin(); } });
+  else pair([...cands].sort((a,b)=>((linkMatches(card,b)?10:0)+(b.pAp||0)+(b.pHp||0))-((linkMatches(card,a)?10:0)+(a.pAp||0)+(a.pHp||0)))[0]);
+}
+// "When this Unit is attacked, …" (GP01Fb): fires for the declared attack target, and for a Unit that
+// becomes the target by blocking (5-22-2).
+function fireAttacked(u, side){
+  const oa=u && u.onAttacked; if (!oa || !oa.act || u.hp<=0 || !side) return;
+  if (oa.oncePerTurn){ if (u.attackedTurn===G.turnSeq) return; u.attackedTurn=G.turnSeq; }
+  log(`<b>${u.name}</b> is attacked — its effect triggers.`, side===G.player?'me':'ai');
+  runTrigger(u, side, Object.assign({}, oa.act), 'Attacked');
+}
+// After a <Blocker> has been declared (and the blocker rested): "when this Unit activates <Blocker>, set
+// it as active" on its Pilot (Harry Ord, 【Once per Turn】), and "when this Unit is attacked" effects.
+function afterBlockDeclared(blk, side){
+  fireAttacked(blk, side);
+  const p=blk.pilotCard; if (!p || !p.unrestOnBlock) return;
+  if (blk.unrestBlockTurn===G.turnSeq) return; blk.unrestBlockTurn=G.turnSeq;
+  blk.rested=false; log(`<b>${p.name}</b>: <b>${blk.name}</b> is set active again after blocking.`, side===G.player?'me':'ai');
+}
+// A Command's effect was activated by `side`: board watchers keyed on the Command's trait, e.g. Shining
+// Gundam (Meikyo Shisui) on a (Special Move) Command — 【Once per Turn】, during your turn only.
+function commandPlayed(card, side){
+  if (!card || !side || G.turn!==side.who) return;
+  const ct=(card.trait||'').toLowerCase(); const foe=side===G.player?G.enemy:G.player; const cls=side===G.player?'me':'ai';
+  for (const u of [...side.field]){
+    const w=u.onSpecialMove; if (!w || u.hp<=0) continue;
+    if (!ct.includes('('+w.trait+')')) continue;
+    if (w.oncePerTurn && u.specialMoveTurn===G.turnSeq) continue;
+    const cands=foe.field.filter(x=>x.hp>0 && !effUntargetable(x)); if (!cands.length) continue;
+    u.specialMoveTurn=G.turnSeq;
+    const t=[...cands].sort((a,b)=>effAp(b)-effAp(a))[0];
+    t.tempAp=(t.tempAp||0)-w.debuff; t.ap=effAp(t);
+    if (w.selfBuff){ u.tempAp=(u.tempAp||0)+w.selfBuff; u.ap=effAp(u); }
+    log(`<b>${u.name}</b>: <b>${t.name}</b> gets AP-${w.debuff} this turn${w.selfBuff?`, and ${u.name} gets AP+${w.selfBuff}`:''}.`, cls);
+  }
+}
+// "When this Base receives battle damage while you have a rested (Trait) Unit in play, choose 1 enemy
+// Unit. Deal N damage to it." (Argama, 【Once per Turn】). The defender chooses from a modal (the attack
+// is the opponent's, so board taps are off); the AI auto-targets.
+function resolveBaseDamagedTrigger(b, defSide, done){
+  done = done || function(){};
+  const w=b && b.onBaseDamage; if (!w){ done(); return; }
+  if (w.oncePerTurn && b.baseDmgTurn===G.turnSeq){ done(); return; }
+  if (!defSide.field.some(x=>x.rested && x.hp>0 && (x.trait||'').toLowerCase().includes('('+w.trait+')'))){ done(); return; }
+  const foe = defSide===G.player?G.enemy:G.player;
+  const act={ kind:'damage', amount:w.amount, source:b };
+  const cands=enemyTargets(foe, act); if (!cands.length){ done(); return; }
+  b.baseDmgTurn=G.turnSeq;
+  flashCard(b, (defSide===G.player?'YOUR':'ENEMY')+' EFFECT');
+  const fire=(t)=>{ if (t) applyToTarget(b, defSide, act, t, b.name); render(); done(); };
+  if (defSide===G.player && cands.length>=2) promptTargetChoice(cands, `<b>${b.name}</b> took battle damage — choose an enemy Unit to deal ${w.amount} damage to.`, fire, null);
+  else fire(defSide===G.player ? cands[0] : rankTarget(cands, act));
+}
+// "While you have a (Trait) Link Unit in play, this card in your trash gets Lv.-N and cost -N." (Legend Gundam)
+function trashReduction(side, c){
+  const tr = c && c.trashReduce; if (!tr || !side || !side.trash.includes(c)) return { cost:0, lv:0 };
+  if (!condMet(tr.cond, side, c)) return { cost:0, lv:0 };
+  return { cost: tr.cost||0, lv: tr.lv||0 };
 }
 // GD05-017 Nu Gundam (LR) 【When Paired】: you may exile 3 (Londo Bell) cards from your trash; if you
 // do, choose 1 enemy Unit and resolve a damage-step-only battle against it (both deal AP, no block,
@@ -3033,6 +3177,26 @@ function runTrigger(card, side, act, label){
     }
   } else if (act.kind==='pairFromHand'){
     pairFromHand(card, side, act, label);
+  } else if (act.kind==='pilotAction'){
+    const inner = pilotActionAction(card);
+    if (inner) runTrigger(card, side, inner, label);
+  } else if (act.kind==='cloneToken'){
+    // "Choose 1 of your Unit tokens. Deploy 1 rested Unit token of the same kind." (Turn X GD06-021)
+    const toks=side.field.filter(x=>x.token && x.hp>0 && x.spec);
+    if (!toks.length) log(`${label}: <b>${name}</b> — no Unit token to copy.`, cls);
+    else {
+      const src=[...toks].sort((a,b)=>tokenScore(b.spec)-tokenScore(a.spec))[0];
+      makeRoom(side, 1, name, ()=>{ const tk=makeToken(Object.assign({}, src.spec, { rested:true }), side.who); side.field.push(tk);
+        log(`${label}: <b>${name}</b> deploys a rested <b>${tk.name}</b> token (a copy of ${src.name}).`, cls); onUnitDeployed(tk, side, null, true); }, {auto:true});
+    }
+  } else if (act.kind==='selfDuel'){
+    gd06SelfDuel(card, side, act, label, null);
+  } else if (act.kind==='digPair'){
+    gd06DigPair(card, side, act, label, null);
+  } else if (act.kind==='destroyEnemyBase'){
+    // "destroy every enemy player's Base" (Gundam GP02A 【When Paired】)
+    if (foe.base){ const b=foe.base; foe.base=null; fx('die', b.uid); sendToTrash(b, foe); log(`${label}: <b>${name}</b> destroys ${who(foe)}'s <b>${b.name}</b> base.`, cls); }
+    else log(`${label}: <b>${name}</b> — the enemy has no Base.`, cls);
   } else if (act.kind==='pilotMain'){
     const inner = pilotMainAction(card);
     if (inner) runTrigger(card, side, inner, label);
@@ -3084,7 +3248,7 @@ function runTrigger(card, side, act, label){
     if (pc){
       const ti=side.trash.indexOf(pc); if(ti>=0) side.trash.splice(ti,1);            // rescue from trash (Destroyed)…
       if (card.pilot && side.field.includes(card)){
-        card.hp-=(pc.pHp||0); card.pilot=null; card.pilotCard=null; card.linked=false; card.pilotPairAp=0; card.pilotPairHp=0; card.pilotLinkAp=0; card.pilotLinkHp=0; if (card.baseLv!=null) card.lv=card.baseLv; card.ap=effAp(card); card.maxHp=effMaxHp(card);  // …or detach from a living Unit
+        card.hp-=(pc.pHp||0); card.pilot=null; card.pilotCard=null; card.linked=false; if (card.activateFromPilot){ card.activate=null; card.activateFromPilot=false; } card.pilotPairAp=0; card.pilotPairHp=0; card.pilotLinkAp=0; card.pilotLinkHp=0; if (card.baseLv!=null) card.lv=card.baseLv; card.ap=effAp(card); card.maxHp=effMaxHp(card);  // …or detach from a living Unit
         // Losing the Pilot's HP can reduce the Unit to 0 — that's a state-based destruction.
         if (card.hp<=0){ const fi=side.field.indexOf(card); if(fi>=0) side.field.splice(fi,1); fx('die',card.uid); log(`<b>${card.name}</b> is destroyed.`, cls); sendToTrash(card, side); runTrigger(card, side, parseTrigger(card.effect,'Destroyed'), 'Destroyed'); }
       }
@@ -3199,6 +3363,8 @@ function resolvePlayerTrigger(card, side, act, label, after){
   act.source = card;
   if (act.kind==='gd05Sac'){ gd05SacInteractive(side, card, fin); return; }
   if (act.kind==='gd05NuBattle'){ gd05NuGundamBattlePlayer(side, card, fin); return; }
+  if (act.kind==='selfDuel'){ gd06SelfDuel(card, side, act, label, fin); return; }
+  if (act.kind==='digPair'){ gd06DigPair(card, side, act, label, fin); return; }
   if (act.kind==='selfSacMill'){ selfSacMillPlayer(card, side, act, fin); return; }
   if (act.kind==='selfSacThen'){
     const cands=side.field.filter(u=>u!==card && u.hp>0);
@@ -3410,6 +3576,7 @@ function applySelfPingChosen(card, side, act, ftarget, etarget, after){
 // Strip a unit back to its printed state (used by both returnToHand and trash retrieval).
 function resetUnit(u){
   if (u.token) return;
+  if (u.activateFromPilot){ u.activate=null; u.activateFromPilot=false; }
   u.pilot=null; u.pilotCard=null; u.linked=false; u.tempAp=0; u.rested=false; u.sick=true; u.activatedThisTurn=false;
   u.pilotPairAp=0; u.pilotPairHp=0; u.pilotLinkAp=0; u.pilotLinkHp=0;
   u.ap=u.baseAp; u.hp=u.baseHp; u.maxHp=u.baseHp; if (u.baseLv!=null) u.lv=u.baseLv;
@@ -3497,6 +3664,31 @@ function exileFromTrash(side, count, trait){
 
 // ---- deck building from the real pool ----
 let uid = 1;
+// GD06 static / watcher abilities, read off Units, Pilots and Bases:
+function parseGd06Statics(c, def){
+  const pl0 = plain(def.effect);
+  // 【Once per Turn】"When this Unit is attacked, draw 1." (Gundam GP01Fb) — fires for the declared attack
+  // target and for a Unit that becomes the target by blocking.
+  const oa = pl0.match(/(【\s*Once per Turn\s*】\s*)?When this Unit is attacked,\s*([^【.]+\.)/i);
+  c.onAttacked = oa && parseClause(oa[2].trim()) ? { act: parseClause(oa[2].trim()), oncePerTurn: !!oa[1] } : null;
+  // "During your turn, when one of your (Trait) Units destroys an enemy card with damage, this Unit recovers N HP." (Hamma-Hamma)
+  const akh = pl0.match(/when one of your\s*\(([^)]+)\)\s*units destroys an enemy card with damage,\s*this unit recovers (\d+) hp/i);
+  c.allyKillHeal = akh ? { trait: akh[1].trim().toLowerCase(), amount:+akh[2] } : null;
+  // 【Once per Turn】"When this Unit activates <Blocker>, set it as active." (Harry Ord, read off the paired Pilot)
+  c.unrestOnBlock = /when this unit activates <\s*blocker\s*>,?\s*set it as active/i.test(pl0);
+  // "When playing this card from your hand and pairing it with [a Unit with the [Name] link condition |
+  // a (Trait) Unit that is Lv.N or higher], it gets cost -N." (Mashymre Cello, Corin Nander)
+  const pd = pl0.match(/when playing this card from your hand and pairing it with (?:a unit with the \[([^\]]+)\] link condition|an?\s*\(([^)]+)\)\s*unit that is lv\.?\s*(\d+) or higher),\s*it gets cost\s*[-−]\s*(\d+)/i);
+  c.pairDiscount = pd ? { linkName: pd[1]?pd[1].trim().toLowerCase():null, trait: pd[2]?pd[2].trim().toLowerCase():null, minLv: pd[3]?+pd[3]:0, amount:+pd[4] } : null;
+  // 【Once per Turn】"During your turn, when you activate a (Trait) Command's 【Main】/【Action】, choose 1 enemy
+  // Unit. It gets AP-N during this turn. If you do, this Unit gets AP+N." (Shining Gundam Meikyo Shisui)
+  const sm = pl0.match(/when you activate an?\s*\(([^)]+)\)\s*command'?s?\s*【\s*main\s*】\s*\/\s*【\s*action\s*】,\s*choose 1 enemy unit\. it gets ap\s*-\s*(\d+) during this turn\.(?:\s*if you do, this unit gets ap\s*\+\s*(\d+))?/i);
+  c.onSpecialMove = sm ? { trait: sm[1].trim().toLowerCase(), debuff:+sm[2], selfBuff: sm[3]?+sm[3]:0, oncePerTurn:/once per turn/i.test(pl0) } : null;
+  // 【Once per Turn】"When this Base receives battle damage while you have a rested (Trait) Unit in play,
+  // choose 1 enemy Unit. Deal N damage to it." (Argama)
+  const bd = pl0.match(/when this base receives battle damage while you have a rested\s*\(([^)]+)\)\s*unit in play,\s*choose 1 enemy unit\. deal (\d+) damage to it/i);
+  c.onBaseDamage = bd ? { trait: bd[1].trim().toLowerCase(), amount:+bd[2], oncePerTurn:/once per turn/i.test(pl0) } : null;
+}
 function makeCard(def, owner){
   const c = { uid: uid++, owner, def: def.id, name: def.name, type: def.type, color: def.color,
               cost: def.cost, lv: def.lv, trait: def.trait, effect: def.effect, img: def.img };
@@ -3542,9 +3734,9 @@ function makeCard(def, owner){
     //   "…this card in your hand gets cost -N"  -> handReduce (consulted by effectiveCost / levelOk)
     {
       const ungated = plain(def.effect).split('【')[0];
-      const wk=[], wb=[]; let hr=null;
+      const wk=[], wb=[]; let hr=null, tr=null;
       for (const sent of ungated.replace(/\bLv\.\s*/gi,'Lv ').split(/(?<=\.)\s+/)){
-        const m = sent.match(/^(?:during your turn,\s*)?while (.+?),\s*(this unit|it|this card in your hand) (gains?|gets)\s*(.+)$/i);
+        const m = sent.match(/^(?:during your turn,\s*)?while (.+?),\s*(this unit|it|this card in your hand|this card in your trash) (gains?|gets)\s*(.+)$/i);
         if (!m) continue;
         const cond = parseCondition(m[1].toLowerCase()); if (!cond) continue;
         const rest = m[4].toLowerCase();
@@ -3553,17 +3745,19 @@ function makeCard(def, owner){
           const kw = /first/.test(km[1]) ? 'first' : /high/.test(km[1]) ? 'high' : /breach/.test(km[1]) ? 'breach'
                    : /blocker/.test(km[1]) ? 'blocker' : /suppression/.test(km[1]) ? 'suppression' : /repair/.test(km[1]) ? 'repair' : null;
           if (kw) wk.push({ cond, kw, amount: km[2]?+km[2]:0 });
-        } else if (/this card in your hand/i.test(m[2])){
+        } else if (/this card in your (hand|trash)/i.test(m[2])){
           const cm = rest.match(/cost\s*[-−]\s*(\d+)/), lm = rest.match(/lv\.?\s*[-−]\s*(\d+)/);
           const per = rest.match(/for each of your\s*\(([^)]+)\)\s*units?/);
-          hr = { cond, cost: cm?+cm[1]:0, lv: lm?+lm[1]:0, perTrait: per?per[1].toLowerCase():null };
+          const red = { cond, cost: cm?+cm[1]:0, lv: lm?+lm[1]:0, perTrait: per?per[1].toLowerCase():null };
+          if (/trash/i.test(m[2])) tr = red; else hr = red;   // "this card in your trash gets Lv.-N and cost -N" (Legend Gundam GD06-050)
         } else {
           const am = rest.match(/ap\s*\+\s*(\d+)/), hm = rest.match(/hp\s*\+\s*(\d+)/);
           if (am || hm) wb.push({ cond, ap: am?+am[1]:0, hp: hm?+hm[1]:0 });
         }
       }
-      c.whileKw = wk; c.whileBuff = wb; c.handReduce = hr;
+      c.whileKw = wk; c.whileBuff = wb; c.handReduce = hr; c.trashReduce = tr;
     }
+    parseGd06Statics(c, def);
     // 【Once per Turn】"During your turn, when your (Trait) Unit deals battle damage to an enemy Unit,
     // you may return the enemy Unit to its owner's hand." (Freedom Gundam METEOR) — a board watcher.
     const bdb = plain(def.effect).match(/when your\s*\(([^)]+)\)\s*unit deals battle damage to an enemy unit,\s*you may return the enemy unit to its owner'?s hand/i);
@@ -3613,6 +3807,8 @@ function makeCard(def, owner){
   } else if (def.type === 'pilot'){
     c.pAp = def.ap; c.pHp = def.hp;
     c.trashCostReduce = parseTrashCostReduce(def.effect);
+    c.activate = parseActivate(def.effect); c.activatedThisTurn = false;   // gained by the paired Unit (Kou Uraki)
+    parseGd06Statics(c, def);
   } else { // command
     c.action = inferCommand(def.effect);
     c.trashCostReduce = parseTrashCostReduce(def.effect);
@@ -3639,7 +3835,7 @@ function exBaseToken(owner){
 
 // Generic 1/1 Mobile Suit token (fallback when a token's stats can't be parsed).
 function genericToken(owner){
-  return { uid: uid++, owner, name:'Mobile Suit Token', type:'unit', token:true,
+  return { uid: uid++, owner, name:'Mobile Suit Token', type:'unit', token:true, spec:{ name:'Mobile Suit Token', ap:1, hp:1, rested:true },
            color:'-', cost:0, lv:0, trait:'', effect:'(1 AP / 1 HP token.)', img:'',
            baseAp:1, baseHp:1, ap:1, hp:1, maxHp:1, rested:true, sick:true, tempAp:0,
            pilot:null, link:[], linked:false, blitz:false, repair:0, blocker:false, firstStrike:false, highManeuver:false, breach:0, suppression:false, support:0 };
@@ -3694,7 +3890,7 @@ function tokenArt(name){
 function makeToken(spec, owner){
   const r=(spec.restrict||'').toLowerCase();
   const kw=[]; if(spec.blocker)kw.push('<Blocker>'); if(spec.first)kw.push('<First Strike>'); if(spec.high)kw.push('<High-Maneuver>');
-  return { uid:uid++, owner, name:spec.name||'Mobile Suit Token', type:'unit', token:true,
+  return { uid:uid++, owner, name:spec.name||'Mobile Suit Token', type:'unit', token:true, spec,
     color:'-', cost:0, lv:0, trait:spec.trait||'', img:tokenArt(spec.name),
     effect:`(Token — ${spec.trait?spec.trait+' · ':''}${spec.ap} AP / ${spec.hp} HP${kw.length?' · '+kw.join(' '):''}.)`,
     baseAp:spec.ap, baseHp:spec.hp, ap:spec.ap, hp:spec.hp, maxHp:spec.hp,
@@ -4588,6 +4784,7 @@ function draw(side, silent){
   const c = side.deck.pop();
   // No hand limit during the turn: the hand is only trimmed to 10 in the end phase's hand step (4-8-4).
   side.hand.push(c);
+  if (G.phase!=='draw') side.effectDrawTurn = G.turnSeq;   // "if you have drawn with an effect during this turn" (Kou Uraki)
   // Reveal the player's own draws (turn draw and effect draws) so you can see what you got — both
   // a log line and a card pop — but never reveal the AI's cards.
   if (!silent && side===G.player && c){ log(`You draw <b>${c.name}</b>.`, 'me'); sound('draw'); revealDraw(c); }
@@ -4686,7 +4883,7 @@ function finishEndPhase(){
 // Official rule: a card needs BOTH (1) total resources in your area >= its Lv,
 // and (2) enough active (unrested) resources to pay its Cost.
 function totalRes(side){ return side.resMax + side.ex; }                 // resources in the area
-function levelOk(side,c){ return totalRes(side) >= Math.max(0, (c.lv||0) - handReduction(side, c).lv); }   // Lv requirement gate
+function levelOk(side,c){ return totalRes(side) >= Math.max(0, (c.lv||0) - handReduction(side, c).lv - trashReduction(side, c).lv); }   // Lv requirement gate
 function costOk(side,c){ return side.resAvail >= effectiveCost(side,c); } // payable right now
 function canAfford(side,c){ return levelOk(side,c) && costOk(side,c); }
 // Human-readable reason a card can't be played yet (or null if it can).
@@ -4865,7 +5062,7 @@ function startCommand(card, handIdx){
   resolvePlayerTrigger(card, G.player, a, card.name, ()=>{ G.cmdInFlight=null; clearSel(); render(); checkEnd(); });
 }
 
-function commit(card, handIdx){ G.player.hand.splice(handIdx,1); payCost(G.player, effectiveCost(G.player,card)); sendToTrash(card, G.player); }
+function commit(card, handIdx){ G.player.hand.splice(handIdx,1); payCost(G.player, effectiveCost(G.player,card)); sendToTrash(card, G.player); commandPlayed(card, G.player); }
 
 // Auto-discard the lowest-value card from side's hand (used by AI / no-choice cases).
 function cardValue(c){ if(c.type==='unit') return c.baseAp+c.baseHp; if(c.type==='pilot') return c.pAp+c.pHp; if(c.type==='command'&&c.action) return c.action.kind==='damage'?4:c.action.kind==='draw'?3:1; return 1; }
@@ -4922,6 +5119,7 @@ function activateCostPayable(u, side){
   if (c.type==='rest') return !u.rested;                  // a rest cost needs an active card
   if (c.type==='restUnit') return side.field.filter(x=>!x.rested && (!c.excludeSelf || x!==u) && matchTrashTrait(x, c.trait)).length >= (c.count||1); // enough friendly Units to rest (tokens count)
   if (c.type==='destroyToken') return side.field.filter(x=>x.token && x.hp>0).length >= c.count;
+  if (c.type==='destroyUnits') return destroyCostCands(u, side, c).length >= c.count;
   if (c.type==='exile') return trashCount(side, c.trait) >= c.count;
   if (c.type==='resource') return side.resAvail >= c.amount;
   return false;
@@ -4955,6 +5153,10 @@ function activateReady(u){
     if (!side.field.some(x=>x.token && x.hp>0)) return false;
     if (!foe.field.some(x=>x.hp>0)) return false;
   }
+  // Don't offer a cost-paying ability whose effect can't do anything: no qualifying Unit in hand to
+  // deploy (Neo Core Fighter), nothing rested to set active (SUMO Gold Type).
+  if (act && act.kind==='deployFromHandLv' && !side.hand.some(c=>c.type==='unit' && matchTrashTrait(c, act.trait) && (act.minLv==null || (c.lv||0)>=act.minLv))) return false;
+  if (act && act.kind==='setActiveAll' && !side.field.some(x=>x.rested && x.hp>0 && (!act.traits.length || act.traits.some(tr=>(x.trait||'').toLowerCase().includes('('+tr+')'))) && (!act.blocker || effBlocker(x)))) return false;
   return activateCostPayable(u, side);
 }
 // Begin activation: pay nothing yet if a target is needed, else resolve immediately.
@@ -4963,6 +5165,19 @@ function activateReady(u){
 function restCostCands(u, side){
   const c=u.activate.cost;
   return side.field.filter(x=>!x.rested && (!c.excludeSelf || x!==u) && matchTrashTrait(x, c.trait));
+}
+// Units that can pay a "Destroy N of your (Trait) Units with unique card names that are Lv.N" cost:
+// one per card name, matching trait and Lv, never the ability's own Unit or a token.
+function destroyCostCands(u, side, c){
+  const seen=new Set(); const out=[];
+  for (const x of [...side.field].sort((a,b)=>cardValue(a)-cardValue(b))){
+    if (x===u || x.token || x.hp<=0) continue;
+    if (c.lv!=null && (x.lv||0)!==c.lv) continue;
+    if (!matchTrashTrait(x, c.trait)) continue;
+    if (c.unique && seen.has(x.name)) continue;
+    seen.add(x.name); out.push(x);
+  }
+  return out;
 }
 function startActivate(u){
   if (!activateReady(u)){ flashPrompt(`${u.name}'s ability isn't available.`); return; }
@@ -5054,6 +5269,12 @@ function applyActivateEffect(u, target, side, costUnit){
     for (const v of picks) v.rested=true;
     if (picks.length) log(`<b>${u.name}</b> rests <b>${picks.map(v=>v.name).join(', ')}</b> as a cost.`, cls);
   }
+  else if (cost.type==='destroyUnits'){
+    // Destroy N qualifying Units (the least valuable ones) and, if printed, this Unit itself — they ARE destroyed (5-10-1).
+    const picks=destroyCostCands(u, side, cost).slice(0, cost.count); if (cost.plusSelf) picks.push(u);
+    for (const x of picks){ const i=side.field.indexOf(x); if(i>=0) side.field.splice(i,1); fx('die', x.uid); sendToTrash(x, side); fireDestroyed(x, side); }
+    log(`<b>${u.name}</b> destroys ${picks.map(t=>'<b>'+t.name+'</b>').join(', ')} as a cost.`, cls);
+  }
   else if (cost.type==='destroyToken'){
     const toks=side.field.filter(x=>x.token && x.hp>0).slice(0, cost.count);
     for (const tk of toks){ const i=side.field.indexOf(tk); if(i>=0) side.field.splice(i,1); fx('die', tk.uid); }
@@ -5083,8 +5304,24 @@ function applyActivateEffect(u, target, side, costUnit){
       else if (side===G.player && cands.length>1) showLookAtTop(cands, `${u.name}: pair a Pilot from your trash`, ()=>true, true, pick);
       else pick([...cands].sort((x,y)=>((y.pAp||0)+(y.pHp||0))-((x.pAp||0)+(x.pHp||0)))[0]);
     }
+  } else if (a.kind==='setActiveAll'){
+    const us=side.field.filter(x=>x.hp>0 && x.rested && (!a.traits.length || a.traits.some(tr=>(x.trait||'').toLowerCase().includes('('+tr+')'))) && (!a.blocker || effBlocker(x)));
+    for (const x of us){ x.rested=false; if (a.noAttack) x.noAttackTurn=G.turnSeq; }
+    log(`<b>${u.name}</b>: ${us.length?us.map(x=>'<b>'+x.name+'</b>').join(', ')+' set active'+(a.noAttack?" (they can't attack this turn)":''):'nothing to set active'}.`, cls);
+  } else if (a.kind==='redirectBattle'){
+    if (target){ u.redirectTo=target; log(`<b>${u.name}</b>: battle damage it would receive this battle is dealt to <b>${target.name}</b> instead.`, cls); }
+  } else if (a.kind==='deployFromHandLv'){
+    const cands=side.hand.filter(c=>c.type==='unit' && matchTrashTrait(c, a.trait) && (a.minLv==null || (c.lv||0)>=a.minLv));
+    const dep=(c)=>{ if(!c) return; side.hand.splice(side.hand.indexOf(c),1);
+      makeRoom(side, 1, u.name, ()=>{ c.rested=false; c.sick=!c.blitz; side.field.push(c); sound('deploy');
+        log(`<b>${u.name}</b>: deploys <b>${c.name}</b> from hand.`, cls);
+        if (side===G.player) resolvePlayerTrigger(c, side, parseTrigger(c.effect,'Deploy'), 'Deploy', ()=>{ onUnitDeployed(c, side, ()=>render()); });
+        else { runTrigger(c, side, parseTrigger(c.effect,'Deploy'), 'Deploy'); onUnitDeployed(c, side, null, true); } }); };
+    if (!cands.length) log(`<b>${u.name}</b>: no qualifying Unit card in hand.`, cls);
+    else if (side===G.player && cands.length>1) showLookAtTop(cands, `${u.name}: deploy a Unit from your hand`, ()=>true, false, dep);
+    else dep([...cands].sort((x,y)=>cardValue(y)-cardValue(x))[0]);
   } else if (a.kind==='deployFromTrash'){
-    const cands=side.trash.filter(c=>c.type==='unit'
+    const cands=side.trash.filter(c=>c.type==='unit' && (!a.trait || matchTrashTrait(c, a.trait))
       && (a.name==null || (c.name||'').toLowerCase().includes(a.name))
       && (a.minLv==null || (c.lv||0)>=a.minLv) && (a.maxLv==null || (c.lv||0)<=a.maxLv));
     const deploy=(c)=>{
@@ -5383,6 +5620,7 @@ function fieldClick(uidv){
       if (effUntargetable(tgt)){ flashPrompt(`${tgt.name} can't be chosen as an attack target.`); return; }
       if (!tgt.rested && !canHitActive(atk, tgt)){ flashPrompt('You can only attack a rested (turned) enemy unit. Attack the shields instead, or a rested unit.'); return; }
       declareAttack(atk, G.player);   // attack step (8-2): rest the attacker, on-attack self-buffs
+      fireAttacked(tgt, G.enemy);     // "when this Unit is attacked" on the enemy Unit
       // 【Attack】 effects (Marida's ping, etc.) resolve at declaration so YOU pick their targets.
       resolveAttackTriggers(atk, G.player, ()=>{
         if (!attackerStillOut(atk, G.player)){ clearSel(); render(); checkEnd(); return; }
@@ -5425,6 +5663,7 @@ function aiBlockStep(atk, target){
   if (!blockers.length || !aiWantsBlock(atk)) return null;
   const blk = pickAiBlocker(atk, blockers);
   blk.rested=true; log(`${who(G.enemy)}'s <b>${blk.name}</b> &lt;Blocker&gt; intercepts${target?'':' your attack'}!`, 'ai');
+  afterBlockDeclared(blk, G.enemy);
   return blk;
 }
 
@@ -5444,13 +5683,18 @@ function strikePlayer(atk, defSide, done){
     const hitBase=()=>{ b.hp-=ap; floatNum(b.uid,'-'+ap,'#ff6b5e'); log(`<b>${atk.name}</b> hits ${who(defSide)}'s <b>${b.name}</b> base for ${ap}.`, side); };
     const hitBack=()=>{ const d=Math.max(0, (b.baseAp!=null ? effAp(b) : b.ap)||0); if (d>0 && atkSide.field.includes(atk)) damage(atk, d, atkSide, 'battle'); };
     if (effFirstStrike(atk)){ hitBase(); if (b.hp>0) hitBack(); } else { hitBase(); hitBack(); }
-    if (b.hp<=0){
-      defSide.base=null; fx('die', b.uid); log(`${who(defSide)}'s ${b.name} base is destroyed.`, side); sendToTrash(b, defSide);
-      // The base is a shield-area card, so destroying it triggers "on shield break" effects (Sinanju).
-      resolveShieldBreakTrigger(atk, defSide, done); return;
-    }
-    fx('hit', b.uid);
-    done(); return;
+    const cont=()=>{
+      if (b.hp<=0){
+        defSide.base=null; fx('die', b.uid); log(`${who(defSide)}'s ${b.name} base is destroyed.`, side); sendToTrash(b, defSide);
+        enemyCardDestroyed(atk, atkSide, 'base');
+        // The base is a shield-area card, so destroying it triggers "on shield break" effects (Sinanju).
+        resolveShieldBreakTrigger(atk, defSide, done); return;
+      }
+      fx('hit', b.uid);
+      done();
+    };
+    resolveBaseDamagedTrigger(b, defSide, cont);   // "when this Base receives battle damage…" (Argama)
+    return;
   }
   if (defSide.shields.length>0){
     // <Suppression>: damage to shields hits the first 2 cards simultaneously, else just 1.
@@ -5467,6 +5711,7 @@ function strikePlayer(atk, defSide, done){
       k++;
       const sh=defSide.shields.pop(); defSide.breakingShield=true; fx('shield'); broke++;
       log(`<b>${atk.name}</b> destroys a ${who(defSide)} shield!${supp?' &lt;Suppression&gt;':''} (${defSide.shields.length} left)`, side);
+      enemyCardDestroyed(atk, atkSide, 'shield');
       triggerBurst(sh, defSide, nextShield, true);
     })();
     return;
@@ -5482,15 +5727,19 @@ function resolveShieldBreakTrigger(atk, defSide, done){
   const sb = atk && atk.onShieldBreak;
   const atkSide = defSide===G.player ? G.enemy : G.player;
   if (!sb || atkSide.who !== G.turn){ done(); return; }
-  const act = { kind:'damage', amount:sb.amount, source:atk };
+  if (sb.requirePair && !atk.pilot){ done(); return; }                              // 【During Pair】 gate
+  if (sb.oncePerTurn && atk.shieldBreakTurn===G.turnSeq){ done(); return; }         // 【Once per Turn】
+  const act = sb.kind==='rest' ? { kind:'rest', filter: sb.maxLv!=null?{maxLv:sb.maxLv}:{}, source:atk }
+                               : { kind:'damage', amount:sb.amount, source:atk };
   const cands = enemyTargets(defSide, act);
   if (!cands.length){ done(); return; }
+  if (sb.oncePerTurn) atk.shieldBreakTurn=G.turnSeq;
   flashCard(atk, (atkSide===G.player?'YOUR':'ENEMY')+' EFFECT');
   if (atkSide===G.player){
     if (cands.length>=2){          // player's own turn → tap an enemy Unit to target
       G.mode='trigger-target';
       G.pending={ card:atk, side:G.player, act, label:atk.name, after:done, scope:'enemy', cands:cands.map(c=>c.uid) };
-      setPrompt(`${atk.name}: shield destroyed — tap an enemy Unit to deal ${sb.amount} damage.`);
+      setPrompt(`${atk.name}: shield destroyed — tap an enemy Unit to ${sb.kind==='rest'?'rest':'deal '+sb.amount+' damage'}.`);
       render(); return;
     }
     applyToTarget(atk, G.player, act, cands[0], atk.name); render(); done(); return;
@@ -5597,6 +5846,9 @@ function declareAttack(atk, atkSide){
     } else if (act.kind==='selfKeyword'){
       grantKeyword(atk, act.kw, act.amount); atk.ap=effAp(atk);
       log(`Attack: <b>${atk.name}</b> gains &lt;${kwLabel(act.kw)}${act.kw==='breach'?' '+act.amount:''}&gt; this turn.`, cls);
+    } else if (act.kind==='selfBattleReduce'){
+      atk.battleReduceLowLv = act.amount;   // consumed by battle(), cleared with the other battle-scoped state
+      log(`Attack: <b>${atk.name}</b> reduces battle damage from a Lv.${atk.lv||0}-or-lower Unit by ${act.amount} this battle.`, cls);
     }
   };
   apply(gatedAttackAction(atk.effect, atk));
@@ -5616,6 +5868,11 @@ function gatedAttackAction(effect, atk){
   // "Activate (the) 【Main】 on the card paired with this Unit." (Gundam Rose / Bolt Gundam) — the body
   // is cut short by the 【Main】 bracket, so match it against the whole text instead.
   if (/activate (?:the )?【\s*main\s*】 on the card paired with this unit/i.test(pl)) return { kind:'pilotMain' };
+  if (/activate (?:the )?【\s*action\s*】 on the card paired with this unit/i.test(pl)) return { kind:'pilotAction' };   // Shadow Gundam
+  // "During this battle, when this Unit receives battle damage from an enemy Unit whose Lv. is equal to or
+  // lower than it, reduce it by N." (Anavel Gato's 【Attack】, gained by the paired Unit)
+  const gato = m[2].match(/during this battle, when this unit receives battle damage from an enemy unit whose lv\.? is equal to or lower than it, reduce it by (\d+)/i);
+  if (gato) return { kind:'selfBattleReduce', amount:+gato[1] };
   // Self-sacrifice attack effects ("destroy 1 of your own Units…") aren't modelled by the generic
   // enemy-removal parser — skip them so they don't misfire as enemy destruction (e.g. Sazabi GD05-049).
   if (/your own Units?/i.test(m[2]) && /destroy/i.test(m[2])) return atk.def==='GD05-049' ? { kind:'gd05Sac' } : null;
@@ -5634,6 +5891,13 @@ function pilotMainAction(atk){
 function pilotAttackAction(atk){
   return atk.pilotCard ? gatedAttackAction(atk.pilotCard.effect, atk) : null;
 }
+// The 【Action】 printed on the card paired with this Unit (Shadow Gundam: "Activate 【Action】 on the card paired with this Unit").
+function pilotActionAction(atk){
+  const p = atk && atk.pilotCard; if (!p) return null;
+  const eff = p.srcEffect || p.effect;
+  if (!eff) return null;
+  return parseTrigger(eff, 'Action') || inferCommand(eff);
+}
 // 【Attack】 effects that pick a target (enemy damage, etc.) from the Unit and its Pilot. Resolved
 // when the attack is DECLARED — before the Block Step — so the player chooses targets (Marida,
 // Kshatriya-style). Self-buffs were already applied by declareAttack(), so they're skipped here.
@@ -5644,7 +5908,7 @@ function attackerStillOut(atk, atkSide){ return !!(atk && atk.hp>0 && atkSide &&
 function resolveAttackTriggers(atk, atkSide, done){
   const acts=[];
   const add=(act, slot)=>{
-    if (!act || act.kind==='selfbuff' || act.kind==='selfKeyword') return;
+    if (!act || act.kind==='selfbuff' || act.kind==='selfKeyword' || act.kind==='selfBattleReduce') return;
     if (act.oncePerTurn){ if (atk[slot]===G.turnSeq) return; atk[slot]=G.turnSeq; }
     act.source=atk; acts.push(act);
   };
@@ -5666,11 +5930,16 @@ function parseOnKill(effect){
   const p = plain(effect).replace(/\([^)]*shield area[^)]*\)/gi, '');
   // Optional qualifier on WHICH enemy Unit counts, e.g. "…destroys an enemy Unit paired with a
   // (Newtype) Pilot with battle damage…" (Olba Frost) — captured so the payoff only fires then.
-  const m = p.match(/when this unit destroys an enemy unit(?:\s+(paired with[^,]*?))?\s+with battle damage,?\s*([^<【]*)/i);
+  const m = p.match(/when this unit destroys an enemy (unit|card)(?:\s+(paired with[^,]*?))?\s+with battle damage,?\s*([^<【]*)/i);
   if (!m) return null;
-  const qual = m[1] ? m[1].toLowerCase() : null;
-  const t = (m[2]||'').toLowerCase(); let d, act=null;
-  if ((d = t.match(/recovers?\s*(\d+)\s*hp/)))  act = { kind:'recover', amount:+d[1] };
+  const anyCard = m[1].toLowerCase()==='card';            // "enemy card" — Shields and Bases count too (Infinite Justice)
+  const qual = m[2] ? m[2].toLowerCase() : null;
+  const t = (m[3]||'').toLowerCase(); let d, act=null;
+  // "choose 1 of your (Trait) Units. It recovers N HP." (Infinite Justice) — before the self-recover form
+  if ((d = t.match(/choose 1 (?:of your|friendly)\s*\(?([a-z\- ]*)\)?\s*units?\.\s*it recovers (\d+)\s*hp/))) act = { kind:'healFriendly', trait:(d[1]||'').trim()||null, amount:+d[2] };
+  // "choose 1 enemy Unit with N or less AP. Deal N damage to it." (Zeta Gundam GD06-035)
+  else if ((d = t.match(/choose 1 enemy unit(?: with (\d+) or less ap)?\.\s*deal (\d+) damage to it/))) act = { kind:'damageEnemy', amount:+d[2], maxAp: d[1]?+d[1]:null };
+  else if ((d = t.match(/recovers?\s*(\d+)\s*hp/)))  act = { kind:'recover', amount:+d[1] };
   else if ((d = t.match(/draw (\d+)/))){
     if (/discard/.test(t)){ const disc=t.match(/discard (\d+)/); act = { kind:'drawDiscard', draw:+d[1], discard:+(disc?disc[1]:1) }; }
     else act = { kind:'draw', amount:+d[1] };
@@ -5683,6 +5952,7 @@ function parseOnKill(effect){
   }
   if (!act) return null;
   if (/once per turn/i.test(p.slice(0, p.indexOf(m[0])+m[0].length))) act.oncePerTurn = true;
+  if (anyCard) act.anyCard = true;
   if (qual){ const pm=qual.match(/paired with (?:a |an )?\(([^)]+)\)\s*pilot/); if (pm) act.reqEnemyPilotTrait = pm[1].toLowerCase(); }
   return act;
 }
@@ -5701,6 +5971,22 @@ function applyOnKill(u, side, k){
     const t = side.field.filter(ok).sort((a,b)=>effAp(b)-effAp(a))[0];
     if (t){ t.rested=false; if (k.noAttack) t.noAttackTurn=G.turnSeq;
       log(`<b>${u.name}</b>: <b>${t.name}</b> is set active${k.noAttack?" (it can't attack this turn)":''}.`, cls); }
+    return;
+  }
+  if (k.kind==='healFriendly'){      // the most-damaged eligible friendly Unit recovers (Infinite Justice)
+    const cands=side.field.filter(x=>x.hp>0 && x.hp<effMaxHp(x) && (!k.trait || (x.trait||'').toLowerCase().includes('('+k.trait+')')))
+      .sort((a,b)=>(effMaxHp(b)-b.hp)-(effMaxHp(a)-a.hp));
+    const t=cands[0]; if (!t) return;
+    const before=t.hp; t.hp=Math.min(effMaxHp(t), t.hp+k.amount);
+    log(`<b>${u.name}</b>: <b>${t.name}</b> recovers ${t.hp-before} HP.`, cls); try{ floatNum(t.uid,'+'+(t.hp-before),'#7ee29a'); }catch(e){}
+    return;
+  }
+  if (k.kind==='damageEnemy'){       // "choose 1 enemy Unit (with N or less AP). Deal N damage to it." (Zeta Gundam)
+    const foe = side===G.player?G.enemy:G.player;
+    const act={ kind:'damage', amount:k.amount, filter: k.maxAp!=null?{maxAp:k.maxAp}:{}, source:u };
+    const cands=enemyTargets(foe, act); const t=cands.length?rankTarget(cands, act):null;
+    if (!t) return;
+    log(`<b>${u.name}</b>: deals ${k.amount} damage to <b>${t.name}</b>.`, cls); damage(t, k.amount, foe);
     return;
   }
   if (k.kind==='recover'){
@@ -5739,16 +6025,23 @@ function battle(atk, def, atkSide, defSide){
   fxLunge(atk);
   // <Support N>: an active friendly Unit may rest to give the attacker +N AP this turn.
   applySupport(atk, atkSide, def);
+  G.curBattle = { atk, def };          // "while this Unit is battling…" conditions (e.g. Reginlaze Julia) read this
   // First Strike only triggers on this Unit's attack — i.e. on its owner's turn. The
   // attacker is always the turn player here, so only the attacker's First Strike applies;
   // a defending First Strike Unit gets no priority.
   const fs = effFirstStrike(atk) ? 'me' : 'both';
+  if (fs==='me') atk.ap=effAp(atk);
   log(`<b>${atk.name}</b> (${atk.ap}/${atk.hp}) vs <b>${def.name}</b> (${def.ap}/${def.hp})${fs!=='both'?' — &lt;First Strike&gt;':''}.`, atkSide===G.player?'me':'ai');
   const a=atk.ap, d=def.ap;
   // Only strike units still on their field: a mid-resolution effect (sacrifice, an earlier kill) can
   // remove a combatant before this point — hitting it then would leave a ghost at negative HP.
-  const hitDef=()=>{ if (defSide.field.includes(def) && !preventsWeakBattleDamage(def, atk, defSide)) damage(def,a,defSide,'battle'); };
-  const hitAtk=()=>{ if (atkSide.field.includes(atk) && !preventsWeakBattleDamage(atk, def, atkSide)) damage(atk,d,atkSide,'battle'); };
+  // Battle damage a Unit "would receive" can be redirected to another friendly card for this battle
+  // (Elpeo Ple's Qubeley Mk-II); a Pilot's 【Attack】 can reduce the damage taken from a lower-Lv Unit (Anavel Gato).
+  const hitDef=()=>{ if (defSide.field.includes(def) && !preventsWeakBattleDamage(def, atk, defSide)) damage(redirectOf(def, defSide),a,defSide,'battle'); };
+  const hitAtk=()=>{ if (atkSide.field.includes(atk) && !preventsWeakBattleDamage(atk, def, atkSide)){
+    let dd=d;
+    if (atk.battleReduceLowLv && (def.lv||0)<=(atk.lv||0)){ dd=Math.max(0, dd-atk.battleReduceLowLv); log(`<b>${atk.name}</b> reduces the battle damage by ${atk.battleReduceLowLv} (Lv.${def.lv||0} attacker's target).`, atkSide===G.player?'me':'ai'); }
+    damage(redirectOf(atk, atkSide),dd,atkSide,'battle'); } };
   if (fs==='me'){ hitDef(); if (def.hp>0) hitAtk(); }
   else { hitDef(); hitAtk(); }
   // <Breach N>: when this attack destroys an enemy Unit, hit the top enemy shield.
@@ -5760,13 +6053,39 @@ function battle(atk, def, atkSide, defSide){
     const pk = atk.pilotCard ? parseOnKill(atk.pilotCard.effect) : null;                      // on-kill can live on the paired Pilot (e.g. Amuro)
     if (pk && onKillMatches(pk, def)) applyOnKill(atk, atkSide, pk);
     if (atk.killDrawTurn>0){ draw(atkSide); log(`<b>${atk.name}</b>: draw 1 (destroyed an enemy Unit).`, atkSide===G.player?'me':'ai'); }
+    enemyCardDestroyed(atk, atkSide, 'unit');
   }
   clearBattleScoped();                 // "during this battle" effects (e.g. Kira's AP-2) end now
   clearSel(); render(); checkEnd();
 }
 // Clear "during this battle" AP modifiers from every Unit once the battle ends.
 function clearBattleScoped(){
-  for (const s of [G.player, G.enemy]){ if(!s) continue; for (const u of s.field){ if(u.battleAp){ u.battleAp=0; u.ap=effAp(u); } } }
+  G.curBattle = null;
+  for (const s of [G.player, G.enemy]){ if(!s) continue; for (const u of s.field){ if(u.battleAp){ u.battleAp=0; u.ap=effAp(u); } u.redirectTo=null; u.battleReduceLowLv=0; } }
+}
+// Where battle damage to `u` actually lands this battle: a friendly Unit/Base it was redirected to
+// (Qubeley Mk-II's 【Activate･Action】), if that card is still in play — else `u` itself.
+function redirectOf(u, side){
+  const r=u && u.redirectTo;
+  if (r && r!==u && r.hp>0 && (side.field.includes(r) || side.base===r)){ log(`<b>${u.name}</b>'s battle damage is dealt to <b>${r.name}</b> instead.`, side===G.player?'me':'ai'); return r; }
+  return u;
+}
+// Hooks that fire when `atk` (a Unit) destroys an enemy card — Unit, Base or Shield — with damage:
+// board watchers such as Hamma-Hamma ("when one of your (Neo Zeon) Units destroys an enemy card…") and
+// on-kill payoffs worded "destroys an enemy card" (Infinite Justice) for the non-Unit cases.
+function enemyCardDestroyed(atk, atkSide, what){
+  if (!atk || !atkSide) return;
+  const cls = atkSide===G.player?'me':'ai';
+  if (what!=='unit' && atk.onKill && atk.onKill.anyCard) applyOnKill(atk, atkSide, atk.onKill);
+  if (G.turn!==atkSide.who) return;                       // "During your turn, …"
+  for (const u of atkSide.field){
+    const w=u.allyKillHeal; if (!w || u.hp<=0) continue;
+    if (!(atk.trait||'').toLowerCase().includes('('+w.trait+')')) continue;
+    if (u.hp>=effMaxHp(u)) continue;
+    const before=u.hp; u.hp=Math.min(effMaxHp(u), u.hp+w.amount);
+    log(`<b>${u.name}</b> recovers ${u.hp-before} HP (a (${w.trait}) Unit destroyed an enemy card).`, cls);
+    try{ floatNum(u.uid,'+'+(u.hp-before),'#7ee29a'); }catch(e){}
+  }
 }
 
 // <Support N>: rest one other active friendly Unit to boost the attacker, but only when the
@@ -5789,16 +6108,18 @@ function applySupport(atk, atkSide, def){
 // sits in front of the shields, so it takes the hit first; otherwise the top Shield breaks (Burst may fire).
 function breachShield(atk, defSide){
   const side = defSide===G.player ? 'ai' : 'me';
+  const atkSide = defSide===G.player ? G.enemy : G.player;
   if (defSide.base){
     const amt=effBreach(atk); const b=defSide.base; b.hp-=amt; floatNum(b.uid,'-'+amt,'#ff6b5e');
     log(`<b>${atk.name}</b> &lt;Breach ${amt}&gt; hits ${who(defSide)}'s <b>${b.name}</b> base for ${amt}.`, side);
-    if (b.hp<=0){ defSide.base=null; fx('die', b.uid); sendToTrash(b, defSide); log(`${who(defSide)}'s ${b.name} base is destroyed by Breach.`, side); }
+    if (b.hp<=0){ defSide.base=null; fx('die', b.uid); sendToTrash(b, defSide); log(`${who(defSide)}'s ${b.name} base is destroyed by Breach.`, side); enemyCardDestroyed(atk, atkSide, 'base'); }
     else fx('hit', b.uid);
     return;
   }
   if (defSide.shields.length<=0) return;
   const sh=defSide.shields.pop(); defSide.breakingShield=true; fx('shield');
   log(`<b>${atk.name}</b> &lt;Breach&gt; destroys a ${who(defSide)} shield! (${defSide.shields.length} left)`, side);
+  enemyCardDestroyed(atk, atkSide, 'shield');
   triggerBurst(sh, defSide);
 }
 
@@ -5888,6 +6209,7 @@ function damage(u, dmg, side, kind){
   floatNum(u.uid, '-'+dmg, '#ff6b5e');
   if (u.hp<=0){
     const i=side.field.indexOf(u); if(i>=0) side.field.splice(i,1);
+    if (u.type==='base' && side.base===u) side.base=null;   // a Base can take (redirected) battle damage too
     fx('die', u.uid); log(`<b>${u.name}</b> is destroyed.`, side===G.player?'me':'ai');
     sendToTrash(u, side);
     // 【Destroyed】: fires as the Unit leaves play (its controller resolves it). Player-side targeted
@@ -5970,6 +6292,8 @@ function pairFromHand(card, side, act, label){
 function attachPilot(u, p, onDone){
   u.pilot={ name:p.name, pAp:p.pAp, pHp:p.pHp };
   u.pilotCard = p;   // saved so both go to trash together when the unit is destroyed
+  // A Pilot's own 【Activate】 (Kou Uraki's 【Activate･Action】) is gained by the paired Unit (3-3-9-2).
+  if (p.activate && !u.activate){ u.activate = p.activate; u.activateFromPilot = true; }
   // A paired Pilot does NOT change the Unit's Lv — the Unit keeps its printed level.
   const side = u.owner==='player'?G.player:G.enemy;
   // The Pilot's own continuous 【During Pair】/【During Link】 self-buffs apply to the Unit it pilots
@@ -6176,7 +6500,7 @@ function aiMainStep(){
     const worthIt = isAoE ? pl.field.length>=2
       : (tgt && (tgt.hp<=dmg.action.amount || aiThreatScore(tgt)>=6));   // a kill, or a scary unit
     if (worthIt){
-      const i=ai.hand.indexOf(dmg); ai.hand.splice(i,1); payCost(ai, effectiveCost(ai,dmg)); sendToTrash(dmg,ai); flashCard(dmg,'ENEMY COMMAND');
+      const i=ai.hand.indexOf(dmg); ai.hand.splice(i,1); payCost(ai, effectiveCost(ai,dmg)); sendToTrash(dmg,ai); flashCard(dmg,'ENEMY COMMAND'); commandPlayed(dmg, ai);
       if (isAoE){ log(`${who(G.enemy)} plays <b>${dmg.name}</b> (all units).`, 'ai'); damageAll(dmg, ai, dmg.action, dmg.name); }
       else { log(`${who(G.enemy)} plays <b>${dmg.name}</b> on <b>${tgt.name}</b>.`, 'ai'); damage(tgt,dmg.action.amount,pl); }
       return true;
@@ -6184,7 +6508,7 @@ function aiMainStep(){
   }
   // draw if low
   const drawC = ai.hand.find(c=>c.type==='command' && c.action.kind==='draw' && c.action.amount>=2 && canAfford(ai,c));
-  if (drawC && ai.hand.length<=4){ const i=ai.hand.indexOf(drawC); ai.hand.splice(i,1); payCost(ai, effectiveCost(ai,drawC)); sendToTrash(drawC,ai); flashCard(drawC,'ENEMY COMMAND'); for(let k=0;k<drawC.action.amount;k++) draw(ai); log(`${who(G.enemy)} plays <b>${drawC.name}</b>.`, 'ai'); return true; }
+  if (drawC && ai.hand.length<=4){ const i=ai.hand.indexOf(drawC); ai.hand.splice(i,1); payCost(ai, effectiveCost(ai,drawC)); sendToTrash(drawC,ai); flashCard(drawC,'ENEMY COMMAND'); commandPlayed(drawC, ai); for(let k=0;k<drawC.action.amount;k++) draw(ai); log(`${who(G.enemy)} plays <b>${drawC.name}</b>.`, 'ai'); return true; }
   // deploy a base if it improves the guard
   const baseC = ai.hand.find(c=>c.type==='base' && canAfford(ai,c) && (!ai.base || c.hp>ai.base.hp));
   if (baseC){ const i=ai.hand.indexOf(baseC); ai.hand.splice(i,1); payCost(ai, effectiveCost(ai,baseC)); baseC.rested=false; baseC.sick=false; sendToTrash(ai.base, ai); ai.base=baseC; flashCard(baseC,'ENEMY BASE'); log(`${who(G.enemy)} deploys base <b>${baseC.name}</b>.`, 'ai'); runTrigger(baseC, ai, parseTrigger(baseC.effect,'Deploy'), 'Deploy'); return true; }
@@ -6229,10 +6553,10 @@ function aiMainStep(){
   }
   // buff before attacks
   const buff = ai.hand.find(c=>c.type==='command' && c.action.kind==='buff' && canAfford(ai,c));
-  if (buff && ai.field.some(u=>!u.sick&&!u.rested&&u.ap>0)){ const t=ai.field.filter(u=>!u.sick&&!u.rested&&u.ap>0).sort((a,b)=>b.ap-a.ap)[0]; const i=ai.hand.indexOf(buff); ai.hand.splice(i,1); payCost(ai, effectiveCost(ai,buff)); sendToTrash(buff,ai); flashCard(buff,'ENEMY COMMAND'); t.tempAp=(t.tempAp||0)+buff.action.amount; t.ap=effAp(t); log(`${who(G.enemy)} empowers <b>${t.name}</b>.`, 'ai'); return true; }
+  if (buff && ai.field.some(u=>!u.sick&&!u.rested&&u.ap>0)){ const t=ai.field.filter(u=>!u.sick&&!u.rested&&u.ap>0).sort((a,b)=>b.ap-a.ap)[0]; const i=ai.hand.indexOf(buff); ai.hand.splice(i,1); payCost(ai, effectiveCost(ai,buff)); sendToTrash(buff,ai); flashCard(buff,'ENEMY COMMAND'); commandPlayed(buff, ai); t.tempAp=(t.tempAp||0)+buff.action.amount; t.ap=effAp(t); log(`${who(G.enemy)} empowers <b>${t.name}</b>.`, 'ai'); return true; }
   // token-creating command — play it when there's board room
   const tokCmd = ai.hand.find(c=>c.type==='command' && c.action.kind==='token' && canAfford(ai,c) && !(c.action.tokenLimit && hasTraitToken(ai, c.action.tokenLimit)));
-  if (tokCmd && ai.field.length<FIELD_MAX){ const i=ai.hand.indexOf(tokCmd); ai.hand.splice(i,1); payCost(ai, effectiveCost(ai,tokCmd)); sendToTrash(tokCmd,ai); flashCard(tokCmd,'ENEMY COMMAND'); deployTokens(tokCmd.action, ai, tokCmd.name, tokCmd.name, 'ai'); return true; }
+  if (tokCmd && ai.field.length<FIELD_MAX){ const i=ai.hand.indexOf(tokCmd); ai.hand.splice(i,1); payCost(ai, effectiveCost(ai,tokCmd)); sendToTrash(tokCmd,ai); flashCard(tokCmd,'ENEMY COMMAND'); commandPlayed(tokCmd, ai); deployTokens(tokCmd.action, ai, tokCmd.name, tokCmd.name, 'ai'); return true; }
   return false;
 }
 // Plan which attacker hits which enemy Unit. The point is SEQUENCING: assign the WEAKEST attacker
@@ -6333,6 +6657,7 @@ function autoActivateTarget(u, attacker){
   if (a.scope==='enemy'){ if(attacker&&attacker.hp>0&&G.enemy.field.includes(attacker)) return attacker; return [...G.enemy.field].sort((x,y)=>y.ap-x.ap)[0]||null; }
   if (a.scope==='friendly'){
     if (a.kind==='heal') return [...G.player.field].filter(t=>t.hp<effMaxHp(t)).sort((x,y)=>(effMaxHp(y)-y.hp)-(effMaxHp(x)-x.hp))[0]||null;
+    if (a.kind==='redirectBattle') return friendlyTargets(G.player, a).filter(t=>t!==u).sort((x,y)=>y.hp-x.hp)[0]||null;   // the sturdiest other body soaks the hit
     if (a.kind==='setActive') return [...G.player.field].filter(t=>t.rested&&!t.token).sort((x,y)=>y.ap-x.ap)[0]||null;
     return [...G.player.field].sort((x,y)=>y.ap-x.ap)[0]||null;
   }
@@ -6360,8 +6685,10 @@ function collectPlayerActions(attacker){
   for (const u of [...G.player.field, G.player.base].filter(Boolean)){
     if (u.activate && u.activate.phase==='action' && (!u.activate.oncePerTurn || !u.activatedThisTurn) && u.hp>0
         && (!u.activate.requireLink || u.linked) && (!u.activate.requirePair || u.pilot)
+        && (u.activate.action.kind!=='cond' || condMet(u.activate.action.cond, G.player, u, u.activate.action.other))
+        && (u.activate.action.kind!=='redirectBattle' || autoActivateTarget(u, attacker))
         && activateCostPayable(u, G.player)){
-      opts.push({ label:`⚡ ${u.name}`, sub:u.activate.text||'', run:(afterCb)=>{ flashCard(u,'YOUR ACTION'); applyActivateEffect(u, autoActivateTarget(u, attacker), G.player); if (afterCb) afterCb(); } });
+      opts.push({ label:`⚡ ${u.name}`, sub:u.activate.text||'', run:(afterCb)=>{ flashCard(u,'YOUR ACTION'); applyActivateEffect(u, autoActivateTarget(u, attacker), G.player); if (u.activate.oncePerTurn) u.activatedThisTurn=true; if (afterCb) afterCb(); } });
     }
   }
   for (const c of G.player.hand){
@@ -6375,7 +6702,7 @@ function collectPlayerActions(attacker){
           const cands=enemyTargets(G.enemy, c.action);
           if (!cands.length){ flashPrompt(`${c.name}: no legal target.`); if(afterCb) afterCb(); return; }
           G.player.hand.splice(h,1); payCost(G.player, effectiveCost(G.player,c));
-          sendToTrash(c,G.player); flashCard(c,'YOUR ACTION');
+          sendToTrash(c,G.player); flashCard(c,'YOUR ACTION'); commandPlayed(c, G.player);
           if (cands.length>=2){          // let the player choose among the valid targets
             G.mode='action-step-target';
             G.pending={ cmd:c, attacker, after:afterCb, cands:cands.map(x=>x.uid) };
@@ -6386,7 +6713,7 @@ function collectPlayerActions(attacker){
           if (afterCb) afterCb(); return;
         }
         G.player.hand.splice(h,1); payCost(G.player, effectiveCost(G.player,c));
-        sendToTrash(c,G.player); flashCard(c,'YOUR ACTION');
+        sendToTrash(c,G.player); flashCard(c,'YOUR ACTION'); commandPlayed(c, G.player);
         applyCommand(c, G.player, autoCommandTarget(c, attacker));
         if (afterCb) afterCb();
       }});
@@ -6436,13 +6763,14 @@ function resolveAiAttackInner(atk, done, forced){
   }
   if (!target && cantHitPlayer(atk)){ render(); done(); return; }   // nothing it may legally attack
   declareAttack(atk, G.enemy);   // attack step: rest + on-attack self-buffs
+  if (target) fireAttacked(target, pl);   // "when this Unit is attacked" (GP01Fb)
   resolveAttackTriggers(atk, G.enemy, ()=>{   // 【Attack】 effects (e.g. Marida's ping)
     if (!attackerStillOut(atk, G.enemy)){ render(); done(); return; }
     if (target && (!pl.field.includes(target) || target.hp<=0)){ render(); done(); return; }   // 8-2-4
     // Block step (8-3): the player may intercept with an active <Blocker> — never the attacked Unit itself.
     const blockers = pl.field.filter(b=>effBlocker(b) && !b.rested && b.hp>0 && b!==target);
     const afterBlock=(blk)=>{
-      if (blk){ blk.rested=true; log(`You intercept with <b>${blk.name}</b> &lt;Blocker&gt;.`, 'me'); }
+      if (blk){ blk.rested=true; log(`You intercept with <b>${blk.name}</b> &lt;Blocker&gt;.`, 'me'); afterBlockDeclared(blk, G.player); }
       // Action step (8-4), then the damage step (8-5).
       offerPlayerActionStep(atk, ()=>{
         if (!attackerStillOut(atk, G.enemy)){ render(); done(); return; }
