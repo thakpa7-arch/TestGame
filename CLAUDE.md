@@ -16,7 +16,7 @@ Do not default to statically.io / jsDelivr / raw.githubusercontent unless the us
 - Development happens on branch `claude/gundam-tcg-card-game-a1qm2z`.
 
 ## Validating changes (Node test harness)
-- The harness lives in the session scratchpad (`harness.js` stubs DOM/timers and exposes internals
+- The harness lives in the session scratchpad (a committed mirror is in `dev/` — see `dev/README.md`) (`harness.js` stubs DOM/timers and exposes internals
   via `global.__G`; `game.js` is the extracted `<script>` body, regenerated after every HTML edit).
 - After any change, regenerate `game.js` and run the suite; every script must report `Errors: 0`:
   `run_cards.js` (all cards), `pt_gd05_games.js` (full GD05 games), `fuzz_player.js` / `fuzz_hard.js`
