@@ -134,6 +134,15 @@ for (const id of ['GD06-039','GD06-044','GD06-045','GD06-046','GD06-035','GD06-0
   ok('Hyaku-Shiki: you choose which (Gundam Team) Unit gets AP+2', !!m && /choose 1 of your Units/.test(m.msg) && m.btns.length===2, m&&m.msg);
   press(/Core Base/); passAll(); ok('Hyaku-Shiki: the chosen Unit gets AP+2', A.effAp(cb)===5 && A.effAp(ct)===3); }
 
+// "【Activate･Main】②, return this Unit to the bottom of its owner's deck：…" (Impulse Gundam): the paired Pilot goes to the trash
+// instead of vanishing with the Unit (found by fuzz_ui with the P/W Impulse preset).
+for (const who of ['player','enemy']){ fresh(who); const s=who==='player'?G.player:G.enemy;
+  const imp=put('ST09-001', who); const kira=pair(imp, 'ST04-010');
+  const lv4=A.GUNDAM_CARDS.find(c=>c.type==='unit' && /Impulse Gundam/.test(c.name) && c.lv>=4); s.trash=[card(lv4.id, who)];
+  A.applyActivateEffect(imp, null, s); drainTasks(); for (let g=0; g<4 && modal(); g++) if (!press(new RegExp(lv4.name.replace(/[()]/g,'.')))) press(/./);
+  ok(`Impulse Gundam (${who}): returns to the bottom of the deck, its paired Pilot goes to the trash`,
+    s.deck[0]===imp && !s.field.includes(imp) && s.trash.includes(kira) && !imp.pilotCard, `deck0=${s.deck[0]&&s.deck[0].name} trash=${s.trash.map(c=>c.name)}`); }
+
 console.log('== Harsh Meta Slave Deck reports (UI paths) ==');
 console.log(`passed: ${pass} | failed: ${fail.length}`); for (const f of fail) console.log('  FAIL '+f);
 console.log('Errors: '+(H.ERRORS.length+fail.length)); for (const e of H.ERRORS.slice(0,5)) console.log('  ERR', e.ctx, e.phase, e.msg);

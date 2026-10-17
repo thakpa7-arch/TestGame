@@ -30,7 +30,7 @@ const tally={}; for(const id of picked) tally[id]=(tally[id]||0)+1;
 const dg=Object.entries(tally).map(([id,n])=>n+'n'+id).join('a');
 let html=fs.readFileSync(GAME,'utf8');
 if (html.includes("name:'"+NAME.replace(/'/g,"\\'")+"'")){ console.log('preset '+NAME+' already present'); process.exit(0); }
-const anchor="  { name:'BIG PREEN', dg:";
+const anchor="  { name:'B/P Big Preen', dg:";
 const i=html.indexOf(anchor); if(i<0){ console.log('could not find the preset table'); process.exit(1); }
 const lineEnd=html.indexOf('\n', i);
 html=html.slice(0,lineEnd+1)+"  { name:'"+NAME.replace(/'/g,"\\'")+"', dg:'"+dg+"' },\n"+html.slice(lineEnd+1);

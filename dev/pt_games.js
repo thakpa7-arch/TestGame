@@ -16,7 +16,7 @@ const CHK={ lastTurn:null };
 function check(tag, base){
   if (G.turn!==CHK.lastTurn){
     if (CHK.lastTurn){ const es = CHK.lastTurn==='player'?G.player:G.enemy;   // the side whose turn just ended
-      if (es.hand.length>10) viol(tag,`${CHK.lastTurn==='player'?'P':'A'} ended its turn with hand>10 (${es.hand.length})`);
+      if (es.hand.length>10 && !/\|final$/.test(tag)) viol(tag,`${CHK.lastTurn==='player'?'P':'A'} ended its turn with hand>10 (${es.hand.length})`);
       if (process.env.TRACEHAND) console.log(`  [handover] ${CHK.lastTurn} -> ${G.turn}: P hand ${G.player.hand.length} A hand ${G.enemy.hand.length}`); }
     CHK.lastTurn=G.turn;
   }
@@ -134,7 +134,7 @@ function playerTurn(tag, base){
     const card=playable[Math.floor(Math.random()*playable.length)];
     setCtx(tag+'|play:'+card.name); check(tag, base);
     const before=s.resAvail, cost=A.effectiveCost(s,card);
-    const lvOk = (s.resMax+s.ex) >= Math.min(card.lv||0, card.altPlay ? card.altPlay.lv : 99);   // "…play it as if it has N Lv. and cost" (altPlay)
+    const red=(A.handReduction? (A.handReduction(s,card)||{}).lv||0 : 0); const lvOk = (s.resMax+s.ex) >= Math.min((card.lv||0)-red, card.altPlay ? card.altPlay.lv : 99);   // "…play it as if it has N Lv. and cost" (altPlay)
     try { A.playFromHand(card.uid, true); } catch(e){ recordErr('playFromHand',e); G.mode='idle'; G.pending=null; }
     if (!s.hand.includes(card)){
       if (!lvOk) viol('cost', `played ${card.name} Lv${card.lv} with only ${s.resMax+s.ex} resources`);

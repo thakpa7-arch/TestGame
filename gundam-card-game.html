@@ -7749,9 +7749,17 @@ const POOL_STATS = (()=>{ const ids=[...CARD_BY_ID.keys()]; return { cards: new 
 const PRESET_DECKS = [
   // House presets only; the official starter decks were retired from the picker.
   // (Custom decks you build in the Deck Builder are stored separately and are unaffected.)
-  { name:'B/P', dg:'4nST03-008a4nGD05-062a4nGD01-030a4nST03-006a4nGD02-054a1nGD05-053a4nGD03-056a2nGD02-055a1nGD05-060a3nGD04-017a4nGD05-049a2nST03-011a4nST05-010a4nGD05-093a1nST09-009a4nGD05-129' },
-  { name:'BIG PREEN', dg:'4nST03-008a4nST03-006a3nST05-006a4nGD02-054a4nGD03-056a4nST05-010a3nGD05-129a4nGD02-055a2nGD05-060a4nGD05-093a2nGD04-017a4nST13-011a2nGD05-114a3nGD05-049a3nST13-001' },
+  { name:'B/P Little Preen', dg:'4nST03-008a4nGD05-062a4nGD01-030a4nST03-006a4nGD02-054a1nGD05-053a4nGD03-056a2nGD02-055a1nGD05-060a3nGD04-017a4nGD05-049a2nST03-011a4nST05-010a4nGD05-093a1nST09-009a4nGD05-129' },
+  { name:'B/P Big Preen', dg:'4nST03-008a4nST03-006a3nST05-006a4nGD02-054a4nGD03-056a4nST05-010a3nGD05-129a4nGD02-055a2nGD05-060a4nGD05-093a2nGD04-017a4nST13-011a2nGD05-114a3nGD05-049a3nST13-001' },
   { name:'Harsh Meta Slave Deck', dg:'4nGD06-039a2nGD06-112a4nGD06-088a2nGD06-035a2nGD06-125a2nGD06-110a4nGD06-045a4nGD06-044a4nGD06-033a2nGD06-046a4nGD05-111a4nGD01-118a4nGD02-079a2nGD02-129a2nGD03-071a4nGD02-097' },
+  { name:'R/W Suletta', dg:'4nGD01-086a4nGD02-079a4nGD04-068a4nGD01-067a4nST13-006a4nGD01-066a4nST01-011a4nST13-012a2nST03-013a4nGD01-118a4nGD03-109a4nGD05-110a4nGD01-128' },
+  { name:'B/W SF Slop', dg:'4nGD01-086a4nGD02-079a1nGD04-077a2nGD01-073a1nGD05-005a2nGD05-010a2nGD01-068a4nST04-001a3nGD01-065a4nGD05-002a2nST01-010a4nST04-010a4nGD05-081a3nGD01-118a3nST01-014a2nGD01-100a1nGD04-117a4nST04-015' },
+  { name:'B/G Londobell is falling down', dg:'4nST03-008a4nGD01-008a4nGD05-027a4nGD01-018a3nGD01-030a3nGD05-028a4nGD05-029a2nST01-001a3nGD05-019a2nGD03-001a4nGD05-017a4nST01-010a4nGD05-085a3nGD01-126a2nGD05-125' },
+  { name:'B/W Orb Slop', dg:'4nGD05-015a3nGD01-086a4nGD02-079a4nGD05-003a4nGD05-016a4nGD05-010a2nST04-001a4nGD05-004a4nGD05-002a2nST04-010a4nGD05-082a4nGD05-081a4nGD01-118a3nST11-016' },
+  { name:'R/G Haman Sulleta??', dg:'2nST03-008a3nST13-009a4nGD05-025a4nGD01-044a4nST13-006a1nGD02-036a4nST13-001a4nGD01-093a1nGD04-089a4nST13-012a4nST13-011a4nGD05-111a3nST03-013a1nGD03-109a3nGD05-110a4nGD02-126' },
+  { name:'P/R Mardia', dg:'4nST11-009a4nGD05-050a4nST11-008a4nST11-007a2nST13-008a2nGD01-051a4nGD03-056a4nGD01-044a4nST12-006a4nGD01-093a3nST05-010a3nST12-012a4nGD05-111a4nST08-014' },
+  { name:'B/R SF', dg:'2nGD05-005a4nGD01-044a2nGD01-003a4nGD05-002a4nGD01-093a4nGD05-081a4nGD05-111a4nST03-013a4nGD03-109a4nGD04-101a3nGD01-100a4nGD05-110a3nGD04-109a2nGD01-128a2nST01-015' },
+  { name:'P/W Impulse', dg:'4nGD01-086a4nST09-001a2nGD01-073a3nST09-006a2nGD05-064a4nST04-001a2nST09-002a2nST09-007a3nGD04-050a4nST04-010a4nST09-008a2nGD04-095a4nGD01-118a2nST04-012a1nST09-009a2nGD01-117a1nGD05-114a2nST09-010a2nGD05-129' },
 ];
 function parsePreset(dg){
   return dg.split('a').map(e=>{ const m=e.match(/^(\d+)n(.+)$/); return m?{n:+m[1],id:m[2]}:null; }).filter(Boolean);
@@ -9269,7 +9277,9 @@ function applyActivateEffect(u, target, side, costUnit){
   if (cost.resource){ payCost(side, cost.resource); payHook(side, u, cost.resource); log(`<b>${u.name}</b> pays ${cost.resource} resource${cost.resource===1?'':'s'}.`, cls); }
   if (cost.type==='selfToDeck'){
     const i=side.field.indexOf(u); if(i>=0) side.field.splice(i,1);
+    const pc=u.pilotCard;
     resetUnit(u); side.deck.unshift(u);
+    if (pc) sendToTrash(pc, side);                                              // a paired Pilot is left behind
     log(`<b>${u.name}</b> returns to the bottom of its owner's deck as a cost.`, cls);
   }
   else if (cost.type==='destroySelf'){

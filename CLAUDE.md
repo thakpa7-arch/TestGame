@@ -9,6 +9,8 @@ When sharing a link to play/preview the game, ALWAYS send **both** of these form
 
 Do not default to statically.io / jsDelivr / raw.githubusercontent unless the user asks.
 
+Always send both updated-build links after finishing a task (push first, then republish the Artifact).
+
 ## The game
 - `gundam-card-game.html` is a single-file browser game (Gundam Card Game simulator). All card
   data lives in `GUNDAM_CARDS` (+ `GUNDAM_CARDS.push(...)` blocks). `sw.js` caches the shell for
