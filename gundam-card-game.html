@@ -2474,8 +2474,11 @@ function parseGatedEffect(t){
 function parseSelfPing(t){
   t = t.toLowerCase(); let m;
   // friendly + enemy together: "Choose 1 of your Units and 1 enemy Unit. Deal N damage to them."
-  if ((m=t.match(/choose 1 (?:of your|friendly)[^.]*?and 1 enemy unit\.\s*deal (\d+) damage to them/)))
-    return { kind:'damageBoth', amount:+m[1] };
+  // The friendly half keeps its restriction: "Choose 1 friendly (Vagan) Unit and 1 enemy Unit." (Towards Destiny).
+  if ((m=t.match(/choose 1 ((?:of your|friendly)[^.]*?)and 1 enemy unit\.\s*deal (\d+) damage to them/))){
+    const f=friendlyFilter(m[1].trim().replace(/\s*units?$/,'')+' unit');
+    return f ? { kind:'damageBoth', amount:+m[2], filter:f } : { kind:'damageBoth', amount:+m[2] };
+  }
   // "Choose 1 friendly Unit and 1 enemy Unit that is Lv.5 or higher. Deal 2 damage to them." (Two Unicorns ST12-015) — the
   // Lv. requirement applies to both chosen Units.
   if ((m=t.match(/choose 1 (?:of your|friendly)[^.]*?and 1 enemy unit that is lv\.?\s*(\d+) or (higher|lower)\.\s*deal (\d+) damage to them/))){
@@ -2772,7 +2775,7 @@ function destroyAll(card, side, act, label){
   const inRange=u=>u && u.hp>0 && (f.maxLv==null||(u.lv||0)<=f.maxLv)
     && (f.maxAp==null||effAp(u)<=f.maxAp) && (f.maxHp==null||u.hp<=f.maxHp);
   const list=[];
-  for (const u of [...foe.field]) if (inRange(u)) list.push([u,foe]);
+  for (const u of [...foe.field]) if (inRange(u) && !effDestroyGuarded(u, foe, side)) list.push([u,foe]);   // (Kindhearted guards the foe's Units)
   if (act.scope!=='all-enemy') for (const u of [...side.field]) if (inRange(u)) list.push([u,side]);
   const what = `all${act.scope==='all-enemy'?' enemy':''} Units${f.maxLv!=null?' Lv.'+f.maxLv+' or lower':''}`;
   if (!list.length){ log(`${label}: <b>${card.name}</b> — no ${what} to destroy.`, cls); return; }
@@ -2907,7 +2910,9 @@ function inferCommand(effect){
   const body0 = (mm ? mm[1] : full.replace(/【\s*Burst\s*】[^【]*/ig,' ')).trim();
   const modes = parseModes(body0);   // "choose 1 of the following effects and activate it: ■A ■B"
   if (modes) return { kind:'modal', modes };
-  const raw = firstModal(body0);
+  // A 【Main】/【Action】 Command's text starts "/【Action】…": take that tag off, so a leading "If <condition>, …" is read as
+  // the condition it is (Sisterly Care, World Distortion) instead of being dropped.
+  const raw = firstModal(body0).replace(/^[\s\/]*(?:【\s*(?:Main|Action)\s*】[\s\/]*)+/i,'');
   const t = raw.toLowerCase();
   let m;
   // "Choose 1 rested friendly (T) Unit. Change a battling enemy Unit's attack target to it." (Veterans
@@ -2937,7 +2942,13 @@ function inferCommand(effect){
   if (chain) return chain;
   if (a){
     if (['destroy','bounce','rest','debuff','stun'].includes(a.kind) && !a.scope) a.scope='enemy';
+    if (a.kind==='cond') cmdScope(a.inner);
     const bt = body.toLowerCase();
+    // "Choose 1 enemy Unit … battling a friendly Unit with <Blocker>." (Heart Set on Revenge) — the keyword belongs to YOUR
+    // battling Unit, not to the enemy Unit chosen.
+    { const ta = a.kind==='cond' ? a.inner : a, bk = bt.match(/enemy unit[^.]*?battling a friendly unit with <\s*([a-z][a-z\- ]*?)\s*\d*\s*>/);
+      if (ta && bk && kwKeyOf(bk[1])){ const f=Object.assign({}, ta.filter||{}); if (kwKeyOf(bk[1])==='blocker') delete f.blocker; if (f.kw===g4KwKey(bk[1])) delete f.kw;
+        f.battlingFriendlyKw = kwKeyOf(bk[1]); ta.filter = f; } }
     // "…Return it to its owner's hand. If you do, draw N." (Poorly Planned Offensive) — drawn only when that happened.
     if (['destroy','bounce','bounceDeck','rest'].includes(a.kind) && (m=bt.match(/\bif you do,\s*draw (\d+)\.?$/))) a.ifDoDraw = +m[1];
     // "…Deal 1 damage to it. If <condition>, deal N damage instead." (Lady Luck) — the amount is settled on resolution.
@@ -2960,6 +2971,46 @@ const traitList = s=>{ const m=String(s||'').match(/\(([^)]+)\)/g); return m ? m
 function cmdScope(a){ if (a && ['destroy','bounce','rest','debuff','stun'].includes(a.kind) && !a.scope) a.scope='enemy'; return a; }
 function parseCommandShapes(raw0){
   const raw = cmdBody(raw0), t = raw.toLowerCase(); let m;
+  // "All your Units get AP+N during this turn." (Citizens, Take a Stand!), "All friendly (T) Units that are Lv.N or lower get
+  // AP+N during this turn." (On Edge), "During this turn, all Units paired with a Pilot get AP+N." (Warped Intent — no side
+  // named: both players' Units), "All friendly Units that are Lv.N or lower recover N HP." (Securing the Supply Line) —
+  // every Unit that qualifies, nothing chosen.
+  if ((m=t.match(/^(during this turn,\s*)?all (your |friendly )?((?:\([^)]+\)\s*\/?\s*)*)units?( that are lv\.?\s*(\d+) or (lower|higher))?( paired with a pilot)?\s+(?:get ap\s*\+\s*(\d+)|recover (\d+) hp)(\s+during this turn)?\.?$/))){
+    const f={}; const tr=traitList(m[3]); if (tr) f.traits=tr;
+    if (m[5]!=null){ if (m[6]==='lower') f.maxLv=+m[5]; else f.minLv=+m[5]; }
+    if (m[7]) f.paired=true;
+    const out={ kind: m[8]!=null ? 'massBuff' : 'massHeal', amount:+(m[8]!=null?m[8]:m[9]), both:!m[2] };
+    if (Object.keys(f).length) out.filter=f;
+    return out;
+  }
+  // "During this turn, friendly Units can't be destroyed by enemy effects. Then, draw 1." (Kindhearted) — your Units are
+  // guarded from enemy destroy effects until the end of the turn.
+  if ((m=t.match(/^during this turn, friendly units can'?t be destroyed by enemy effects\.?(?:\s*then,\s*(.+))?$/))){
+    const g={ kind:'noEnemyEffDestroy' };
+    if (!m[1]) return g;
+    const then=cmdScope(parseClause(raw.replace(/^.*?\bthen,\s*/i,'')));
+    return then ? { kind:'chain', steps:[g, then] } : g;
+  }
+  // "Choose 1 Pilot paired with an enemy Unit that is Lv.N or lower. Destroy it." (Eliminate Target) — the Pilot goes to the
+  // trash and its Unit stays (the Lv. cap reads the Unit, the noun it follows).
+  if ((m=lvMask(t).match(/^choose 1 pilot paired with an enemy unit([^.]*)\.\s*destroy it\.?$/)))
+    return { kind:'destroyPilot', scope:'enemy', filter:targetFilter('enemy unit'+lvUnmask(m[1]))||null };
+  // "Choose 1 to N enemy Units <restriction>. Return them to their owners' hands." (MAP Weapon, Graceful Demeanor)
+  if ((m=lvMask(t).match(/^choose 1 to (\d+) enemy units?([^.]*)\.\s*return them to their owners'? hands?\.?$/)))
+    return { kind:'bounceMulti', count:+m[1], scope:'enemy', filter:targetFilter('enemy units'+lvUnmask(m[2]))||null };
+  // "Choose 1 friendly Unit / 1 (T) Unit that is Lv.N or higher. It recovers N HP and gets AP+M during this turn." (Not with
+  // Scattershot!, Tactical Training) — both happen to the one Unit chosen. A choice that names no side may be either player's Unit.
+  if ((m=lvMask(t).match(/^(choose 1 [^.]*?units?[^.]*)\.\s*it recovers (\d+) hp and gets ap\s*\+\s*(\d+)( during this turn)?\.?$/))){
+    const cs=lvUnmask(m[1]), f=grantChoiceFilter(cs);
+    return Object.assign({ kind:'healBuff', heal:+m[2], amount:+m[3], scope:'friendly', filter:f||null }, /\b(?:friendly|of your)\b/.test(cs) ? {} : { anySide:true });
+  }
+  // "Choose 1 friendly Base and 1 enemy Unit <restriction>. Rest them." (Unheralded Attack) — your Base, not a Unit.
+  if ((m=lvMask(t).match(/^choose 1 friendly base and 1 enemy unit([^.]*)\.\s*rest them\.?$/)))
+    return { kind:'restBaseEnemy', enemyFilter:targetFilter('enemy unit'+lvUnmask(m[1]))||null };
+  // "Choose a number of enemy Units up to the number of white Units with <Blocker> you have in play. They get AP-N during this
+  // turn." (Infinite Variations) — how many is counted on resolution; any enemy Units may be chosen.
+  if ((m=t.match(/^choose a number of enemy units up to the number of (?:(blue|white|red|green|purple) )?((?:\([^)]+\)\s*)*)units?(?: with <\s*([a-z][a-z\- ]*?)\s*>)? you have in play\.\s*they get ap\s*-\s*(\d+) during this (turn|battle)\.?$/)))
+    return { kind:'debuffUpTo', amount:+m[4], dur:m[5]==='battle'?'battle':'turn', per:{ color:m[1]||null, traits:traitList(m[2]), kw:m[3]?kwKeyOf(m[3]):null } };
   // "During this battle, your shield area cards can't receive damage from enemy Units that are Lv.N or lower /
   // with N or less AP." (Peaceful Timbre, White Wolf, Presence Detected)
   if ((m=t.match(/^during this battle, your shield area cards can'?t receive damage from enemy units (?:that are lv\.?\s*(\d+) or lower|with (\d+) or less ap)\.?$/)))
@@ -3159,8 +3210,111 @@ function cmdAuto(card, side, act, label){
       const u=[...c].sort((a,b)=>best(b)-best(a) || cardValue(a)-cardValue(b))[0];
       u.rested=true; log(`${label}: <b>${name}</b> — ${side===G.player?'you rest your':'rests its'} <b>${u.name}</b>.`, cls);
       runTrigger(card, side, restedInner(act, u), label); return true; }
+    case 'massBuff': case 'massHeal': applyMassCmd(card, side, act, label); return true;
+    case 'noEnemyEffDestroy':
+      side.noEnemyEffDestroyTurn=G.turnSeq;
+      log(`${label}: <b>${name}</b> — during this turn, ${side===G.player?'your':who(side)+"'s"} Units can't be destroyed by enemy effects.`, cls); return true;
+    case 'destroyPilot': {
+      const sc=u=>{ const pc=u.pilotCard; return (u.hp<=(pc.pHp||0)?100:0) + (u.linked?6:0) + (pc.pAp||0) + (pc.pHp||0); };   // the Pilot whose loss hurts most
+      const t=[...destroyPilotCands(foe, act)].sort((a,b)=>sc(b)-sc(a))[0];
+      if (t) destroyPairedPilot(card, side, t, label); else log(`${label}: <b>${name}</b> — no enemy Pilot it can choose.`, cls);
+      return true; }
+    case 'bounceMulti': {
+      const picks=enemyTargets(foe, act).sort((a,b)=>aiThreatScore(b)-aiThreatScore(a) || cardValue(b)-cardValue(a)).slice(0, act.count);
+      for (const t of picks) applyToTarget(card, side, Object.assign({}, act, { kind:'bounce' }), t, label);
+      if (!picks.length) log(`${label}: <b>${name}</b> — no enemy Unit it can choose.`, cls);
+      return true; }
+    case 'healBuff': {
+      const c=healBuffCands(side, act).filter(u=>side.field.includes(u));   // the AI only ever picks its own Unit
+      const can=u=>(G.turn===side.who && !u.rested && !u.sick && effAp(u)>0)?1:0;
+      const t=[...c].sort((a,b)=>can(b)-can(a) || ((effMaxHp(b)-b.hp)>0)-((effMaxHp(a)-a.hp)>0) || effAp(b)-effAp(a))[0];
+      if (t) applyHealBuff(card, side, act, t, label); else log(`${label}: <b>${name}</b> — no Unit it can choose.`, cls);
+      return true; }
+    case 'restBaseEnemy': {
+      const e=rankTarget(enemyTargets(foe, { kind:'rest', filter:act.enemyFilter }), { kind:'rest' });
+      applyRestBaseEnemy(card, side, e, label); return true; }
+    case 'debuffUpTo': {
+      const n=debuffUpToCount(side, act);
+      const picks=enemyTargets(foe, { kind:'debuff', filter:null }).sort((a,b)=>effAp(b)-effAp(a)).slice(0, n);
+      if (!picks.length) log(`${label}: <b>${name}</b> — ${n?'no enemy Unit to choose':'it may choose no enemy Unit'} (${n}).`, cls);
+      for (const t of picks) applyToTarget(card, side, { kind:'debuff', amount:act.amount, dur:act.dur, scope:'enemy' }, t, label);
+      return true; }
   }
   return false;
+}
+// ---- Command shapes that touch several Units, a Pilot, a Base or a counted number of Units ----
+// The Units an "All [your/friendly] (T) Units [that are Lv.N or lower] [paired with a Pilot] get AP+N / recover N HP" Command
+// covers: yours, and the opponent's too when the text names no side (Warped Intent).
+function massCmdUnits(side, act){
+  const foe=side===G.player?G.enemy:G.player;
+  return [side, ...(act.both?[foe]:[])].flatMap(s=>friendlyTargets(s, { filter:act.filter||null }).filter(u=>u.type==='unit'));
+}
+function applyMassCmd(card, side, act, label){
+  const cls=side===G.player?'me':'ai', us=massCmdUnits(side, act);
+  if (act.kind==='massBuff'){
+    for (const u of us){ u.tempAp=(u.tempAp||0)+act.amount; u.ap=effAp(u); }
+    log(`${label}: <b>${card.name}</b> — ${us.length?us.map(u=>'<b>'+u.name+'</b>').join(', ')+` get${us.length===1?'s':''} AP+${act.amount} this turn`:'no Unit it applies to'}.`, cls);
+    return;
+  }
+  const healed=[];
+  for (const u of us){ const b=u.hp; u.hp=Math.min(effMaxHp(u), u.hp+act.amount); if (u.hp>b){ healed.push(u); floatNum(u.uid,'+'+(u.hp-b),'#7ee29a'); unitHealed(u, G.player.field.includes(u)?G.player:G.enemy); } }
+  log(`${label}: <b>${card.name}</b> — ${healed.length?healed.map(u=>'<b>'+u.name+'</b>').join(', ')+` recover${healed.length===1?'s':''} ${act.amount} HP`:'no damaged Unit it applies to'}.`, cls);
+}
+// Kindhearted: "During this turn, friendly Units can't be destroyed by enemy effects." `owner` = the Unit's side, `srcSide` = whose
+// effect is destroying it. (A Unit brought to 0 HP by effect damage is still destroyed by the rules.)
+function effDestroyGuarded(u, owner, srcSide){
+  if (!u || u.type!=='unit' || !owner || !srcSide || owner===srcSide || owner.noEnemyEffDestroyTurn!==G.turnSeq) return false;
+  log(`<b>${u.name}</b> can't be destroyed by enemy effects this turn.`, owner===G.player?'me':'ai');
+  return true;
+}
+// "Choose 1 Pilot paired with an enemy Unit …" — the enemy Units (meeting the restriction) that have a Pilot.
+function destroyPilotCands(foe, act){ return enemyTargets(foe, act).filter(u=>u.type==='unit' && !!u.pilotCard); }
+// Destroy the Pilot paired with enemy Unit `u`: it goes to its owner's trash and its AP/HP and pair/link bonuses leave with it;
+// the Unit stays (damage it already took stays too, so it is destroyed if that leaves it at 0 HP).
+function destroyPairedPilot(card, side, u, label){
+  const foe=side===G.player?G.enemy:G.player, cls=side===G.player?'me':'ai', pc=u && u.pilotCard;
+  if (!pc || !foe.field.includes(u)) return;
+  const maxBefore=effMaxHp(u);
+  u.pilot=null; u.pilotCard=null; u.linked=false; if (u.activateFromPilot) dropPilotActivate(u);
+  u.pilotPairAp=0; u.pilotPairHp=0; u.pilotLinkAp=0; u.pilotLinkHp=0; if (u.baseLv!=null) u.lv=u.baseLv;
+  u.hp -= Math.max(0, maxBefore-effMaxHp(u)); u.ap=effAp(u); u.maxHp=effMaxHp(u);
+  sendToTrash(pc, foe);
+  log(`${label}: <b>${card.name}</b> destroys Pilot <b>${pc.name}</b> (paired with <b>${u.name}</b>).`, cls);
+  if (u.hp<=0){ const i=foe.field.indexOf(u); if(i>=0) foe.field.splice(i,1); fx('die',u.uid); log(`<b>${u.name}</b> is destroyed.`, foe===G.player?'me':'ai'); sendToTrash(u, foe); fireDestroyed(u, foe); }
+}
+// "Choose 1 … Unit. It recovers N HP and gets AP+M during this turn." — the Units it may choose (either player's when no side is named).
+function healBuffCands(side, act){
+  const foe=side===G.player?G.enemy:G.player, f={ filter:act.filter||null };
+  return [...friendlyTargets(side, f), ...(act.anySide ? friendlyTargets(foe, f) : [])].filter(u=>u.type==='unit');
+}
+function applyHealBuff(card, side, act, t, label){
+  if (!t || t.hp<=0) return;
+  const cls=side===G.player?'me':'ai', owner=G.player.field.includes(t)?G.player:G.enemy, b=t.hp;
+  t.hp=Math.min(effMaxHp(t), t.hp+act.heal); if (t.hp>b){ floatNum(t.uid,'+'+(t.hp-b),'#7ee29a'); unitHealed(t, owner); }
+  t.tempAp=(t.tempAp||0)+act.amount; t.ap=effAp(t);
+  log(`${label}: <b>${t.name}</b> recovers ${act.heal} HP and gets AP+${act.amount} this turn.`, cls);
+}
+// "Choose 1 friendly Base and 1 enemy Unit … Rest them." (Unheralded Attack)
+function applyRestBaseEnemy(card, side, e, label){
+  const cls=side===G.player?'me':'ai', foe=side===G.player?G.enemy:G.player, b=side.base;
+  if (b && b.hp>0 && !b.rested){ b.rested=true; log(`${label}: <b>${card.name}</b> rests ${side===G.player?'your':who(side)+"'s"} <b>${b.name}</b> base.`, cls); }
+  if (e && foe.field.includes(e) && effectRest(e, foe)) log(`${label}: <b>${card.name}</b> rests enemy <b>${e.name}</b>.`, cls);
+}
+// "Choose a number of enemy Units up to the number of white Units with <Blocker> you have in play." — counted now.
+function debuffUpToCount(side, act){
+  const p=act.per||{};
+  return side.field.filter(u=>u.hp>0 && u.type==='unit' && (!p.color || String(u.color||'').toLowerCase()===p.color)
+    && (!p.traits || p.traits.some(tr=>hasTraitT(u, tr))) && (!p.kw || targetHasKw(u, p.kw))).length;
+}
+// The player picks up to `max` different Units from `candsFn()` one at a time (modal chooser; "Done" after the first pick).
+function pickUpTo(candsFn, max, msgFn, done){
+  const picked=[];
+  (function next(){
+    const left=candsFn().filter(u=>!picked.includes(u) && u.hp>0);
+    if (picked.length>=max || !left.length){ done(picked); return; }
+    if (!picked.length && left.length===1 && max>=1){ picked.push(left[0]); next(); return; }
+    promptTargetChoice(left, msgFn(picked.length), t=>{ if (!t){ done(picked); return; } picked.push(t); next(); }, picked.length ? 'Done' : null);
+  })();
 }
 // Player resolution of the Command shapes. `modal`: choose through modals only (an Action Step or a Burst, where board
 // taps are off); otherwise a step may use the board's trigger-target mode. Returns true when it handled `act`.
@@ -3196,12 +3350,42 @@ function cmdPlayer(card, side, act, label, fin, modal){
       return true; }
     case 'grantKw': {
       if (!act.may) return false;   // "(Then,) you may choose 1 friendly Unit. It gains <K>…" — the player may decline
-      choose(friendlyTargets(side, act), `<b>${name}</b>: you may choose 1 friendly Unit — it gains &lt;${kwLabel(act.kw)}&gt; this turn.`,
+      choose(friendlyTargets(side, act), `<b>${name}</b>: you may choose 1 friendly Unit${act.filter && act.filter.nameHas ? ` with "${act.filter.nameHas.replace(/\b\w/g,ch=>ch.toUpperCase())}" in its card name` : ''} — it gains &lt;${kwLabel(act.kw)}&gt; this turn.`,
         t=>{ if (t) applyToTarget(card, side, act, t, label); render(); fin(); }, "Don't choose");
       return true; }
     case 'cond':
       if (!modal || !act.elseInner) return false;
       cmdStep(card, side, condMet(act.cond, side, card, act.other) ? act.inner : act.elseInner, label, fin, true); return true;
+    // Nothing to choose: every qualifying Unit / the side-wide guard.
+    case 'massBuff': case 'massHeal': case 'noEnemyEffDestroy': cmdAuto(card, side, act, label); render(); fin(); return true;
+    case 'destroyPilot':
+      choose(destroyPilotCands(G.enemy, act), `<b>${name}</b>: choose 1 enemy Unit — the Pilot paired with it is destroyed.`,
+        t=>{ if (t) destroyPairedPilot(card, side, t, label); else log(`${label}: <b>${name}</b> — no enemy Pilot it can choose.`, 'me'); render(); fin(); });
+      return true;
+    case 'bounceMulti':
+      pickUpTo(()=>enemyTargets(G.enemy, act), act.count, k=>`<b>${name}</b>: choose ${k?'another':'1 to '+act.count} enemy Unit${k?'':'s'} to return to ${k?'its':'their'} owner's hand (${k}/${act.count}).`,
+        picked=>{ for (const t of picked) if (G.enemy.field.includes(t)) applyToTarget(card, side, Object.assign({}, act, { kind:'bounce' }), t, label); render(); fin(); });
+      return true;
+    case 'healBuff': {
+      const c=healBuffCands(side, act), mine=c.filter(u=>side.field.includes(u)), theirs=c.filter(u=>!side.field.includes(u));
+      choose([...mine, ...theirs], `<b>${name}</b>: choose 1 ${act.anySide?'':'friendly '}Unit — it recovers ${act.heal} HP and gets AP+${act.amount} this turn${theirs.length?' (your Units are listed first)':''}.`,
+        t=>{ if (t) applyHealBuff(card, side, act, t, label); else log(`${label}: <b>${name}</b> — no Unit it can choose.`, 'me'); render(); fin(); });
+      return true; }
+    case 'restBaseEnemy':
+      choose(enemyTargets(G.enemy, { kind:'rest', filter:act.enemyFilter }), `<b>${name}</b>: choose 1 enemy Unit to rest (your Base is rested too).`,
+        t=>{ applyRestBaseEnemy(card, side, t, label); render(); fin(); });
+      return true;
+    case 'debuffUpTo': {
+      const n=debuffUpToCount(side, act);
+      if (!n){ log(`${label}: <b>${name}</b> — you have no Unit it counts, so it chooses no enemy Unit.`, 'me'); fin(); return true; }
+      pickUpTo(()=>enemyTargets(G.enemy, { kind:'debuff', filter:null }), n, k=>`<b>${name}</b>: choose up to ${n} enemy Unit${n>1?'s':''} — AP-${act.amount} this ${act.dur==='battle'?'battle':'turn'} (${k}/${n}).`,
+        picked=>{ for (const t of picked) applyToTarget(card, side, { kind:'debuff', amount:act.amount, dur:act.dur, scope:'enemy' }, t, label); render(); fin(); });
+      return true; }
+    // "Choose 1 friendly (T) Unit and 1 enemy Unit. Deal N damage to them." with a restriction on either Unit (Towards Destiny,
+    // Two Unicorns): both are picked from the Units the text allows.
+    case 'damageBoth':
+      if (!act.filter && !act.enemyFilter) return false;
+      resolveChosenMode(card, side, act, label, fin); return true;
   }
   return false;
 }
@@ -3986,6 +4170,10 @@ function friendlyFilter(t){
   // Unit's own relative clause, never "if you are Lv.7 or higher" or an enemy Unit's Lv.
   const lvh=t.match(/(?:of your|friendly)\s+(?:(?!enemy)[^.])*?units? that (?:is|are) lv\.?\s*(\d+) or higher/i); if(lvh) f.minLv=+lvh[1];
   const ap=t.match(/(\d+) or more ap/i); if(ap) f.minAp=+ap[1];
+  // "Choose 1 of your (MF) Units with 4 or less AP" (Rose Screamer) / "… Units without <Breach>" (Hoka Kyoten Juzetsujin) — the
+  // chosen friendly Unit's own restriction (an enemy Unit's "with N or less AP" elsewhere in the text is not read).
+  const apx=t.match(/(?:of your|friendly)\s+(?:(?!enemy)[^.])*?units? with (\d+) or less ap\b/i); if(apx) f.maxAp=+apx[1];
+  const nok=t.match(/(?:of your|friendly)\s+(?:(?!enemy)[^.])*?units? without <\s*([a-z][a-z\- ]*?)\s*\d*\s*>/i); if(nok && kwKeyOf(nok[1])) f.noKw=kwKeyOf(nok[1]);
   // "Choose 1 of your Unit tokens" (Valedictorian), "1 friendly Unit token" (Sodon) — tokens only.
   if (/(?:of your|friendly)\s+(?:other |active |rested |damaged )*(?:\([^)]*\)\s*\/?\s*)*unit tokens?\b/i.test(t)) f.token=true;
   // "Choose 1 friendly Unit paired with an (X-Rounder) Pilot" (Distant Reunion, Gundam Kyrios (Tail Booster)).
@@ -4266,6 +4454,9 @@ function enemyTargets(foe, act){
     && (!f.battlingSelf || !!(G.curBattle && act.source && ((G.curBattle.atk===act.source && G.curBattle.def===u) || (G.curBattle.def===act.source && G.curBattle.atk===u))))
     && (f.battlingFriendlyMinLv==null || !!(G.curBattle && ((G.curBattle.def===u && (G.curBattle.atk.lv||0)>=f.battlingFriendlyMinLv)
                                               || (G.curBattle.atk===u && G.curBattle.def && (G.curBattle.def.lv||0)>=f.battlingFriendlyMinLv))))
+    // "… battling a friendly Unit with <Blocker>" (Heart Set on Revenge): the Unit it battles is yours and has that keyword.
+    && (!f.battlingFriendlyKw || !!(G.curBattle && ((G.curBattle.def===u && G.curBattle.atk && G.curBattle.atk.type==='unit' && caster && caster.field.includes(G.curBattle.atk) && targetHasKw(G.curBattle.atk, f.battlingFriendlyKw))
+                                                 || (G.curBattle.atk===u && G.curBattle.def && G.curBattle.def.type==='unit' && caster && caster.field.includes(G.curBattle.def) && targetHasKw(G.curBattle.def, f.battlingFriendlyKw)))))
     && (!f.undamaged || u.hp>=effMaxHp(u))
     && (f.hpEq==null || u.hp===f.hpEq)
     && (!f.noPilot || (!u.pilot && !u.pilotCard))
@@ -4287,6 +4478,10 @@ function friendlyTargets(side, act){
     && (f.maxLv==null || (u.lv||0)<=f.maxLv)
     && (f.minLv==null || (u.lv||0)>=f.minLv)                   // "friendly Unit … that is Lv.5 or higher" (Two Unicorns)
     && (f.minAp==null || effAp(u)>=f.minAp)
+    && (f.maxAp==null || effAp(u)<=f.maxAp)                                                                    // "with 4 or less AP" (Rose Screamer)
+    && (!f.noKw || !targetHasKw(u, f.noKw))                                                                     // "without <Breach>" (Hoka Kyoten Juzetsujin)
+    && (!f.nameHas || String(u.name||'').toLowerCase().includes(f.nameHas))                                    // "with "Shining Gundam" in its card name"
+    && (!f.paired || !!u.pilotCard)                                                                            // "paired with a Pilot"
     && (!f.color || (u.color||'').toLowerCase()===f.color)
     && (!f.damaged || u.hp<effMaxHp(u))
     && (f.minLv==null || (u.lv||0)>=f.minLv)
@@ -4358,6 +4553,7 @@ function applyToTarget(card, side, act, target, label){
     sound('bounce');
     log(`${label}: <b>${name}</b> returns <b>${target.name}</b> to the bottom of its owner's deck.`,cls);
   }
+  else if (act.kind==='destroy' && effDestroyGuarded(target, foe, side)){ /* Kindhearted: it can't be destroyed by enemy effects */ }
   else if (act.kind==='destroy'){ log(`${label}: <b>${name}</b> destroys <b>${target.name}</b>.`,cls); const i=foe.field.indexOf(target); if(i>=0)foe.field.splice(i,1); fx('die',target.uid); sendToTrash(target,foe); fireDestroyed(target, foe); }
   else if (act.kind==='debuff'){
     const amt = act.perRestedEnemy ? foe.field.filter(u=>u.rested&&u.hp>0).length
@@ -4493,6 +4689,7 @@ function parseCondition(t){
   if ((m=t.match(/this unit is battling an enemy unit that is lv\.?\s*(\d+) or lower/))) return { type:'battlingLv', max:+m[1] };   // ZnO
   if (/you have drawn with an effect during this turn/.test(t)) return { type:'effectDrew' };         // Kou Uraki
   if ((m=t.match(/^(?:you have )?(\d+) or more other ([a-z\/() \-]*?)\s*units?(?: are)? in play$/))) return { type:'friendlyUnit', min:+m[1], trait:(m[2]||'').replace(/[()]/g,'').trim()||null, other:true };   // Mahiroo
+  if (/^no enemy units? (?:have|has) attacked (?:during )?this turn$/.test(t)) return { type:'noFoeAttackThisTurn' };   // A Miracle (declareAttack records it)
   if (/it is your opponent's turn|it is the opponent's turn/.test(t)) return { type:'oppTurn' };
   if ((m=t.match(/you are lv\.?\s*(\d+) or higher/))) return { type:'level', min:+m[1] };
   if ((m=t.match(/(\d+)\s*to\s*(\d+) enemy units/))) return { type:'and', conds:[{ type:'enemyUnits', min:+m[1] }, { type:'enemyUnitsMax', max:+m[2] }] };   // Orga's Order
@@ -4586,6 +4783,7 @@ function condMet(cond, side, source, other){
     case 'trashName':      return side.trash.some(c=>(c.name||'').toLowerCase().includes(cond.name.toLowerCase()));
     case 'yourTurn':       return G.turn===side.who;
     case 'oppTurn':        return G.turn!==side.who;
+    case 'noFoeAttackThisTurn': return foe.attackDeclTurn!==G.turnSeq;
     case 'level':          return (side.resMax||0) >= cond.min;
     case 'enemyUnits':     return foe.field.length >= cond.min;
     case 'enemyUnitsMax':  return foe.field.length <= cond.max;
@@ -6359,6 +6557,19 @@ function resolvePlayerTrigger(card, side, act, label, after){
     if (trashCount(side, act.trait) >= act.count && act.inner){
       const needsEnemy = ['destroy','rest','damage','debuff','bounce'].includes(act.inner.kind);
       if (!needsEnemy || G.enemy.field.some(u=>!u.token)){
+        // "Choose 3 Unit cards from your trash. Exile them." (Operation to Intercept Solomon) — you choose which (the Command
+        // being played isn't one of them).
+        const cands=side.trash.filter(c=>c!==card && matchTrashTrait(c, act.trait));
+        const tr = act.trait ? `${act.trait.replace(/\b\w/g,ch=>ch.toUpperCase())} ` : '';
+        if (side===G.player && cands.length>=act.count){
+          pickCardsOverlay(cands, act.count, `${card.name}: choose ${act.count} ${tr}card${act.count===1?'':'s'} in your trash to exile`, picks=>{
+            for (const c of picks){ const i=side.trash.indexOf(c); if (i>=0) side.exile.push(side.trash.splice(i,1)[0]); }
+            refreshTrashStats(side);
+            log(`${label}: <b>${card.name}</b> exiles ${picks.map(c=>'<b>'+c.name+'</b>').join(', ')} from your trash.`, cls0);
+            resolvePlayerTrigger(card, side, act.inner, label, after);
+          });
+          return;
+        }
         const n=exileFromTrash(side, act.count, act.trait);
         log(`${label}: <b>${card.name}</b> exiles ${n} ${act.trait?act.trait+' ':''}card${n===1?'':'s'} from trash.`, cls0);
         return resolvePlayerTrigger(card, side, act.inner, label, after);
@@ -7315,7 +7526,10 @@ function makeCard(def, owner){
       const ct=plain(def.effect).toLowerCase(); let r;
       if (/if you use an ex resource to play this card, rest the enemy unit/.test(ct)) c.action.restIfEx = true;                      // Incendiary Spark
       if ((r=ct.match(/then, you may choose 1 of your units with ["“”']([^"“”']+)["“”'] in its card name\. it gets <\s*([a-z\- ]+?)\s*> during this turn/)))
-        c.action.rider = { name:r[1].trim(), kw:KW_OF(r[2]) };                                                                         // Shining Finger
+      { // Shining Finger: "Then, you may choose 1 of your Units with "Shining Gundam" in its card name. It gets <First Strike> during
+        // this turn." — a part of its own after the rest, which the player may decline or point at either such Unit.
+        const first = c.action.kind==='chain' ? c.action.steps[0] : c.action;
+        c.action = { kind:'chain', steps:[ first, { kind:'grantKw', kw:KW_OF(r[2]), amount:0, scope:'friendly', may:true, filter:{ nameHas:r[1].trim() } } ] }; }
       if ((r=ct.match(/choose 1 friendly\s*\(([^)]+)\)\s*unit\. it gains the following effect during this turn\s*[:：]\s*■\s*(【during link】)?\s*【destroyed】\s*choose 1 friendly\s*\(([^)]+)\)\s*unit\. set it as active/)))
         c.action = { kind:'grantDestroyedReady', scope:'friendly', filter:{ traits:[r[1].trim()] }, readyTrait:r[3].trim(), link:!!r[2] };   // At the Risk of One's Life
       if ((r=ct.match(/enemy unit that is battling one of your units that is lv\.?\s*(\d+) or higher/))){                                  // A Wind Against Fires
@@ -8933,7 +9147,9 @@ function startCommand(card, handIdx, modeAct){
   const noEnemyTgt = needEnemy && enemyTargets(G.enemy, a).length===0;
   // A restricted friendly target ("friendly Unit with <Blocker>", "(AEUG) Units/Bases") must exist; a "Then, …" part
   // (Dramatic Turnabout's draw) still makes the card worth playing without one.
-  const noAllyTgt  = needAlly && !a.then && (a.filter || a.withBase ? friendlyTargets(G.player, a).length===0 : G.player.field.length===0);
+  // A restricted "1 friendly (T) Unit and 1 enemy Unit" (Towards Destiny) still damages the enemy Unit when none of yours qualifies.
+  const noAllyTgt  = needAlly && !a.then && !(a.kind==='damageBoth' && a.filter && G.enemy.field.some(u=>u.hp>0))
+                  && (a.filter || a.withBase ? friendlyTargets(G.player, a).length===0 : G.player.field.length===0);
   // The Command shapes ("… instead" upgrades, Human Karma's rest, Destined Battle's chosen Unit…): what they choose first.
   const noShapeTgt = (a.kind==='cond' || cmdModalKind(a)) && !cmdPlayable(a, s, card);
   if (noEnemyTgt || noAllyTgt || noShapeTgt || cmdNoTarget(a, G.player)){ flashPrompt(`${card.name}: no legal target — can't play it now.`); return; }
@@ -10028,6 +10244,7 @@ function autoTarget(action, side){
 function declareAttack(atk, atkSide){
   const cls = atkSide===G.player?'me':'ai';
   atk.rested = true;   // attack step (8-2-1): the attacker is rested as the attack is declared
+  atkSide.attackDeclTurn = G.turnSeq;   // "no enemy Units have attacked this turn" (A Miracle)
   G.curAttack = atk;   // "while this Unit is attacking" (Yzak Jule, Suletta Mercury) — cleared when the battle ends
   const apply=(act)=>{
     if (!act) return;
@@ -10372,6 +10589,7 @@ function battle(atk, def, atkSide, defSide){
 function battleSlayHook(dealer, dSide, victim, vSide, hp0){
   const g=dealer && dealer.slayGrant; if (!g || g.turnSeq!==G.turnSeq) return;
   if (!victim || victim.type!=='unit' || victim.hp<=0 || !(victim.hp<hp0) || !vSide.field.includes(victim) || (victim.lv||0)>g.maxLv) return;
+  if (effDestroyGuarded(victim, vSide, dSide)) return;   // Kindhearted: an enemy effect can't destroy it this turn
   log(`<b>${dealer.name}</b> dealt battle damage to Lv.${victim.lv||0} <b>${victim.name}</b> — it is destroyed.`, dSide===G.player?'me':'ai');
   G.effSrc=dealer;
   const i=vSide.field.indexOf(victim); if (i>=0) vSide.field.splice(i,1); fx('die', victim.uid); sendToTrash(victim, vSide); fireDestroyed(victim, vSide);
@@ -11273,6 +11491,14 @@ function aiMainStep(){
   const buff = ai.hand.find(c=>mainCmd(c) && c.action.kind==='buff' && canAfford(ai,c));
   const buffOk = u=>!u.sick&&!u.rested&&u.ap>0 && (!buff.action.filter || friendlyTargets(ai, buff.action).includes(u));   // only a Unit its text allows
   if (buff && ai.field.some(buffOk)){ const t=ai.field.filter(buffOk).sort((a,b)=>b.ap-a.ap)[0]; const i=ai.hand.indexOf(buff); ai.hand.splice(i,1); payCost(ai, effectiveCost(ai,buff)); sendToTrash(buff,ai); flashCard(buff,'ENEMY COMMAND'); commandPlayed(buff, ai); setTimeout(()=>afterCommandMain(buff, ai), 0); t.tempAp=(t.tempAp||0)+buff.action.amount; t.ap=effAp(t); log(`${who(G.enemy)} empowers <b>${t.name}</b>.`, 'ai'); return true; }
+  // "All your (T) Units get AP+N" / "Choose 1 … Unit. It recovers N HP and gets AP+M" before attacks — when a Unit that can attack
+  // gets the AP (and, for Warped Intent's both-sides buff, when the AI gains more than the player's Units do).
+  { const ready=u=>!u.sick&&!u.rested&&effAp(u)>0;
+    const worth=a=>a.kind==='healBuff' ? healBuffCands(ai, a).some(u=>ai.field.includes(u) && ready(u))
+      : (()=>{ const mine=massCmdUnits(ai, Object.assign({}, a, { both:false })).filter(ready).length; return mine>0 && (!a.both || mine>=massCmdUnits(pl, Object.assign({}, a, { both:false })).length); })();
+    const mc = ai.hand.find(c=>mainCmd(c) && c.action && ['massBuff','healBuff'].includes(c.action.kind) && canAfford(ai,c) && worth(c.action));
+    if (mc){ const i=ai.hand.indexOf(mc); ai.hand.splice(i,1); payCost(ai, effectiveCost(ai,mc)); sendToTrash(mc,ai); flashCard(mc,'ENEMY COMMAND'); commandPlayed(mc, ai); setTimeout(()=>afterCommandMain(mc, ai), 0);
+      log(`${who(G.enemy)} plays <b>${mc.name}</b>.`, 'ai'); applyCommand(mc, ai, null); return true; } }
   // token-creating command — play it when there's board room
   // (a token whose own condition fails — Orga's Order with no enemy Unit — isn't worth the card)
   const tokCmd = ai.hand.find(c=>mainCmd(c) && canAfford(ai,c) && ((c.action.kind==='token' && !(c.action.tokenLimit && hasTraitToken(ai, c.action.tokenLimit)) && tokenMakerQueue(c.action, ai).length>0)
@@ -11429,13 +11655,17 @@ function actionCmdUsable(c){
 // Command shapes resolved through resolveModal in an Action Step.
 function cmdModalKind(a){
   return !!a && (['chain','cond','noEffect','shieldGuard','destroyShieldArea','grantLure','grantNoUnitEffDmg','grantBattleDestroy','armKillReady',
-    'readyBaseThen','restFriendlyThen','restMulti','damageMulti','destroyMulti'].includes(a.kind) || (a.kind==='setActiveFriendly' && !!a.filter)
-    || (a.kind==='grantKw' && !!a.may) || (a.kind==='reanimate' && !!a.free));
+    'readyBaseThen','restFriendlyThen','restMulti','damageMulti','destroyMulti',
+    'massBuff','massHeal','noEnemyEffDestroy','destroyPilot','bounceMulti','healBuff','restBaseEnemy','debuffUpTo'].includes(a.kind) || (a.kind==='setActiveFriendly' && !!a.filter)
+    || (a.kind==='grantKw' && !!a.may) || (a.kind==='reanimate' && !!a.free) || (a.kind==='damageBoth' && !!(a.filter || a.enemyFilter)));
 }
 // Can this Command be played right now — does what it chooses first have a legal choice? A chain is always playable
 // (its "Then," part happens regardless).
 function cmdPlayable(a, side, card){
   if (!a || a.kind==='chain') return true;
+  // "If <condition>, …" with nothing else to do: while the condition is false the Command would do nothing (A Miracle once an
+  // enemy Unit has attacked, Sisterly Care with no (Teiwaz) Link Unit), so it isn't offered.
+  if (a.kind==='cond' && !a.elseInner && !condOnTarget(a.cond) && !condMet(a.cond, side, card, a.other)) return false;
   const foe=side===G.player?G.enemy:G.player, h=cmdHead(a, side, card);
   if (h.kind==='debuff' && h.scope==='all-enemy') return true;
   if ((h.kind==='damage' && h.scope!=='all-enemy' && h.scope!=='all-both') || ['rest','destroy','bounce','debuff','stun'].includes(h.kind)) return enemyTargets(foe, h).length>0;
@@ -11443,6 +11673,10 @@ function cmdPlayable(a, side, card){
   if (['grantLure','grantNoUnitEffDmg','grantBattleDestroy','restFriendlyThen'].includes(h.kind) || (h.kind==='setActiveFriendly' && h.filter)) return friendlyTargets(side, h).length>0;
   if (h.kind==='shieldGuard') return !!(G.curAttack && foe.field.includes(G.curAttack));   // only worth it while an enemy Unit attacks you
   if (h.kind==='readyBaseThen') return !!(side.base && side.base.rested);
+  if (h.kind==='destroyPilot') return destroyPilotCands(foe, h).length>0;
+  if (h.kind==='bounceMulti') return enemyTargets(foe, h).length>0;
+  if (h.kind==='healBuff') return healBuffCands(side, h).length>0;
+  if (h.kind==='debuffUpTo') return debuffUpToCount(side, h)>0 && enemyTargets(foe, { kind:'debuff', filter:null }).length>0;
   return true;
 }
 // Command actions the player resolves through resolvePlayerTrigger in an action step (their choices use modal choosers).

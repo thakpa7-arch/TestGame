@@ -360,7 +360,7 @@ function crybaby(hm){ fresh('enemy'); const atk=stick('enemy',7,5,{highManeuver:
 { fresh('player'); const c=inHand('ST13-013'); play(c); const asked=!!modal() && /how many/.test(modal().msg); press(/^2/); drainTasks();
   ok("I'm a Newtype: you choose to deploy 1 or 2 Bit / Funnel tokens", asked && G.player.field.filter(u=>u.token).length===2, `asked=${asked}`); }
 { const a=A.makeCard(A.CARD_BY_ID.get('GD05-120'),'player').action;
-  ok('Shining Finger keeps its rest + "Shining Gundam" rider', a.kind==='rest' && a.rider && a.rider.kw==='first'); }
+  ok('Shining Finger keeps its rest + "Shining Gundam" First Strike (a "you may" part of its own)', a.kind==='chain' && a.steps[0].kind==='rest' && a.steps[1].kind==='grantKw' && a.steps[1].kw==='first' && a.steps[1].may && a.steps[1].filter.nameHas==='shining gundam'); }
 { const u=stick('player',1,1); u.pilotCard={ name:'Domon', srcEffect:A.CARD_BY_ID.get('GD05-110').effect };
   const a=A.pilotActionAction(u); ok('A Command paired as a Pilot gives its whole action (Darkness Finger: damage, then the draw)', a && a.kind==='chain' && a.steps[0].kind==='damage'); }
 { fresh('player'); const u=stick('player',2,6); u.hp=2; A.runTrigger(card('EB01-006','player'), G.player, A.parseTrigger(A.CARD_BY_ID.get('EB01-006').effect,'Deploy'), 'Deploy');

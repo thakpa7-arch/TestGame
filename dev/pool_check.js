@@ -297,7 +297,7 @@ fresh(); { const ag=put('GD05-021','player'); A.applyActivateEffect(ag, null, G.
 fresh(); { const sp=card('GD05-118','player'); const e=stick('enemy',4,4); G.player.resMax=0; G.player.ex=1; G.player.resAvail=1; A.payCost(G.player,1);
   A.applyToTarget(sp, G.player, sp.action, e, 'T'); ok('Incendiary Spark: paid with an EX Resource it also rests the target', A.effAp(e)===2 && e.rested===true); }
 fresh(); { const sf=card('GD05-120','player'); const sg=stick('player',3,3,{name:'Shining Gundam'}); const e=stick('enemy',1,3);
-  A.applyToTarget(sf, G.player, sf.action, e, 'T'); ok('Shining Finger: rests the target and gives a "Shining Gundam" First Strike', e.rested && A.effFirstStrike(sg)===true); }
+  A.runTrigger(sf, G.player, sf.action, 'T'); ok('Shining Finger: rests the target and gives a "Shining Gundam" First Strike', e.rested && A.effFirstStrike(sg)===true); }
 fresh(); { const w=card('GD05-119','player'); const mine=stick('player',3,3,{lv:5}); const e=stick('enemy',3,3,{lv:2}); const other=stick('enemy',3,3,{lv:9});
   G.curBattle={atk:e, def:mine}; const ts=A.enemyTargets(G.enemy, w.action);
   ok('A Wind Against Fires: only the enemy Unit battling your Lv.5+ Unit is a target', ts.length===1 && ts[0]===e, ts.map(x=>x.lv).join(',')); G.curBattle=null; }
