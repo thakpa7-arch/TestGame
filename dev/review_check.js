@@ -299,6 +299,14 @@ fresh('enemy'); { const hh=put('GD06-020','enemy'); hh.hp=2; G.effSrc=stick('ene
 fresh('player'); { const j=put('GD06-037','enemy'); pair(j,'ST01-010'); const u=stick('player',3,3,{rested:true}); pair(u,'GD01-097'); for(let i=0;i<8;i++) G.enemy.hand.push(card('ST01-005','enemy'));
   ok('round3: Guel Jeturk isn\'t offered while Julia stops set-active effects', !A.activateReadyAny(u)); }
 
+// An End Phase whose hand-limit discard got dropped is resumed by End Turn, never wedged and never re-run
+fresh('player'); { for (let i=0;i<12;i++) inHand('ST01-005','player'); const rep=stick('player',1,3,{repair:1}); rep.hp=1;
+  A.endTurn(); drainTasks(); while(modalUp() && clickBtn(/Pass/)) drainTasks();
+  const hp1=rep.hp; G.mode='idle'; G.pending=null;          // the discard lost (simulated)
+  A.endTurn(); const reAsked=G.mode==='discard' && G.pending && G.pending.discardLeft===2;
+  for (let k=0;k<2 && G.mode==='discard';k++){ const c=G.player.hand[0]; G.player.hand.splice(0,1); A.sendToTrash(c,G.player); G.pending.discardLeft--; if (G.pending.discardLeft<=0){ const af=G.pending.after; G.mode='idle'; G.pending=null; af(); } }
+  ok('extra: End Turn resumes an interrupted hand step (no wedge, Repair not re-applied)', reAsked && G.turn==='enemy' && rep.hp===hp1 && G.player.hand.length===10, `reAsked=${reAsked} turn=${G.turn} hp ${hp1}->${rep.hp}`); drainTasks(); }
+
 console.log('\n== review regression checks ==');
 console.log('passed:', pass, '| failed:', fail.length);
 for (const f of fail) console.log('  !', f);

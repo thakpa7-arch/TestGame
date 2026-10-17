@@ -44,7 +44,7 @@ const { chromium } = require('/opt/node22/lib/node_modules/playwright');
         if (G.mode!=='idle'){
           // targeting / choosing: click a highlighted Unit, or Cancel
           const sel=[...document.querySelectorAll('.selectable, .targetable')].filter(x=>x.offsetParent!==null);
-          if (sel.length && Math.random()<0.85){ sel[rnd(sel.length)].click(); return 'select'; }
+          if (sel.length && (G.mode==='discard' || Math.random()<0.85)){ sel[rnd(sel.length)].click(); return 'select'; }   // a discard must be made
           const c=document.getElementById('cancelBtn'); if (c && c.offsetParent!==null){ c.click(); return 'cancel'; }
           if (G.turn!=='player') return 'wait';
           return 'stuck:'+G.mode;

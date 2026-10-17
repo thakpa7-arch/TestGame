@@ -6107,7 +6107,14 @@ function beginTurn(turn){
 
 function endTurn(){
   if (G.over) return;
-  if (G.turn==='player' && G.phase==='end') return;   // already ending (e.g. waiting on the hand-limit discard)
+  // Already in the End Phase: never run the End Step twice. If the hand-limit discard is still open, wait
+  // for it; if it was somehow dropped (mode back to idle), pick the End Phase up where it stopped.
+  if (G.turn==='player' && G.phase==='end'){
+    if (G.mode!=='idle') return;
+    const s=G.player;
+    if (s.hand.length>HAND_MAX){ playerDiscard(s, s.hand.length-HAND_MAX, 'Hand limit', ()=>{ render(); endPhaseTail(s); }); render(); return; }
+    endPhaseTail(s); return;
+  }
   // 5) End Phase — Action Step: EITHER player may use Action abilities/commands before the Repair
   // Step, so offer the human their Action window whether it's their own End Phase or the AI's.
   offerPlayerActionStep(null, finishEndPhase);
