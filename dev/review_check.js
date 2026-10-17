@@ -193,7 +193,9 @@ fresh('player'); { const u=stick('player',3,3); u.pilotCard=card('GD05-097','pla
   const a=A.pilotActionAction(u); u.pilotCard=card('GD01-097','player');                             // Guel Jeturk: 【Activate･Main】 only
   const b=A.pilotActionAction(u); const cmdPilot=card('GD05-110','player'); u.pilotCard={ name:'Domon', srcEffect:cmdPilot.effect }; // Darkness Finger as a Pilot: 【Main】/【Action】
   const c=A.pilotActionAction(u);
-  ok('#22 Shadow Gundam: nothing from a card with no 【Action】; a 【Main】/【Action】 card gives its effect', a===null && b===null && c && c.kind==='damage', `a=${JSON.stringify(a)} b=${JSON.stringify(b)} c=${c&&c.kind}`); }
+  // Darkness Finger's action is "2 damage, then (with a Master Gundam) draw 1" — a chain that starts with the damage.
+  const dmgFirst = c && (c.kind==='damage' || (c.kind==='chain' && c.steps[0].kind==='damage'));
+  ok('#22 Shadow Gundam: nothing from a card with no 【Action】; a 【Main】/【Action】 card gives its effect', a===null && b===null && dmgFirst, `a=${JSON.stringify(a)} b=${JSON.stringify(b)} c=${c&&c.kind}`); }
 
 // #23 — GP02A's 【Destroyed】 dig puts the other cards into the trash
 fresh('enemy'); { const s=G.enemy; const gp=card('GD06-049','enemy'); s.deck.push(card('ST03-007','enemy'), card('GD06-060','enemy'), card('ST03-007','enemy'));

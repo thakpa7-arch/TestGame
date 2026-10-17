@@ -51,6 +51,11 @@ for (const def of src){
     (dead['(continuous)']=dead['(continuous)']||[]).push(`${def.id} ${def.name}: ${unb.slice(0,140)}`);
 }
 console.log(`cards: ${cards} | printed 【…】 clauses: ${clauses} | with no parsed effect: ${deadClauses}`);
+// Commands whose 【Main】/【Action】 inferCommand can't read: they play, log "no effect" and do nothing (no made-up draw).
+{ const ne=[]; const s2=new Set();
+  for (const def of src){ const base=def.id.replace(/-p\d+$/,''); if (s2.has(base) || def.type!=='command') continue; s2.add(base);
+    const c=A.makeCard(def,'player'); if (c.action && c.action.kind==='noEffect') ne.push(`${def.id} ${def.name}: ${plainTxt(def.effect).slice(0,140)}`); }
+  if (ne.length){ console.log(`\n### Commands resolved as "no effect" (unmodelled 【Main】/【Action】) — ${ne.length}`); ne.forEach(s=>console.log('   '+s)); } }
 for (const k of Object.keys(dead).sort((a,b)=>dead[b].length-dead[a].length)){
   console.log(`\n### ${k==='(continuous)'?'un-bracketed continuous text (unmodelled?)':'【'+k+'】'} — ${dead[k].length}`);
   const lim=process.env.COVER_ALL?Infinity:30; dead[k].slice(0,lim).forEach(s=>console.log('   '+s)); if (dead[k].length>lim) console.log('   … +'+(dead[k].length-lim)+' more');
