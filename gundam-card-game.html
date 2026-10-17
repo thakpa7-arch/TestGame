@@ -3906,41 +3906,53 @@ function selfSacMillPlayer(card, side, act, after){
       render(); fin();
     }, "Don't destroy");
 }
-// Sazabi 【Attack】: you MAY destroy 1 of your own Units; if you do, each opponent destroys 1 of their
-// own non-battling Units. Auto-resolved for both sides (sac only when worthwhile / free via Jagd Doga).
-function gd05Sacrifice(side, sourceCard){
+// Units not in the current battle (the attacking Unit and the Unit it attacks are battling).
+function nonBattlingUnits(side){ const b=G.curBattle; return side.field.filter(u=>u.hp>0 && !(b && (b.atk===u || b.def===u))); }
+// Sazabi 【Attack】: you MAY destroy 1 of your own Units; if you do, each opponent chooses 1 of their own
+// non-battling Units and destroys it. The AI decides its own sacrifice (only when worthwhile / free via Jagd Doga);
+// when the opponent is the player, the player chooses which non-battling Unit to destroy. `after` continues the attack.
+function gd05Sacrifice(side, sourceCard, after){
+  const fin=()=>{ if (after) after(); };
   const foe=side===G.player?G.enemy:G.player, cls=side===G.player?'me':'ai';
   const ownCands=side.field.filter(u=>u!==sourceCard && u.hp>0);
-  const foeCands=foe.field.filter(u=>u.hp>0);                 // attack triggers resolve before any block — nothing "in battle" yet
-  if (!ownCands.length) return;
+  const foeCands=nonBattlingUnits(foe);
+  if (!ownCands.length){ fin(); return; }
   const free=ownCands.find(u=>gd05ReturnsOnSelfKill(u) && !u.token);
-  if (!foeCands.length && !free) return;                      // no enemy to hit and no free-value sacrifice → skip
+  if (!foeCands.length && !free){ fin(); return; }            // no enemy to hit and no free-value sacrifice → skip
   const val=u=>((u.baseAp||0)+(u.baseHp||0))+(u.pilot?5:0);   // a paired Unit is worth more (its pilot is lost too) — sac unpaired bodies first
-
   const sac=free || [...ownCands].sort((a,b)=>val(a)-val(b))[0];
-  const victim=foeCands.length ? [...foeCands].sort((a,b)=>val(a)-val(b))[0] : null;   // the opponent loses their weakest, if any
-  if (!free && victim && val(sac) > val(victim)) return;      // don't sacrifice a better Unit than you remove
+  const victim=foeCands.length ? [...foeCands].sort((a,b)=>val(a)-val(b))[0] : null;   // the opponent will lose (at least) their weakest
+  if (!free && victim && val(sac) > val(victim)){ fin(); return; }   // don't sacrifice a better Unit than you remove
   log(`<b>${sourceCard.name}</b>: ${side===G.player?'you destroy your':'the AI destroys its'} <b>${sac.name}</b>.`, cls);
   gd05DestroyUnit(sac, side, true);
-  if (victim && foe.field.includes(victim) && victim.hp>0){
-    log(`<b>${sourceCard.name}</b>: ${foe===G.player?'you':'the AI'} must destroy <b>${victim.name}</b>.`, foe===G.player?'me':'ai');
-    gd05DestroyUnit(victim, foe, false);
+  const left=nonBattlingUnits(foe);
+  if (!left.length){ render(); fin(); return; }
+  if (foe===G.player){   // the player chooses which of their non-battling Units to destroy
+    promptTargetChoice(left, `<b>${sourceCard.name}</b> 【Attack】 — the AI destroyed its <b>${sac.name}</b>. Choose 1 of your non-battling Units to destroy.`, (t)=>{
+      if (!t || !G.player.field.includes(t)) t=nonBattlingUnits(G.player)[0];
+      if (t){ log(`<b>${sourceCard.name}</b>: you destroy your <b>${t.name}</b>.`, 'me'); gd05DestroyUnit(t, G.player, false); }
+      render(); checkEnd(); fin(); }, null);
+    return;
   }
-  render();
+  const v=[...left].sort((a,b)=>val(a)-val(b))[0];
+  log(`<b>${sourceCard.name}</b>: the AI destroys its <b>${v.name}</b>.`, 'ai');
+  gd05DestroyUnit(v, foe, false);
+  render(); fin();
 }
 // Player-interactive Sazabi sacrifice: you pick which of your Units to destroy (or decline). The AI's
-// own Sazabi stays auto-resolved (gd05Sacrifice via runTrigger).
+// own Sazabi: the AI decides, and you choose your non-battling Unit (gd05Sacrifice).
 function gd05SacInteractive(side, sourceCard, after){
   const fin=()=>{ if(after) after(); };
-  if (side!==G.player){ gd05Sacrifice(side, sourceCard); fin(); return; }
-  const ownCands=side.field.filter(u=>u!==sourceCard && u.hp>0);
+  if (side!==G.player){ gd05Sacrifice(side, sourceCard, fin); return; }
+  // "Choose 1 of your Units" — any of them, Sazabi itself included (listed last).
+  const ownCands=[...side.field.filter(u=>u!==sourceCard && u.hp>0), ...(side.field.includes(sourceCard)&&sourceCard.hp>0?[sourceCard]:[])];
   if (!ownCands.length){ fin(); return; }   // nothing of yours to sacrifice
   // The opponent having no Units does NOT block the sacrifice — "you MAY destroy 1 of your Units" is
   // worth taking for its 【Destroyed】 / trash-return value (e.g. Zeong's token); the AI just destroys
   // nothing if it has no Units. Modal chooser with an explicit "No target" to decline.
-  const foeCands=G.enemy.field.filter(u=>u.hp>0);
+  const foeCands=nonBattlingUnits(G.enemy);
   G.pending={ sourceCard, after, cands: ownCands.map(u=>u.uid) };
-  el('blockMsg').innerHTML = `<b>${sourceCard.name}</b> 【Attack】 — destroy one of YOUR Units${foeCands.length?' (then the AI destroys one of its Units)':''}, or choose No target.`;
+  el('blockMsg').innerHTML = `<b>${sourceCard.name}</b> 【Attack】 — you may destroy one of YOUR Units${foeCands.length?' (then the AI destroys one of its non-battling Units)':''}, or choose No target.`;
   const wrap=el('blockBtns'); wrap.innerHTML='';
   ownCands.forEach(u=>{ const b=document.createElement('button'); b.innerHTML=`💥 ${u.name} <span style="opacity:.6;font-size:10px">⚔${effAp(u)}/❤${u.hp}</span>`;
     b.onclick=()=>{ el('blockModal').classList.remove('show'); gd05SacResolve(u.uid); }; wrap.appendChild(b); });
@@ -3985,7 +3997,7 @@ function gd05SacResolve(uid){
     if (sac){
       log(`<b>${src.name}</b>: you destroy your <b>${sac.name}</b>.`, 'me');
       gd05DestroyUnit(sac, G.player, true);
-      const victim=[...G.enemy.field].filter(u=>u.hp>0).sort((a,b)=>(((a.baseAp||0)+(a.baseHp||0))+(a.pilot?5:0))-(((b.baseAp||0)+(b.baseHp||0))+(b.pilot?5:0)))[0];
+      const victim=nonBattlingUnits(G.enemy).sort((a,b)=>(((a.baseAp||0)+(a.baseHp||0))+(a.pilot?5:0))-(((b.baseAp||0)+(b.baseHp||0))+(b.pilot?5:0)))[0];   // the AI's choice, among its non-battling Units
       if (victim){ log(`<b>${src.name}</b>: the AI destroys its <b>${victim.name}</b>.`, 'ai'); gd05DestroyUnit(victim, G.enemy, false); }
     }
   }
@@ -4529,9 +4541,18 @@ function resolvePlayerTrigger(card, side, act, label, after){
     fin(); return;
   }
   if (allyKinds){
-    // Friendly-targeting effects always auto-resolve — a click on your own unit after pairing
-    // should start an attack, not confirm a trigger. runTrigger picks the best target.
-    applyToTarget(card, side, act, rankTarget(friendlyTargets(G.player, act), act), label);
+    // "Choose 1 of your (other) … Units" is the player's choice (Hyaku-Shiki's 【Attack】): with two or more legal Units a
+    // chooser opens (a modal, so a click on the board still starts an attack); with one it simply applies.
+    const cands=friendlyTargets(G.player, act);
+    if (cands.length>=2){
+      const best=rankTarget(cands, act); const order=[best, ...cands.filter(c=>c!==best)];
+      const verb = act.kind==='buff' ? `AP+${act.amount}` : act.kind==='heal' ? `recover ${act.amount} HP` : 'the effect';
+      promptTargetChoice(order, `<b>${card.name}</b> 【${label}】 — choose 1 of your Units (${verb}).`, (t)=>{
+        if (t && !G.player.field.includes(t)) t=rankTarget(friendlyTargets(G.player, act), act);
+        applyToTarget(card, side, act, t||null, label); render(); fin(); }, null);
+      return;
+    }
+    applyToTarget(card, side, act, rankTarget(cands, act), label);
     fin(); return;
   }
   // damageBoth (Mikazuki etc.): auto-pick the friendly that takes the self-damage drawback (so the
@@ -7668,6 +7689,7 @@ function resolveAttackTriggers(atk, atkSide, done){
     if (i>=acts.length || !attackerStillOut(atk, atkSide)){ done(); return; }
     const a=acts[i++];
     if (atkSide===G.player) resolvePlayerTrigger(atk, atkSide, a, 'Attack', next);
+    else if (a.kind==='gd05Sac') gd05Sacrifice(atkSide, atk, next);   // the player may have to choose a Unit — continue after
     else { runTrigger(atk, atkSide, a, 'Attack'); next(); }
   })();
 }

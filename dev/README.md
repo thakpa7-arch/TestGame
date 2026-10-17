@@ -15,6 +15,8 @@ Run everything from this directory. Scripts read the game from `../gundam-card-g
     node review_check.js              # regressions for the adversarial-review findings (one case per finding)
     node printings_check.js [cards.ndjson]  # alt-art printings show their own official text and play like the base card
     node gates_check.js               # 【During Pair･X Pilot】 requirements, forced attack targets, "Then, discard" clauses
+    node harsh_check.js               # Harsh Meta Slave Deck reports replayed through the real UI paths (modals, action step)
+    node pw_harsh.js                  # the same reports in Chromium with real clicks
     ROUNDS=6 node pt_games.js         # full games across every preset; conservation + rules invariants
     node fuzz_ui.js [seed] [games]    # random human play through the real UI entry points (fuzz_harness.js)
     node pw_check.js                  # Chromium smoke (needs /opt/pw-browsers/chromium)
