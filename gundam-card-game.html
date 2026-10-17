@@ -2293,8 +2293,17 @@ function parseTriggerInner(t){
   if ((d=tl.match(/(?:it|this unit) gets ap\+(\d+)/i))){ return { kind:/this unit/.test(tl)?'selfbuff':'buff', amount:+d[1] }; }
   if ((d=tl.match(/(?:it|enemy unit) gets ap-(\d+)/i))) return { kind:'debuff', amount:+d[1] };
   if (/set this unit as active/i.test(tl)) return { kind:'setActive' };
-  // "Choose 1 of your … Units. Set it as active." — re-ready a friendly Unit.
-  if (/set it as active|sets? it active/i.test(tl) && !/this unit/i.test(tl)) return { kind:'setActiveFriendly' };
+  // "Choose 1 of your … Units. Set it as active." — re-ready a friendly Unit. The restriction on which Unit
+  // ("(T)", "with <Blocker>"…) and an "It can't attack during this turn." rider are kept (30cm Cannon, Midair
+  // Modifications). "Choose 1 (rested) Unit with <Blocker>" names no side: either player's Unit may be chosen.
+  if (/set it as active|sets? it active/i.test(tl) && !/this unit/i.test(tl)){
+    const sa = { kind:'setActiveFriendly' };
+    const ff = friendlyFilter(tl); if (ff) sa.filter = ff;
+    if (/units? with <\s*blocker\s*>/i.test(tl)) sa.filter = Object.assign({}, sa.filter||{}, { blocker:true });
+    if (/it can'?t attack during this turn/i.test(tl)) sa.noAttack = true;
+    if (/\bchoose 1 (?:rested )?units? with\b/i.test(tl)) sa.anySide = true;
+    return sa;
+  }
   // self keyword grants this turn: "This (Unit) gains <First Strike>/<Suppression>/<High-Maneuver>…"
   if (/(?:this unit|this|it)\s+gains/i.test(tl)){
     if (/<\s*first[-\s]?strike/i.test(tl)) return { kind:'selfKeyword', kw:'first' };
@@ -2398,16 +2407,16 @@ function showLookAtTop(cards, title, canPick, allowSkip, onChoose){
     const card=document.createElement('div');
     card.style.cssText=`width:130px;height:182px;border-radius:9px;border:2px solid ${pick?'#34d399':'#555'};overflow:hidden;cursor:${pick?'pointer':'default'};opacity:${pick?1:.5};position:relative;`+(c.img?`background:url('${c.img}') center/cover;`:'background:#0d1628;display:flex;align-items:center;justify-content:center;color:#cdd;font-size:13px;text-align:center;padding:8px;');
     if(!c.img) card.textContent=c.name;
-    if(pick) card.onclick=()=>{ modal.remove(); onChoose(c); };
+    if(pick) card.onclick=()=>{ modal.remove(); onChoose(c); pumpModalQueue(); };   // a choice queued behind this one (a block step…) comes next
     row.appendChild(card);
   });
   box.appendChild(row);
-  if(allowSkip){ const sk=document.createElement('button'); sk.textContent='Take none'; sk.style.cssText='margin-top:16px;padding:11px 24px;background:#333;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600'; sk.onclick=()=>{ modal.remove(); onChoose(null); }; box.appendChild(sk); }
+  if(allowSkip){ const sk=document.createElement('button'); sk.textContent='Take none'; sk.style.cssText='margin-top:16px;padding:11px 24px;background:#333;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600'; sk.onclick=()=>{ modal.remove(); onChoose(null); pumpModalQueue(); }; box.appendChild(sk); }
   modal.appendChild(box); document.body.appendChild(modal);
 }
 // Look at the top card and choose to leave it on top or send it to the bottom (Shuji Itō). Shows the
 // actual card face so the player sees what they revealed.
-function showScryChoice(source, top, done){
+function showScryChoice(source, top, done, canAdd){
   const modal=document.createElement('div'); modal.className='modal-overlay';
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.86);z-index:1000;display:flex;align-items:center;justify-content:center;padding:14px;';
   const box=document.createElement('div');
@@ -2420,7 +2429,15 @@ function showScryChoice(source, top, done){
   const label=document.createElement('div'); label.style.cssText='color:#e8e8f4;font-weight:700;margin:0 0 14px'; label.textContent=top.name;
   box.appendChild(label);
   const wrap=document.createElement('div'); wrap.style.cssText='display:flex;gap:10px;justify-content:center;flex-wrap:wrap;';
-  const addBtn=(txt,bg,fn)=>{ const b=document.createElement('button'); b.innerHTML=txt; b.style.cssText=`padding:11px 20px;background:${bg};color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:700`; b.onclick=()=>{ modal.remove(); fn(); render(); if(done)done(); }; wrap.appendChild(b); };
+  const addBtn=(txt,bg,fn)=>{ const b=document.createElement('button'); b.innerHTML=txt; b.style.cssText=`padding:11px 20px;background:${bg};color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:700`; b.onclick=()=>{ modal.remove(); fn(); render(); if(done)done(); pumpModalQueue(); }; wrap.appendChild(b); };
+  // "If it is a … card, you may reveal it and add it to your hand" (Premium Unit Assembly, Le Cygne): offered only when it qualifies.
+  if (canAdd) addBtn('✋ Reveal &amp; add to hand', '#2f7d5b', ()=>{
+    const i = G.player.deck.lastIndexOf(top);
+    if (i < 0){ log(`<b>${source.name}</b>: <b>${top.name}</b> already left the deck.`,'me'); return; }
+    G.player.deck.splice(i,1); G.player.hand.push(top);
+    log(`<b>${source.name}</b>: you reveal <b>${top.name}</b> and add it to your hand.`,'me');
+    deckOutCheck(G.player);
+  });
   addBtn('⬆ Keep on top', '#6a4fb0', ()=>{ log(`<b>${source.name}</b>: keeps <b>${top.name}</b> on top of the deck.`,'me'); });
   // Move the card BY IDENTITY: the modal stays up while other effects resolve, so the deck's top may
   // no longer be the card that was revealed (popping blind would delete one card and clone this one).
@@ -2631,6 +2648,7 @@ function playerScryMill(card, side, after){
 // "Enemy Units can't choose this Unit as their attack target" printed under a 【During Pair/Link】
 // gate with a board condition (Char's Z'Gok ST11-001: while 2+ other friendly (Marine) Units are out).
 function effUntargetable(u){
+  if (u && u.noTargetTurn!=null && u.noTargetTurn===G.turnSeq) return true;   // "Enemy Units can't choose it as their attack target this turn" (The Orca of Red Sea)
   if (!u || u.type!=='unit' || !u.effect) return false;
   const side = u.owner==='player' ? G.player : G.enemy;
   if (!side) return false;
@@ -2741,16 +2759,98 @@ function inferCommand(effect){
     const dm = t.match(/draw (\d+)/), disc = t.match(/discard (\d+)/);
     return t.indexOf('discard')<t.indexOf('draw') ? { kind:'discardDraw', discard:+disc[1], draw:+dm[1] } : { kind:'drawDiscard', draw:+dm[1], discard:+disc[1] };
   }
+  // Command-only wordings, read on the 【Main】/【Action】 text itself (leading "/【Action】" and any trailing
+  // 【Pilot】 line taken off) — before firstModal(), since "gains the following effect: ■…" is not a modal choice.
+  const body = (mm ? mm[1] : '').replace(/^[\s.\/]*(?:【[^】]*】[\s\/]*)*/,'').split('【')[0].replace(/\s*\((?:[^()]*\.[^()]*)\)\s*$/,'').trim();
+  { const cx = parseCommandExtra(body); if (cx) return cx; }
   // Delegate to the unified clause parser so Commands gain every effect the triggers understand
   // (AP-/debuff, keyword grants, dig, reanimate, set-active, damage-reduction, …).
   const a = parseClause(raw);
   if (a){
     if (['destroy','bounce','rest','debuff','stun'].includes(a.kind) && !a.scope) a.scope='enemy';
+    const bt = body.toLowerCase();
+    // "…Return it to its owner's hand. If you do, draw N." (Poorly Planned Offensive) — drawn only when that happened.
+    if (['destroy','bounce','bounceDeck','rest'].includes(a.kind) && (m=bt.match(/\bif you do,\s*draw (\d+)\.?$/))) a.ifDoDraw = +m[1];
+    // "…Deal 1 damage to it. If <condition>, deal N damage instead." (Lady Luck) — the amount is settled on resolution.
+    if (a.kind==='damage' && (m=bt.match(/\bif ([^,]+),\s*deal (\d+) damage instead/))){ const c=parseCondition(m[1]); if (c) a.alt = { cond:c, amount:+m[2] }; }
     return a;
   }
   if ((m = t.match(/ap\s*\+\s*(\d+)|\+\s*(\d+)\s*ap|gets ap\+(\d+)/))) return buffRiders(t, { kind:'buff', amount:+(m[1]||m[2]||m[3]||2) });
   return { kind:'draw', amount:1 }; // never a dead card
 }
+// Command 【Main】/【Action】 wordings the shared clause parser doesn't read (`body` = that text, original case).
+// Returns null for anything else, so inferCommand carries on with parseClause.
+function parseCommandExtra(body){
+  const t = String(body||'').toLowerCase(); let m;
+  if (!t) return null;
+  // "During this battle, your shield area cards can't receive damage from enemy Units that are Lv.N or lower / with N or
+  // less AP." (Peaceful Timbre, White Wolf, Presence Detected) — Shields and Base, battle damage and <Breach> alike.
+  if ((m = t.match(/during this battle, your shield area cards can'?t receive damage from enemy units (?:that are lv\.?\s*(\d+) or lower|with (\d+) or less ap)/)))
+    return { kind:'shieldGuard', maxLv: m[1]!=null?+m[1]:null, maxAp: m[2]!=null?+m[2]:null };
+  // "Choose N (active) friendly / of your … Unit(s). Rest it/them. If you do, <effect>." — your own Units are rested
+  // first, and the rest of the effect needs that to have happened (Extreme Hatred, Eternal Road).
+  if ((m = body.match(/^choose (\d+) ((?:active |rested )*(?:friendly|of your)\b[^.]*?)units?\.\s*rest (?:it|them)\.\s*if you do,\s*(.+)$/i))){
+    // "…whose Lv. is equal to or lower than the Unit rested with this ability" (Human Karma): capped by the rested Unit's Lv.
+    const lvOfRested = /whose lv\.? is equal to or lower than the unit rested with this/i.test(m[3]);
+    const inner = parseClause(m[3].replace(/\s*whose lv\.? is equal to or lower than the unit rested with this (?:ability|effect)/i,''));
+    if (inner && !(lvOfRested && +m[1]!==1)){
+      if (['destroy','bounce','rest','debuff','stun'].includes(inner.kind) && !inner.scope) inner.scope='enemy';
+      return Object.assign({ kind:'selfRestThen', count:+m[1], filter: friendlyFilter(m[2].toLowerCase()+'units'), inner }, lvOfRested ? { lvOfRested:true } : {});
+    }
+  }
+  // "Choose 1 friendly (T) Unit. Enemy Units can't choose it as their attack target this turn." (The Orca of Red Sea)
+  if (/^choose 1 [^.]*?units?\.\s*enemy units can'?t choose it as their attack target (?:this|during this) turn/.test(t))
+    return { kind:'grantNoAttackTarget', scope:'friendly', filter: friendlyFilter(t) };
+  // "Choose 1 (T) Unit card [that is Lv.N or lower] from your trash. Deploy it [rested]." — no cost is paid
+  // (A Twinkle from the Abyss, Afterglow of Zeon).
+  if ((m = t.match(/^choose 1 (.+?) card(.*?) from your trash\.\s*deploy it( rested)?\.?$/))){
+    const lv = m[2].match(/lv\.?\s*(\d+) or lower/);
+    let flt = m[1].trim(); if (!/\bunit\b/.test(flt)) flt = (flt+' unit').trim();
+    return { kind:'trashDeploy', filter: flt, maxLv: lv?+lv[1]:null, rested: !!m[3] };
+  }
+  // "Choose 1 enemy player. You and that player each choose 1 of your own Units. Begin a battle between them and only
+  // perform the damage step." (The Final Victor) — you choose first, then your opponent.
+  if (/you and that player each choose 1 of your own units\.\s*begin a battle between them and only perform the damage step/.test(t))
+    return { kind:'mutualDuel' };
+  // "Choose 1 friendly Unit. It gains the following effect during this battle: ■When this Unit destroys an enemy Unit with
+  // battle damage, <effect>." (Wise Leader's Pride)
+  if ((m = body.match(/^choose 1 ((?:friendly|of your)\b[^.]*?)units?\.\s*it gains the following effect during this battle\s*[:：]?\s*■\s*when this unit destroys an enemy unit with battle damage,\s*(.+)$/i))){
+    const inner = parseClause(m[2]);
+    if (inner){
+      if (['destroy','bounce','rest','debuff','stun'].includes(inner.kind) && !inner.scope) inner.scope='enemy';
+      return { kind:'grantBattleKill', scope:'friendly', filter: friendlyFilter(m[1].toLowerCase()+'unit'), inner };
+    }
+  }
+  // "Choose 2 friendly Units. They get AP+N during this turn." — exactly that many (Assault on Torrington Base).
+  if ((m = t.match(/^choose ([2-9]) ((?:friendly|of your)\b[^.]*?)units?\.\s*they get ap\s*\+\s*(\d+)/)))
+    return buffRiders(t, { kind:'buffMulti', amount:+m[3], count:+m[1], exact:true, filter: friendlyFilter(m[2]+'units') });
+  // "Choose 1 friendly (damaged) (T) Unit[/Base]. It recovers N HP. [Then, <effect>.]" (Dramatic Turnabout, Aspiring Pilot,
+  // Gerbera Straight, Deep Devotion). A "Then, if <condition>, …" whose condition can't be read is left to the shared parser.
+  if ((m = body.match(/^choose 1 ((?:friendly|of your)\b[^.]*?|damaged friendly[^.]*?)units?(\/bases?)?\.\s*it recovers (\d+) hp\.?\s*(?:then,\s*(.+))?$/i))){
+    const then = m[4] ? parseClause(m[4]) : null;
+    const thenOk = !m[4] || (then && !(/^\s*if\b/i.test(m[4]) && then.kind!=='cond'));
+    if (thenOk){
+      const h = { kind:'heal', amount:+m[3] };
+      const f = friendlyFilter(m[1].toLowerCase()+'unit'); if (f) h.filter = f;
+      if (m[2]) h.withBase = true;
+      if (then) h.then = then;
+      return h;
+    }
+  }
+  // "Look at the top N cards of your deck and return 1 to the top. Return the remaining cards to the bottom of your deck.
+  // [Then, <effect>.]" (Turning Point of History) — one of them MUST go back on top.
+  if ((m = body.match(/^look at the top (\d+) cards? of your deck and return 1 to the top\.\s*return the remaining cards? (?:randomly )?to the bottom of your deck\.?\s*(?:then,\s*(.+))?$/i))){
+    const then = m[2] ? parseClause(m[2]) : null;
+    if (!m[2] || then) return Object.assign({ kind:'digTop', amount:+m[1], filter:null, must:true }, then?{ then }:{});
+  }
+  // "All players each look at the top card of their deck. If it is a Unit card / a card that is Lv.N or higher, they may reveal
+  // it and add it to their hand. They return any remaining card to the top or bottom of their deck." (Premium Unit Assembly)
+  if ((m = t.match(/all players each look at the top card of their deck\.\s*if it is an? (?:(unit|pilot|command|base) )?card(?: that is lv\.?\s*(\d+) or higher)?, they may reveal it and add it to their hand/)))
+    return { kind:'allLookTop', cardType: m[1]||null, minLv: m[2]!=null?+m[2]:0 };
+  return null;
+}
+// "If you do, …" riders and "… instead" amounts on a Command's action (see inferCommand).
+function dmgAmount(act, side, card){ const a=act && act.alt; return (a && side && condMet(a.cond, side, card)) ? a.amount : (act ? act.amount : 0); }
 
 // Parse a 【Burst】 clause into a simple auto-resolved action.
 function parseBurst(effect){
@@ -2936,8 +3036,12 @@ function parseClause(raw){
     return { kind:'foeDiscard', amount:+d[2], minHand: d[1]?+d[1]:0 };
   // "All enemy players each choose 1 of their active Units. Rest them." / "…1 Unit belonging to each
   // enemy player. Rest them." — one rest per opponent, i.e. one enemy Unit in a two-player game.
-  if (/rest them/.test(t) && /(?:all )?enemy players?/.test(t) && !/enemy units?/.test(t))
+  if (/rest them/.test(t) && /(?:all )?enemy players?/.test(t) && !/enemy units?/.test(t)){
+    // "…each choose 1 of their (active) Units": that player chooses which of their own Units is rested (Eternal Road,
+    // Gundam Full Armor (Thunderbolt) (EX)); "choose 1 Unit belonging to each enemy player" is the caster's choice.
+    if (/enemy players? each choose 1 of their\b/.test(t)) return { kind:'foeRestOwn', filter: /active units?/.test(t) ? { active:true } : null };
     return { kind:'rest', filter: /active units?/.test(t) ? { active:true } : null };
+  }
   // "…reduce its AP by an amount equal to the number of Unit cards with "NAME" in their card names in
   // your trash." (Gundam Nadleeh) — a variable debuff counted when it resolves.
   if (/reduce its ap/.test(t) && (d=t.match(/number of (?:unit )?cards? with ["'“”]([^"'“”]+)["'“”] in their card names? in your trash/))){
@@ -3068,9 +3172,10 @@ function parseClause(raw){
   // "Choose 1 of your [trait] Unit AND 1 enemy Unit (Lv.X or lower). Rest them." → rest one of each.
   // (Gun EZ) Has both "rest them" and "enemy unit", so must precede the enemy-only rule below; the
   // friendly side may be a token, so the player must be offered the friendly choice (incl. Parts).
-  if (/rest them/.test(t) && /(of your|friendly)[^.]*?\band 1 enemy unit\b/.test(t)){
-    const fPart=t.split(/\band 1 enemy unit\b/)[0];
-    const ePart='enemy unit'+(t.split(/\band 1 enemy unit\b/)[1]||'');
+  // "…and 1 ACTIVE enemy Unit" too (The Stubborn Cog) — it was read as "rest 2 enemy Units".
+  if (/rest them/.test(t) && /(of your|friendly)[^.]*?\band 1 (?:active )?enemy unit\b/.test(t)){
+    const fPart=t.split(/\band 1 (?:active )?enemy unit\b/)[0];
+    const ePart='enemy unit'+(t.split(/\band 1 (?:active )?enemy unit\b/)[1]||'');
     const eLv=(ePart.match(/lv\.?(\d+) or lower/)||[])[1];
     return { kind:'restBoth', filter:friendlyFilter(fPart), enemyFilter:{ maxLv: eLv?+eLv:99 } };
   }
@@ -3214,11 +3319,15 @@ function friendlyFilter(t){
   if (m){
     const seg=m[2]||'';
     const traits=seg.match(/\(([^)]+)\)/g); if(traits) f.traits=traits.map(x=>x.replace(/[()]/g,'').trim().toLowerCase());
-    const col=seg.match(/\b(blue|red|green|white|purple)\b/); if(col) f.color=col[1];
+    const col=seg.replace(/\([^)]*\)/g,' ').match(/\b(blue|red|green|white|purple)\b/); if(col) f.color=col[1];   // not the "white" in "(White Base Team)"
     if (/\bother\b/.test(m[1])) f.other=true;
     if (/\bdamaged\b/.test(m[1])) f.damaged=true;
+    if (/\blink\b/.test(seg)) f.linked=true;                                         // "friendly Link Unit" (Deep Devotion, Words for Hathaway)
   }
+  if (/\bdamaged friendly\b/.test(t)) f.damaged=true;                                // "Choose 1 damaged friendly Unit" (It's Name is Ryusei-Go)
+  if (/(?:of your|friendly)\b[^.]*?\bunits? with <\s*blocker\s*>/.test(t)) f.blocker=true;   // "friendly Unit with <Blocker>" (Naval Bombardment)
   const lv=t.match(/lv\.?(\d+) or lower/i); if(lv) f.maxLv=+lv[1];
+  const lvh=t.match(/(?:of your|friendly)\b[^.]*?\bunits? that (?:is|are) lv\.?\s*(\d+) or higher/i); if(lvh) f.minLv=+lvh[1];   // Guncannon (108) & (109)
   const ap=t.match(/(\d+) or more ap/i); if(ap) f.minAp=+ap[1];
   return Object.keys(f).length?f:null;
 }
@@ -3247,6 +3356,10 @@ function targetFilter(t){
   // instead." — lifts the Lv cap once enough copies sit in your trash (e.g. Improved Technique).
   const lift = t.match(/if there are (\d+) or more cards? with ["'“”]([^"'“”]+)["'“”] in their card name in your trash,?\s*choose 1 enemy unit instead/i);
   if (lift) f.lvLift = { minCount:+lift[1], name: lift[2].trim().toLowerCase() };
+  // "If <condition>, choose 1 [active/rested] enemy Unit [<restriction>] instead." — another restriction replaces the printed
+  // one while the condition holds (Covert Operative, Blazing Mobile Suit Rider, Look of Determination, Helmwige Reincar).
+  if (!lift){ const iw=t.match(/\bif ([^,]+),\s*choose 1 ((?:active |rested )?enemy unit(?:[^.]|\.\d)*?) instead/i);
+    if (iw){ const cond=parseCondition(iw[1]); if (cond) f.insteadIf = { cond, filter: targetFilter(iw[2]) || {} }; } }
   // "whose Lv. is equal to or lower than this Unit" — a cap relative to the SOURCE Unit's Lv
   // (e.g. Marida Cruz). Resolved against act.source at target-selection time.
   if (/(?:lv\.?[^.]*?)?equal to or lower than this unit/i.test(t)) f.maxLvSelf=true;
@@ -3264,12 +3377,15 @@ function targetFilter(t){
 }
 // Valid enemy targets for a single-target removal/debuff action (respects act.filter).
 function enemyTargets(foe, act){
-  const f=act.filter||{};
+  let f=act.filter||{};
+  const caster = foe===G.player ? G.enemy : G.player;
+  // "If <condition>, choose … instead": the alternative restriction applies while the CASTER meets the condition. The Command
+  // being activated isn't counted among the cards in the trash (Blazing Mobile Suit Rider's reminder).
+  if (f.insteadIf && caster && condMetSansSelf(f.insteadIf.cond, caster, act.source || (G.cmdInFlight && G.cmdInFlight.card) || null)) f = f.insteadIf.filter;
   // "Lv. equal to or lower than this Unit": cap by the source Unit's current level.
   const selfLvCap = (f.maxLvSelf && act.source) ? (act.source.lv||0) : null;
   // Improved-Technique-style Lv-cap lift: enough same-named copies in the CASTER's trash (the caster
   // is whoever's targeting the opponent `foe`) removes the Lv restriction entirely.
-  const caster = foe===G.player ? G.enemy : G.player;
   const lvLifted = !!(f.lvLift && caster && trashNameCount(caster, f.lvLift.name, G.cmdInFlight&&G.cmdInFlight.card) >= f.lvLift.minCount);
   const capLv = lvLifted ? null : f.maxLv;
   let list=foe.field.filter(u=>u.hp>0
@@ -3294,12 +3410,17 @@ function enemyTargets(foe, act){
 }
 function friendlyTargets(side, act){
   const f=act.filter||{};
-  let list=side.field.filter(u=>u.hp>0
+  // "Choose 1 of your (T) Units/Bases" (Aspiring Pilot): your Base is a candidate too.
+  const pool = act.withBase && side.base && side.base.hp>0 ? [...side.field, side.base] : side.field;
+  let list=pool.filter(u=>u.hp>0
     && (f.maxLv==null || (u.lv||0)<=f.maxLv)
+    && (f.minLv==null || (u.lv||0)>=f.minLv)
     && (f.minAp==null || effAp(u)>=f.minAp)
     && (!f.color || (u.color||'').toLowerCase()===f.color)
     && (!f.damaged || u.hp<effMaxHp(u))
     && (!f.traits || f.traits.some(tr=>(u.trait||'').toLowerCase().includes(tr)))
+    && (!f.blocker || effBlocker(u))
+    && (!f.linked || u.linked)
     && (!f.other || u!==act.source));
   if (act.kind==='heal') list=list.filter(u=>u.hp<effMaxHp(u));
   return list;
@@ -3325,9 +3446,11 @@ function rankTarget(cands, act){
 // Apply a single-target action to a specific chosen target.
 function applyToTarget(card, side, act, target, label){
   G.effSrc = card;   // the card whose effect is resolving — effect damage reads it (damage-prevention statics)
-  if (!target) return;
+  // "…It recovers 2 HP. Then, draw 1." — a "Then" part happens even when there was nothing to choose (Dramatic Turnabout).
+  if (!target){ if (act.then && (act.kind==='heal' || act.kind==='buff')) runTrigger(card, side, act.then, label); return; }
   const cls=side===G.player?'me':'ai', foe=side===G.player?G.enemy:G.player, name=card.name;
-  if (act.kind==='damage'){ log(`${label}: <b>${name}</b> deals ${act.amount} to <b>${target.name}</b>.`,cls); damage(target,act.amount,foe); if (act.drawOnKill && target.hp<=0){ for(let i=0;i<act.drawOnKill;i++) draw(side); log(`${label}: <b>${name}</b> — draw ${act.drawOnKill} (this effect destroyed an enemy Unit).`,cls); } }
+  const wasThere = foe.field.includes(target), wasRested = !!target.rested;
+  if (act.kind==='damage'){ const amt=dmgAmount(act, side, card); log(`${label}: <b>${name}</b> deals ${amt} to <b>${target.name}</b>.`,cls); damage(target,amt,foe); if (act.drawOnKill && target.hp<=0){ for(let i=0;i<act.drawOnKill;i++) draw(side); log(`${label}: <b>${name}</b> — draw ${act.drawOnKill} (this effect destroyed an enemy Unit).`,cls); } }
   else if (act.kind==='rest'){ if (effectRest(target, foe)) log(`${label}: <b>${name}</b> rests <b>${target.name}</b>.`,cls); }
   else if (act.kind==='bounce'){ const i=foe.field.indexOf(target); if(i>=0)foe.field.splice(i,1); returnToHand(target,foe); log(`${label}: <b>${name}</b> returns <b>${target.name}</b> to hand.`,cls); }
   else if (act.kind==='bounceDeck'){
@@ -3344,7 +3467,9 @@ function applyToTarget(card, side, act, target, label){
               : act.perTrashName ? side.trash.filter(c=>(c.name||'').toLowerCase().includes(act.perTrashName)).length
               : act.amount; if(act.dur==='battle'){ target.battleAp=(target.battleAp||0)-amt; } else { target.tempAp=(target.tempAp||0)-amt; } target.ap=effAp(target); log(`${label}: <b>${target.name}</b> gets AP-${amt} this ${act.dur==='battle'?'battle':'turn'}.`,cls); if (amt>0 && foe.field.includes(target)) apReducedHook(target, foe); }
   else if (act.kind==='buff'){ if (act.dur==='battle') target.battleAp=(target.battleAp||0)+act.amount; else target.tempAp=(target.tempAp||0)+act.amount; target.ap=effAp(target); log(`${label}: <b>${target.name}</b> gets AP+${act.amount} ${act.dur==='battle'?'during this battle':'this turn'}.`,cls); if (act.then) runTrigger(card, side, act.then, label); }
-  else if (act.kind==='heal'){ const _b=target.hp; target.hp=Math.min(effMaxHp(target), target.hp+(act.amount>=99?effMaxHp(target):act.amount)); if(target.hp>_b){ floatNum(target.uid,'+'+(target.hp-_b),'#7ee29a'); unitHealed(target, side); } log(`${label}: <b>${name}</b> repairs <b>${target.name}</b>.`,cls); }
+  else if (act.kind==='heal'){ const _b=target.hp; target.hp=Math.min(effMaxHp(target), target.hp+(act.amount>=99?effMaxHp(target):act.amount)); if(target.hp>_b){ floatNum(target.uid,'+'+(target.hp-_b),'#7ee29a'); unitHealed(target, side); } log(`${label}: <b>${name}</b> repairs <b>${target.name}</b>.`,cls); if (act.then) runTrigger(card, side, act.then, label); }
+  else if (act.kind==='grantNoAttackTarget'){ target.noTargetTurn=G.turnSeq; log(`${label}: enemy Units can't choose <b>${target.name}</b> as their attack target this turn.`,cls); }
+  else if (act.kind==='grantBattleKill'){ (target.battleOnKill=target.battleOnKill||[]).push({ act:act.inner, card, atk:G.curAttack||null }); log(`${label}: <b>${target.name}</b> gains "when this Unit destroys an enemy Unit with battle damage, …" during this battle.`,cls); }
   else if (act.kind==='grantKw'){ grantKeyword(target, act.kw, act.amount); target.ap=effAp(target); log(`${label}: <b>${target.name}</b> gains &lt;${kwLabel(act.kw)}${act.kw==='breach'?' '+act.amount:''}&gt; this turn.`,cls); }
   else if (act.kind==='grantAttackActive'){ target.canAttackActive=true; log(`${label}: <b>${target.name}</b> may attack active enemy Units this turn.`,cls); }
   else if (act.kind==='stun'){ if (effectRest(target, foe)){ target.stunned=true; log(`${label}: <b>${name}</b> rests <b>${target.name}</b> — it won't ready next turn.`,cls); } }
@@ -3354,6 +3479,11 @@ function applyToTarget(card, side, act, target, label){
   if (act.kind==='grantDestroyedReady'){ target.tempOnDestroyed={ turnSeq:G.turnSeq, readyTrait:act.readyTrait, link:act.link };
     log(`${label}: <b>${target.name}</b> gains "${act.link?'【During Link】':''}【Destroyed】 set a friendly (${act.readyTrait}) Unit active" this turn.`, cls); }
   if (act.kind==='grantReduce'){ target.dmgReduce=(target.dmgReduce||0)+act.amount; log(`${label}: <b>${target.name}</b> ${act.amount>=99?"can't receive battle damage":"reduces damage by "+act.amount} this turn.`,cls); }
+  // "…If you do, draw N." (Poorly Planned Offensive): only when the Unit really was returned / destroyed / rested.
+  if (act.ifDoDraw){
+    const did = act.kind==='rest' ? (!wasRested && !!target.rested) : (wasThere && !foe.field.includes(target));
+    if (did){ for (let i=0;i<act.ifDoDraw;i++) draw(side); log(`${label}: <b>${name}</b> — draw ${act.ifDoDraw}.`,cls); }
+  }
 }
 // Rest the chosen friendly Units, then deal damage equal to the count to all enemy Units in Lv range.
 function applySelfRestDamage(card, side, act, chosen, label){
@@ -3468,6 +3598,14 @@ function parseCondition(t){
 // Whole-trait match: "(Zeon)" must not be satisfied by "(Neo Zeon)" — every printed trait is parenthesised.
 function traitMatchUnit(u, trait){ if(!trait) return true; const ct=(u.trait||'').toLowerCase();
   return String(trait).toLowerCase().split('/').some(p=>{ const q=p.trim().replace(/^\(|\)$/g,'').trim(); return !!q && ct.includes('('+q+')'); }); }
+// condMet, with the card whose effect is resolving left out of its owner's trash for the check: a Command is moved to the
+// trash as it's played here, but "this card that is being activated is not counted" (Blazing Mobile Suit Rider).
+function condMetSansSelf(cond, side, src){
+  const i = (src && side && side.trash) ? side.trash.indexOf(src) : -1;
+  if (i<0) return condMet(cond, side, src);
+  side.trash.splice(i,1);
+  try { return condMet(cond, side, src); } finally { side.trash.splice(i,0,src); }
+}
 // Evaluate a parsed condition for `side` (source card excluded when the text says "another").
 function condMet(cond, side, source, other){
   if (!cond) return true;
@@ -4136,21 +4274,7 @@ function runTrigger(card, side, act, label){
       .sort((a,b)=>effAp(b)-effAp(a))[0];
     if (t){ t.sick=false; log(`${label}: <b>${t.name}</b> may attack this turn.`, cls); }
   } else if (act.kind==='digTop'){
-    const n=Math.min(act.amount, side.deck.length);
-    if (n){
-      const top=side.deck.splice(side.deck.length-n, n);
-      const keepTop=(pick)=>{
-        const rest=top.filter(c=>c!==pick);
-        shuffle(rest); for (const c of rest) side.deck.unshift(c);   // the rest go to the bottom
-        if (pick){ side.deck.push(pick); log(`${label}: <b>${name}</b> puts <b>${pick.name}</b> on top of the deck.`, cls); }
-        else log(`${label}: <b>${name}</b> looks at top ${n} — nothing kept.`, cls);
-        render();
-      };
-      const legal=top.filter(c=>matchFilter(c, act.filter));
-      if (side===G.player && legal.length)
-        showLookAtTop(top, `${name}: keep 1 on TOP of your deck (the rest go to the bottom)`, (c)=>legal.includes(c), true, keepTop);
-      else keepTop([...legal].sort((a,b)=>cardValue(b)-cardValue(a))[0] || null);
-    }
+    digTopResolve(card, side, act, label, null);
   } else if (act.kind==='pairFromHand'){
     pairFromHand(card, side, act, label);
   } else if (act.kind==='payDiscard'){
@@ -4165,13 +4289,25 @@ function runTrigger(card, side, act, label){
   } else if (act.kind==='deployToken'){
     deployTokens({ kind:'token', specs:act.specs }, side, name, label, cls);
   } else if (act.kind==='allLookTop'){
-    for (const sd of [side, foe]){                     // the active player first (1-3-4)
-      if (!sd.deck.length) continue;
-      const top=sd.deck[sd.deck.length-1];
-      if (top.type!=='resource' && (top.lv||0)>=act.minLv){ sd.deck.pop(); sd.hand.push(top); log(`${label}: ${who(sd)} reveals <b>${top.name}</b> (Lv.${top.lv}) and adds it to ${sd===G.player?'your':'their'} hand.`, cls); if (sd===G.player) revealDraw(top,'ADDED'); deckOutCheck(sd); }
-      else if (cardValue(top)<3){ sd.deck.pop(); sd.deck.unshift(top); log(`${label}: ${who(sd)} puts the top card on the bottom.`, cls); }
-      else log(`${label}: ${who(sd)} keeps the top card on top.`, cls);
-    }
+    allLookTop(card, side, act, label, null);   // each player decides for their own deck (the human through a chooser)
+  } else if (act.kind==='selfRestThen'){
+    selfRestThen(card, side, act, label, null);
+  } else if (act.kind==='foeRestOwn'){
+    foeRestOwn(card, side, act, label, null);
+  } else if (act.kind==='mutualDuel'){
+    mutualDuel(card, side, label, null);
+  } else if (act.kind==='trashDeploy'){
+    trashDeploy(card, side, act, label, null);
+  } else if (act.kind==='shieldGuard'){
+    side.shieldGuard = { atk: G.curAttack||null, maxLv: act.maxLv, maxAp: act.maxAp };
+    log(`${label}: <b>${name}</b> — during this battle, ${side===G.player?'your':who(side)+"'s"} shield area cards can't receive damage from enemy Units ${act.maxLv!=null?`that are Lv.${act.maxLv} or lower`:`with ${act.maxAp} or less AP`}${G.curAttack?'':' (no battle is under way)'}.`, cls);
+  } else if (act.kind==='grantNoAttackTarget' || act.kind==='grantBattleKill'){
+    // The AI arms the Unit in this battle first / shields a rested (attackable) Unit first, else its strongest.
+    const cands=friendlyTargets(side, act);
+    const inB=u=>!!(G.curBattle && (G.curBattle.atk===u || G.curBattle.def===u));
+    const rested=cands.filter(u=>u.rested);
+    const t=act.kind==='grantBattleKill' ? (cands.find(inB) || rankTarget(cands, act)) : rankTarget(rested.length?rested:cands, act);
+    applyToTarget(card, side, act, t||null, label);
   } else if (act.kind==='redirectAttack'){
     const cands=side.field.filter(x=>x!==card && x.hp>0 && x.type==='unit' && hasTraitT(x, act.trait)).sort((a,b)=>b.hp-a.hp);
     if (cands.length){ card.redirectTo=cands[0]; log(`${label}: battle damage <b>${card.name}</b> would receive this battle is dealt to <b>${cands[0].name}</b> instead.`, cls); }
@@ -4253,7 +4389,8 @@ function runTrigger(card, side, act, label){
   } else if (act.kind==='deployFromHand'){
     deployFromHand(card, side, act);
   } else if (act.kind==='damage' || act.kind==='rest' || act.kind==='bounce' || act.kind==='bounceDeck' || act.kind==='destroy' || act.kind==='debuff' || act.kind==='stun'){
-    applyToTarget(card, side, act, rankTarget(enemyTargets(foe, act), act), label);
+    const rk = act.alt ? Object.assign({}, act, { amount: dmgAmount(act, side, card) }) : act;   // aim with the damage it will really deal (Lady Luck)
+    applyToTarget(card, side, act, rankTarget(enemyTargets(foe, act), rk), label);
   } else if (act.kind==='buff' || act.kind==='heal'){
     applyToTarget(card, side, act, rankTarget(friendlyTargets(side, act), act), label);
   } else if (act.kind==='returnPilot'){
@@ -4295,9 +4432,10 @@ function runTrigger(card, side, act, label){
   } else if (act.kind==='token'){
     deployTokens(act, side, name, label, cls);
   } else if (act.kind==='setActiveFriendly'){
-    // Re-ready one of your other rested Units (most useful for re-attacking/blocking).
-    const t=side.field.filter(u=>u!==card && u.rested && !u.token).sort((a,b)=>b.ap-a.ap)[0];
-    if (t && effReady(t, side)){ log(`${label}: <b>${name}</b> sets <b>${t.name}</b> active.`, cls); }
+    // Re-ready one of your other rested Units (most useful for re-attacking/blocking) — one the text allows
+    // ("(T)", "with <Blocker>"); "It can't attack during this turn" rides along (30cm Cannon, Midair Modifications).
+    const t=readyCands(side, act, card).filter(u=>!u.token || act.filter).sort((a,b)=>b.ap-a.ap)[0];
+    if (t) applyReadyChosen(card, side, act, t, label);
   } else if (act.kind==='selfKeyword'){
     grantKeyword(card, act.kw, act.amount); card.ap=effAp(card);
     log(`${label}: <b>${name}</b> gains &lt;${kwLabel(act.kw)}${act.kw==='breach'?' '+act.amount:''}&gt; this turn.`, cls);
@@ -4416,6 +4554,31 @@ function resolvePlayerTrigger(card, side, act, label, after){
     }
     return resolvePlayerTrigger(card, side, act.inner, label, after);
   }
+  // These choose through modal choosers, so they also work on the opponent's turn (an 【Action】 in their battle, a 【Burst】).
+  if (act.kind==='selfRestThen'){ selfRestThen(card, side, act, label, after); return; }
+  if (act.kind==='mutualDuel'){ mutualDuel(card, side, label, fin); return; }
+  if (act.kind==='trashDeploy'){ trashDeploy(card, side, act, label, fin); return; }
+  if (act.kind==='allLookTop'){ allLookTop(card, side, act, label, fin); return; }
+  if (act.kind==='digTop'){ digTopResolve(card, side, act, label, after); return; }
+  if (act.kind==='foeRestOwn'){ foeRestOwn(card, side, act, label, fin); return; }
+  if (act.kind==='setActiveFriendly' && side===G.player){
+    // "Choose 1 (rested) Unit with <Blocker>. Set it as active." — you choose (yours listed first; an enemy one when the
+    // text names no side).
+    const own=readyCands(side, act, card), opp=act.anySide ? readyCands(G.enemy, act, card) : [];
+    const cands=[...own.sort((a,b)=>effAp(b)-effAp(a)), ...opp];
+    if (!cands.length){ log(`${label}: <b>${card.name}</b> — no rested Unit it can set as active.`, 'me'); fin(); return; }
+    if (cands.length===1){ applyReadyChosen(card, side, act, cands[0], label); render(); fin(); return; }
+    promptTargetChoice(cands, `<b>${card.name}</b> — choose 1 rested Unit${act.filter&&act.filter.blocker?' with &lt;Blocker&gt;':''} to set as active${act.noAttack?" (it can't attack this turn)":''}${opp.length?' — your Units are listed first':''}.`,
+      (t)=>{ if (!t || !cands.includes(t)) t=cands[0]; applyReadyChosen(card, side, act, t, label); render(); fin(); }, null);
+    return;
+  }
+  if (act.kind==='buffMulti' && act.exact && side===G.player){
+    // "Choose 2 friendly Units. They get AP+1." — exactly that many (fewer only when you have fewer).
+    const cands=friendlyTargets(G.player, act);
+    if (!cands.length){ fin(); return; }
+    chooseUnitsModal(cands, act.count, `<b>${card.name}</b> — choose ${act.count} of your Units (AP+${act.amount})`, (picked)=>{ applyBuffMulti(card, side, act, picked, label); render(); fin(); });
+    return;
+  }
   if (act.kind==='shieldToHand'){               // take the shield, then chain the "Then,…" part
     const chain=()=>{ if (act.then) return resolvePlayerTrigger(card, side, act.then, label, after); fin(); };
     if (act.scryN===2 && G.player.deck.length>=2 && side.who===G.turn){
@@ -4526,7 +4689,8 @@ function resolvePlayerTrigger(card, side, act, label, after){
   // Board-wide debuff (Norn) applies to every enemy Unit with no choice.
   if (act.kind==='debuff' && act.scope==='all-enemy'){ debuffAllEnemy(card, side, act, label); fin(); return; }
   const enemyKinds = (act.kind==='damage' && act.scope!=='all-enemy' && act.scope!=='all-both') || ['rest','bounce','bounceDeck','destroy','debuff','stun'].includes(act.kind);
-  const allyKinds  = act.kind==='buff' || act.kind==='heal' || act.kind==='grantKw' || act.kind==='grantReduce' || (act.kind==='grantAttackActive' && act.scope==='friendly' && !act.all);
+  const allyKinds  = act.kind==='buff' || act.kind==='heal' || act.kind==='grantKw' || act.kind==='grantReduce' || (act.kind==='grantAttackActive' && act.scope==='friendly' && !act.all)
+                  || act.kind==='grantNoAttackTarget' || act.kind==='grantBattleKill';
   if (enemyKinds){
     // Enemy-targeting effects: always prompt when there's at least 1 valid target so the player
     // sees the choice (even with exactly 1 candidate they confirm by clicking it).
@@ -4545,8 +4709,10 @@ function resolvePlayerTrigger(card, side, act, label, after){
     // chooser opens (a modal, so a click on the board still starts an attack); with one it simply applies.
     const cands=friendlyTargets(G.player, act);
     if (cands.length>=2){
-      const best=rankTarget(cands, act); const order=[best, ...cands.filter(c=>c!==best)];
-      const verb = act.kind==='buff' ? `AP+${act.amount}` : act.kind==='heal' ? `recover ${act.amount} HP` : 'the effect';
+      const inB=u=>!!(G.curBattle && (G.curBattle.atk===u || G.curBattle.def===u));   // a "during this battle" grant: the battling Unit first
+      const best=(act.kind==='grantBattleKill' && cands.find(inB)) || rankTarget(cands, act); const order=[best, ...cands.filter(c=>c!==best)];
+      const verb = act.kind==='buff' ? `AP+${act.amount}` : act.kind==='heal' ? `recover ${act.amount} HP`
+                 : act.kind==='grantNoAttackTarget' ? "enemy Units can't choose it as their attack target this turn" : 'the effect';
       promptTargetChoice(order, `<b>${card.name}</b> 【${label}】 — choose 1 of your Units (${verb}).`, (t)=>{
         if (t && !G.player.field.includes(t)) t=rankTarget(friendlyTargets(G.player, act), act);
         applyToTarget(card, side, act, t||null, label); render(); fin(); }, null);
@@ -4613,11 +4779,234 @@ function applySelfPingChosen(card, side, act, ftarget, etarget, after){
   }
   fin();
 }
+// ---- Command effects that choose several things or ask the other player (both sides) ----
+// Rested Units of `side` a "Choose 1 … Unit. Set it as active." effect may pick (its text's restriction applied).
+function readyCands(side, act, card){
+  return friendlyTargets(side, { kind:'setActiveFriendly', filter:act.filter, source:card }).filter(u=>u.rested && u!==card && u.type==='unit');
+}
+// Set the chosen Unit active; "It can't attack during this turn" (30cm Cannon, Midair Modifications).
+function applyReadyChosen(card, side, act, t, label){
+  if (!t || t.hp<=0) return;
+  const owner = G.player.field.includes(t) ? G.player : G.enemy, cls = side===G.player?'me':'ai';
+  if (owner===side && !effReady(t, side)) return;   // (Reginlaze Julia can stop your effects readying your Units)
+  t.rested=false;
+  if (act.noAttack) t.noAttackTurn=G.turnSeq;
+  log(`${label}: <b>${card.name}</b> sets ${owner===side?'':who(owner)+"'s "}<b>${t.name}</b> active${act.noAttack?" — it can't attack during this turn":''}.`, cls);
+}
+// Choose `n` different Units from `cands`, one after another, in the modal chooser (works on either player's turn).
+// When the Units left are exactly as many as still needed there is nothing to choose: they're all taken.
+function chooseUnitsModal(cands, n, msg, done){
+  const picked=[];
+  const step=()=>{
+    const left=cands.filter(u=>!picked.includes(u) && u.hp>0);
+    if (picked.length>=n || !left.length){ done(picked); return; }
+    if (left.length<=n-picked.length){ done(picked.concat(left)); return; }
+    promptTargetChoice(left, `${msg} — ${picked.length+1} of ${n}.`, (t)=>{ if (t && left.includes(t)) picked.push(t); else picked.push(left[0]); step(); }, null);
+  };
+  step();
+}
+function applyBuffMulti(card, side, act, picked, label){
+  const cls=side===G.player?'me':'ai';
+  for (const t of picked){ if (act.dur==='battle') t.battleAp=(t.battleAp||0)+act.amount; else t.tempAp=(t.tempAp||0)+act.amount; t.ap=effAp(t); }
+  if (picked.length) log(`${label}: <b>${card.name}</b> gives AP+${act.amount} to ${picked.map(u=>'<b>'+u.name+'</b>').join(', ')}${act.dur==='battle'?' during this battle':' this turn'}.`, cls);
+}
+// Your own active Units an "Choose N … of your active Units. Rest them. If you do, …" effect may rest.
+function selfRestCands(side, act, card){ return friendlyTargets(side, { filter:act.filter, source:card }).filter(u=>!u.rested && u.type==='unit'); }
+// "Choose N of your active Units. Rest them. If you do, <effect>." (Extreme Hatred, Eternal Road, Human Karma): with fewer than N
+// such Units nothing happens. The player picks which Units to rest; the AI rests the ones it needs least.
+function selfRestThen(card, side, act, label, after){
+  const fin=()=>{ if (after) after(); };
+  const cls=side===G.player?'me':'ai';
+  const cands=selfRestCands(side, act, card);
+  if (cands.length < act.count){ log(`${label}: <b>${card.name}</b> — not enough active Units to rest, so nothing happens.`, cls); fin(); return; }
+  const pay=(picked)=>{
+    picked=picked.filter(u=>side.field.includes(u) && !u.rested).slice(0, act.count);
+    if (picked.length < act.count){ fin(); return; }
+    for (const u of picked) u.rested=true;   // your own effect rests your own Units
+    log(`${label}: <b>${card.name}</b> — ${side===G.player?'you rest':'the AI rests'} ${picked.map(u=>'<b>'+u.name+'</b>').join(', ')}.`, cls);
+    if (side===G.player && G.cmdInFlight && G.cmdInFlight.card===card) G.cmdInFlight=null;   // paid: the Command can't be taken back now
+    let inner=act.inner;
+    if (act.lvOfRested) inner=Object.assign({}, inner, { filter: Object.assign({}, inner.filter||{}, { maxLv: picked[0].lv||0 }) });
+    if (side===G.player) resolvePlayerTrigger(card, side, inner, label, after);
+    else { runTrigger(card, side, inner, label); fin(); }
+  };
+  if (side===G.player) chooseUnitsModal(cands, act.count, `<b>${card.name}</b> — choose ${act.count} of your active Units to rest`, pay);
+  else {
+    // AI: Units that can't attack anyway first (summoning-sick, or it's not its turn), then the least valuable;
+    // with a Lv cap on the payoff (Human Karma), the highest-Lv Unit.
+    const val=u=>(u.sick||G.turn!==side.who?0:10)+keepVal(u);
+    const order=act.lvOfRested ? [...cands].sort((a,b)=>(b.lv||0)-(a.lv||0)) : [...cands].sort((a,b)=>val(a)-val(b));
+    pay(order.slice(0, act.count));
+  }
+}
+// "All enemy players each choose 1 of their active Units. Rest them." — the opponent of `side` picks one of their own Units.
+function foeRestOwn(card, side, act, label, after){
+  const fin=()=>{ if (after) after(); };
+  const foe=side===G.player?G.enemy:G.player, cls=side===G.player?'me':'ai';
+  const cands=foe.field.filter(u=>u.hp>0 && u.type==='unit' && (!(act.filter && act.filter.active) || !u.rested));
+  if (!cands.length){ log(`${label}: <b>${card.name}</b> — ${foe===G.player?'you have':who(foe)+' has'} no ${act.filter&&act.filter.active?'active ':''}Unit to rest.`, cls); fin(); return; }
+  const rest=(u)=>{ if (u && foe.field.includes(u) && !u.rested && effectRest(u, foe)) log(`${label}: <b>${card.name}</b> — ${foe===G.player?'you rest your':'the AI rests its'} <b>${u.name}</b>.`, cls); render(); fin(); };
+  if (foe===G.player){
+    if (cands.length===1){ rest(cands[0]); return; }
+    promptTargetChoice(cands, `<b>${card.name}</b> — choose 1 of your active Units to rest.`, (t)=>rest(t && cands.includes(t) ? t : cands[0]), null);
+    return;
+  }
+  // AI: one already rested if it may, else one that can't attack this turn anyway, never a Blocker it may need, the one
+  // hardest to kill once rested.
+  const myTurn=G.turn===foe.who;
+  rest([...cands].sort((a,b)=>(b.rested?1:0)-(a.rested?1:0) || ((myTurn&&!a.sick)?1:0)-((myTurn&&!b.sick)?1:0) || (effBlocker(a)?1:0)-(effBlocker(b)?1:0) || b.hp-a.hp || effAp(a)-effAp(b))[0]);
+}
+// "Choose 1 enemy player. You and that player each choose 1 of your own Units. Begin a battle between them and only perform
+// the damage step. (You choose first, then your opponent.)" (The Final Victor). Damage step only (5-22-3): no block step;
+// the caster's Unit is the attacking one (<First Strike>, <Breach>); battle-kill payoffs apply.
+function mutualDuel(card, side, label, after){
+  const fin=()=>{ if (after) after(); };
+  const foe=side===G.player?G.enemy:G.player, cls=side===G.player?'me':'ai';
+  const units=s=>s.field.filter(u=>u.hp>0 && u.type==='unit');
+  if (!units(side).length || !units(foe).length){ log(`${label}: <b>${card.name}</b> — ${units(side).length?who(foe)+' has':'there is'} no Unit to battle.`, cls); fin(); return; }
+  const fight=(a, d)=>{
+    if (!a || !d || !side.field.includes(a) || !foe.field.includes(d)){ fin(); return; }
+    log(`${label}: <b>${a.name}</b> (${effAp(a)}/${a.hp}) and <b>${d.name}</b> (${effAp(d)}/${d.hp}) battle — damage step only.`, cls);
+    G.curBattle={ atk:a, def:d };
+    const aa=effAp(a), da=effAp(d);
+    const hitD=()=>{ if (foe.field.includes(d) && !preventsWeakBattleDamage(d, a, foe) && !preventsLowApBattle(d, a, foe)) damage(redirectOf(d, foe), aa, foe, 'battle', a); };
+    const hitA=()=>{ if (side.field.includes(a) && !preventsWeakBattleDamage(a, d, side) && !preventsLowApBattle(a, d, side)) damage(redirectOf(a, side), da, side, 'battle', d); };
+    if (effFirstStrike(a)){ hitD(); if (d.hp>0) hitA(); } else { hitD(); hitA(); }
+    if (d.hp<=0){ if (effBreach(a)>0) breachShield(a, foe); battleKillPayoffs(a, side, d); }
+    grantedKillHook(a, side, d); grantedKillHook(d, foe, a);
+    clearBattleScoped(); render(); checkEnd(); fin();
+  };
+  // The opponent's pick: a Unit that destroys yours and survives, else one that survives, else one that destroys it,
+  // else its least valuable Unit.
+  const respond=(s, vs)=>{
+    const c=units(s); const score=x=>{
+      const kills = effAp(x)>=vs.hp && !(effFirstStrike(vs) && effAp(vs)>=x.hp);
+      const lives = effAp(vs)<x.hp;
+      return (kills&&lives?3:lives?2:kills?1:0);
+    };
+    return [...c].sort((x,y)=>score(y)-score(x) || keepVal(x)-keepVal(y))[0];
+  };
+  const second=(mine)=>{
+    if (!mine || !side.field.includes(mine)){ fin(); return; }
+    const theirs=units(foe); if (!theirs.length){ fin(); return; }
+    if (foe===G.player){
+      if (theirs.length===1){ fight(mine, theirs[0]); return; }
+      promptTargetChoice(theirs, `<b>${card.name}</b> — the AI chose <b>${mine.name}</b> (⚔${effAp(mine)}/❤${mine.hp}). Choose 1 of your Units to battle it (damage step only).`,
+        (t)=>fight(mine, t && theirs.includes(t) ? t : theirs[0]), null);
+      return;
+    }
+    fight(mine, respond(foe, mine));
+  };
+  const mine=units(side);
+  if (side===G.player){
+    if (mine.length===1){ second(mine[0]); return; }
+    promptTargetChoice(mine, `<b>${card.name}</b> — choose 1 of your Units to battle (then the AI chooses one of its Units; damage step only).`, (t)=>second(t && mine.includes(t) ? t : mine[0]), null);
+    return;
+  }
+  second([...mine].sort((x,y)=>(effFirstStrike(y)?1:0)-(effFirstStrike(x)?1:0) || effAp(y)-effAp(x) || y.hp-x.hp)[0]);
+}
+// "When this Unit destroys an enemy Unit with battle damage, <effect>" gained for this battle (Wise Leader's Pride).
+function grantedKillHook(killer, side, victim){
+  const gs=killer && killer.battleOnKill;
+  if (!gs || !gs.length || !victim || victim.type!=='unit' || victim.hp>0 || !side) return;
+  const cls=side===G.player?'me':'ai';
+  killer.battleOnKill=null;   // granted for this one battle
+  for (const g of gs.filter(x=>x.atk && x.atk===G.curAttack)){
+    const act=Object.assign({}, g.act, { source:g.card });
+    log(`<b>${killer.name}</b> destroyed <b>${victim.name}</b> — <b>${g.card.name}</b>'s effect triggers.`, cls);
+    const enemyKind=(act.kind==='damage' && act.scope!=='all-enemy' && act.scope!=='all-both') || ['rest','bounce','bounceDeck','destroy','debuff','stun'].includes(act.kind);
+    if (side===G.player && enemyKind){
+      const cands=enemyTargets(G.enemy, act);
+      if (!cands.length){ log(`<b>${g.card.name}</b>: no enemy Unit it can choose.`, 'me'); continue; }
+      if (cands.length===1){ applyToTarget(g.card, side, act, cands[0], g.card.name); continue; }
+      promptTargetChoice(cands, `<b>${g.card.name}</b> — <b>${killer.name}</b> destroyed an enemy Unit: choose an enemy Unit for its effect.`,
+        (t)=>{ if (!t || !G.enemy.field.includes(t)) t=enemyTargets(G.enemy, act)[0]||null; G.effSrc=g.card; applyToTarget(g.card, side, act, t, g.card.name); render(); checkEnd(); }, null);
+    } else runTrigger(g.card, side, act, g.card.name);
+  }
+}
+// "Choose 1 (T) Unit card [that is Lv.N or lower] from your trash. Deploy it [rested]." — free (A Twinkle from the Abyss,
+// Afterglow of Zeon). The player chooses among the eligible cards; the AI takes the strongest.
+function trashDeploy(card, side, act, label, after){
+  const fin=()=>{ if (after) after(); };
+  const cls=side===G.player?'me':'ai';
+  const fits=c=>c.type==='unit' && !c.token && matchFilter(c, act.filter) && (act.maxLv==null || trashLv(side,c)<=act.maxLv);
+  const cands=side.trash.filter(fits);
+  const what=`${act.filter}${act.maxLv!=null?` card that is Lv.${act.maxLv} or lower`:' card'}`;
+  if (!cands.length){ log(`${label}: <b>${card.name}</b> — no ${what} in the trash.`, cls); fin(); return; }
+  const deploy=(c)=>{
+    if (!c || !side.trash.includes(c)){ fin(); return; }
+    makeRoom(side, 1, card.name, ()=>{
+      if (!side.trash.includes(c)){ fin(); return; }
+      side.trash.splice(side.trash.indexOf(c),1); refreshTrashStats(side);
+      resetUnit(c); c.rested=!!act.rested; c.sick=!c.blitz; side.field.push(c); sound('deploy');
+      log(`${label}: <b>${card.name}</b> deploys <b>${c.name}</b> from the trash${act.rested?' rested':''}.`, cls);
+      if (side===G.player) resolvePlayerTrigger(c, side, trashDeployAct(c), 'Deploy', ()=>{ onUnitDeployed(c, side, ()=>{ render(); fin(); }); });
+      else { runTrigger(c, side, trashDeployAct(c), 'Deploy'); onUnitDeployed(c, side, null, true); render(); fin(); }
+    });
+  };
+  if (side===G.player && cands.length>1){ whenModalFree(()=>showLookAtTop(cands, `${card.name}: choose 1 ${what} from your trash to deploy${act.rested?' rested':''}`, ()=>true, false, (c)=>deploy(c||cands[0]))); return; }
+  deploy(side===G.player ? cands[0] : [...cands].sort((a,b)=>cardValue(b)-cardValue(a))[0]);
+}
+// "All players each look at the top card of their deck. If it is a <X> card, they may reveal it and add it to their hand. They
+// return any remaining card to the top or bottom of their deck." (Le Cygne (EX), Premium Unit Assembly) — the active player
+// first; each player decides for their own deck: the human through a chooser, the AI keeps what qualifies.
+function allLookTop(card, side, act, label, after){
+  const fin=()=>{ if (after) after(); };
+  const cls=side===G.player?'me':'ai', foe=side===G.player?G.enemy:G.player;
+  const fits=c=>!!c && c.type!=='resource' && (act.minLv==null || (c.lv||0)>=act.minLv) && (!act.cardType || c.type===act.cardType);
+  const order=G.turn===foe.who ? [foe, side] : [side, foe];
+  let i=0;
+  const next=()=>{
+    if (i>=order.length){ render(); fin(); return; }
+    const sd=order[i++];
+    if (!sd.deck.length){ next(); return; }
+    const top=sd.deck[sd.deck.length-1];
+    if (sd===G.player){ whenModalFree(()=>showScryChoice({ name:card.name }, top, next, fits(top))); return; }
+    if (fits(top)){ sd.deck.pop(); sd.hand.push(top); log(`${label}: ${who(sd)} reveals <b>${top.name}</b> and adds it to their hand.`, cls); deckOutCheck(sd); }
+    else if (cardValue(top)<3){ sd.deck.pop(); sd.deck.unshift(top); log(`${label}: ${who(sd)} puts the top card on the bottom.`, cls); }
+    else log(`${label}: ${who(sd)} keeps the top card on top.`, cls);
+    next();
+  };
+  next();
+}
+// "Look at the top N cards. [You may reveal 1 (X) card among them and] return 1 to the top. Return the remaining cards to the
+// bottom. [Then, …]" — `act.must`: one card has to go back on top (Turning Point of History); `act.then` resolves afterwards.
+function digTopResolve(card, side, act, label, after){
+  const cls=side===G.player?'me':'ai', name=card.name;
+  const fin=()=>{
+    if (act.then){ if (side===G.player) return resolvePlayerTrigger(card, side, act.then, label, after); runTrigger(card, side, act.then, label); }
+    if (after) after();
+  };
+  const n=Math.min(act.amount, side.deck.length);
+  if (!n){ fin(); return; }
+  const top=side.deck.splice(side.deck.length-n, n);
+  const keepTop=(pick)=>{
+    const rest=top.filter(c=>c!==pick);
+    shuffle(rest); for (const c of rest) side.deck.unshift(c);   // the rest go to the bottom
+    if (pick){ side.deck.push(pick); log(`${label}: <b>${name}</b> puts ${side===G.player?'<b>'+pick.name+'</b>':'a card'} on top of the deck${rest.length?` and ${rest.length} on the bottom`:''}.`, cls); }
+    else log(`${label}: <b>${name}</b> looks at top ${n} — nothing kept.`, cls);
+    render(); fin();
+  };
+  const legal=top.filter(c=>matchFilter(c, act.filter));
+  if (side===G.player && legal.length && !(act.must && top.length===1))
+    showLookAtTop(top, `${name}: ${act.must?'return 1':'keep 1'} on TOP of your deck (the rest go to the bottom)`, (c)=>legal.includes(c), !act.must, (c)=>keepTop(c || (act.must ? legal[0] : null)));
+  else keepTop([...legal].sort((a,b)=>cardValue(b)-cardValue(a))[0] || null);
+}
+// Peaceful Timbre / White Wolf / Presence Detected: during this battle `side`'s shield area cards (Shields and Base) can't
+// receive damage — battle damage or <Breach> — from an enemy Unit that is Lv.N or lower / has N or less AP.
+function shieldAreaGuarded(side, srcUnit){
+  const g=side && side.shieldGuard;
+  if (!g || !g.atk || G.curAttack!==g.atk || !srcUnit || srcUnit.type!=='unit' || srcUnit.owner===side.who) return false;
+  if (g.maxLv!=null && (srcUnit.lv||0)>g.maxLv) return false;
+  if (g.maxAp!=null && effAp(srcUnit)>g.maxAp) return false;
+  return true;
+}
 // Strip a unit back to its printed state (used by both returnToHand and trash retrieval).
 function resetUnit(u){
   if (u.token) return;
   if (u.activateFromPilot) dropPilotActivate(u);
   u.pilot=null; u.pilotCard=null; u.linked=false; u.tempAp=0; u.rested=false; u.sick=true; u.activatedThisTurn=false;
+  u.battleOnKill=null; u.noTargetTurn=null;   // effects it gained while in play (Wise Leader's Pride, The Orca of Red Sea)
   u.pilotPairAp=0; u.pilotPairHp=0; u.pilotLinkAp=0; u.pilotLinkHp=0;
   u.ap=u.baseAp; u.hp=u.baseHp; u.maxHp=u.baseHp; if (u.baseLv!=null) u.lv=u.baseLv;
   u.blocker=innateKeyword(u.effect,'blocker'); u.firstStrike=innateKeyword(u.effect,'first'); u.highManeuver=innateKeyword(u.effect,'high');
@@ -6551,6 +6940,18 @@ function playAsPilot(card, idx){
   closeInspect(); render();
 }
 
+// Command effects with nothing they could do right now (so the card isn't spent for nothing): too few of your active Units to
+// rest, no eligible card in the trash, no Unit on one side for a damage-step battle, no rested Unit it may set active.
+function cmdNoTarget(a, side){
+  if (!a) return false;
+  const foe = side===G.player ? G.enemy : G.player;
+  if (a.kind==='selfRestThen') return selfRestCands(side, a, null).length < a.count;
+  if (a.kind==='trashDeploy') return !side.trash.some(c=>c.type==='unit' && !c.token && matchFilter(c, a.filter) && (a.maxLv==null || trashLv(side,c)<=a.maxLv));
+  if (a.kind==='mutualDuel') return !side.field.some(u=>u.hp>0 && u.type==='unit') || !foe.field.some(u=>u.hp>0 && u.type==='unit');
+  if (a.kind==='setActiveFriendly' && (a.filter || a.anySide)) return !readyCands(side, a, null).length && !(a.anySide && readyCands(foe, a, null).length);
+  if (a.kind==='buffMulti' || a.kind==='grantNoAttackTarget' || a.kind==='grantBattleKill') return !friendlyTargets(side, a).length;
+  return false;
+}
 function startCommand(card, handIdx){
   const s=G.player, a=card.action;
   // "If you have no (X) Unit tokens in play" — block when you already control one (only one allowed).
@@ -6603,8 +7004,10 @@ function startCommand(card, handIdx){
   const needEnemy = (a.kind==='damage'&&a.scope!=='all-enemy'&&a.scope!=='all-both') || ['rest','destroy','bounce','debuff','stun'].includes(a.kind);
   const needAlly  = ['heal','buff','grantKw','grantReduce'].includes(a.kind) || (a.kind==='grantAttackActive'&&a.scope==='friendly'&&!a.all) || a.kind==='damageBoth' || a.kind==='selfPingBuff' || a.kind==='selfPingDraw';
   const noEnemyTgt = needEnemy && enemyTargets(G.enemy, a).length===0;
-  const noAllyTgt  = needAlly && G.player.field.length===0;
-  if (noEnemyTgt || noAllyTgt){ flashPrompt(`${card.name}: no legal target — can't play it now.`); return; }
+  // A restricted friendly target ("friendly Unit with <Blocker>", "(AEUG) Units/Bases") must exist; a "Then, …" part
+  // (Dramatic Turnabout's draw) still makes the card worth playing without one.
+  const noAllyTgt  = needAlly && !a.then && (a.filter || a.withBase ? friendlyTargets(G.player, a).length===0 : G.player.field.length===0);
+  if (noEnemyTgt || noAllyTgt || cmdNoTarget(a, G.player)){ flashPrompt(`${card.name}: no legal target — can't play it now.`); return; }
   // Everything else resolves through the same interactive resolver as triggered effects. Track it as
   // in-flight so a Cancel while picking a target returns the Command to hand instead of losing it.
   G.cmdInFlight = { card, cost: effectiveCost(s, card), exBefore: s.ex };
@@ -6681,9 +7084,10 @@ function applyCommand(card, side, target){
   else if (a.kind==='draw'){ for(let i=0;i<a.amount;i++) draw(side); log(`<b>${card.name}</b>: draw ${a.amount}.`, side===G.player?'me':'ai'); }
   else if (a.kind==='damage'){
     if (a.scope==='all-enemy' || a.scope==='all-both'){ damageAll(card, side, a, card.name); }
-    else if (target){ log(`<b>${card.name}</b> deals ${a.amount} to <b>${target.name}</b>.`, side===G.player?'me':'ai'); damage(target,a.amount,foe); }
+    else if (target){ const amt=dmgAmount(a, side, card); log(`<b>${card.name}</b> deals ${amt} to <b>${target.name}</b>.`, side===G.player?'me':'ai'); damage(target,amt,foe); }
   }
-  else if (a.kind==='heal'){ if (target){ const _b=target.hp; target.hp=Math.min(effMaxHp(target), target.hp + (a.amount>=99?effMaxHp(target):a.amount)); if(target.hp>_b){ floatNum(target.uid,'+'+(target.hp-_b),'#7ee29a'); unitHealed(target, side); } log(`<b>${card.name}</b> repairs <b>${target.name}</b>.`, side===G.player?'me':'ai'); } }
+  else if (a.kind==='heal'){ if (target){ const _b=target.hp; target.hp=Math.min(effMaxHp(target), target.hp + (a.amount>=99?effMaxHp(target):a.amount)); if(target.hp>_b){ floatNum(target.uid,'+'+(target.hp-_b),'#7ee29a'); unitHealed(target, side); } log(`<b>${card.name}</b> repairs <b>${target.name}</b>.`, side===G.player?'me':'ai'); }
+    if (a.then) runTrigger(card, side, a.then, card.name); }   // "Then, draw 1." (Dramatic Turnabout)
   else if (a.kind==='buff'){
     if (target){
       if (a.dur==='battle') target.battleAp=(target.battleAp||0)+a.amount; else target.tempAp=(target.tempAp||0)+a.amount;
@@ -7400,6 +7804,7 @@ function strikePlayer(atk, defSide, done){
   if (defSide.shields.length>0){
     const guard = defSide.field.find(x=>x.restedShieldGuard && x.rested && x.hp>0);
     if (guard){ log(`${who(defSide)} Shields can't receive battle damage while <b>${guard.name}</b> is rested.`, side); done(); return; }
+    if (shieldAreaGuarded(defSide, atk)){ log(`${who(defSide)} shield area cards can't receive damage from <b>${atk.name}</b> during this battle.`, side); done(); return; }
     // <Suppression>: damage to shields hits the first 2 cards simultaneously, else just 1.
     const supp = atk && effSuppression(atk);
     const n = supp ? 2 : 1;
@@ -7530,6 +7935,8 @@ function burstResolvePlayer(card, side, act, done){
   }
   // Token Bursts on a full battle area: the player chooses which of their Units make room (11-4-2).
   if (act.kind==='token' && side===G.player){ deployTokensInteractive(card, side, act, 'Burst', ()=>{ render(); done(); }); return; }
+  // "Activate this card's 【Main】" with choices of its own (Midair Modifications: which rested Unit with <Blocker>).
+  if (side===G.player && playerResolvedCmd(act)){ resolvePlayerTrigger(card, side, act, 'Burst', ()=>{ render(); done(); }); return; }
   applyCommand({name:card.name, action:act}, side, autoTarget(act, side)); render(); done();   // non-enemy-target → auto
 }
 // Modal target picker (used by player Bursts on the opponent's turn, where field taps are disabled).
@@ -7565,7 +7972,8 @@ function promptTargetChoice(cands, msg, cb, skipLabel){
 function autoTarget(action, side){
   const foe = side===G.player?G.enemy:G.player;
   if (['damage','rest','destroy','bounce','debuff','stun'].includes(action.kind)) return rankTarget(enemyTargets(foe, action), action);
-  if (['heal','buff','grantKw','grantReduce','grantAttackActive'].includes(action.kind)) return [...side.field].sort((a,b)=>b.baseAp-a.baseAp)[0]||null;
+  if (['heal','buff','grantKw','grantReduce','grantAttackActive'].includes(action.kind))
+    return [...((action.filter || action.withBase) ? friendlyTargets(side, action) : side.field)].sort((a,b)=>b.baseAp-a.baseAp)[0]||null;   // its restriction applies
   return null;
 }
 
@@ -7864,13 +8272,16 @@ function battle(atk, def, atkSide, defSide){
   if (def.type==='unit' && def.hp<=0){                                            // "when this Unit destroys an enemy Unit…" — fires even if the attacker died too (10-1-6-4)
     battleKillPayoffs(atk, atkSide, def);
   }
+  // …and one gained for this battle (Wise Leader's Pride) — on the attacking or the defending Unit.
+  if (def.type==='unit'){ grantedKillHook(atk, atkSide, def); grantedKillHook(def, defSide, atk); }
   clearBattleScoped();                 // "during this battle" effects (e.g. Kira's AP-2) end now
   clearSel(); render(); checkEnd();
 }
 // Clear "during this battle" AP modifiers from every Unit once the battle ends.
 function clearBattleScoped(){
   G.curBattle = null; G.curAttack = null; G.retarget = null;
-  for (const s of [G.player, G.enemy]){ if(!s) continue; for (const u of s.field){ if(u.battleAp){ u.battleAp=0; u.ap=effAp(u); } u.redirectTo=null; u.battleReduceLowLv=0; u.battleBreach=0; u.noBlockLvMax=null; u.noBattleDmgBattle=false; } }
+  for (const s of [G.player, G.enemy]){ if(!s) continue; for (const u of s.field){ if(u.battleAp){ u.battleAp=0; u.ap=effAp(u); } u.redirectTo=null; u.battleReduceLowLv=0; u.battleBreach=0; u.noBlockLvMax=null; u.noBattleDmgBattle=false; u.battleOnKill=null; }
+    s.shieldGuard=null; }   // Peaceful Timbre & co. last for this battle only
 }
 // Where battle damage to `u` actually lands this battle: a friendly Unit/Base it was redirected to
 // (Qubeley Mk-II's 【Activate･Action】), if that card is still in play — else `u` itself.
@@ -7911,6 +8322,7 @@ function effectDamagePrevented(u, side, src, kind, dmg){
 // low-Lv enemy Units while a rested (T) Unit of yours is in play). `srcUnit` is the enemy Unit dealing it (null for a Command).
 function baseGuarded(side, srcUnit, battle){
   const b=side && side.base; if (!b) return false;
+  if (shieldAreaGuarded(side, srcUnit)) return true;   // Peaceful Timbre & co.: the Base is a shield area card
   if (!battle && b.noEnemyEffDmg) return true;
   const g=b.baseUnitGuard;
   if (g && srcUnit && srcUnit.type==='unit' && !(g.battleOnly && !battle) && (srcUnit.lv||0)<=g.maxLv && !(g.notToken && srcUnit.token)
@@ -8181,6 +8593,7 @@ function breachShield(atk, defSide){
     return;
   }
   if (defSide.shields.length<=0) return;
+  if (shieldAreaGuarded(defSide, atk)){ log(`${who(defSide)} shield area cards can't receive damage from <b>${atk.name}</b> during this battle.`, side); return; }
   const sh=defSide.shields.pop(); defSide.breakingShield=true; fx('shield');
   log(`<b>${atk.name}</b> &lt;Breach&gt; destroys a ${who(defSide)} shield! (${defSide.shields.length} left)`, side);
   enemyCardDestroyed(atk, atkSide, 'shield');
@@ -8620,13 +9033,14 @@ function aiMainStep(){
   const dmg = ai.hand.find(c=>mainCmd(c) && c.action.kind==='damage' && canAfford(ai,c) && (aoe(c.action) || enemyTargets(pl, c.action).length));
   if (dmg && pl.field.length){
     const isAoE = aoe(dmg.action);
-    const tgt = isAoE ? null : aiRemovalTarget(dmg.action.amount, dmg.action);
+    const amt = dmgAmount(dmg.action, ai, dmg);   // "If <condition>, deal N damage instead" (Lady Luck)
+    const tgt = isAoE ? null : aiRemovalTarget(amt, dmg.action);
     const worthIt = isAoE ? (()=>{ const r=aoeNet(dmg.action); return r.foeHit>=2 && r.net>0; })()
-      : (tgt && (tgt.hp<=dmg.action.amount || aiThreatScore(tgt)>=6));   // a kill, or a scary unit
+      : (tgt && (tgt.hp<=amt || aiThreatScore(tgt)>=6));   // a kill, or a scary unit
     if (worthIt){
       const i=ai.hand.indexOf(dmg); ai.hand.splice(i,1); payCost(ai, effectiveCost(ai,dmg)); sendToTrash(dmg,ai); flashCard(dmg,'ENEMY COMMAND'); commandPlayed(dmg, ai); setTimeout(()=>afterCommandMain(dmg, ai), 0);
       if (isAoE){ log(`${who(G.enemy)} plays <b>${dmg.name}</b> (all units).`, 'ai'); damageAll(dmg, ai, dmg.action, dmg.name); }
-      else { log(`${who(G.enemy)} plays <b>${dmg.name}</b> on <b>${tgt.name}</b>.`, 'ai'); G.effSrc=dmg; damage(tgt,dmg.action.amount,pl); }
+      else { log(`${who(G.enemy)} plays <b>${dmg.name}</b> on <b>${tgt.name}</b>.`, 'ai'); G.effSrc=dmg; damage(tgt,amt,pl); }
       return true;
     }
   }
@@ -8680,7 +9094,8 @@ function aiMainStep(){
   }
   // buff before attacks
   const buff = ai.hand.find(c=>mainCmd(c) && c.action.kind==='buff' && canAfford(ai,c));
-  if (buff && ai.field.some(u=>!u.sick&&!u.rested&&u.ap>0)){ const t=ai.field.filter(u=>!u.sick&&!u.rested&&u.ap>0).sort((a,b)=>b.ap-a.ap)[0]; const i=ai.hand.indexOf(buff); ai.hand.splice(i,1); payCost(ai, effectiveCost(ai,buff)); sendToTrash(buff,ai); flashCard(buff,'ENEMY COMMAND'); commandPlayed(buff, ai); setTimeout(()=>afterCommandMain(buff, ai), 0); t.tempAp=(t.tempAp||0)+buff.action.amount; t.ap=effAp(t); log(`${who(G.enemy)} empowers <b>${t.name}</b>.`, 'ai'); return true; }
+  const buffOk = u=>!u.sick&&!u.rested&&u.ap>0 && (!buff.action.filter || friendlyTargets(ai, buff.action).includes(u));   // only a Unit its text allows
+  if (buff && ai.field.some(buffOk)){ const t=ai.field.filter(buffOk).sort((a,b)=>b.ap-a.ap)[0]; const i=ai.hand.indexOf(buff); ai.hand.splice(i,1); payCost(ai, effectiveCost(ai,buff)); sendToTrash(buff,ai); flashCard(buff,'ENEMY COMMAND'); commandPlayed(buff, ai); setTimeout(()=>afterCommandMain(buff, ai), 0); t.tempAp=(t.tempAp||0)+buff.action.amount; t.ap=effAp(t); log(`${who(G.enemy)} empowers <b>${t.name}</b>.`, 'ai'); return true; }
   // token-creating command — play it when there's board room
   const tokCmd = ai.hand.find(c=>mainCmd(c) && c.action.kind==='token' && canAfford(ai,c) && !(c.action.tokenLimit && hasTraitToken(ai, c.action.tokenLimit)));
   if (tokCmd && ai.field.length<FIELD_MAX){ const i=ai.hand.indexOf(tokCmd); ai.hand.splice(i,1); payCost(ai, effectiveCost(ai,tokCmd)); sendToTrash(tokCmd,ai); flashCard(tokCmd,'ENEMY COMMAND'); commandPlayed(tokCmd, ai); setTimeout(()=>afterCommandMain(tokCmd, ai), 0); deployTokens(tokCmd.action, ai, tokCmd.name, tokCmd.name, 'ai'); return true; }
@@ -8820,7 +9235,15 @@ function actionCmdUsable(c){
   const a=c.action; if(!a) return false;
   const ek=['damage','rest','destroy','bounce','debuff'];
   if (ek.includes(a.kind) && a.scope!=='all-enemy' && a.scope!=='all-both') return enemyTargets(G.enemy, a).length>0;
+  // A restricted friendly target must exist ("friendly Unit with <Blocker>" — Naval Bombardment; "(AEUG) Units/Bases").
+  if (['buff','heal','grantKw','grantReduce'].includes(a.kind) && (a.filter || a.withBase) && !a.then && !friendlyTargets(G.player, a).length) return false;
+  if (cmdNoTarget(a, G.player)) return false;
   return true;
+}
+// Command actions the player resolves through resolvePlayerTrigger in an action step (their choices use modal choosers).
+function playerResolvedCmd(a){
+  return !!a && (['selfRestThen','grantNoAttackTarget','grantBattleKill','setActiveFriendly','trashDeploy','mutualDuel','allLookTop','digTop','foeRestOwn','shieldGuard'].includes(a.kind)
+              || (a.kind==='buffMulti' && a.exact));
 }
 // Units an attack can be moved onto by a "change a battling enemy Unit's attack target to it" effect:
 // rested friendly Units matching the card's trait, other than the one already being attacked.
@@ -8893,8 +9316,13 @@ function collectPlayerActions(attacker){
         }});
         continue;
       }
+      // "During this battle, your shield area cards can't receive damage…" only means something while an enemy Unit attacks
+      // you; a "during this battle" kill effect, while a Unit battles a Unit.
+      if (c.action && c.action.kind==='shieldGuard' && !(attacker && G.enemy.field.includes(attacker))) continue;
+      if (c.action && c.action.kind==='grantBattleKill' && !(attacker && G.curBattle && G.curBattle.def && G.curBattle.def.type==='unit')) continue;
       opts.push({ label:`▸ ${c.name}`, sub:'Action command', run:(afterCb)=>{
         const h=G.player.hand.indexOf(c); if(h<0)return;
+        if (c.action) c.action.source=c;   // the Command being activated (not counted among the cards in your trash)
         const enemyKinds=['damage','rest','destroy','bounce','debuff'];
         if (enemyKinds.includes(c.action?.kind) && c.action.scope!=='all-enemy' && c.action.scope!=='all-both'){
           const cands=enemyTargets(G.enemy, c.action);
@@ -8918,6 +9346,9 @@ function collectPlayerActions(attacker){
         const cost=effectiveCost(G.player,c); G.player.hand.splice(h,1); payCost(G.player, cost);
         sendToTrash(c,G.player); flashCard(c,'YOUR ACTION');
         commandPlayed(c, G.player, ()=>{
+          // Effects with their own choices (several Units, a trash card, the top of the deck, a Unit with <Blocker>, the
+          // opponent's pick…) resolve through the interactive resolver, whose choosers work on either player's turn.
+          if (playerResolvedCmd(c.action)){ resolvePlayerTrigger(c, G.player, c.action, c.name, ()=>{ render(); if (afterCb) afterCb(); }); return; }
           // "Choose 1 of your Units" (Familial Love): the player chooses; the Unit in this battle is listed first.
           if (['buff','heal'].includes(c.action.kind) && c.action.scope!=='all-friendly'){
             const inBattle=u=>G.curBattle && (G.curBattle.atk===u || G.curBattle.def===u);
