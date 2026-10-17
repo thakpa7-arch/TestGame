@@ -2374,6 +2374,8 @@ function trashRetrieveFilter(t){
   let f=m[1].trim(); const rest=m[2]||'';
   const lo=rest.match(/lv\.?\s*(\d+) or lower/i); if (lo) f+=' lv.'+lo[1]+' or lower';
   const hi=rest.match(/lv\.?\s*(\d+) or higher/i); if (hi) f+=' lv.'+hi[1]+' or higher';
+  // "1 Pilot card with "Shinn Asuka" in its card name" (Force Impulse Gundam) — the name is a requirement (parseFilter r.name).
+  const nm=rest.match(/^\s*with ["'“”]([^"'“”]+)["'“”] in (?:its|their) card names?/i); if (nm) f+=' card with "'+nm[1]+'" in its card name';
   return f;
 }
 function parseFilter(filterStr){
@@ -2383,6 +2385,7 @@ function parseFilter(filterStr){
   // alternative to the rest of the filter.
   const nm = f.match(/\s*\/\s*(?:1\s+)?cards? with ["'“”]([^"'“”]+)["'“”] in (?:its|their) card names?/);
   if (nm){ r.orName = nm[1].trim(); f = f.slice(0, nm.index) + f.slice(nm.index + nm[0].length); }
+  else { const rn = f.match(/\bcards? with ["'“”]([^"'“”]+)["'“”] in (?:its|their) card names?/); if (rn) r.name = rn[1].trim(); }   // a required name (Force Impulse Gundam)
   if (/\bunit\b/.test(f)) r.type='unit'; else if (/\bpilot\b/.test(f)) r.type='pilot';
   else if (/\bcommand\b/.test(f)) r.type='command'; else if (/\bbase\b/.test(f)) r.type='base';
   // "(Clan) Unit card/Pilot card", "(Academy) Unit card/Command card" — either card type.
@@ -2399,6 +2402,7 @@ function matchFilter(card, filterStr){
   if (!filterStr) return true;
   const f = parseFilter(filterStr);
   if (f.orName && (card.name||'').toLowerCase().includes(f.orName)) return true;
+  if (f.name && !(card.name||'').toLowerCase().includes(f.name)) return false;
   if (f.types){ if (!f.types.includes(card.type)) return false; }
   else if (f.type && card.type !== f.type) return false;
   if (f.color && (card.color||'').toLowerCase() !== f.color) return false;
@@ -2435,10 +2439,12 @@ function parseTriggerInner(t){
   }
   // self keyword grants this turn: "This (Unit) gains <First Strike>/<Suppression>/<High-Maneuver>…"
   if (/(?:this unit|this|it)\s+gains/i.test(tl)){
-    if (/<\s*first[-\s]?strike/i.test(tl)) return { kind:'selfKeyword', kw:'first' };
-    if (/<\s*high[-\s]?maneuver/i.test(tl)) return { kind:'selfKeyword', kw:'high' };
-    if ((d=tl.match(/<\s*breach\s*(\d+)/i))) return { kind:'selfKeyword', kw:'breach', amount:+d[1] };
-    if (/<\s*suppression/i.test(tl)) return { kind:'selfKeyword', kw:'suppression' };
+    // "… during this battle" (Gadeel, Lafter Frankland): the keyword ends with the battle (clearBattleScoped), not the turn.
+    const sk=(o)=>/during this battle/i.test(tl) ? Object.assign(o, { dur:'battle' }) : o;
+    if (/<\s*first[-\s]?strike/i.test(tl)) return sk({ kind:'selfKeyword', kw:'first' });
+    if (/<\s*high[-\s]?maneuver/i.test(tl)) return sk({ kind:'selfKeyword', kw:'high' });
+    if ((d=tl.match(/<\s*breach\s*(\d+)/i))) return sk({ kind:'selfKeyword', kw:'breach', amount:+d[1] });
+    if (/<\s*suppression/i.test(tl)) return sk({ kind:'selfKeyword', kw:'suppression' });
     if (/<\s*blocker/i.test(tl)) return { kind:'selfKeyword', kw:'blocker' };
   }
   if ((d=tl.match(/draw (\d+)/i))){ if(/discard/.test(tl)){ const disc=tl.match(/discard (\d+)/i); const dn=+(disc?disc[1]:1); return tl.indexOf('discard')<tl.indexOf('draw') ? { kind:'discardDraw', discard:dn, draw:+d[1] } : { kind:'drawDiscard', draw:+d[1], discard:dn }; } return { kind:'draw', amount:+d[1] }; }
@@ -2480,10 +2486,10 @@ function parseSelfPing(t){
     return f ? { kind:'damageBoth', amount:+m[2], filter:f } : { kind:'damageBoth', amount:+m[2] };
   }
   // "Choose 1 friendly Unit and 1 enemy Unit that is Lv.5 or higher. Deal 2 damage to them." (Two Unicorns ST12-015) — the
-  // Lv. requirement applies to both chosen Units.
+  // singular "that is" qualifies the enemy Unit only (a requirement on both would read "that are"): any friendly Unit may be chosen.
   if ((m=t.match(/choose 1 (?:of your|friendly)[^.]*?and 1 enemy unit that is lv\.?\s*(\d+) or (higher|lower)\.\s*deal (\d+) damage to them/))){
     const f = m[2]==='higher' ? { minLv:+m[1] } : { maxLv:+m[1] };
-    return { kind:'damageBoth', amount:+m[3], filter:f, enemyFilter:Object.assign({}, f) };
+    return { kind:'damageBoth', amount:+m[3], enemyFilter:f };
   }
   // self-damage as a cost, then an AP buff: "Choose 1 of your Units. Deal N damage to it. It gets AP+M…"
   if ((m=t.match(/(?:choose|may choose) 1 (?:of your|other active friendly|other friendly|friendly)[^.]*?\.\s*deal (\d+) damage to it\.\s*it gets ap\+(\d+)/)))
@@ -2694,8 +2700,16 @@ function digDeploy(card, side, act, after){
 function trashLv(side, c){ return Math.max(0, (c.lv||0) - trashReduction(side, c).lv); }
 // The 【Deploy】 of a Unit that was just deployed from the trash. Legend Gundam (GD06-050): "If you deploy
 // this Unit from your trash, choose 1 to 2 enemy Units that are Lv.3 or lower instead."
+// "If you deploy this Unit from your trash, …" holds here: the gate is lifted (cond type 'deployedFromTrash', false anywhere else).
+function liftFromTrashGate(a){
+  if (!a || typeof a!=='object') return a;
+  if (a.kind==='cond' && a.cond && a.cond.type==='deployedFromTrash') return liftFromTrashGate(a.inner);
+  if (a.kind==='cond') return Object.assign({}, a, { inner:liftFromTrashGate(a.inner) }, a.elseInner ? { elseInner:liftFromTrashGate(a.elseInner) } : {});
+  if (a.kind==='seq' && Array.isArray(a.acts)) return Object.assign({}, a, { acts:a.acts.map(liftFromTrashGate) });
+  return a;
+}
 function trashDeployAct(c){
-  const act=parseTrigger(c.effect,'Deploy');
+  const act=liftFromTrashGate(parseTrigger(c.effect,'Deploy'));
   if (act && act.kind==='destroy' && cardNum(c.def)==='GD06-050') return Object.assign({}, act, { kind:'destroyMulti', count:2 });
   return act;
 }
@@ -3512,6 +3526,10 @@ function parseBurst(effect){
   if (!bm) return null;
   const raw = bm[1].trim();
   const t = raw.toLowerCase();
+  // "If an enemy (CB) Unit is in play, add this card to your hand." (GD04-071) — a gated keep; triggerBurst checks bz.cond.
+  // An unreadable condition never keeps the card.
+  { const bc = t.match(/^if ([^,]+),\s*(add this card to your hand|deploy this card)\.?\s*$/);
+    if (bc) return { kind: /add this card/.test(bc[2]) ? 'tohand' : 'deploy', cond: parseCondition(bc[1]) || { type:'never' } }; }
   if (/add this card to your hand/.test(t)) return { kind:'tohand' };
   if (/deploy this card/.test(t)) return { kind:'deploy' };
   if (/activate this card/.test(t)) return { kind:'main', action: inferCommand(effect) };
@@ -3596,8 +3614,11 @@ function parseTrigger(effect, kw){
     // The trigger bracket itself may carry a requirement after a separator — 【When Paired･(Newtype)
     // Pilot】 only fires for a (Newtype) Pilot. Without this the qualifier was swallowed by [^】]* and
     // the trigger fired on ANY pairing (Zeong GD04-017, Abyss Gundam GD05-046).
-    const qual = (m[2]||'').match(/\(([^)]+)\)\s*pilot/i);
-    if (act && qual) act = { kind:'cond', cond:{ type:'pairedPilotTrait', trait:qual[1].toLowerCase() }, inner:act };
+    // "･(A)/(B) Pilot" (either trait), "･Lv.4 or Higher Pilot" and "･Purple Pilot" are read the same way as 【During Pair･X
+    // Pilot】 (Kshatriya, Aile Strike Gundam, Hyakuri, Gundam Hajiroboshi (2nd Form), Gundam Sandrock Custom (EW)). A requirement
+    // the engine can't read keeps the effect from firing rather than letting any Pilot through.
+    const qm = (m[2]||'').match(/^\s*[･・·]\s*(.+?)\s*pilot\s*$/i);
+    if (act && qm) act = { kind:'cond', cond: pilotQualReq(qm[1]) || { type:'pairedPilotReq', unknown:true }, inner:act };
     if (act && act.kind==='drawDiscard'){ const da=m[3].match(/if you discard an?\s*\(([^)]+)\)\s*command card with this effect, you may activate its/i); if (da) act.discardActivate=da[1].trim().toLowerCase(); }   // Domon Kasshu
     const preq = pilotReqOf(gate);   // 【During Pair･(Vulture) Pilot】【Destroyed】… needs a qualifying Pilot
     if (act && preq) act = { kind:'cond', cond:preq, inner:act };
@@ -4094,6 +4115,8 @@ function parseClause(raw){
     return /then,? discard the same number of cards you drew/.test(t) ? { kind:'drawDiscard', draw:1, discard:1 } : { kind:'draw', amount:1 };
   if ((d=t.match(/draw (\d+)/)) && /discard (\d+)/.test(t)){ const disc=t.match(/discard (\d+)/); return t.indexOf('discard')<t.indexOf('draw') ? { kind:'discardDraw', discard:+disc[1], draw:+d[1] } : { kind:'drawDiscard', draw:+d[1], discard:+disc[1] }; }
   if ((d=t.match(/^(?:all players|each player) (?:each )?draws? (\d+)/))) return { kind:'draw', amount:+d[1], allPlayers:true };   // Armory One
+  // "you and the player who destroyed this Unit draw 1" (Haro EB01-017) — in a two-player game that is both players.
+  if ((d=t.match(/^you and the player who destroyed this unit (?:each )?draws? (\d+)/))) return { kind:'draw', amount:+d[1], allPlayers:true };
   if ((d=t.match(/draw (\d+)/))) return { kind:'draw', amount:+d[1] };
   if (/\bdraw\b/.test(t)) return { kind:'draw', amount:1 };
   if ((d=t.match(/ap\s*\+\s*(\d+)/))){
@@ -4370,6 +4393,17 @@ function applyDmgGuards(u, dmg, side, kind, dealer){
 // Keywords without an amount never stack (13-1-4-2, 13-1-5-3…); a gained <Breach N> adds to the one the
 // Unit already has (13-1-2-5).
 // Every grant is "during this turn": it lives in its own field and resetTurnKeywords clears it at the cleanup step.
+// A Unit's own "this Unit gains <K> (during this battle)": a battle-scoped copy when the text says so (cleared by
+// clearBattleScoped), else the keyword for the turn. Returns the duration wording for the log.
+function grantSelfKeyword(u, act){
+  if (act.dur==='battle'){
+    if (act.kw==='breach'){ u.battleBreach=(u.battleBreach||0)+(act.amount||1); return 'during this battle'; }
+    if (act.kw==='suppression'){ u.battleSuppression=true; return 'during this battle'; }
+    if (act.kw==='high'){ u.battleHigh=true; return 'during this battle'; }
+    if (act.kw==='first'){ u.battleFirst=true; return 'during this battle'; }
+  }
+  grantKeyword(u, act.kw, act.amount); return 'this turn';
+}
 function grantKeyword(u, kw, amount){
   if (kw==='first') u.firstStrike=true;
   else if (kw==='high') u.highManeuver=true;
@@ -4661,6 +4695,22 @@ function doShieldToHand(card, side, act, label, skipScry){
   }
 }
 // Parse a leading board/turn/trash condition ("If <cond>, …") into a predicate descriptor.
+// The words around a trait in a condition: "rested"/"active" are states and "friendly"/"other" quantifiers, not traits —
+// "2 or more other rested friendly Units" is { rested, trait:null }, "other friendly (Marine) Units" is trait "marine".
+function condTraitFlags(raw){
+  const f={ rested:false, active:false, other:false };
+  const rest=String(raw||'').toLowerCase().replace(/\([^)]*\)|\b(rested|active|friendly|other)\b/g, (x,w)=>{ if (w){ if (w!=='friendly') f[w]=true; return ' '; } return x; });
+  f.trait=rest.replace(/[()]/g,'').replace(/\s*\/\s*/g,'/').replace(/\s+/g,' ').trim()||null;
+  return f;
+}
+// The Unit "this Unit" means in a condition: the card itself, or — for a Pilot's text — the Unit it is paired with (3-3-9-2).
+function condHost(source, side){
+  if (!source) return null;
+  if (source.type!=='pilot') return source;
+  const sides = side ? [side] : [G.player, G.enemy].filter(Boolean);
+  for (const s of sides){ const h=s.field.find(x=>x.pilotCard===source); if (h) return h; }
+  return null;
+}
 function parseCondition(t){
   t=t.toLowerCase().trim(); let m;
   // Named-card conditions (read before the "and" split — a card name may contain "and").
@@ -4671,6 +4721,35 @@ function parseCondition(t){
   if (/\sand\s/.test(t) && !/\bor\b/.test(t)){
     const parts = t.split(/\s+and\s+/).map(p=>parseCondition(p)).filter(Boolean);
     if (parts.length>=2) return { type:'and', conds:parts };
+  }
+  // The same with amounts in either half ("this Unit has 5 or more AP and it is attacking an enemy Unit" — LaGOWE, GINN
+  // Long-Range Reconnaissance Type; "this Unit is damaged and Lv.5 or lower" — Lafter Frankland; "… and you have 5 or less
+  // cards in your hand" — GQuuuuuuX GD06-003): "N or more/less" and "Lv.N or lower" are not an "or" between conditions.
+  // Every half must be understood — dropping one would make the effect fire too often.
+  if (/\sand\s/.test(t) && /\bor\b/.test(t) && !/\bor\b/.test(t.replace(/\b\d+ or (?:more|less|fewer|lower|higher)\b/g,'#'))){
+    const parts = t.split(/\s+and\s+/).map(p=>parseCondition(p));
+    if (parts.length>=2 && parts.every(Boolean)) return { type:'and', conds:parts };
+  }
+  // "If you deploy this Unit from your trash, …" (GX-Bit, Esperansa, Sword Impulse, Force Impulse): only the trash-deploy
+  // path satisfies it — trashDeployAct() lifts the gate on the 【Deploy】 it resolves; a deploy from hand never does.
+  if (/^you deploy this unit from your trash$/.test(t)) return { type:'deployedFromTrash' };
+  if (/^this unit is destroyed with battle damage$/.test(t)) return { type:'destroyedByBattle' };   // Haro EB01-017 【Destroyed】
+  if (/^a friendly unit paired with a pilot has destroyed an enemy unit with battle damage this turn$/.test(t)) return { type:'pairedBattleKill' };   // Libra ST12-016
+  // Rested Units of EITHER player: "there are 6 or more rested Units in play" (Character Requests), "If 3 or more other
+  // rested Units are in play" (Hi-Nu Gundam (EX)), "If 2 or more rested Units are in play" (Kamille Bidan ST10-011).
+  if ((m=t.match(/^(?:there are )?(\d+) or more (other )?rested units (?:are )?in play$/))) return m[2] ? { type:'restedUnitsOther', min:+m[1] } : { type:'restedUnits', min:+m[1] };
+  if ((m=t.match(/^(?:you have )?(\d+) or (?:less|fewer) cards in your hand$/))) return { type:'handMax', max:+m[1] };
+  if ((m=t.match(/^(?:this unit is )?lv\.?\s*(\d+) or (lower|higher)$/))) return m[2]==='lower' ? { type:'selfLv', max:+m[1] } : { type:'selfLv', min:+m[1] };   // "… and Lv.5 or lower"
+  if (/^it is attacking an enemy unit$/.test(t)) return { type:'attackingUnit' };
+  // "you have a (Neo Zeon) Unit paired with a Pilot that is Lv.3 or lower in play" (Endra GD06-123) — the Pilot's Lv.
+  if ((m=t.match(/^you have an?\s*((?:\([^)]+\)\s*\/?\s*)*)units? paired with an? pilot(?: that is lv\.?\s*(\d+) or (lower|higher))? in play$/))){
+    const pr={ type:'pairedPilotReq' }; if (m[2]) pr[m[3]==='lower'?'maxLv':'minLv']=+m[2];
+    return { type:'friendlyUnit', min:1, trait:m[1].replace(/[()]/g,'').replace(/\s*\/\s*/g,'/').trim()||null, pilotReq:pr };
+  }
+  // "a rested friendly (CB) Unit is in play" (Ptolemaios), "you have a rested (AEUG) Unit in play" (Argama): "rested" is a
+  // state, not a trait.
+  if ((m=t.match(/^(?:you have )?(a|an|another)\s+((?:rested |active |friendly )+)((?:\([^)]+\)\s*\/?\s*)*)units? (?:is |are )?in play$/))){
+    const f=condTraitFlags(m[2]+m[3]); return Object.assign({ type:'friendlyUnit', min:1, trait:f.trait, other:m[1]==='another' }, f.rested?{ rested:true }:{}, f.active?{ active:true }:{});
   }
   // A specifically-named card sitting in your trash.
   if ((m=t.match(/a card with ["'“”]?([^"'“”.]+?)["'“”]? in its card name is in your trash/))) return { type:'trashName', name:m[1].trim() };
@@ -4688,7 +4767,8 @@ function parseCondition(t){
   if (/this unit is battling a damaged enemy unit/.test(t)) return { type:'battlingDamaged' };        // Reginlaze Julia
   if ((m=t.match(/this unit is battling an enemy unit that is lv\.?\s*(\d+) or lower/))) return { type:'battlingLv', max:+m[1] };   // ZnO
   if (/you have drawn with an effect during this turn/.test(t)) return { type:'effectDrew' };         // Kou Uraki
-  if ((m=t.match(/^(?:you have )?(\d+) or more other ([a-z\/() \-]*?)\s*units?(?: are)? in play$/))) return { type:'friendlyUnit', min:+m[1], trait:(m[2]||'').replace(/[()]/g,'').trim()||null, other:true };   // Mahiroo
+  if ((m=t.match(/^(?:you have )?(\d+) or more other ([a-z\/() \-]*?)\s*units?(?: are)? in play$/))){ const f=condTraitFlags(m[2]);   // Mahiroo; "other friendly (Marine)" (Char's Z'Gok), "other rested friendly" (Shamblo)
+    return Object.assign({ type:'friendlyUnit', min:+m[1], trait:f.trait, other:true }, f.rested?{ rested:true }:{}, f.active?{ active:true }:{}); }
   if (/^no enemy units? (?:have|has) attacked (?:during )?this turn$/.test(t)) return { type:'noFoeAttackThisTurn' };   // A Miracle (declareAttack records it)
   if (/it is your opponent's turn|it is the opponent's turn/.test(t)) return { type:'oppTurn' };
   if ((m=t.match(/you are lv\.?\s*(\d+) or higher/))) return { type:'level', min:+m[1] };
@@ -4698,11 +4778,11 @@ function parseCondition(t){
   if ((m=t.match(/(\d+) or (?:less|fewer) enemy shields/))) return { type:'enemyShieldsMax', max:+m[1] };
   if ((m=t.match(/(\d+) or more enemy shields/))) return { type:'enemyShields', min:+m[1] };
   if ((m=t.match(/there are (\d+) or more ([a-z\/() ]*?)\s*cards? in your trash/))) return { type:'trash', min:+m[1], trait:(m[2]||'').replace(/[()]/g,'').trim()||null };
-  if ((m=t.match(/you have (?:a|an|another)\s+([a-z\/() ]*?)\s*link unit/))) return { type:'linkUnit', trait:(m[1]||'').replace(/[()]/g,'').trim()||null };
-  if (/friendly\s+[a-z\/() ]*?link unit (?:is|are) in play/.test(t)){ const tm=t.match(/friendly\s+([a-z\/() ]*?)\s*link unit/); return { type:'linkUnit', trait:tm?((tm[1]||'').replace(/[()]/g,'').trim()||null):null }; }
+  if ((m=t.match(/you have (?:a|an|another)\s+([a-z\/() ]*?)\s*link unit/))) return Object.assign({ type:'linkUnit', trait:(m[1]||'').replace(/[()]/g,'').trim()||null }, /you have another\b/.test(t)?{ other:true }:{});   // Miguel's Ginn: "another Link Unit"
+  if (/friendly\s+[a-z\/() ]*?link unit (?:is|are) in play/.test(t)){ const tm=t.match(/friendly\s+([a-z\/() ]*?)\s*link unit/); return Object.assign({ type:'linkUnit', trait:tm?((tm[1]||'').replace(/[()]/g,'').trim()||null):null }, /\banother friendly\b/.test(t)?{ other:true }:{}); }   // Kikeroga: "another friendly (Zeon) Link Unit"
   if ((m=t.match(/(?:a|an|another)\s+friendly\s+([a-z\/() ]*?)\s*unit (?:is|are) in play/))) return { type:'friendlyUnit', min:1, trait:(m[1]||'').replace(/[()]/g,'').trim()||null, other:/\banother\b/.test(m[0]) };
-  if ((m=t.match(/(\d+) or more (?:friendly )?([a-z\/() ]*?)\s*units?(?: are)? in play/))) return { type:'friendlyUnit', min:+m[1], trait:(m[2]||'').replace(/[()]/g,'').trim()||null };
-  if ((m=t.match(/you have (\d+) or more ([a-z\/() ]*?)\s*units?/))) return { type:'friendlyUnit', min:+m[1], trait:(m[2]||'').replace(/[()]/g,'').trim()||null };
+  if ((m=t.match(/(\d+) or more (?:friendly )?([a-z\/() ]*?)\s*units?(?: are)? in play/))){ const f=condTraitFlags(m[2]); return Object.assign({ type:'friendlyUnit', min:+m[1], trait:f.trait }, f.rested?{ rested:true }:{}, f.active?{ active:true }:{}); }
+  if ((m=t.match(/you have (\d+) or more ([a-z\/() ]*?)\s*units?/))){ const f=condTraitFlags(m[2]); return Object.assign({ type:'friendlyUnit', min:+m[1], trait:f.trait }, f.rested?{ rested:true }:{}, f.active?{ active:true }:{}); }
   // "another (UN)/(Superpower Bloc) Unit" keeps both traits — traitMatchUnit reads "un/superpower bloc" as either (Alvatore GD04-080).
   if ((m=t.match(/you have (?:another|an|a)\s+([a-z\/() ]*?)\s*units?\s+in play/))){ let tr=(m[1]||'').replace(/[()]/g,'').replace(/\s*\/\s*/g,'/').trim(); if(tr.includes('/') && !/^\s*\([^)]+\)(?:\s*\/\s*\([^)]+\))+\s*$/.test(m[1])) tr=null; return { type:'friendlyUnit', min:1, trait:tr||null, other:/you have another/.test(t) }; }   // "(G Team)/(Preventer)" = either trait (traitMatchUnit)
   // "a red (Super Soldier) Pilot" — the colour is a separate requirement, not part of the trait (Gundam Kyrios (Trans-Am) GD04-037).
@@ -4794,7 +4874,10 @@ function condMet(cond, side, source, other){
     case 'trashNameMin':   return trashNameCount(side, cond.name, source) >= cond.min;
     case 'friendlyName':   return side.field.some(u=>u.hp>0 && (u.name||'').toLowerCase().includes(cond.name));
     case 'targetPilotMaxLv': return !!(source && source.pilotCard && (source.pilotCard.lv||0) <= cond.max);   // `source` = the chosen Unit
-    case 'linkUnit':       return side.field.some(u=>u.linked && traitMatchUnit(u,cond.trait));
+    case 'linkUnit': {     // "another (friendly) … Link Unit": not the Unit carrying the text (Kikeroga, Miguel's Ginn)
+      const me = cond.other ? condHost(source, side) : null;
+      return side.field.some(u=>u.linked && u!==me && traitMatchUnit(u,cond.trait));
+    }
     case 'friendlyPilot':  return side.field.some(u=>u.pilotCard && traitMatchUnit({trait:u.pilotCard.trait}, cond.trait)
                                   && (!cond.color || String(u.pilotCard.color||'').toLowerCase()===cond.color)
                                   && (!cond.notColor || String(u.pilotCard.color||'').toLowerCase()!==cond.notColor));
@@ -4803,17 +4886,27 @@ function condMet(cond, side, source, other){
       let tr=cond.trait, excl=other || !!cond.other;
       if (tr==='other' || tr==='another'){ excl=true; tr=null; }
       else if (tr==='friendly'){ tr=null; }
-      const n = side.field.filter(u=>traitMatchUnit(u,tr) && (!excl || u!==source)).length;
+      // "other" excludes the Unit carrying the text — for a Pilot's text, the Unit it is paired with (McGillis Fareed).
+      const me = excl ? (condHost(source, side) || source) : null;
+      const n = side.field.filter(u=>traitMatchUnit(u,tr) && (!excl || u!==me) && (!cond.rested || u.rested) && (!cond.active || !u.rested)
+        && (!cond.pilotReq || (u.pilot && pilotMeetsReq(u.pilotCard, cond.pilotReq)))).length;   // "a (T) Unit paired with a Pilot that is Lv.N or lower" (Endra)
       return n >= cond.min;
     }
+    case 'restedUnits':    return [...side.field, ...foe.field].filter(x=>x.rested && x.hp>0).length >= cond.min;   // either player's (Character Requests)
+    case 'selfLv':         { const me=condHost(source, side); return !!(me && (cond.max==null || (me.lv||0)<=cond.max) && (cond.min==null || (me.lv||0)>=cond.min)); }   // Lafter Frankland
+    case 'never':          return false;   // a condition the engine can't read — the gated effect doesn't happen
+    case 'deployedFromTrash': return false;   // trashDeployAct() removes this gate from the 【Deploy】 of a Unit deployed from the trash
+    case 'destroyedByBattle': return !!(G.destroying && G.destroying.u===condHost(source, side) && G.destroying.cause==='battle');   // Haro
+    case 'pairedBattleKill':  return side.pairedBattleKillSeq===G.turnSeq;   // Libra: set by damage() when a paired Unit's battle damage destroys an enemy Unit
     case 'battlingDamaged': return !!(G.curBattle && G.curBattle.atk===source && G.curBattle.def && G.curBattle.def.hp < effMaxHp(G.curBattle.def) && G.turn===side.who);
     case 'effectDrew':      return side.effectDrawTurn === G.turnSeq;
-    case 'selfColor':  return !!(source && String(source.color||'').toLowerCase()===cond.color);
-    case 'selfTrait':  return !!(source && (source.trait||'').toLowerCase().includes('('+cond.trait+')'));
-    case 'friendlyKw': return side.field.some(x=>x!==source && x.hp>0 && condMet({type:'selfHasKw', kw:cond.kw}, side, x));
+    // "this Unit" in a Pilot's text is the Unit it is paired with (Haman Karn: "If this Unit is red").
+    case 'selfColor':  { const me=condHost(source, side); return !!(me && String(me.color||'').toLowerCase()===cond.color); }
+    case 'selfTrait':  { const me=condHost(source, side); return !!(me && (me.trait||'').toLowerCase().includes('('+cond.trait+')')); }
+    case 'friendlyKw': { const me=condHost(source, side) || source; return side.field.some(x=>x!==me && x.hp>0 && condMet({type:'selfHasKw', kw:cond.kw}, side, x)); }
     case 'friendlyBaseColor': return !!(side.base && !side.base.token && String(side.base.color||'').toLowerCase()===cond.color);
     case 'noEnemyBase': return !foe.base;
-    case 'restedUnitsOther': return [...side.field, ...foe.field].filter(x=>x!==source && x.rested && x.hp>0).length >= cond.min;
+    case 'restedUnitsOther': { const me=condHost(source, side) || source; return [...side.field, ...foe.field].filter(x=>x!==me && x.rested && x.hp>0).length >= cond.min; }
     case 'hostLinked': case 'hostTrait': {
       const host = source && source.type==='pilot' ? side.field.find(x=>x.pilotCard===source) : source;
       if (!host) return false;
@@ -4827,20 +4920,27 @@ function condMet(cond, side, source, other){
     case 'activatedTraitCmd': return !!(side.cmdTraits && side.cmdTraits.turnSeq===G.turnSeq && side.cmdTraits.set.has(cond.trait));
     case 'battlingLv':      return !!(G.curBattle && G.curBattle.atk===source && G.curBattle.def && (G.curBattle.def.lv||0)<=cond.max && G.turn===side.who);
     case 'trashUnits':      return side.trash.filter(c=>c.type==='unit' && traitMatchUnit(c, cond.trait)).length >= cond.min;
-    case 'selfAp':         return !!(source && effAp(source) >= cond.min);
+    case 'selfAp':         { const me=condHost(source, side); return !!(me && effAp(me) >= cond.min); }
     case 'selfHpMax':      return !!(source && source.hp <= cond.max);
     case 'selfRested':     return !!(source && source.rested);
     case 'enemyRested':    return foe.field.some(u=>u.rested && u.hp>0);
-    case 'friendlyBase':   return !!(side.base && !side.base.token);
+    case 'friendlyBase':   return !!side.base;   // the EX Base token is a Base in play too (Gundam Hajiroboshi GD03-068)
     case 'friendlyToken':  return side.field.some(u=>u.token && u.hp>0);
     case 'enemyTrash':     return foe.trash.length >= cond.min;
     case 'noFriendlyLv':   return !side.field.some(u=>(u.lv||0) >= cond.min);
     case 'oppDiscardedThisTurn': return foe.discardedTurn === G.turnSeq;
-    case 'selfDamaged':      return !!(source && source.hp < effMaxHp(source));
+    case 'selfDamaged':      { const me=condHost(source, side); return !!(me && me.hp < effMaxHp(me)); }
     case 'paired':           return !!(source && source.pilot);    // 【During Pair】 gate (e.g. Char's Zaku Ⅱ)
-    case 'pairedPilotReq':   return !!(source && source.pilot && pilotMeetsReq(source.pilotCard, cond));   // 【During Pair･X Pilot】
+    case 'pairedPilotReq': {   // 【During Pair･X Pilot】 / 【When Paired･X Pilot】 — the source is the Unit (check its Pilot) or the Pilot itself
+      const pc = source && (source.type==='pilot' ? source : (source.pilot ? source.pilotCard : null));
+      return !!(pc && pilotMeetsReq(pc, cond));
+    }
     case 'linked':           return !!(source && source.linked);   // 【During Link】 gate
-    case 'attackingDamaged': return true;   // during an Attack trigger we are attacking something
+    case 'attackingDamaged': {   // "If you are attacking a damaged enemy Unit" (Gadeel) — the Unit this attack targets
+      const me = condHost(source, side);
+      const d = me && G.curAttack===me && G.curBattle && G.curBattle.atk===me ? G.curBattle.def : null;
+      return !!(d && d.type==='unit' && d.hp>0 && d.hp < effMaxHp(d));
+    }
     case 'enemyPlayers':     return 1 >= cond.min;   // a two-player game has exactly one enemy player
     case 'hostColor': {      // the Unit carrying the text: the card itself, or the Unit a Pilot is paired with
       const host = source && source.type==='pilot' ? side.field.find(x=>x.pilotCard===source) : source;
@@ -6226,8 +6326,8 @@ function runTrigger(card, side, act, label){
     const t=setActiveCands(side, act, card).sort((a,b)=>((a.token?1:0)-(b.token?1:0)) || (b.ap-a.ap))[0];
     if (t) applyReadyChosen(card, side, act, t, label);
   } else if (act.kind==='selfKeyword'){
-    grantKeyword(card, act.kw, act.amount); card.ap=effAp(card);
-    log(`${label}: <b>${name}</b> gains &lt;${kwLabel(act.kw)}${act.kw==='breach'?' '+act.amount:''}&gt; this turn.`, cls);
+    const dw=grantSelfKeyword(card, act); card.ap=effAp(card);
+    log(`${label}: <b>${name}</b> gains &lt;${kwLabel(act.kw)}${act.kw==='breach'?' '+act.amount:''}&gt; ${dw}.`, cls);
   } else if (act.kind==='selfbuff'){
     card.tempAp=(card.tempAp||0)+act.amount; card.ap=effAp(card);
     const gotHM = act.hman && (!act.hmanIfLink || card.linked);
@@ -7383,8 +7483,14 @@ function cardNum(id){ return String(id||'').replace(/-p\d+$/i, ''); }
 function pilotReqOf(gateText){
   const m = String(gateText||'').toLowerCase().match(/during pair\s*[･・·]\s*([^】]*?)\s*pilot/);
   if (!m) return null;
-  const q=m[1].trim(), c={ type:'pairedPilotReq' }; let r;
-  if ((r=q.match(/^\(([^)]+)\)$/))) c.trait=r[1].trim();
+  return pilotQualReq(m[1]);
+}
+// The Pilot requirement written after the separator of a 【During Pair･X Pilot】 / 【When Paired･X Pilot】 bracket: "(T)",
+// "(A)/(B)" (either trait — Kshatriya), "Lv.N or Lower/Higher" (Aile Strike Gundam, Gundam Sandrock Custom (EW)) or a colour
+// (Hyakuri, Gundam Hajiroboshi (2nd Form)). null when it isn't one of those.
+function pilotQualReq(q){
+  q=String(q||'').toLowerCase().trim(); const c={ type:'pairedPilotReq' }; let r;
+  if ((r=q.match(/^((?:\([^)]+\)\s*\/?\s*)+)$/))) c.trait=r[1].replace(/[()]/g,'').split('/').map(x=>x.trim()).filter(Boolean).join('/');
   else if ((r=q.match(/^lv\.?\s*(\d+) or (lower|higher)$/))){ if (r[2]==='lower') c.maxLv=+r[1]; else c.minLv=+r[1]; }
   else if (/^(blue|white|red|green|purple)$/.test(q)) c.color=q;
   else return null;
@@ -7393,7 +7499,8 @@ function pilotReqOf(gateText){
 function pilotMeetsReq(pc, req){
   if (!pc) return false;
   if (!req) return true;
-  if (req.trait && !(pc.trait||'').toLowerCase().includes('('+req.trait+')')) return false;
+  if (req.unknown) return false;
+  if (req.trait && !String(req.trait).split('/').some(t=>(pc.trait||'').toLowerCase().includes('('+t.trim()+')'))) return false;   // "(A)/(B)": either
   if (req.color && !(pc.color||'').toLowerCase().includes(req.color)) return false;
   if (req.maxLv!=null && (pc.lv||0) > req.maxLv) return false;
   if (req.minLv!=null && (pc.lv||0) < req.minLv) return false;
@@ -8247,8 +8354,8 @@ function whileKwAmount(u, kw){
   for (const w of list) if (w.kw===kw && condMet(w.cond, side, u)) best = Math.max(best, w.amount||1);
   return best;
 }
-function effFirstStrike(u){ return !!(u && (u.firstStrike || condKeyword(u,'first'))); }
-function effHighManeuver(u){ return !!(u && (u.highManeuver || condKeyword(u,'high'))); }
+function effFirstStrike(u){ return !!(u && (u.firstStrike || u.battleFirst || condKeyword(u,'first'))); }
+function effHighManeuver(u){ return !!(u && (u.highManeuver || u.battleHigh || condKeyword(u,'high'))); }
 // Effective <Repair N>: a gained copy adds its amount to the printed one (13-1-1-2).
 function effRepair(u){
   let r = (u.repair||0) + (u.tempRepair||0) + whileKwAmount(u,'repair');
@@ -10123,6 +10230,8 @@ function triggerBurst(card, side, done, allowChoice){
   const sideCls = side===G.player ? 'me' : 'ai';
   sound('burst');
   flashCard(card, (side===G.player?'YOUR':'ENEMY')+' BURST');
+  // "【Burst】If <condition>, add this card to your hand." (Graham's Union Flag Custom Ⅱ (GN Flag)) — otherwise it goes to the trash.
+  if (bz.cond && !condMet(bz.cond, side, card)){ log(`Burst: <b>${card.name}</b> — its condition isn't met.`, sideCls); finish(); return; }
   const toHand=()=>{ side.hand.push(card); log(`Burst! <b>${card.name}</b> is added to ${who(side)} hand.`, sideCls); if (side===G.player) revealDraw(card, 'BURST'); finish(); };
   // Master Asia GD05-089: "【Burst】Add this card to your hand. If there are 3 or more (MF) cards in your trash, you may deploy it as an
   // (AP3・HP3) Unit instead. (Don't treat it as a Pilot.)" — the player chooses; the AI deploys it when its battle area has room.
@@ -10256,8 +10365,8 @@ function declareAttack(atk, atkSide){
       if (act.amount || gotHM)
         log(`Attack: <b>${atk.name}</b> gets AP+${act.amount||0} this turn${gotHM?' and &lt;High-Maneuver&gt;':''}.`, cls);
     } else if (act.kind==='selfKeyword'){
-      grantKeyword(atk, act.kw, act.amount); atk.ap=effAp(atk);
-      log(`Attack: <b>${atk.name}</b> gains &lt;${kwLabel(act.kw)}${act.kw==='breach'?' '+act.amount:''}&gt; this turn.`, cls);
+      const dw=grantSelfKeyword(atk, act); atk.ap=effAp(atk);
+      log(`Attack: <b>${atk.name}</b> gains &lt;${kwLabel(act.kw)}${act.kw==='breach'?' '+act.amount:''}&gt; ${dw}.`, cls);
     } else if (act.kind==='battleNoBlockLv'){
       atk.noBlockLvMax = act.max;
       log(`Attack: Units that are Lv.${act.max} or lower can't activate &lt;Blocker&gt; during this battle.`, cls);
@@ -10598,6 +10707,7 @@ function battleSlayHook(dealer, dSide, victim, vSide, hp0){
 function clearBattleScoped(){
   G.curBattle = null; G.curAttack = null; G.retarget = null;
   for (const s of [G.player, G.enemy]){ if (s) s.shieldGuard = null; }   // Presence Detected & co. last for the battle
+  for (const s of [G.player, G.enemy]){ if (s) for (const u of s.field){ u.battleHigh=false; u.battleFirst=false; } }   // "it gains <High-Maneuver> during this battle" (Lafter Frankland)
   for (const s of [G.player, G.enemy]){ if(!s) continue; for (const u of s.field){ if(u.battleAp){ u.battleAp=0; u.ap=effAp(u); } u.redirectTo=null; u.battleReduceLowLv=0; u.battleBreach=0; u.battleSuppression=false; u.noBlockLvMax=null; u.noBattleDmgBattle=false;
     u.battleOnKill=null;   // a "during this battle" kill effect (Wise Leader's Pride)
     if (u.dmgGuards) u.dmgGuards=u.dmgGuards.filter(g=>g.dur!=='battle'); } }   // "during this battle" damage guards end with the battle
@@ -10989,7 +11099,8 @@ function pickAiBlocker(atk, blockers){
 // effect (an AoE, "1 to 2 enemy Units") that destroys a Unit keeps resolving as itself (Acguy, Archangel).
 function fireDestroyed(u, side){
   const prevSrc = G.effSrc, cause = G.destroyCause;   // 'battle' / 'cost' (set by the caller) — anything else is an effect
-  try { G.destroyCause = null; fireDestroyedInner(u, side, cause); } finally { G.effSrc = prevSrc; G.destroyCause = cause; }
+  const prevD = G.destroying; G.destroying = { u, cause };   // "If this Unit is destroyed with battle damage" (Haro) reads it
+  try { G.destroyCause = null; fireDestroyedInner(u, side, cause); } finally { G.effSrc = prevSrc; G.destroyCause = cause; G.destroying = prevD; }
 }
 // Alpha Azieru GD05-054: "【Once per Turn】When one of your Units is destroyed by an effect, draw N." (a Unit destroyed with battle
 // damage or as a cost doesn't count; Alpha Azieru sees its own destruction too).
@@ -11102,6 +11213,9 @@ function damage(u, dmg, side, kind, dealer){
       // "when one of your (T) Units destroys an enemy card with damage" also counts effect damage (Hamma-Hamma)
       if (killer && killer.owner!==u.owner) enemyCardDestroyed(killer, srcSide, 'unit');
     }
+    // "a friendly Unit paired with a Pilot has destroyed an enemy Unit with battle damage this turn" (Libra ST12-016)
+    if (kind==='battle' && u.type==='unit' && G.curBattle){ const k = G.curBattle.def===u ? G.curBattle.atk : (G.curBattle.atk===u ? G.curBattle.def : null);
+      if (k && k.pilot && k.owner!==u.owner){ const ks = k.owner==='player' ? G.player : G.enemy; if (ks) ks.pairedBattleKillSeq = G.turnSeq; } }
     { const pc=G.destroyCause; G.destroyCause = kind==='battle' ? 'battle' : 'effect'; try { fireDestroyed(u, side); } finally { G.destroyCause=pc; } }
     if (kind!=='battle') effDmgHook(u, side, src0, kind);
     return;
@@ -11912,7 +12026,10 @@ function aiDirectHit(atk, done){
     if (a && a.kind==='grantKw' && a.kw==='suppression' && a.scope==='self' && activateReady(atk)) aiActivate(atk);
     if (slot===1) swapActivate(atk);
   }
-  atk.rested=true; strikePlayer(atk, G.player, ()=>{ render(); if(done) done(); });
+  // Set active during its own attack (Hi-Nu Gundam (EX)'s 【Attack】) — the hit doesn't rest it again (as in battle()).
+  if (!(atk.readiedMidAttack===G.turnSeq && G.curAttack===atk)) atk.rested=true;
+  atk.readiedMidAttack=null;
+  strikePlayer(atk, G.player, ()=>{ render(); if(done) done(); });
 }
 
 // Let the player choose ONE token spec to deploy (e.g. Striker Pack: Sword OR Launcher Strike).
