@@ -134,7 +134,7 @@ function playerTurn(tag, base){
     const card=playable[Math.floor(Math.random()*playable.length)];
     setCtx(tag+'|play:'+card.name); check(tag, base);
     const before=s.resAvail, cost=A.effectiveCost(s,card);
-    const lvOk = (s.resMax+s.ex) >= (card.lv||0);
+    const lvOk = (s.resMax+s.ex) >= Math.min(card.lv||0, card.altPlay ? card.altPlay.lv : 99);   // "…play it as if it has N Lv. and cost" (altPlay)
     try { A.playFromHand(card.uid, true); } catch(e){ recordErr('playFromHand',e); G.mode='idle'; G.pending=null; }
     if (!s.hand.includes(card)){
       if (!lvOk) viol('cost', `played ${card.name} Lv${card.lv} with only ${s.resMax+s.ex} resources`);
