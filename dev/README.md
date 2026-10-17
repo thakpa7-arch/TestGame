@@ -1,6 +1,7 @@
 # dev/ — import + test tooling (mirror of the session scratchpad)
 
-Run everything from this directory. Scripts read the game from `../gundam-card-game.html`.
+Run everything from this directory. Scripts read the game from `../gundam-card-game.html`
+(`GAMEJS=/path/to/game.js` points the harness at another build).
 
     python3 -I mkgame.py              # extract the <script> body to game.js (harness.js loads it)
     node run_cards.js                 # every card instantiates + parses -> must say Errors: 0
@@ -10,8 +11,12 @@ Run everything from this directory. Scripts read the game from `../gundam-card-g
     node keywords_check.js            # keyword mechanics vs their reminder text
     node while_check.js               # "While <cond>, …" continuous abilities
     node qub2.js; node qub3.js        # Qubeley token payoff + duel
+    node pool_check.js                # pool-wide cards that needed bespoke engine support
+    node review_check.js              # regressions for the adversarial-review findings (one case per finding)
     ROUNDS=6 node pt_games.js         # full games across every preset; conservation + rules invariants
+    node fuzz_ui.js [seed] [games]    # random human play through the real UI entry points (fuzz_harness.js)
     node pw_check.js                  # Chromium smoke (needs /opt/pw-browsers/chromium)
+    NG=8 node pw_play.js              # Chromium: real setup flow + random play to game over; reports JS errors
 
 Importing a new set from the gcg-api dataset (https://github.com/yzRobo/gcg-api, data/cards.ndjson):
 

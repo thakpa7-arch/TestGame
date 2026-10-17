@@ -72,7 +72,8 @@ function answerBlockModal(){
   let g=0;
   while (el('blockModal').classList.contains('show') && g++<40){
     const b=el('blockBtns').children; if(!b.length) break;
-    const pick=b[Math.floor(Math.random()*b.length)];
+    // A <Support> offer only appears when the boost wins the fight: the heuristic player always takes it.
+    const pick=/Support/.test(el('blockMsg').innerHTML||'') ? b[0] : b[Math.floor(Math.random()*b.length)];
     el('blockModal').classList.remove('show');
     try{ if(pick&&pick.onclick) pick.onclick(); }catch(e){recordErr('modal',e);}
     drainTasks();

@@ -20,11 +20,13 @@ echo "== 5. coverage: printed clauses in $SET with no parsed effect"
 node cover.js "$PAD/${SET}_sim.json" | sed -n '3,80p'
 echo "== 6. mechanics suites"
 node rules_check.js | tail -2; [ -f "${SET,,}_check.js" ] && node "${SET,,}_check.js" | tail -2; node keywords_check.js | tail -2; node while_check.js | grep -E "failures"; node qub2.js | tail -1
+node pool_check.js | tail -2; node review_check.js | tail -2
 echo "== 7. auto-build a $SET test deck and add it as a preset (if enough legal cards)"
 node mkdeck.js "$SET" || true
 python3 -I mkgame.py
 echo "== 8. 180 full games across every preset"
 ROUNDS=6 node pt_games.js | tail -6
+node fuzz_ui.js 1 150 | tail -3
 echo "== 9. browser smoke"
 node pw_check.js | grep -E "allPresetSizes|JS ERRORS" | tr '\n' ' '; echo
 echo "== done: $SET"

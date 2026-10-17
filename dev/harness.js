@@ -16,7 +16,8 @@ function stubEl(){
     prepend(c){ c.parent=this; this.children.unshift(c); return c; },
     removeChild(c){ const i=this.children.indexOf(c); if(i>=0) this.children.splice(i,1); return c; },
     remove(){ if(this.parent){ const i=this.parent.children.indexOf(this); if(i>=0) this.parent.children.splice(i,1); } },
-    addEventListener(){}, removeEventListener(){},
+    addEventListener(type, fn){ (this._l=this._l||{})[type]=fn; }, removeEventListener(){},   // recorded so tests can fire real handlers (el.fire('click'))
+    fire(type, ev){ const f=this._l&&this._l[type]; if (f) f(ev||{ target:this, stopPropagation(){}, preventDefault(){} }); return !!f; },
     querySelector(){ return stubEl(); }, querySelectorAll(){ return []; },
     setAttribute(){}, getAttribute(){return null;}, focus(){}, click(){}, getBoundingClientRect(){return {top:0,left:0,width:0,height:0,bottom:0,right:0};},
     insertBefore(){}, cloneNode(){ return stubEl(); },
@@ -80,7 +81,7 @@ src += '\nglobal.__G = { ' + [
   'gatedAttackAction','pairFromHand','pilotMainAction','triggerBurst','burstResolvePlayer','returnToHand',
   'doShieldToHand','attackerStillOut','effFirstStrike','effHighManeuver','whileKwAmount','handReduction','totalRes','levelOk','shuffle','cardValue','plain','FIELD_MAX','HAND_MAX',
   'grantKeyword','payCost','settleEx','deckOutCheck','deckColorIssue','makeRoom','deployFromHand','reanimate','finishEndPhase','applySupport','applyToTarget','aiBlockStep','RES_AREA_MAX','EX_MAX',
-  'afterCommandMain','resolveAttackTriggers','clearBattleScoped','cardNum','printingsOf','dbNumCount','onUnitDeployed','effHighManeuver','totalRes','payCost','gd06SelfDuel','gd06DigPair','fireAttacked','afterBlockDeclared','commandPlayed','resolveBaseDamagedTrigger','enemyCardDestroyed','trashReduction','parseShieldBreak','activateReady','activateCostPayable','collectPlayerActions','genericToken','clearBattleScoped',
+  'afterCommandMain','resolveAttackTriggers','clearBattleScoped','readyDenied','effReady','pilotActionAction','trashLv','trashDeployAct','supportHelper','retargetCands','attackDefender','aiRetarget','swapActivate','activateReadyAny','dropPilotActivate','cloneToken','placeBaseToken','nameAliases','pairDiscountOk','digRest','endPhaseTail','bindActSource','autoActivateTarget','commit','startCommand','aiTurn','aiPostMain','offerPlayerActionStep','chooseTokenCount','pairDeployHook','tokenMakerQueue','deployTokensInteractive','burstResolvePlayer','finishMultiDamage','enemyTargets','friendlyTargets','reanimate','cardNum','printingsOf','dbNumCount','onUnitDeployed','effHighManeuver','totalRes','payCost','gd06SelfDuel','gd06DigPair','fireAttacked','afterBlockDeclared','commandPlayed','resolveBaseDamagedTrigger','enemyCardDestroyed','trashReduction','parseShieldBreak','activateReady','activateCostPayable','collectPlayerActions','genericToken','clearBattleScoped',
 ].map(n=>n+':typeof '+n+'!=="undefined"?'+n+':undefined').join(',') + ' };\n';
 
 try { eval.call(null, src); } catch(e){ console.error('LOAD FAILED:', e.message, '\n', e.stack); process.exit(1); }

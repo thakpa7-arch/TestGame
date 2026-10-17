@@ -48,7 +48,14 @@ fresh(); { G.player.deck.length=2; A.draw(G.player); ok('7-3-1 drawing with card
 fresh(); { const s=G.player; s.hand=[]; for(let i=0;i<10;i++) s.hand.push(A.makeCard(vanillaUnit,'player'));
   A.draw(s); ok('4-8-4 an 11th card drawn stays in hand (no mid-turn discard)', s.hand.length===11 && s.trash.length===0, 'hand='+s.hand.length+' trash='+s.trash.length);
   A.draw(s); A.endTurn();
-  ok('7-6-5 hand step discards down to 10 at the end phase', s.hand.length===10 && s.trash.length===2, 'hand='+s.hand.length+' trash='+s.trash.length); }
+  // 7-6-5-1: the player discards cards OF THEIR CHOOSING — the engine asks (discard mode) instead of picking.
+  const asked = G.mode==='discard' && G.pending && G.pending.discardLeft===2 && s.hand.length===12;
+  ok('7-6-5-1 the player chooses which cards to discard in the hand step', asked, 'mode='+G.mode+' left='+(G.pending&&G.pending.discardLeft)+' hand='+s.hand.length);
+  const pick=[s.hand[11], s.hand[3]];   // two particular cards — exactly these must be the ones discarded
+  for (const c of pick){ if (G.mode!=='discard') break; s.hand.splice(s.hand.indexOf(c),1); A.sendToTrash(c,s); G.pending.discardLeft--;
+    if (G.pending.discardLeft<=0){ const af=G.pending.after; G.mode='idle'; G.pending=null; if (af) af(); } }
+  ok('7-6-5 hand step discards down to 10 at the end phase', s.hand.length===10 && s.trash.length===2 && pick.every(c=>s.trash.includes(c)), 'hand='+s.hand.length+' trash='+s.trash.length);
+  ok('7-6-5 the turn passes once the discard is done', G.turn==='enemy', 'turn='+G.turn); }
 fresh(); { const s=G.player; s.hand=[]; for(let i=0;i<10;i++) s.hand.push(A.makeCard(vanillaUnit,'player'));
   const u=stick('player',2,2); const p=A.makeCard(vanillaPilot,'player'); u.pilot={pAp:p.pAp,pHp:p.pHp}; u.pilotCard=p;
   A.returnToHand(u, s);

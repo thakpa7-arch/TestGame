@@ -1,6 +1,7 @@
 // Keyword mechanics, checked against the printed reminder text rather than against the engine's own
 // assumptions. Each case builds a tiny board and asserts the outcome.
 const H=require('./harness.js'); const {A,drainTasks}=H; const G=A.G;
+const el=id=>global.document.getElementById(id);
 let pass=0; const fail=[];
 function ok(name, cond, extra){ if(cond) pass++; else fail.push(name+(extra?'  ('+extra+')':'')); }
 function fresh(){
@@ -61,6 +62,9 @@ fresh(); { const u=stick('enemy',2,5,{repair:2}); u.hp=1; A.endTurn();
 // Support
 fresh(); { const atk=stick('player',2,5); const helper=stick('player',1,3,{support:2}); const def=stick('enemy',1,4,{rested:true});
   A.battle(atk,def,G.player,G.enemy); drainTasks();
+  const asked=el('blockModal').classList.contains('show') && /Support/.test(el('blockMsg').innerHTML);   // 13-1-3-1: the player chooses to use it
+  if (asked) el('blockBtns').children[0].onclick(); drainTasks();
+  ok('Support: the player is asked', asked);
   ok('Support: the helper rested', helper.rested===true); ok('Support: the boost let the attacker kill', !G.enemy.field.includes(def)); }
 fresh(); { const atk=stick('player',2,5); stick('player',1,3,{support:2,rested:true}); const def=stick('enemy',1,4,{rested:true});
   A.battle(atk,def,G.player,G.enemy); drainTasks();
