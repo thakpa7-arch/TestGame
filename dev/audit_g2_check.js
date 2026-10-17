@@ -46,11 +46,13 @@ const logs=()=>(el('log').children||[]).map(n=>(n.innerHTML||'').replace(/<[^>]+
 { const fb=[...A.CARD_BY_ID.values()].filter(d=>d.type==='command' && !/-p\d+$/.test(d.id)).map(d=>[d, A.makeCard(d,'player').action])
     .filter(([d,a])=>a && a.kind==='draw' && !/draw/i.test(d.effect));
   ok('no Command draws 1 without "draw" in its text (the old fallback)', fb.length===0, fb.map(([d])=>d.id).join(','));
-  const ne=A.inferCommand(A.CARD_BY_ID.get('EB01-078').effect);
+  // (EB01-078 Premium Unit Assembly is modelled since the g1 merge and every printed Command now parses: a made-up text stands in.)
+  A.CARD_BY_ID.set('TEST-NE', Object.assign({}, A.CARD_BY_ID.get('EB01-078'), { id:'TEST-NE', name:'Unreadable Orders', effect:'【Main】Hum a quiet tune to the stars.' }));
+  const ne=A.inferCommand(A.CARD_BY_ID.get('TEST-NE').effect);
   ok('an unmodelled Command parses to a no-effect action', ne && ne.kind==='noEffect', JSON.stringify(ne));
-  fresh('player'); const c=inHand('EB01-078'); const h0=G.player.hand.length, d0=G.player.deck.length; play(c);
+  fresh('player'); const c=inHand('TEST-NE'); const h0=G.player.hand.length, d0=G.player.deck.length; play(c);
   ok('playing it: no card is drawn and the log says "no effect"', G.player.deck.length===d0 && G.player.trash.includes(c) && /no effect/.test(logs()), `deck ${d0}->${G.player.deck.length}`);
-  fresh('enemy'); const c2=card('EB01-078','enemy'); const d1=G.enemy.deck.length; A.applyCommand(c2, G.enemy, null);
+  fresh('enemy'); const c2=card('TEST-NE','enemy'); const d1=G.enemy.deck.length; A.applyCommand(c2, G.enemy, null);
   ok('AI: the no-effect Command draws nothing', G.enemy.deck.length===d1);
   ok('a Pilot with no 【Main】 gives nothing to "Activate 【Main】 on the paired card"', A.pilotMainAction({ pilotCard:card('GD01-089','player') })===null); }
 

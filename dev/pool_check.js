@@ -243,6 +243,10 @@ fresh(); { const u=stick('player',1,1); A.grantKeyword(u,'blocker'); A.grantKeyw
 fresh(); { const lc=put('EB01-023','player'); const hi=card(A.GUNDAM_CARDS.find(d=>d.type==='unit'&&d.lv>=6).id,'player'); G.player.deck.push(hi);
   const lo=card('ST01-003','enemy'); G.enemy.deck.push(lo); const hp=G.player.hand.length, he=G.enemy.hand.length;
   A.runTrigger(lc, G.player, A.gatedAttackAction(lc.effect, lc), 'Attack');
+  // "they MAY reveal it and add it": you decide for your own top card (the top-card chooser), the AI for its own.
+  { const ov=(global.document.body.children||[]).filter(n=>String(n.className||'').includes('modal-overlay')).pop();
+    const add=ov ? ov.children[0].children.flatMap(k=>k.children||[]).find(b=>b.onclick && /add to hand/i.test(b.innerHTML||'')) : null;
+    ok('Le Cygne: you are offered to reveal and add your own Lv.6 top card', !!add); if (add){ add.onclick(); drainTasks(); } }
   ok('Le Cygne: a Lv.6 top card goes to its owner\'s hand; a Lv.3 one does not', G.player.hand.includes(hi) && G.player.hand.length===hp+1 && G.enemy.hand.length===he); }
 // GD04-087 Elan Ceres (pilot, 【During Link】【Attack】) — battle damage the host would receive goes to an (Academy) Unit
 fresh(); { const host=stick('player',3,3,{linked:true}); host.pilot={pAp:1,pHp:2}; host.pilotCard=card('GD04-087','player'); const ac=stick('player',1,6,{trait:'(Academy)'});

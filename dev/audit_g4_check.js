@@ -274,16 +274,20 @@ for (const id of ['GD01-068','GD01-075']){ const nm=A.CARD_BY_ID.get(id).name;
   ok('Scirocco (you): you choose 1 of your OTHER Units (not the linked The-O)', !!m && m.btns.length===2 && !m.btns.some(b=>b.includes(theo.name)), m&&m.btns.join(','));
   press(new RegExp(j.name.slice(0,5))); ok('Scirocco (you): (Jupitris) Unit chosen — <Repair 2> and you draw 1', A.effRepair(j)===3 && G.player.hand.length===1, `${A.effRepair(j)} hand ${G.player.hand.length}`); }
 
+// Le Cygne's top-card choice is the shared top-card overlay (showScryChoice — the same chooser as Premium Unit Assembly's).
+function scry(){ const m=(doc.body.children||[]).filter(n=>String(n.className||'').includes('modal-overlay')).pop(); if(!m) return null;
+  const box=m.children[0], btns=box.children.flatMap(k=>k.children||[]).filter(b=>b.onclick), txt=b=>(b.innerHTML||b.textContent||'').replace(/<[^>]+>/g,'');
+  return { msg:(box._h||'').replace(/<[^>]+>/g,''), btns:btns.map(txt), press:(re)=>{ const b=btns.find(x=>re.test(txt(x))); if (b){ b.onclick(); drainTasks(); } return !!b; } }; }
 // ===== Le Cygne (EX) EB01-023 — 【Attack】All players each look at the top card of their deck. If Lv.5 or higher, they may reveal it and add
 // it to their hand. They return any remaining card to the top or bottom of their deck. =====
 { fresh('player'); const lc=put('EB01-023','player'); const hi=card('GD03-010','player'); G.player.deck.push(hi); const lo=card('ST01-005','enemy'); G.enemy.deck.push(lo); const foe=stick('enemy',1,9,{rested:true});
-  A.fieldClick(lc.uid); drainTasks(); A.fieldClick(foe.uid); drainTasks(); const m=modal();
+  A.fieldClick(lc.uid); drainTasks(); A.fieldClick(foe.uid); drainTasks(); const m=scry();
   ok('Le Cygne (you): you see your top card and choose', !!m && /top card of your deck/.test(m.msg) && m.btns.some(b=>/Reveal/.test(b)) && m.btns.some(b=>/bottom/.test(b)), m&&m.msg);
-  press(/Reveal/); passAll(); ok('Le Cygne (you): you added the Lv.6 card; the AI could not add its Lv.2 card', G.player.hand.includes(hi) && G.enemy.deck.includes(lo) && !G.enemy.hand.includes(lo)); }
+  m && m.press(/Reveal/); passAll(); ok('Le Cygne (you): you added the Lv.6 card; the AI could not add its Lv.2 card', G.player.hand.includes(hi) && G.enemy.deck.includes(lo) && !G.enemy.hand.includes(lo)); }
 { fresh('enemy'); const lc=put('EB01-023','enemy'); const mineTop=card('ST01-005','player'); G.player.deck.push(mineTop); const mine=stick('player',1,9,{rested:true});
-  A.resolveAiAttack(lc, ()=>{}, mine); drainTasks(); const m=modal();
+  A.resolveAiAttack(lc, ()=>{}, mine); drainTasks(); const m=scry();
   ok("Le Cygne (AI attacks): you decide for your own top card (a Lv.2 card can't be added)", !!m && /top card of your deck/.test(m.msg) && !m.btns.some(b=>/Reveal/.test(b)), m&&m.msg);
-  press(/Send to bottom/); passAll(); ok('Le Cygne: your card went to the bottom', G.player.deck[0]===mineTop); }
+  m && m.press(/Send to bottom/); passAll(); ok('Le Cygne: your card went to the bottom', G.player.deck[0]===mineTop); }
 
 // ===== Providence Gundam GD03-033 — 【Attack】Choose 1 enemy Unit. Deal 1 damage to it for each 4 AP this Unit has. =====
 { fresh('enemy'); const pv=put('GD03-033','enemy',{tempAp:3}); pv.ap=A.effAp(pv); const mine=stick('player',1,20,{rested:true});
