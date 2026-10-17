@@ -349,6 +349,46 @@ fresh('enemy'); { const atk=stick('enemy',3,3); G.curAttack=atk; G.curBattle={at
   if (A.cancelAction) A.cancelAction();
   ok('round4: Escape/Cancel on the AI\'s turn keeps the battle in progress', G.curAttack===atk && G.curBattle && G.curBattle.atk===atk); }
 
+// ===== Harsh Meta Slave Deck cards (user reports) =====
+// ZZ Gundam: "When your (AEUG) cards deal damage to enemy Units, increase the damage dealt by 1."
+fresh('player'); { put('GD06-033','player'); const ct=put('GD06-044','player'); const plain=stick('player',1,1,{trait:'(Zeon)'}); const e1=stick('enemy',1,9,{rested:true}); const e2=stick('enemy',1,9);
+  G.effSrc=ct; A.applyToTarget(ct, G.player, {kind:'damage', amount:1}, e1, 'Test'); const eff=9-e1.hp;
+  G.effSrc=plain; A.applyToTarget(plain, G.player, {kind:'damage', amount:1}, e2, 'Test'); const nonAeug=9-e2.hp;
+  const e3=stick('enemy',1,9,{rested:true}); G.selected=ct.uid; G.mode='attack-target'; A.fieldClick(e3.uid); drainTasks(); while(modalUp() && clickBtn(/Pass/)) drainTasks();
+  ok('ZZ Gundam: +1 to (AEUG) effect and battle damage to enemy Units, not to other cards', eff===2 && nonAeug===1 && 9-e3.hp===A.effAp(ct)+1, `eff=${eff} non=${nonAeug} battle=${9-e3.hp}`); }
+fresh('player'); { const zz=inHand('GD06-033','player'); const e=stick('enemy',1,9); G.player.resAvail=10; G.player.resMax=10; A.playFromHand(zz.uid, true); drainTasks();
+  ok('ZZ Gundam: its own 【Deploy】 2 damage to all enemy Units becomes 3', e.hp===6, 'hp='+e.hp); }
+// Judau Ashta: 【During Link】【Destroyed】 fetch a Lv.2-or-lower (Gundam Team) Unit — including in the Neo Core Fighter combo
+fresh('player'); { const ncf=put('GD06-039','player'), top=put('GD06-044','player'); put('GD06-045','player'); pair(top,'GD06-088'); inHand('GD06-033','player');
+  A.startActivate(ncf); drainTasks(); let g=0; while (G.mode==='activate-cost' && g++<5){ const c=G.activateCands.find(x=>!(G.activateCostPicked||[]).includes(x)); A.fieldClick(c); drainTasks(); }
+  while(modalUp() && g++<10){ el('blockBtns').children[0].onclick(); drainTasks(); }
+  ok('Judau Ashta: the Neo Core Fighter combo returns Neo Core Fighter to hand', G.player.hand.some(c=>c.name==='Neo Core Fighter') && G.player.field.some(u=>u.name==='ZZ Gundam'), 'hand='+G.player.hand.map(c=>c.name)); }
+fresh('enemy'); { const top=put('GD06-044','player'); pair(top,'GD06-088'); G.player.trash.push(card('GD06-033','player')); G.player.trash.push(card('ST01-005','player'));
+  G.effSrc=stick('enemy',5,5); A.damage(top, 9, G.player); drainTasks();
+  ok('Judau Ashta: only a Lv.2-or-lower (Gundam Team) Unit qualifies (nothing taken here)', G.player.hand.length===0, 'hand='+G.player.hand.map(c=>c.name)); }
+// Pilot 【Destroyed】 in general fires when the Unit dies (Soma Peries: an enemy Unit gets AP-3)
+fresh('player'); { const u=put('ST01-005','enemy'); pair(u,'GD03-100'); const mine=stick('player',4,4); G.effSrc=mine; A.damage(u, 9, G.enemy); drainTasks();
+  ok('Pilot 【Destroyed】 fires with its Unit (Soma Peries gives AP-3)', A.effAp(mine)===1, 'ap='+A.effAp(mine)); }
+// Familial Love: 【Action】 only; the player picks the Unit; AP+2 for this battle; draw 1 at 3 or fewer cards
+fresh('player'); { const fl=inHand('GD06-110','player'); put('GD06-044','player'); A.playFromHand(fl.uid, true); drainTasks();
+  ok('Familial Love can\'t be played in the main phase (【Action】 only)', G.player.hand.includes(fl) && G.player.resAvail===10); }
+fresh('enemy'); { const ct=put('GD06-044','player',{rested:true}); const other=stick('player',5,5); inHand('GD06-110','player'); for(let i=0;i<3;i++) inHand('ST01-005','player');
+  const e=stick('enemy',1,9); A.resolveAiAttackInner(e, ()=>{}, ct); drainTasks(); clickBtn(/Familial/); drainTasks();
+  const asked=modalUp() && btns().length===2 && /Core Top/.test(String(btns()[0].innerHTML||btns()[0].textContent));
+  clickBtn(/Core Top/); drainTasks(); const hand=G.player.hand.length;
+  while(modalUp() && clickBtn(/Pass/)) drainTasks();
+  // Core Top (AP 3) dealt 3+2 in the battle, and the boost ended with it
+  ok('Familial Love: you choose the Unit (the battling one first), AP+2 in the battle, then draw at 3 cards', asked && hand===4 && e.hp===9-(A.effAp(ct)+2) && ct.battleAp===0, `asked=${asked} hand=${hand} e=${e.hp} ap=${A.effAp(ct)}`); }
+// Rivalry with Roux: 2 damage to the enemy Unit battling your (AEUG) Unit, in the action step
+fresh('enemy'); { const rd=put('GD02-079','player',{rested:true}); inHand('GD06-112','player'); const e=stick('enemy',1,9);
+  A.resolveAiAttackInner(e, ()=>{}, rd); drainTasks(); clickBtn(/Rivalry/); drainTasks(); while(modalUp() && clickBtn(/Pass/)) drainTasks();
+  const logged=(el('log').children||[]).some(c=>/Rivalry with Roux deals 2 to/.test(String(c.innerHTML||'').replace(/<[^>]+>/g,'')));
+  ok('Rivalry with Roux deals 2 to the enemy battling your (AEUG) Unit', logged && e.hp===9-2-A.effAp(rd), `hp=${e.hp} logged=${logged}`); }
+// Argama (GD06-125): battle damage to the Base with a rested (AEUG) Unit in play → 1 damage to an enemy Unit
+fresh('enemy'); { G.player.base=card('GD06-125','player'); put('GD06-044','player',{rested:true}); const e=stick('enemy',2,3); const e2=stick('enemy',3,3);
+  A.resolveAiAttackInner(e, ()=>{}, null); drainTasks(); const asked=modalUp() && /Argama/.test(el('blockMsg').innerHTML); clickBtn(new RegExp(e2.name.replace(/[#/]/g,'.'))); drainTasks();
+  ok('Argama: triggers on battle damage with a rested (AEUG) Unit', asked && e2.hp===2, `asked=${asked} e2=${e2.hp}`); }
+
 console.log('\n== review regression checks ==');
 console.log('passed:', pass, '| failed:', fail.length);
 for (const f of fail) console.log('  !', f);
