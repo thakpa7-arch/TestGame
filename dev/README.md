@@ -13,6 +13,8 @@ Run everything from this directory. Scripts read the game from `../gundam-card-g
     node qub2.js; node qub3.js        # Qubeley token payoff + duel
     node pool_check.js                # pool-wide cards that needed bespoke engine support
     node review_check.js              # regressions for the adversarial-review findings (one case per finding)
+    node printings_check.js [cards.ndjson]  # alt-art printings show their own official text and play like the base card
+    node gates_check.js               # 【During Pair･X Pilot】 requirements, forced attack targets, "Then, discard" clauses
     ROUNDS=6 node pt_games.js         # full games across every preset; conservation + rules invariants
     node fuzz_ui.js [seed] [games]    # random human play through the real UI entry points (fuzz_harness.js)
     node pw_check.js                  # Chromium smoke (needs /opt/pw-browsers/chromium)
