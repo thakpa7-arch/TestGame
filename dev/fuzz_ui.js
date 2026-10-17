@@ -78,7 +78,8 @@ function conservation(tag, final){
 global.__onDeclare = (atk, side) => {
   const w = side === G.player ? 'P' : 'A';
   if (atk.rested) viol(SEED, 'attack', `${w} attack declared by an already-rested Unit ${atk.name}`);
-  if (atk.sick) viol(SEED, 'attack', `${w} attack declared by a Unit with summoning sickness ${atk.name}`);
+  // "On the turn this Unit is deployed, it may choose a rested enemy Unit as its attack target and attack it." (Blast Impulse…)
+  if (atk.sick && !(atk.deployTurnRestedAttack && A.cantHitPlayer(atk))) viol(SEED, 'attack', `${w} attack declared by a Unit with summoning sickness ${atk.name}`);
   if (A.trashBlocksAttack(atk, side)){ viol(SEED, 'attack', `${w} attack declared by a Unit that can't attack (${atk.name}${atk.noAttackTurn===G.turnSeq?' noAttackTurn':''})`); if (TRACE) lastLog.slice(-6).forEach(l => console.log('    ' + l)); }
   if (G.turn !== side.who) viol(SEED, 'attack', `${w} attack declared on the opponent's turn ${atk.name}`);
 };

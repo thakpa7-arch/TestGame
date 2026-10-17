@@ -77,7 +77,7 @@ function fight(atk, def){ const as=atk.owner==='player'?G.player:G.enemy, ds=def
   const m=modal(); ok('Grace Under Pressure: the choice shows Aerial Rebuild with Breach 3', m && m.btns.some(b=>/Aerial Rebuild.*Breach 3/.test(b)), m&&JSON.stringify(m.btns));
   press(/Aerial Rebuild/); const t=tokens(G.player)[0];
   ok('Grace Under Pressure (player): the Aerial Rebuild token has <Breach 3>', t && t.name==='Gundam Aerial Rebuild' && A.effBreach(t)===3, t&&('breach '+A.effBreach(t)));
-  const qz=A.makeCard(A.CARD_BY_ID.get('GD05-126'),'enemy').activate.action;
+  const qa=A.makeCard(A.CARD_BY_ID.get('GD05-126'),'enemy').activate.action, qz=qa.kind==='cond' ? qa.inner : qa;   // (its Aerial condition wraps the token deploy — g6)
   const gn=A.makeToken(qz.specs[0],'enemy'); ok('Quiet Zero: the Gundnode token has <Breach 1>', A.effBreach(gn)===1 && gn.baseAp===2, 'breach '+A.effBreach(gn)); }
 // ---- makeToken: "can't be set as active or paired with a Pilot" (Zaku Ⅱ FZ's Ad Balloon) ----
 { const act=A.parseTrigger(A.CARD_BY_ID.get('GD03-020').effect,'When Paired');
