@@ -12520,6 +12520,42 @@ function aiMainStep(){
   { const modalC = ai.hand.find(c=>mainCmd(c) && c.action && c.action.kind==='modal' && canAfford(ai,c) && aiModeScore(c, ai, aiPickMode(c, ai)||{kind:'none'})>=3);
     if (modalC){ const m=aiPickMode(modalC, ai); const i=ai.hand.indexOf(modalC); ai.hand.splice(i,1); payCost(ai, effectiveCost(ai,modalC)); sendToTrash(modalC,ai); flashCard(modalC,'ENEMY COMMAND'); commandPlayed(modalC, ai); setTimeout(()=>afterCommandMain(modalC, ai), 0);
       log(`${who(G.enemy)} plays <b>${modalC.name}</b>.`, 'ai'); applyCommand(modalC, ai, null, m); return true; } }
+  // Removal and rest Commands (Fatal Strike, Covert Operative, Wheel Spoke Formation, Graviton Hammer…): "Choose 1 enemy Unit …
+  // Destroy it / Return it to its owner's hand" on a real threat, "… Rest it." on an active <Blocker> (or a Unit a ready attacker
+  // then destroys) before the attacks. One that can also be played in an action step keeps a plain removal for the player's turn
+  // (its cost readies again before the AI's next turn; aiActionStep) unless the target would block this turn's attacks.
+  { const ready=ai.field.filter(u=>!u.sick && !u.rested && effAp(u)>0 && !trashBlocksAttack(u, ai));
+    let pick=null;
+    for (const c of ai.hand){
+      if (!mainCmd(c) || !c.action || !canAfford(ai,c)) continue;
+      const a=c.action; a.source=c;
+      if (!cmdPlayable(a, ai, c)) continue;
+      let x=a; for (let k=0; k<4 && x && x.kind==='cond' && !condOnTarget(x.cond); k++) x = condMet(x.cond, ai, c, x.other) ? x.inner : (x.elseInner||null);
+      if (!x || (x.kind==='chain' && x!==a)) continue;
+      const h=cmdHead(a, ai, c); if (!h || !['destroy','bounce','rest'].includes(h.kind) || (a.kind==='chain' && a.steps[0]!==h)) continue;
+      h.source=c;
+      const alsoAction=/【\s*Action/i.test(c.effect||'');
+      for (const t of enemyTargets(pl, h)){
+        const th=aiThreatScore(t), blocks=effBlocker(t) && !t.rested && ready.length>0;
+        let s;
+        if (h.kind==='rest'){
+          if (t.rested) continue;
+          if (blocks) s=4+th*0.1;
+          else if (th>=4 && ready.some(u=>(effAp(u)>=t.hp) && (effFirstStrike(u) || effAp(t)<u.hp))) s=3;
+          else continue;
+        } else {
+          if (h.kind==='destroy' && pl.noEnemyEffDestroyTurn===G.turnSeq) continue;
+          if (!(h.kind==='destroy' ? th>=4 : (t.token || th>=6))) continue;
+          if (alsoAction && !blocks && th<7) continue;
+          s = th + (h.kind==='destroy'?2:0) + (blocks?3:0);
+        }
+        if (!pick || s>pick.s) pick={ c, h, t, s };
+      }
+    }
+    if (pick){ const {c, h, t}=pick; aiPayAltIfNeeded(ai, c); const i=ai.hand.indexOf(c); ai.hand.splice(i,1); payCost(ai, effectiveCost(ai,c)); sendToTrash(c,ai); flashCard(c,'ENEMY COMMAND'); commandPlayed(c, ai); setTimeout(()=>afterCommandMain(c, ai), 0);
+      log(`${who(G.enemy)} plays <b>${c.name}</b> on <b>${t.name}</b>.`, 'ai');
+      if (c.action.kind==='chain') runTrigger(c, ai, Object.assign({}, c.action, { firstTarget:t }), c.name); else applyCommand(c, ai, t, h);
+      return true; } }
   return false;
 }
 // A 0-AP Unit whose 【Activate･Action】 hits the Base/Shield it is battling (Moebius): the AI attacks the player with it to use that.
@@ -12755,6 +12791,258 @@ function aiRetarget(atk, target){
   }
   return null;
 }
+// ---- AI: 【Action】 Commands in an action step (13-2-4-1) ----
+// There is an action step in every battle on either player's turn and in the End Phase. The AI plays an Action Command from its
+// hand there when it gains from it now: it destroys / saves a Unit in this battle, stops the hit on its shields or Base (or a
+// lethal one), rests an enemy Unit that would still attack or block, removes a threat for resources that ready again at its own
+// start phase, or does what the card is for in the player's End Phase (A Miracle's draw, Financier's EX Base). Each candidate is
+// judged on a small model of the battle (AP, HP, damage guards, <First Strike>) — nothing is played for no gain. Retarget
+// Commands stay with aiRetarget (the block step), Base/Unit 【Activate･Action】 abilities with aiBattleRedirect / aiBattleBoost.
+// The battle the action step belongs to, seen from the AI: its Unit `mine`, the player's Unit `theirs`, `direct` for an attack on
+// a player. null when the attacker (or the Unit it attacks) has left — the battle is ending.
+function aiActionCtx(attacker){
+  const ai=G.enemy, pl=G.player;
+  if (!attacker) return { attacker:null, mine:null, theirs:null, direct:false, endPhase:true };
+  const mineAtk=ai.field.includes(attacker);
+  if (attacker.hp<=0 || (!mineAtk && !pl.field.includes(attacker))) return null;
+  const r = G.retarget && G.retarget.atk===attacker ? G.retarget.to : null;
+  const d0 = r || (G.curBattle && G.curBattle.atk===attacker ? G.curBattle.def : null);
+  const d = d0 && d0.type==='unit' && d0.hp>0 && (mineAtk ? pl : ai).field.includes(d0) ? d0 : null;
+  if (d0 && !d) return null;
+  return mineAtk ? { attacker, mine:attacker, theirs:d, direct:!d0, endPhase:false } : { attacker, mine:d, theirs:attacker, direct:!d0, endPhase:false };
+}
+// Pure reads of the engine's damage rules for the model (no logs, nothing used up).
+function aiApLocked(u){ const w=u && (u.apNoEnemyReduce || (u.type==='unit' && u.pilotCard && u.pilotCard.apNoEnemyReduce)); return !!w && (w!=='link' || !!u.linked); }
+function aiEffDmg(u, amt){
+  let d=Math.max(0, (amt||0) - (u.dmgReduce||0) - (u.effDmgReduce||0));
+  for (const g of (u.dmgGuards||[])){ if (d<=0) break; if (g.turnSeq!==G.turnSeq || g.battle || g.maxAp!=null || g.maxLv!=null || g.maxHp!=null) continue; d = g.prevent ? 0 : Math.max(0, d-g.amount); }
+  return d;
+}
+// Battle damage virtual Unit T takes from virtual Unit S (AP S.ap), after its reductions and guards (existing and planned).
+function aiBattleHit(T, S){
+  let d=S.ap; if (d<=0) return 0;
+  const u=T.u;
+  if (u.redirectTo || (u.redirectTurn && u.redirectTurn.turnSeq===G.turnSeq)) return 0;   // dealt to another card instead
+  d=Math.max(0, d-(u.dmgReduce||0));
+  for (const g of [...T.guards].sort((a,b)=>(b.prevent?1:0)-(a.prevent?1:0))){
+    if (d<=0) break;
+    if (g.turnSeq!=null && g.turnSeq!==G.turnSeq) continue;
+    if (g.enemy && S.u.owner===u.owner) continue;
+    if (g.maxAp!=null && S.ap>g.maxAp) continue;
+    if (g.maxLv!=null && (S.u.lv||0)>g.maxLv) continue;
+    if (g.maxHp!=null && S.hp>g.maxHp) continue;
+    d = g.prevent ? 0 : Math.max(0, d-g.amount);
+  }
+  return d;
+}
+// A grantReduce Command's guard as grantDmgGuard will hand it out.
+function aiGuardOf(act){
+  const g=Object.assign({}, act.guard || { amount:act.amount||0, prevent:(act.amount||0)>=99, battle:(act.amount||0)>=99, enemy:true, next:false, dur:'turn' });
+  if (g.alt && totalRes(G.enemy)>=g.alt.minLevel) g.maxAp=g.alt.maxAp;
+  return g;
+}
+// A Unit as it would be after the planned changes `mods` ({u, ap, dmg, heal, guard, first, rest, removed}).
+function aiActVirt(u, mods){
+  const s={ u, ap:effAp(u), hp:u.hp, gone:null, first:false, guards:[...(u.dmgGuards||[])], rest:false };
+  for (const m of mods) if (m.u===u){
+    if (m.removed) s.gone=m.removed;
+    if (m.ap) s.ap+=m.ap;
+    if (m.dmg) s.hp-=m.dmg;
+    if (m.heal) s.hp=Math.min(effMaxHp(u), s.hp+m.heal);
+    if (m.guard) s.guards.push(m.guard);
+    if (m.first) s.first=true;
+    if (m.rest) s.rest=true;
+  }
+  s.ap=Math.max(0, s.ap);
+  if (!s.gone && s.hp<=0) s.gone='destroy';
+  return s;
+}
+// What resting enemy Unit `u` is worth: on the player's turn it stays rested through the AI's coming turn (no block, attackable)
+// and can't attack again this turn; on the AI's turn an active <Blocker> can't stop its next attacker.
+function aiRestValue(u, ctx){
+  const ai=G.enemy;
+  if (G.turn==='player'){
+    let v = effBlocker(u) ? 2 : 0;
+    if (!ctx.endPhase && !u.sick && effAp(u)>0) v += 1;
+    if (ai.field.some(x=>x.hp>0 && effAp(x)>=u.hp)) v += 1;
+    return v;
+  }
+  return (effBlocker(u) && ai.field.some(x=>x!==ctx.attacker && !x.rested && !x.sick && effAp(x)>0)) ? 2 : 0;
+}
+// What the player's direct attack `A` (virtual) costs the AI: a Base hit, a shield (more when few are left), or the game.
+function aiDirectLoss(A, mods){
+  const ai=G.enemy; if (A.ap<=0) return 0;
+  const sg = (mods.find(m=>m.shieldGuard)||{}).shieldGuard || ai.shieldGuard;
+  const guarded = !!sg && ((sg.maxLv!=null && (A.u.lv||0)<=sg.maxLv) || (sg.maxAp!=null && A.ap<=sg.maxAp));
+  const base = ai.base || (mods.some(m=>m.newBase) ? { hp:3 } : null);
+  if (base) return guarded ? 0 : (A.ap>=base.hp ? 3 : 0.5);
+  if (ai.shields.length){
+    if (guarded || ai.field.some(x=>x.restedShieldGuard && x.rested && x.hp>0)) return 0;
+    const n=Math.min(ai.shields.length, effSuppression(A.u)?2:1), left=ai.shields.length-n;
+    return n*1.5 + (left<=2?1:0) + (left<=1?2:0) + (left===0?2:0);
+  }
+  return 100;   // no shield or Base left: the hit defeats the AI
+}
+// The AI's view of the board after `mods`: cards removed (theirs +, its own −), the battle's damage step, the direct hit, rests.
+function aiActValue(ctx, mods){
+  const ai=G.enemy, S=new Map();
+  const units=new Set(mods.filter(m=>m.u).map(m=>m.u)); for (const u of [ctx.mine, ctx.theirs]) if (u) units.add(u);
+  for (const u of units) S.set(u, aiActVirt(u, mods));
+  const sgn=u=>ai.field.includes(u) ? -1 : 1;
+  const lost=s=>s.gone==='bounce' && !s.u.token ? 0.5*keepVal(s.u)+1 : keepVal(s.u);
+  let v=0;
+  for (const s of S.values()){
+    if (s.gone) v += sgn(s.u)*lost(s);
+    else if (s.rest && sgn(s.u)>0 && !s.u.rested) v += aiRestValue(s.u, ctx);
+  }
+  if (ctx.attacker){
+    const A=S.get(ctx.attacker);
+    if (A && !A.gone){
+      if (ctx.mine && ctx.theirs){
+        const D=S.get(ctx.attacker===ctx.mine ? ctx.theirs : ctx.mine);
+        if (!D.gone){
+          const fs = A.first || effFirstStrike(A.u) || (D.u.foeFirstStrike && G.turn!==D.u.owner);
+          const defDies = aiBattleHit(D, A)>=D.hp;
+          const atkDies = !(fs && defDies) && !A.u.noBattleDmgBattle && aiBattleHit(A, D)>=A.hp;
+          if (defDies) v += sgn(D.u)*keepVal(D.u);
+          if (atkDies) v += sgn(A.u)*keepVal(A.u);
+        }
+      } else if (ctx.direct && ctx.theirs===ctx.attacker) v -= aiDirectLoss(A, mods);
+    }
+  }
+  return v;
+}
+// The ways the AI could play Command `c` now: [{ h (the part it aims), mode, t (its target), mods, extra }].
+function aiActionPlans(c, ctx){
+  const ai=G.enemy, pl=G.player, a=c.action; if (!a) return [];
+  a.source=c;
+  if (a.kind==='retarget' || !cmdPlayable(a, ai, c)) return [];
+  // Through "If …, (… instead)": the branch that resolves now. A Command whose resolving part is a nested chain is left alone.
+  let x=a; for (let k=0; k<4 && x && x.kind==='cond' && !condOnTarget(x.cond); k++) x = condMet(x.cond, ai, c, x.other) ? x.inner : (x.elseInner||null);
+  if (!x || (x.kind==='chain' && x!==a)) return [];
+  const heads = a.kind==='modal' ? a.modes.filter(m=>cmdModeLegal(m, ai)).map(m=>({ h:m, mode:m })) : [{ h:cmdHead(a, ai, c), mode:null }];
+  const out=[];
+  for (const {h, mode} of heads){
+    if (!h || (a.kind==='chain' && a.steps[0]!==h)) continue;
+    h.source=c;
+    const battleOnly = h.dur==='battle' || (h.guard && h.guard.dur==='battle') || h.kind==='shieldGuard';
+    if (battleOnly && !ctx.attacker) continue;
+    for (const p of aiHeadOptions(c, h, ctx)){ p.h=h; p.mode=mode; out.push(p); }
+  }
+  // "Then, draw 1" and other trailing parts of a chain are a small bonus on top of what its first part does.
+  if (a.kind==='chain') for (const p of out) p.extra=(p.extra||0)+0.5;
+  return out;
+}
+function aiHeadOptions(c, h, ctx){
+  const ai=G.enemy, pl=G.player, k=h.kind, mine=ctx.mine, out=[];
+  if (enemyPickKind(h)){
+    for (const t of enemyTargets(pl, h)){
+      let mods=null;
+      if (k==='damage'){ const amt = h.perFriendlyToken ? cmdDamageAmount(h, ai) : h.alt ? dmgAmount(h, ai, c) : dmgAmountFor(h, t); if (!(amt>0)) continue; mods=[{ u:t, dmg:aiEffDmg(t, amt) }]; }
+      else if (k==='destroy'){ if (pl.noEnemyEffDestroyTurn===G.turnSeq) continue; mods=[{ u:t, removed:'destroy' }]; }
+      else if (k==='bounce') mods=[{ u:t, removed:'bounce' }];
+      else if (k==='debuff'){ if (aiApLocked(t) || h.perRestedEnemy || h.perTrashName || h.perFriendlyTrait) continue;
+        mods=[{ u:t, ap:-((h.kwAlt && targetHasKw(t, h.kwAlt.kw)) ? h.kwAlt.amount : (h.amount||0)) }]; }
+      else if (k==='rest' || k==='stun') mods=[{ u:t, rest:true }];
+      if (mods) out.push({ t, mods, extra:h.ifDoDraw ? h.ifDoDraw : 0 });
+    }
+    return out;
+  }
+  if (k==='restMulti'){
+    const picks=enemyTargets(pl, h).sort((a,b)=>effAp(b)-effAp(a)).slice(0, h.count||2).filter(u=>!u.rested);   // runTrigger's own picks
+    if (picks.length) out.push({ t:null, mods:picks.map(u=>({ u, rest:true })) });
+    return out;
+  }
+  if (k==='bounceMulti'){
+    const picks=enemyTargets(pl, h).sort((a,b)=>aiThreatScore(b)-aiThreatScore(a) || cardValue(b)-cardValue(a)).slice(0, h.count||2);   // cmdAuto's picks
+    if (picks.length) out.push({ t:null, mods:picks.map(u=>({ u, removed:'bounce' })) });
+    return out;
+  }
+  if (k==='shieldGuard'){ out.push({ t:null, mods:[{ shieldGuard:{ maxLv:h.maxLv, maxAp:h.maxAp } }] }); return out; }
+  if (k==='draw' && !h.allPlayers){ out.push({ t:null, mods:[], extra:1.5*(h.amount||1) }); return out; }
+  if (k==='exBase'){ if (G.turn==='player' && !ai.base) out.push({ t:null, mods:[{ newBase:true }], extra:ctx.direct ? 0 : 2.5 }); return out; }
+  if (k==='massBuff'){ const us=massCmdUnits(ai, h); if (us.length) out.push({ t:null, mods:us.map(u=>({ u, ap:h.amount })) }); return out; }
+  if (k==='damageBoth'){   // runTrigger's own picks: its sturdiest qualifying Unit (or pingFriendly's) and the enemy it hurts most
+    const fq = h.filter ? friendlyTargets(ai, { filter:h.filter }) : null;
+    const ft = fq ? [...fq].sort((a,b)=>((b.hp>h.amount)-(a.hp>h.amount)) || keepVal(a)-keepVal(b))[0] : pingFriendly(ai, h.amount, false);
+    const et = h.enemyFilter ? rankTarget(enemyTargets(pl, { kind:'damage', amount:h.amount, filter:h.enemyFilter }), { kind:'damage', amount:h.amount }) : [...pl.field].sort((a,b)=>b.ap-a.ap)[0];
+    if (et) out.push({ t:null, mods:[...(ft ? [{ u:ft, dmg:h.amount }] : []), { u:et, dmg:aiEffDmg(et, h.amount) }] });
+    return out;
+  }
+  if (!mine) return out;   // the rest help the AI's Unit in this battle
+  if (k==='selfPingBuff'){ const t=pingFriendly(ai, h.self, true, h.other ? c : null); if (t===mine) out.push({ t:null, mods:[{ u:mine, dmg:h.self, ap:h.ap }] }); return out; }
+  if (k==='buffMulti'){ const picks=friendlyTargets(ai, h).sort((a,b)=>effAp(b)-effAp(a)).slice(0, h.count);
+    if (picks.includes(mine) && (!h.exact || picks.length>=h.count)) out.push({ t:null, mods:picks.map(u=>({ u, ap:h.amount })) }); return out; }
+  if (k==='healBuff'){ if (healBuffCands(ai, h).includes(mine)) out.push({ t:mine, mods:[{ u:mine, heal:h.heal, ap:h.amount }] }); return out; }
+  if (['buff','heal','grantKw','grantReduce'].includes(k)){
+    const cands = k==='grantReduce' ? grantCands(c, ai, h) : friendlyTargets(ai, h);
+    if (!cands.includes(mine)) return out;
+    const m = k==='buff' ? { u:mine, ap:h.amount } : k==='heal' ? { u:mine, heal:h.amount>=99 ? 99 : h.amount }
+            : k==='grantKw' ? (h.kw==='first' ? { u:mine, first:true } : null) : { u:mine, guard:aiGuardOf(h) };
+    if (m) out.push({ t:mine, mods:[m], extra:h.then ? 0.5 : 0 });
+  }
+  return out;
+}
+// Choose and start the AI's best Action Command for this action step. Returns true when it played one (`resume` runs after it
+// resolved), false when it passes.
+function aiActionStep(attacker, resume){
+  const ai=G.enemy;
+  if (G.over || !ai || !ai.hand.length) return false;
+  if (!attacker && G.turn!=='player') return false;   // its own End Phase: nothing left for an Action Command to do
+  const key=`${G.turnSeq}|${attacker ? attacker.uid : 'end'}`;
+  if (!G._aiAct || G._aiAct.key!==key) G._aiAct={ key, n:0 };
+  if (G._aiAct.n>=3) return false;
+  const ctx=aiActionCtx(attacker); if (!ctx) return false;
+  const base=aiActValue(ctx, []), ownTurn=G.turn==='enemy';
+  // On its own turn, keep what the hard AI's held-back deploys need (it places them after combat).
+  const reserve = ownTurn && AI_LVL==='hard' && !G._aiPostDeploy && ai.field.length<FIELD_MAX
+    ? Math.min(Infinity, ...ai.hand.filter(u=>u.type==='unit' && canAfford(ai,u)).map(u=>effectiveCost(ai,u))) : 0;
+  let best=null;
+  for (const c of ai.hand){
+    if (c.type!=='command' || !/【\s*Action/i.test(c.effect||'')) continue;
+    const cost=effectiveCost(ai,c);
+    if (totalRes(ai) < lvNeed(ai, c, false) || ai.resAvail < cost) continue;   // its Lv. and cost (an alternative cost isn't used here)
+    // Spending an EX Resource (gone for good) or what the held deploys need takes a big gain.
+    const need = (ai.ex>0 && ai.resAvail-cost < ai.ex) || (reserve!==Infinity && reserve>0 && ai.resAvail-cost < reserve) ? 6 : ownTurn ? 3 : 2;
+    for (const p of aiActionPlans(c, ctx)){
+      const gain = aiActValue(ctx, p.mods) - base + (p.extra||0);
+      if (gain < need) continue;
+      const score = gain - 0.3*cost;
+      if (!best || score>best.score) best=Object.assign(p, { c, score, gain });
+    }
+  }
+  if (!best) return false;
+  G._aiAct.n++;
+  const c=best.c, cost=effectiveCost(ai,c);
+  ai.hand.splice(ai.hand.indexOf(c),1); payCost(ai, cost); sendToTrash(c, ai);
+  flashCard(c,'ENEMY ACTION');
+  log(`${who(ai)} plays <b>${c.name}</b> in the action step${best.t ? ` — on <b>${best.t.name}</b>` : ''}.`, 'ai');
+  commandPlayed(c, ai, ()=>{
+    aiResolveActionPlan(c, best);
+    afterCommandMain(c, ai, ()=>{ render(); checkEnd(); resume(); });
+  });
+  return true;
+}
+// Resolve the chosen plan through the engine's Command resolution (the same path as an AI 【Burst】 "activate this card's 【Action】").
+function aiResolveActionPlan(c, p){
+  const ai=G.enemy, a=c.action, h=p.h, t=p.t;
+  G.effSrc=c;
+  if (t && !(G.player.field.includes(t) || G.enemy.field.includes(t))){ log(`<b>${c.name}</b>: <b>${t.name}</b> is no longer in play — no effect.`, 'ai'); return; }
+  if (p.mode) log(`<b>${c.name}</b>: ■${p.mode.modeText||''}`, 'ai');
+  if (h.kind==='healBuff'){ applyHealBuff(c, ai, h, t, c.name); return; }
+  if (a.kind==='chain'){ runTrigger(c, ai, Object.assign({}, a, t ? { firstTarget:t } : {}), c.name); return; }
+  applyCommand(c, ai, t||null, h);
+}
+// After the AI's play: wait out any choice it opened for the player, then the action step goes on (the player may answer) — or,
+// when the attacker or the Unit it attacks has left, the battle moves on to its end.
+function aiActionResume(attacker, cb){
+  if (G.over){ cb(); return; }
+  if (modalBusy()){ whenModalFree(()=>aiActionResume(attacker, cb)); return; }
+  if (G.mode!=='idle' && G.mode!=='attack-target'){ setTimeout(()=>aiActionResume(attacker, cb), 200); return; }
+  render();
+  if (attacker && !aiActionCtx(attacker)){ cb(); return; }
+  offerPlayerActionStep(attacker, cb);
+}
 function collectPlayerActions(attacker){
   const opts=[];
   for (const u0 of [...G.player.field, G.player.base].filter(Boolean)) for (const slot of [0,1]){
@@ -12867,6 +13155,8 @@ function collectPlayerActions(attacker){
 function offerPlayerActionStep(attacker, cb){
   if (G.over){ cb(); return; }
   if (modalBusy()){ whenModalFree(()=>offerPlayerActionStep(attacker, cb)); return; }   // after the open choice
+  // The AI may play an 【Action】 Command first, and again after each of the player's plays (the step ends when both pass).
+  if (aiActionStep(attacker, ()=>aiActionResume(attacker, cb))) return;
   const opts=collectPlayerActions(attacker);
   if (!opts.length){ cb(); return; }
   const atkSide = attacker ? (G.player.field.includes(attacker) ? G.player : G.enemy) : null;
