@@ -143,6 +143,16 @@ for (const who of ['player','enemy']){ fresh(who); const s=who==='player'?G.play
   ok(`Impulse Gundam (${who}): returns to the bottom of the deck, its paired Pilot goes to the trash`,
     s.deck[0]===imp && !s.field.includes(imp) && s.trash.includes(kira) && !imp.pilotCard, `deck0=${s.deck[0]&&s.deck[0].name} trash=${s.trash.map(c=>c.name)}`); }
 
+// An open "choose 1 of your Units" whose listed Units leave play meanwhile (Mikazuki Augus 【When Paired】 while Qubeley's token
+// makes room by trashing one): the gone ones aren't offered, and with none left play carries on (found by pt_games).
+{ fresh('player'); const q=put('GD01-007','player'); const a=put('ST01-005','player'); const e=stick('enemy',1,9); let done=0;
+  A.resolvePlayerTrigger(card('ST05-010','player'), G.player, A.parseTrigger(A.CARD_BY_ID.get('ST05-010').effect,'When Paired'), 'Pair', ()=>{ done++; }); drainTasks();
+  const open=G.mode==='trigger-target' && G.pending.cands.length===2;
+  G.player.field.splice(G.player.field.indexOf(a),1); A.sendToTrash(a, G.player); A.render(); drainTasks();
+  const pruned=G.mode==='trigger-target' && G.pending.cands.length===1 && G.pending.cands[0]===q.uid;
+  G.player.field.splice(G.player.field.indexOf(q),1); A.sendToTrash(q, G.player); A.render(); drainTasks();
+  ok('Mikazuki Augus: a chosen-from Unit that left play is dropped; with none left the choice closes and play carries on', open && pruned && G.mode==='idle' && done===1, `open=${open} pruned=${pruned} mode=${G.mode} done=${done}`); }
+
 console.log('== Harsh Meta Slave Deck reports (UI paths) ==');
 console.log(`passed: ${pass} | failed: ${fail.length}`); for (const f of fail) console.log('  FAIL '+f);
 console.log('Errors: '+(H.ERRORS.length+fail.length)); for (const e of H.ERRORS.slice(0,5)) console.log('  ERR', e.ctx, e.phase, e.msg);
