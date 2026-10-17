@@ -12,13 +12,21 @@ function allCards(s){ const o=[]; for(const z of zones(s)) for(const c of z) o.p
   for(const u of s.field) if(u&&u.pilotCard) o.push(u.pilotCard);
   if(s.base){ o.push(s.base); if(s.base.pilotCard) o.push(s.base.pilotCard); } return o; }
 function census(s){ return allCards(s).filter(c=>c&&!c.token).map(c=>c.uid); }
+const CHK={ lastTurn:null };
 function check(tag, base){
+  if (G.turn!==CHK.lastTurn){
+    if (CHK.lastTurn){ const es = CHK.lastTurn==='player'?G.player:G.enemy;   // the side whose turn just ended
+      if (es.hand.length>10) viol(tag,`${CHK.lastTurn==='player'?'P':'A'} ended its turn with hand>10 (${es.hand.length})`);
+      if (process.env.TRACEHAND) console.log(`  [handover] ${CHK.lastTurn} -> ${G.turn}: P hand ${G.player.hand.length} A hand ${G.enemy.hand.length}`); }
+    CHK.lastTurn=G.turn;
+  }
   for (const s of [G.player,G.enemy]){
     const w=s===G.player?'P':'A';
     if (s.resAvail<0) viol(tag,`${w} resAvail<0 (${s.resAvail})`);
     if (s.resAvail>s.resMax+s.ex) viol(tag,`${w} resAvail>total (${s.resAvail}/${s.resMax+s.ex})`);
     if (s.field.length>6) viol(tag,`${w} field>6 (${s.field.length})`);
-    if (s.hand.length>10 && G.turn!==s.who) viol(tag,`${w} hand>10 (${s.hand.length})`);   // the hand may exceed 10 during your own turn (4-8-4)
+    // The hand may exceed 10 at any time except when your own turn ends (4-8-4, 7-6-5): off-turn Bursts
+    // ("add this card to your hand") and draws can push it past 10 legally. Checked at the turn handover below.
     if (s.shields.length>A.SHIELD_MAX) viol(tag,`${w} shields>${A.SHIELD_MAX}`);
     if (s.base && s.base.type!=='base') viol(tag,`${w} non-base in base zone: ${s.base.name}`);
     for (const u of s.field){
@@ -175,6 +183,7 @@ for (let i=0;i<D.length;i++) for (let j=0;j<D.length;j++){
   for (let r=0;r<R;r++){
     const tag=`${D[i].name}(P) vs ${D[j].name}(AI) #${r}`; setCtx(tag); Math.random();
     try {
+      CHK.lastTurn=null;
       initGame(D[i], D[j], r%2?'player':'enemy');
       const base={ p:new Set(census(G.player)), a:new Set(census(G.enemy)) };
       A.beginTurn(G.firstPlayer); autoResolve(tag, base);

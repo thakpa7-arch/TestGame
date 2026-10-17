@@ -5320,15 +5320,11 @@ const CARD_BY_ID = (()=>{
 // Pool size for the title bar: distinct card numbers and printings (alternate arts included).
 const POOL_STATS = (()=>{ const ids=[...CARD_BY_ID.keys()]; return { cards: new Set(ids.map(cardNum)).size, printings: ids.length }; })();
 const PRESET_DECKS = [
-  // Only the official September 2026 starter decks are shipped as presets.
+  // House presets only; the official starter decks were retired from the picker.
   // (Custom decks you build in the Deck Builder are stored separately and are unaffected.)
-  { name:'ST11 Aquatic Assault', dg:'4nST11-008a4nST11-009a3nST11-002a4nST11-003a4nST11-007a3nST11-001a3nST11-004a3nST11-010a2nST11-005a1nST11-006a4nST11-011a4nST11-012a3nST11-014a2nST11-016a3nST11-013a3nST11-015' },
-  { name:'ST12 Raging Onslaught', dg:'4nST12-010a4nST12-005a4nST12-007a4nST12-008a4nST12-004a4nST12-009a2nST12-002a3nST12-003a1nST12-006a1nST12-001a4nST12-011a4nST12-012a3nST12-014a3nST12-015a2nST12-016a3nST12-013' },
-  { name:'ST13 Silent Barrage', dg:'4nST13-003a4nST13-004a4nST13-005a4nST13-008a4nST13-009a3nST13-002a4nST13-007a2nST13-010a1nST13-001a1nST13-006a4nST13-011a4nST13-012a3nST13-013a2nST13-016a3nST13-014a3nST13-015' },
-  { name:'ST14 Heavy Dominion', dg:'4nST14-004a4nST14-010a4nST14-003a4nST14-007a4nST14-009a3nST14-002a3nST14-008a2nST14-005a2nST14-006a1nST14-001a4nST14-011a4nST14-012a3nST14-014a2nST14-016a3nST14-013a3nST14-015' },
   { name:'B/P', dg:'4nST03-008a4nGD05-062a4nGD01-030a4nST03-006a4nGD02-054a1nGD05-053a4nGD03-056a2nGD02-055a1nGD05-060a3nGD04-017a4nGD05-049a2nST03-011a4nST05-010a4nGD05-093a1nST09-009a4nGD05-129' },
   { name:'BIG PREEN', dg:'4nST03-008a4nST03-006a3nST05-006a4nGD02-054a4nGD03-056a4nST05-010a3nGD05-129a4nGD02-055a2nGD05-060a4nGD05-093a2nGD04-017a4nST13-011a2nGD05-114a3nGD05-049a3nST13-001' },
-  { name:'GD06 Test Deck', dg:'1nGD06-013a1nGD06-014a1nGD06-047a1nGD06-004a1nGD06-008a1nGD06-009a1nGD06-010a1nGD06-012a1nGD06-016a1nGD06-017a1nGD06-036a1nGD06-039a1nGD06-040a1nGD06-044a1nGD06-045a1nGD06-048a1nGD06-006a1nGD06-015a1nGD06-041a1nGD06-043a1nGD06-046a1nGD06-001a1nGD06-003a1nGD06-011a1nGD06-035a1nGD06-037a1nGD06-005a1nGD06-007a1nGD06-002a1nGD06-034a2nGD06-080a1nGD06-081a1nGD06-082a1nGD06-083a1nGD06-088a1nGD06-089a1nGD06-090a1nGD06-091a1nGD06-092a2nGD06-122a1nGD06-125a1nGD06-126a1nGD06-103a1nGD06-104a1nGD06-110a1nGD06-111a1nGD06-112a1nGD06-101' },
+  { name:'Harsh Meta Slave Deck', dg:'4nGD06-039a2nGD06-112a4nGD06-088a2nGD06-035a2nGD06-125a2nGD06-110a4nGD06-045a4nGD06-044a4nGD06-033a2nGD06-046a4nGD05-111a4nGD01-118a4nGD02-079a2nGD02-129a2nGD03-071a4nGD02-097' },
 ];
 function parsePreset(dg){
   return dg.split('a').map(e=>{ const m=e.match(/^(\d+)n(.+)$/); return m?{n:+m[1],id:m[2]}:null; }).filter(Boolean);
@@ -5792,7 +5788,7 @@ function setupChooseDeck(){
   const newTile=`<button id="dbNew" style="${tileStyle('','#6a4fb0')};border-style:dashed;color:#b8a8e8;font-size:15px;font-weight:700">＋<br>DECK<br>BUILDER</button>`;
   const aiBtn=(lvl,label)=>`<button class="db-filter dbAi ${AI_LVL===lvl?'on':''}" data-lvl="${lvl}">${label}</button>`;
   const m=setupModal(`${setupBackBtn('Title', setupBackToTitle)}<h2 style="color:#d8b4ff;margin:14px 0 6px">Choose your deck</h2>
-    <p style="color:#9aa;margin:0 0 10px;font-size:13px">Pick a competitive preset, one of your custom decks, or build your own. The AI plays a random preset.</p>
+    <p style="color:#9aa;margin:0 0 10px;font-size:13px">Pick a preset, one of your custom decks, or build your own. The AI plays the other preset.</p>
     <div style="margin:0 0 14px;display:flex;gap:8px;justify-content:center;align-items:center">
       <span style="color:#9aa;font-size:12px">AI difficulty:</span>${aiBtn('easy','Easy')}${aiBtn('normal','Normal')}${aiBtn('hard','Hard')}
     </div>
