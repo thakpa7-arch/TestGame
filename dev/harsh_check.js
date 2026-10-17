@@ -153,6 +153,10 @@ for (const who of ['player','enemy']){ fresh(who); const s=who==='player'?G.play
   G.player.field.splice(G.player.field.indexOf(q),1); A.sendToTrash(q, G.player); A.render(); drainTasks();
   ok('Mikazuki Augus: a chosen-from Unit that left play is dropped; with none left the choice closes and play carries on', open && pruned && G.mode==='idle' && done===1, `open=${open} pruned=${pruned} mode=${G.mode} done=${done}`); }
 
+// "If you are Lv.N or higher": your Lv. is every Resource in your resource area, EX Resources included (2-9-4).
+{ fresh('player'); G.player.resMax=6; G.player.ex=1; const a=A.condMet({type:'level',min:7}, G.player, null); G.player.ex=0; const b=A.condMet({type:'level',min:7}, G.player, null);
+  ok('Lv. conditions count EX Resources (6 + 1 EX is Lv.7; 6 is not)', a && !b); }
+
 console.log('== Harsh Meta Slave Deck reports (UI paths) ==');
 console.log(`passed: ${pass} | failed: ${fail.length}`); for (const f of fail) console.log('  FAIL '+f);
 console.log('Errors: '+(H.ERRORS.length+fail.length)); for (const e of H.ERRORS.slice(0,5)) console.log('  ERR', e.ctx, e.phase, e.msg);

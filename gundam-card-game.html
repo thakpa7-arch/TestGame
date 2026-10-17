@@ -4231,8 +4231,8 @@ function parseClause(raw){
   if (/rest them/.test(t) && /(of your|friendly)[^.]*?\band 1 (?:active )?enemy unit\b/.test(t)){
     const fPart=t.split(/\band 1 (?:active )?enemy unit\b/)[0];
     const ePart='enemy unit'+(t.split(/\band 1 (?:active )?enemy unit\b/)[1]||'');
-    const eLv=(ePart.match(/lv\.?(\d+) or lower/)||[])[1];
-    return { kind:'restBoth', filter:friendlyFilter(fPart), enemyFilter:{ maxLv: eLv?+eLv:99 }, may: /\bmay choose 1\b/.test(fPart) };   // Kudelia & Isaribi: "you may choose …"
+    const eLv=(ePart.match(/lv\.?(\d+) or lower/)||[])[1], eHp=(ePart.match(/with (\d+) or less hp/)||[])[1];   // "1 enemy Unit with 3 or less HP"
+    return { kind:'restBoth', filter:friendlyFilter(fPart), enemyFilter:Object.assign({ maxLv: eLv?+eLv:99 }, eHp?{ maxHp:+eHp }:{}), may: /\bmay choose 1\b/.test(fPart) };   // Kudelia & Isaribi: "you may choose …"
   }
   // "Choose 1 to N of your/friendly [trait] Units. They get AP+X during this turn." → buff up to N chosen friendlies.
   if (/1 to (\d+)[^.]*?(?:of your|friendly)[^.]*?units?/.test(t) && (d=t.match(/(?:they get|it gets)\s*ap\s*\+\s*(\d+)/))){
@@ -4609,7 +4609,7 @@ function grantDmgGuard(target, act, side, label, cls, srcName){
   const g0 = act.guard || { amount:act.amount||0, prevent:(act.amount||0)>=99, battle:(act.amount||0)>=99, enemy:true, next:false, dur:'turn' };
   const g = Object.assign({}, g0, { turnSeq:G.turnSeq, src:srcName||'' });
   if (g.exAmount && side && side.lastExUsed>0) g.amount=g.exAmount;                                       // "reduce by 4 instead"
-  if (g.alt && side && (side.resMax||0)>=g.alt.minLevel) g.maxAp=g.alt.maxAp;                             // "If you are Lv.7 or higher … instead"
+  if (g.alt && side && totalRes(side)>=g.alt.minLevel) g.maxAp=g.alt.maxAp;                             // "If you are Lv.7 or higher … instead"
   delete g.alt; delete g.exAmount;
   if (g.dur==='battle' && !G.curBattle && !G.curAttack){
     log(`${label}: <b>${srcName||''}</b> — no battle is in progress, so "during this battle" has no effect.`, cls); return; }
@@ -5137,7 +5137,7 @@ function condMet(cond, side, source, other){
     case 'yourTurn':       return G.turn===side.who;
     case 'oppTurn':        return G.turn!==side.who;
     case 'noFoeAttackThisTurn': return foe.attackDeclTurn!==G.turnSeq;
-    case 'level':          return (side.resMax||0) >= cond.min;
+    case 'level':          return totalRes(side) >= cond.min;   // your Lv. is every Resource you have, EX Resources too (2-9-4)
     case 'enemyUnits':     return foe.field.length >= cond.min;
     case 'enemyUnitsMax':  return foe.field.length <= cond.max;
     case 'enemyShields':   return foe.shields.length >= cond.min;
