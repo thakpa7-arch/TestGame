@@ -302,7 +302,8 @@ fresh(); { const u=stick('player',2,2); const h=G.player.hand.length; const p=ca
 fresh(); { const o=stick('player',2,2,{trait:'(Orb)'}); o.link=['Kira Yamato']; const h=G.player.hand.length; A.attachPilot(o, card('GD05-081','player'), ()=>{}); drainTasks(); const a=G.player.hand.length;
   const z=stick('player',2,2,{trait:'(ZAFT)'}); z.link=['Kira Yamato']; A.attachPilot(z, card('GD05-081','player'), ()=>{}); drainTasks();
   ok('Kira (GD05-081): draws only when linked to an (Orb)/(Triple Ship Alliance) Unit', a===h+1 && G.player.hand.length===h+1, `${h}->${a}->${G.player.hand.length}`); }
-fresh(); { const ag=put('GD05-021','player'); A.applyActivateEffect(ag, null, G.player); const a=A.effAp(ag); A.clearBattleScoped();
+// AGE-2 Double Bullet is used during its attack (a battle is in progress — outside one "during this battle" does nothing)
+fresh(); { const ag=put('GD05-021','player'); G.curAttack=ag; A.applyActivateEffect(ag, null, G.player); const a=A.effAp(ag); A.clearBattleScoped();
   ok('AGE-2 Double Bullet: AP+4 for this battle only', ag.activate.phase==='action' && a===ag.baseAp+4 && A.effAp(ag)===ag.baseAp, `${a} then ${A.effAp(ag)}`); }
 fresh(); { const sp=card('GD05-118','player'); const e=stick('enemy',4,4); G.player.resMax=0; G.player.ex=1; G.player.resAvail=1; A.payCost(G.player,1);
   A.applyToTarget(sp, G.player, sp.action, e, 'T'); ok('Incendiary Spark: paid with an EX Resource it also rests the target', A.effAp(e)===2 && e.rested===true); }
