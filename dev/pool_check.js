@@ -262,11 +262,12 @@ fresh('enemy'); { const gg=put('GD05-034','enemy'); gg.pilot={pAp:0,pHp:0}; cons
 fresh(); { const gg=put('GD05-034','player'); gg.pilot={pAp:0,pHp:0}; const pp=card(A.GUNDAM_CARDS.find(d=>d.type==='unit'&&/\(Phantom Pain\)/.test(d.trait||'')&&d.lv<=4).id,'player'); G.player.hand.push(pp);
   G.enemy.hand=[card('ST01-003','enemy')]; A.strikePlayer(gg, G.enemy, ()=>{}); drainTasks();
   ok('Gaia: the AI discards a cheap card to stop the deploy', G.enemy.hand.length===0 && !G.player.field.includes(pp) && G.enemy.discardedTurn===G.turnSeq); }
-// GD05-089 Master Asia — with 3+ (MF) cards in the trash it may be deployed as an AP3/HP3 Unit; leaving play it is a Pilot again
-fresh(); { const s=G.player; const ma=card('GD05-089','player'); s.hand.push(ma); for(let i=0;i<3;i++){ const m=card('GD05-069','player'); s.trash.push(m); }
-  A.playFromHand(ma.uid, true); const opened=el('blockModal').classList.contains('show') && el('blockBtns').children.length===2;
+// GD05-089 Master Asia — its 【Burst】: with 3+ (MF) cards in the trash it may be deployed as an AP3/HP3 Unit instead of going to hand;
+// leaving play it is a Pilot again. (From hand it is only played as a Pilot — the Unit option is part of the 【Burst】 sentence.)
+fresh(); { const s=G.player; const ma=card('GD05-089','player'); for(let i=0;i<3;i++){ const m=card('GD05-069','player'); s.trash.push(m); }
+  A.triggerBurst(ma, s, ()=>{}, true); drainTasks(); const opened=el('blockModal').classList.contains('show') && el('blockBtns').children.length===2;
   if (opened) el('blockBtns').children[1].onclick(); drainTasks();
-  ok('Master Asia offers Pilot / Unit and deploys as an AP3/HP3 Unit', opened && s.field.includes(ma) && ma.type==='unit' && A.effAp(ma)===3 && ma.hp===3, `opened=${opened} type=${ma.type}`);
+  ok('Master Asia Burst offers hand / Unit and deploys as an AP3/HP3 Unit', opened && s.field.includes(ma) && ma.type==='unit' && A.effAp(ma)===3 && ma.hp===3, `opened=${opened} type=${ma.type}`);
   const e=stick('enemy',5,5); A.applyToTarget(e, G.enemy, {kind:'damage', amount:3}, ma, 'T');
   ok('…and goes to the trash as a Pilot card', s.trash.includes(ma) && ma.type==='pilot'); }
 fresh(); { const host=stick('player',3,3,{linked:true}); host.pilot={pAp:2,pHp:2}; host.pilotCard=card('GD05-089','player'); const e=stick('enemy',1,4);
