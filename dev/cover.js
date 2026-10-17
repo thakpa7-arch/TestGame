@@ -28,7 +28,8 @@ for (const def of src){
   let c; try { c = A.makeCard(def,'player'); } catch(e){ (dead['CRASH']=dead['CRASH']||[]).push(def.id+' '+def.name+': '+e.message); continue; }
   cards++;
   const txt = plainTxt(def.effect); if (!txt || txt==='-') continue;
-  for (const raw of (txt.match(/【[^】]+】/g)||[])){
+  // A bracket named inside a sentence ("an enemy Unit with a 【Destroyed】 effect" — Bertigo) is not a clause of this card.
+  for (const raw of (txt.replace(/\b(with an?|has an?|have an?|without an?)\s*【[^】]*】(\s*effects?)/gi,'$1 [ref]$2').match(/【[^】]+】/g)||[])){
     const name = raw.replace(/[【】]/g,'').trim(); const base = name.split(/[･··・]/)[0].trim(); clauses++;
     let ok=false;
     if (/^Pilot$/.test(base)) ok = !!c.pilotMode;
