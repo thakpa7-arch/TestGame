@@ -1911,18 +1911,41 @@ function hasKeyword(effect, kw){ return new RegExp('<\\s*'+kw, 'i').test(stripTo
 // merely gain a keyword conditionally aren't treated as having it permanently.
 // Text outside the 【During Pair/Link】 lines: a keyword printed in "【During Link】This Unit gets AP+2 and <Repair 1>." (Asshimar)
 // is granted by the gate, not printed on the card.
+// The card's continuous text: the lines that are not triggered/activated abilities — un-bracketed lines and 【During Pair/Link】 lines
+// (a line opening 【Deploy】/【Attack】/【Activate･Main】/【When Paired】/【Burst】… is a one-shot effect, never a standing aura).
+function continuousText(effect){
+  const raw = String(effect||'');
+  if (!/<br\s*\/?>|\n/i.test(raw)) return plain(raw).split(/(?=【)/).filter(seg=>!/^【/.test(seg) || /^【\s*During\s*(?:Pair|Link)/i.test(seg)).join(' ');
+  return raw.split(/<br\s*\/?>|\n/i).filter(l=>{ const p=plain(l); return !/^【/.test(p) || /^【\s*During\s*(?:Pair|Link)/i.test(p); }).join('<br>');
+}
 function ungatedText(effect){ return String(effect||'').split(/<br\s*\/?>|\n/i).filter(l=>!/^\s*【\s*During\s*(?:Pair|Link)/i.test(plain(l))).join('<br>'); }
+// A printed keyword OPENS its sentence: at the start of the text, after a "." / reminder ")" / a 【…】 bracket ("【Activate･Main】
+// <Support 2>"), or after other printed keywords ("<Repair 1> <Blocker>"). A keyword written anywhere else is named by the text —
+// a target or condition ("enemy Unit with <Blocker>", "can't activate <Blocker>", "Choose 1 Unit card with <Repair>/<Breach>…")
+// or a grant ("gains <Blocker>", "gets AP+1 and <Repair 1>", "all Units gain <Blocker>") — and is not the card's own.
+function kwOpensSentence(p, idx){
+  const before = p.slice(0, idx); let i = before.length - 1;
+  for (;;){
+    while (i >= 0 && /\s/.test(before[i])) i--;
+    if (i < 0) return true;
+    const ch = before[i];
+    if (ch === '.' || ch === ')' || ch === '】') return true;
+    if (ch === '>'){ const lt = before.lastIndexOf('<', i); if (lt < 0) return false; i = lt - 1; continue; }   // skip a preceding keyword
+    return false;
+  }
+}
 function innateKeyword(effect, kw){
-  const p = stripTokenSpecs(plain(ungatedText(effect))); const re = new RegExp('(gains?\\s+)?<\\s*'+kw, 'ig'); let m, innate=false;
-  while ((m=re.exec(p))){ if (!m[1]) innate=true; }
-  return innate;
+  const p = stripTokenSpecs(plain(ungatedText(effect))); const re = new RegExp('<\\s*'+kw, 'ig'); let m;
+  while ((m=re.exec(p))){ if (kwOpensSentence(p, m.index)) return true; }
+  return false;
 }
 // A keyword the Unit gains specifically while a Pilot is paired (the case we can model).
 function pairGrantsKeyword(effect, kw){
   // Only a continuous 【During Pair】 "...gains <kw>" grants the keyword while paired. A one-time
   // 【When Paired】/【When Linked】 trigger ("...gains <kw> during this turn") elsewhere in the text
   // must NOT leak a permanent grant onto every pairing (and "repair" must not match "pair").
-  return clauseGrantsKeyword(effect, kw, 'During Pair');
+  // A "【During Pair】While …, this Unit gains <kw>" grant is conditional: condKeyword checks it live instead.
+  return clauseGrantsKeyword(effect, kw, 'During Pair', null, true);
 }
 function repairAmount(effect){ return innateKwAmount(effect, 'repair'); }
 // Amount for a keyword the card PRINTS innately. A "gains <Kw N>" occurrence is a granted
@@ -1930,9 +1953,9 @@ function repairAmount(effect){ return innateKwAmount(effect, 'repair'); }
 // 【During Pair/Link】 gate — and must never leak onto this card as a permanent stat.
 function innateKwAmount(effect, kw){
   const p = stripTokenSpecs(plain(ungatedText(effect)));
-  const re = new RegExp('(gains?\\s+)?<\\s*'+kw+'\\s*(\\d+)', 'ig');
+  const re = new RegExp('<\\s*'+kw+'\\s*(\\d+)', 'ig');
   let m, amt = 0;
-  while ((m = re.exec(p))){ if (!m[1]) amt = Math.max(amt, +m[2]); }
+  while ((m = re.exec(p))){ if (kwOpensSentence(p, m.index)) amt = Math.max(amt, +m[1]); }
   return amt;
 }
 function breachAmount(effect){ return innateKwAmount(effect, 'breach'); }
@@ -1952,16 +1975,41 @@ function staticSelfBuff(effect, kw){
   const per = t.match(/ap\+(\d+) for each of your (rested )?\(?([a-z0-9\/ \-]+?)\)?\s*units?/);
   if (per) return { ap:0, hp:0, apPer:{ amount:+per[1], rested:!!per[2], trait:per[3].trim().replace(/[()]/g,'') } };
   const ap=(t.match(/ap\+(\d+)/)||[])[1], hp=(t.match(/hp\+(\d+)/)||[])[1];
-  return reqTrait ? { ap:+(ap||0), hp:+(hp||0), reqTrait } : { ap:+(ap||0), hp:+(hp||0) };
+  const out = reqTrait ? { ap:+(ap||0), hp:+(hp||0), reqTrait } : { ap:+(ap||0), hp:+(hp||0) };
+  // "【During Link】This Unit gets AP+2 during your turn." (Landman Rodi GD05-065): the AP bonus is on only during that turn.
+  const self = (t.match(/(?:during your (?:opponent'?s )?turn,\s*)?this unit gets [^.]*/)||[''])[0];
+  if (/during your opponent'?s turn/.test(self)) out.apTurn='opp'; else if (/during your turn/.test(self)) out.apTurn='your';
+  return out;
 }
 // Keywords a Unit gains under a 【During …】 clause (e.g. "gains <High-Maneuver>").
 // A gated clause opening "If this is an (T) Unit, …" (a Pilot's text) applies only to a Unit with that trait.
+// A clause opening "(During your turn,) While <cond>, …" (Gundam AGE-1 Spallow GD02-023: "【During Link】While you are Lv.7 or higher, this
+// Unit gains <First Strike>.") is on only while the condition holds for the Unit's controller.
 function clauseCondOk(u, clauseText){
-  const m=String(clauseText||'').match(/^\s*if this is an?\s*\(([^)]+)\)\s*unit\b/i);
-  return !m || !u || hasTraitT(u, m[1].trim().toLowerCase());
+  const txt=String(clauseText||'');
+  const m=txt.match(/^\s*if this is an?\s*\(([^)]+)\)\s*unit\b/i);
+  if (m && u && !hasTraitT(u, m[1].trim().toLowerCase())) return false;
+  const w=txt.match(/^\s*(during your (?:opponent'?s )?turn,\s*)?while (.+?),\s*(?:this unit|it)\b/i);
+  if (w && u && G.player && G.enemy){
+    const side=u.owner==='player'?G.player:G.enemy;
+    if (w[1] && (/opponent/i.test(w[1]) ? G.turn===side.who : G.turn!==side.who)) return false;
+    const cond=parseCondition(w[2]);
+    if (cond){
+      // "While this Unit has <Repair>, it gains <High-Maneuver>." — reading the Unit's keywords comes back here: a clause can't hold
+      // up its own condition, so a re-entrant check is off.
+      const busy = clauseCondOk.busy || (clauseCondOk.busy = new Set()), key = u.uid+'|'+txt;
+      if (busy.has(key)) return false;
+      busy.add(key);
+      try { if (!condMet(cond, side, u)) return false; } finally { busy.delete(key); }
+    }
+  }
+  return true;
 }
-function clauseGrantsKeyword(effect, kw, clauseKw, u){
+// `fixedOnly`: only an unconditional grant (a "While …," clause is left to the live condKeyword check, so a flag set on pairing
+// can't outlast its condition).
+function clauseGrantsKeyword(effect, kw, clauseKw, u, fixedOnly){
   const m = plain(effect).match(new RegExp('【\\s*'+clauseKw+'[^】]*】\\s*([^【]*)','i'));
+  if (m && fixedOnly && /^\s*(?:during your (?:opponent'?s )?turn,\s*)?while\b/i.test(m[1])) return false;
   return !!m && clauseCondOk(u, m[1]) && new RegExp('(?:gains?|\\band)\\s+<\\s*'+kw, 'i').test(m[1]);
 }
 // Does a Unit have a keyword from a PERSISTENT source (printed innately, or a continuous
@@ -1969,8 +2017,8 @@ function clauseGrantsKeyword(effect, kw, clauseKw, u){
 // (e.g. Char's 【Attack】 High-Maneuver) at turn boundaries without dropping continuous ones.
 function persistentKeyword(u, kw){
   if (innateKeyword(u.effect, kw)) return true;
-  if (duringPairMet(u) && clauseGrantsKeyword(u.effect, kw, 'During Pair')) return true;
-  if (u.linked && clauseGrantsKeyword(u.effect, kw, 'During Link')) return true;
+  if (duringPairMet(u) && clauseGrantsKeyword(u.effect, kw, 'During Pair', u)) return true;
+  if (u.linked && clauseGrantsKeyword(u.effect, kw, 'During Link', u)) return true;
   if (condKeyword(u, kw)) return true;
   return false;
 }
@@ -1978,7 +2026,7 @@ function persistentKeyword(u, kw){
 function resetTurnKeywords(u){
   u.highManeuver = persistentKeyword(u, 'high');
   u.firstStrike  = persistentKeyword(u, 'first');
-  u.tempBlocker = false; u.tempSuppression = false; u.tempBreach = 0; u.tempRepair = 0;
+  u.tempBlocker = false; u.tempSuppression = false; u.tempBreach = 0; u.tempRepair = 0; u.tempSupport = 0;
 }
 // A continuous team aura printed under 【During Pair】/【During Link】: "(During your turn,)
 // all your Units get AP+N (and HP+N)." (e.g. Gundam + Amuro). Applies while the source Unit
@@ -2057,10 +2105,18 @@ function parseActivateEffect(t){
   if (/enemy base\s*\/\s*enemy shield/.test(t) && (d=t.match(/deal (\d+) damage/)))
     return { kind:'baseShieldDamage', amount:+d[1], scope:'self' };
   if ((d=t.match(/^this unit gets ap\s*\+\s*(\d+) during this battle/))) return { kind:'selfBattleBuff', amount:+d[1], scope:'self' };   // AGE-2 Double Bullet
-  if ((d=t.match(/^this unit gets ap\s*\+\s*(\d+) during this turn\.?$/))) return { kind:'selfbuff', amount:+d[1], scope:'self' };   // ∀ Gundam GD04-073 — this Unit, not a chosen one
+  if ((d=t.match(/^this unit gets ap\s*\+\s*(\d+) during this turn\.?$/))) return { kind:'selfbuff', amount:+d[1], scope:'self' };
+  // "Choose 1 Unit card with <Repair>/<Breach>/…/<Blocker> from any player's trash. During this turn, this Unit gets AP+1 and all
+  // <Repair>/<Breach>/… on that Unit card." (∀ Gundam GD04-067) — this Unit is buffed; the trash card only lends its keywords.
+  if ((d=t.match(/^choose 1 unit card with ((?:<[^>]+>\s*\/?\s*)+) from any player'?s trash\.\s*during this turn, this unit gets ap\s*\+\s*(\d+) and all\s*(?:<[^>]+>\s*\/?\s*)+on that unit card/)))
+    return { kind:'copyTrashKw', amount:+d[2], kws:[...d[1].matchAll(/<\s*([a-z\- ]+?)\s*>/g)].map(x=>g4KwKey(x[1])).filter(Boolean), scope:'self' };   // ∀ Gundam GD04-073 — this Unit, not a chosen one
   if (/set this unit as active/.test(t))                    return { kind:'setActive', scope:'self', noDirectTurn:/can'?t choose the enemy player[^.]*as its attack target/.test(t), noAttack:/it can'?t attack during this turn/.test(t) };
   // "Choose 1 friendly Unit… Set it as active." — re-ready one of your Units (often a Blocker).
-  if (/set it as active/.test(t) && /(friendly|of your)[^.]*unit/.test(t)) return { kind:'setActive', scope:'friendly' };
+  // The chosen Unit's restrictions are kept ("1 of your rested white Units with <Blocker>", Strike Rouge GD01-069; "1 friendly Unit
+  // with <Blocker>", Archangel ST04-015), and so is "It can't attack during this turn."
+  if (/set it as active/.test(t) && /(friendly|of your)[^.]*unit/.test(t)){
+    const f = friendlyFilter(t); if (f.kw==='blocker'){ delete f.kw; f.blocker = true; }
+    return { kind:'setActive', scope:'friendly', filter: Object.keys(f).length ? f : null, noAttack:/it can'?t attack during this turn/.test(t) }; }
   // "Deploy N […] Unit token(s)" — put parsed token(s) onto your field.
   if (/deploy \d+ (?:rested )?\[/i.test(t)){
     const specs=parseTokenSpecs(raw);
@@ -2080,8 +2136,10 @@ function parseActivateEffect(t){
   if ((d=t.match(/deal (\d+) damage/)) && /enemy/.test(t))   return { kind:'damage', amount:+d[1], scope:'enemy', filter:targetFilter(t) };
   if ((d=t.match(/ap\s*\+\s*(\d+)/))){
     const all = /all (your |friendly )|all of your|1 to \d+ friendly/.test(t);
-    // Keep any target restriction (e.g. Isaribi's "Choose 1 of your damaged Units").
-    return buffRiders(t, { kind:'buff', amount:+d[1], scope: all?'all-friendly':'friendly', filter:friendlyFilter(t) });
+    // Keep any target restriction (e.g. Isaribi's "Choose 1 of your damaged Units"); "all your (Ghingnham Fleet) Units" (Aspite
+    // GD06-124) restricts the team buff as "all friendly Link Units" (Earth House ST01-016) does.
+    const ff = friendlyFilter(all ? t.replace(/\ball (?:of )?your\b/, 'of your') : t);
+    return buffRiders(t, { kind:'buff', amount:+d[1], scope: all?'all-friendly':'friendly', filter:ff });
   }
   // Damage-shield: "…when it/this Unit receives enemy damage, reduce it by N (this turn/battle)."
   if ((d=t.match(/receives?\s+enemy\s+(?:battle\s+)?damage,?\s*reduce it by (\d+)/))){
@@ -2239,6 +2297,10 @@ function handReduction(side, c){
     const n = side.field.filter(u=>(u.trait||'').toLowerCase().includes('('+hr.perTrait+')')).length;
     return { cost: n, lv: n };
   }
+  if (hr.perEnemyUnit){   // "…gets Lv.-1 and cost -1 for each enemy Unit in play" (Ξ Gundam)
+    const foe = side===G.player ? G.enemy : G.player, n = foe ? foe.field.filter(u=>u.type==='unit' && u.hp>0).length : 0;
+    return { cost: (hr.cost||0)*n, lv: (hr.lv||0)*n };
+  }
   return { cost: hr.cost||0, lv: hr.lv||0 };
 }
 // "When playing this card from your hand, if <cond>, play it as if it has N Lv. and cost." / "…, you may discard 1 (T) Unit card. If
@@ -2365,6 +2427,9 @@ function buffRiders(t, b){
   const th=t.match(/then, if you have (\d+) or (?:less|fewer) cards in your hand, draw (\d+)/);
   if (th) b.then = { kind:'cond', cond:{ type:'handMax', max:+th[1] }, inner:{ kind:'draw', amount:+th[2] } };
   if (/if you increase a link unit'?s ap with this effect, set this unit as active/.test(t)) b.readySrcIfLink=true;   // Galluss J
+  // "It gets AP+1 and <Repair 2> during this turn." (Stero's Mahiroo GD06-026): the chosen Unit also gains the keyword for the turn.
+  const kr=t.match(/ap\s*\+\s*\d+ and <\s*([a-z\- ]+?)\s*(\d+)?\s*> during this turn/);
+  if (kr && KW_OF(kr[1])) b.kwRider = { kw:KW_OF(kr[1]), amount: kr[2]?+kr[2]:0 };
   return b;
 }
 // "Choose 1 (Gundam Team) Unit card that is Lv.2 or lower from your trash" → "(gundam team) unit lv.2 or lower".
@@ -4189,8 +4254,9 @@ function grantKeyword(u, kw, amount){
   else if (kw==='suppression') u.tempSuppression=true;
   else if (kw==='breach') u.tempBreach=(u.tempBreach||0) + (amount||1);
   else if (kw==='repair') u.tempRepair=(u.tempRepair||0) + (amount||1);
+  else if (kw==='support') u.tempSupport=(u.tempSupport||0) + (amount||1);
 }
-function kwLabel(kw){ return {first:'First Strike',high:'High-Maneuver',blocker:'Blocker',suppression:'Suppression',breach:'Breach',repair:'Repair'}[kw]||kw; }
+function kwLabel(kw){ return {first:'First Strike',high:'High-Maneuver',blocker:'Blocker',suppression:'Suppression',breach:'Breach',repair:'Repair',support:'Support'}[kw]||kw; }
 // Extract single-target restrictions from an effect clause (Lv./AP/HP caps, lowest HP, rested/active).
 function targetFilter(t){
   const f={}; let m;
@@ -4366,6 +4432,7 @@ function applyToTarget(card, side, act, target, label){
               : (act.kwAlt && targetHasKw(target, act.kwAlt.kw)) ? act.kwAlt.amount   // "If it has <High-Maneuver>, AP-6 instead."
               : act.amount; if (!apReduceBlocked(target, foe)){ if(act.dur==='battle'){ target.battleAp=(target.battleAp||0)-amt; } else { target.tempAp=(target.tempAp||0)-amt; } target.ap=effAp(target); log(`${label}: <b>${target.name}</b> gets AP-${amt} this ${act.dur==='battle'?'battle':'turn'}.`,cls); if (amt>0 && foe.field.includes(target)) apReducedHook(target, foe); } }
   else if (act.kind==='buff'){ if (act.dur==='battle') target.battleAp=(target.battleAp||0)+act.amount; else target.tempAp=(target.tempAp||0)+act.amount; target.ap=effAp(target); log(`${label}: <b>${target.name}</b> gets AP+${act.amount} ${act.dur==='battle'?'during this battle':'this turn'}.`,cls);
+    if (act.kwRider){ grantKeyword(target, act.kwRider.kw, act.kwRider.amount); log(`${label}: <b>${target.name}</b> gains &lt;${kwLabel(act.kwRider.kw)}${act.kwRider.amount?' '+act.kwRider.amount:''}&gt; this turn.`, cls); }
     // "If you increase a Link Unit's AP with this effect, set this Unit as active." (Galluss J)
     if (act.readySrcIfLink && target.linked && card.type==='unit' && side.field.includes(card) && card.rested && effReady(card, side)) log(`${label}: <b>${name}</b> is set active (a Link Unit's AP was increased).`,cls);
     if (act.then) runTrigger(card, side, act.then, label); }
@@ -4504,7 +4571,7 @@ function parseCondition(t){
   if ((m=t.match(/you have (?:a|an|another)\s+([a-z\/() ]*?)\s*link unit/))) return { type:'linkUnit', trait:(m[1]||'').replace(/[()]/g,'').trim()||null };
   if (/friendly\s+[a-z\/() ]*?link unit (?:is|are) in play/.test(t)){ const tm=t.match(/friendly\s+([a-z\/() ]*?)\s*link unit/); return { type:'linkUnit', trait:tm?((tm[1]||'').replace(/[()]/g,'').trim()||null):null }; }
   if ((m=t.match(/(?:a|an|another)\s+friendly\s+([a-z\/() ]*?)\s*unit (?:is|are) in play/))) return { type:'friendlyUnit', min:1, trait:(m[1]||'').replace(/[()]/g,'').trim()||null, other:/\banother\b/.test(m[0]) };
-  if ((m=t.match(/(\d+) or more (?:friendly )?([a-z\/() ]*?)\s*units?(?: are)? in play/))) return { type:'friendlyUnit', min:+m[1], trait:(m[2]||'').replace(/[()]/g,'').trim()||null };
+  if ((m=t.match(/(\d+) or more (?:friendly )?([a-z\/() \-]*?)\s*units?(?: are)? in play/))) return { type:'friendlyUnit', min:+m[1], trait:(m[2]||'').replace(/[()]/g,'').trim()||null };   // ("(Long-Range Weapon)", Aspite GD06-124)
   if ((m=t.match(/you have (\d+) or more ([a-z\/() ]*?)\s*units?/))) return { type:'friendlyUnit', min:+m[1], trait:(m[2]||'').replace(/[()]/g,'').trim()||null };
   // "another (UN)/(Superpower Bloc) Unit" keeps both traits — traitMatchUnit reads "un/superpower bloc" as either (Alvatore GD04-080).
   if ((m=t.match(/you have (?:another|an|a)\s+([a-z\/() ]*?)\s*units?\s+in play/))){ let tr=(m[1]||'').replace(/[()]/g,'').replace(/\s*\/\s*/g,'/').trim(); if(tr.includes('/') && !/^\s*\([^)]+\)(?:\s*\/\s*\([^)]+\))+\s*$/.test(m[1])) tr=null; return { type:'friendlyUnit', min:1, trait:tr||null, other:/you have another/.test(t) }; }   // "(G Team)/(Preventer)" = either trait (traitMatchUnit)
@@ -4516,7 +4583,7 @@ function parseCondition(t){
   if ((m=t.match(/this unit has (\d+) hp\b/)) || (m=t.match(/this unit has (\d+) or less hp/))) return { type:'selfHpMax', max:+m[1] };
   if (/this unit is rested/.test(t)) return { type:'selfRested' };
   if (/a rested enemy unit is in play/.test(t)) return { type:'enemyRested' };
-  if (/(?:a|your) friendly base is in play|you have a base in play/.test(t)) return { type:'friendlyBase' };
+  if (/(?:a|your) friendly base (?:is )?in play|you have a base in play/.test(t)) return { type:'friendlyBase' };   // (Freedom Gundam ST09-004 is printed without "is")
   if (/you have (?:a|an) unit token in play/.test(t)) return { type:'friendlyToken' };
   if ((m=t.match(/(?:an |the )?enemy player has (\d+) or more cards in their trash/))) return { type:'enemyTrash', min:+m[1] };
   if ((m=t.match(/you have no units? that (?:is|are) lv\.?\s*(\d+) or higher in play/))) return { type:'noFriendlyLv', min:+m[1] };
@@ -4530,6 +4597,8 @@ function parseCondition(t){
   if ((m=t.match(/^a friendly (blue|white|red|green|purple) base is in play$/))) return { type:'friendlyBaseColor', color:m[1] };
   if ((m=t.match(/^a friendly \(([^)]+)\) base is in play$/))) return { type:'friendlyBaseTrait', trait:m[1].trim() };
   if ((m=t.match(/^a friendly unit with <\s*([a-z\- ]+?)\s*> is in play$/))) return { type:'friendlyKw', kw:KW_OF(m[1]) };
+  if ((m=t.match(/^a friendly\s*\(([^)]+)\)\s*unit with <\s*([a-z\- ]+?)\s*> is in play$/))) return { type:'friendlyKw', kw:KW_OF(m[2]), trait:m[1].trim().toLowerCase() };   // Pale Rider (Ground Heavy Equipment Type) EB01-049
+  if ((m=t.match(/^an enemy unit that is lv\.?\s*(\d+) or higher is in play$/))) return { type:'enemyUnitMinLv', min:+m[1] };          // Altron Gundam (EW) GD06-064
   if (/^you have no ex resources?$/.test(t)) return { type:'noEx' };
   if (/^you have any shields in play$/.test(t)) return { type:'anyShields' };
   if ((m=t.match(/^there is a player with (\d+) or (?:less|fewer) shields$/))) return { type:'anyPlayerShieldsMax', max:+m[1] };
@@ -4612,7 +4681,8 @@ function condMet(cond, side, source, other){
     case 'effectDrew':      return side.effectDrawTurn === G.turnSeq;
     case 'selfColor':  return !!(source && String(source.color||'').toLowerCase()===cond.color);
     case 'selfTrait':  return !!(source && (source.trait||'').toLowerCase().includes('('+cond.trait+')'));
-    case 'friendlyKw': return side.field.some(x=>x!==source && x.hp>0 && condMet({type:'selfHasKw', kw:cond.kw}, side, x));
+    case 'friendlyKw': return side.field.some(x=>x!==source && x.hp>0 && (!cond.trait || hasTraitT(x, cond.trait)) && condMet({type:'selfHasKw', kw:cond.kw}, side, x));
+    case 'enemyUnitMinLv': return foe.field.some(u=>u.hp>0 && (u.lv||0)>=cond.min);
     case 'friendlyBaseColor': return !!(side.base && !side.base.token && String(side.base.color||'').toLowerCase()===cond.color);
     case 'noEnemyBase': return !foe.base;
     case 'restedUnitsOther': return [...side.field, ...foe.field].filter(x=>x!==source && x.rested && x.hp>0).length >= cond.min;
@@ -4633,7 +4703,7 @@ function condMet(cond, side, source, other){
     case 'selfHpMax':      return !!(source && source.hp <= cond.max);
     case 'selfRested':     return !!(source && source.rested);
     case 'enemyRested':    return foe.field.some(u=>u.rested && u.hp>0);
-    case 'friendlyBase':   return !!(side.base && !side.base.token);
+    case 'friendlyBase':   return !!(side.base && side.base.hp>0);   // an EX Base is a Base too (Freedom Gundam ST09-004, Gundam Hajiroboshi GD03-068)
     case 'friendlyToken':  return side.field.some(u=>u.token && u.hp>0);
     case 'enemyTrash':     return foe.trash.length >= cond.min;
     case 'noFriendlyLv':   return !side.field.some(u=>(u.lv||0) >= cond.min);
@@ -6725,8 +6795,9 @@ function returnToHand(u, owner){
 }
 // Refresh trash-conditional stats for a side (after any trash-size change).
 function refreshTrashStats(side){
-  for (const u of side.field){ if (u.trashBuff || u.trashKeyword) u.ap = effAp(u); }
-  if (side.base && (side.base.trashBuff || side.base.trashKeyword)) side.base.ap = effAp(side.base);
+  const dyn = x => x.trashBuff || x.trashKeyword || (x.whileBuff && x.whileBuff.length);
+  for (const u of side.field){ if (dyn(u)) u.ap = effAp(u); }
+  if (side.base && dyn(side.base)) side.base.ap = effAp(side.base);
 }
 // Send a card to the trash zone (tokens are simply removed with no trash entry).
 function sendToTrash(card, side){
@@ -6799,22 +6870,27 @@ function parseWhileSentences(effect){
   const wk=[], wb=[]; let hr=null, tr=null;
   // A sentence also ends after a reminder: "<Blocker> (Rest this Unit … to it.) While …" (Hyaku-Shiki GD02-072).
   for (const sent of ungated.replace(/\bLv\.\s*/gi,'Lv ').split(/(?<=\.\)?)\s+/)){
-    const m = sent.match(/^(?:during your turn,\s*)?(?:while|if) (.+?),\s*(this unit|it|this|this card in your hand|this card in your trash) (gains?|gets)\s*(.+)$/i);
+    const m = sent.match(/^(?:(during your (?:opponent'?s )?turn),\s*)?(?:while|if) (.+?),\s*(this unit|it|this|this card in your hand|this card in your trash) (gains?|gets)\s*(.+)$/i);
     if (!m) continue;
-    const cond = parseCondition(m[1].toLowerCase()); if (!cond) continue;
-    const rest = m[4].toLowerCase();
+    let cond = parseCondition(m[2].toLowerCase()); if (!cond) continue;
+    // "During your turn, while …" (Gundam Kyrios ST07-007): the ability is on only during its controller's (opponent's) turn.
+    if (m[1]) cond = { type:'and', conds:[ { type: /opponent/i.test(m[1]) ? 'oppTurn' : 'yourTurn' }, cond ] };
+    const rest = m[5].toLowerCase();
     if (/^<\s*/.test(rest)){
       const km = rest.match(/^<\s*([a-z\- ]+?)\s*(\d+)?\s*>/); if (!km) continue;
       const kw = KW_OF(km[1]);
       if (kw) wk.push({ cond, kw, amount: km[2]?+km[2]:0 });
-    } else if (/this card in your (hand|trash)/i.test(m[2])){
+    } else if (/this card in your (hand|trash)/i.test(m[3])){
       const cm = rest.match(/cost\s*[-−]\s*(\d+)/), lm = rest.match(/lv\.?\s*[-−]\s*(\d+)/);
       const per = rest.match(/for each of your\s*\(([^)]+)\)\s*units?/);
       const red = { cond, cost: cm?+cm[1]:0, lv: lm?+lm[1]:0, perTrait: per?per[1].toLowerCase():null };
-      if (/trash/i.test(m[2])) tr = red; else hr = red;   // "this card in your trash gets Lv.-N and cost -N" (Legend Gundam GD06-050)
+      if (/for each enemy unit in play/.test(rest)) red.perEnemyUnit = true;   // Ξ Gundam ST08-001: "Lv.-1 and cost -1 for each enemy Unit in play"
+      if (/trash/i.test(m[3])) tr = red; else hr = red;   // "this card in your trash gets Lv.-N and cost -N" (Legend Gundam GD06-050)
     } else {
       const am = rest.match(/ap\s*\+\s*(\d+)/), hm = rest.match(/hp\s*\+\s*(\d+)/);
       if (am || hm) wb.push({ cond, ap: am?+am[1]:0, hp: hm?+hm[1]:0 });
+      // "…this Unit gets AP+1 and <Blocker> / <Repair 1>." (M1 Astray GD01-081, Hizack GD03-013): the keyword comes with the same condition.
+      for (const km of rest.matchAll(/\band\s*<\s*([a-z\- ]+?)\s*(\d+)?\s*>/g)){ const kw = KW_OF(km[1]); if (kw) wk.push({ cond, kw, amount: km[2]?+km[2]:0 }); }
     }
   }
   return { wk, wb, hr, tr };
@@ -6831,8 +6907,11 @@ function parseGd06Statics(c, def){
   c.allyKillHeal = akh ? { trait: akh[1].trim().toLowerCase(), amount:+akh[2] } : null;
   // "【During Pair】Enemy Units choose this rested Unit as their attack target if possible when attacking." (Gundam AGE-2 Normal);
   // a Pilot's "【During Link】Enemy Units other than Link Units choose this rested Unit…" (Kayra Su).
-  { const lr = pl0.match(/(【\s*During (Pair|Link)[^】]*】\s*)?enemy units (other than link units )?choose this rested unit as their attack target if possible when attacking/i);
-    c.lureRested = lr ? { gate: lr[2] ? lr[2].toLowerCase() : null, exceptLink: !!lr[3] } : null; }
+  // "【During Pair】While you have another (Superpower Bloc) Unit in play, enemy Units choose this rested Unit…" (Tieren Taozi GD03-074):
+  // the gate and the condition both apply.
+  { const lr = pl0.match(/(【\s*During (Pair|Link)[^】]*】\s*)?(?:while ([^,.【]+),\s*)?enemy units (other than link units )?choose this rested unit as their attack target if possible when attacking/i);
+    const lc = lr && lr[3] ? parseCondition(lr[3]) : null;
+    c.lureRested = lr && !(lr[3] && !lc) ? { gate: lr[2] ? lr[2].toLowerCase() : null, exceptLink: !!lr[4], cond: lc } : null; }
   // 【Once per Turn】"When this Unit activates <Blocker>, set it as active." (Harry Ord, read off the paired Pilot)
   c.unrestOnBlock = /when this unit activates <\s*blocker\s*>,?\s*set it as active/i.test(pl0);
   // 【During Pair】"While your opponent has an EX Resource, this Unit can't receive battle damage from enemy Units that are Lv.N or
@@ -6862,9 +6941,9 @@ function parseGd06Statics(c, def){
   c.onBaseDamage = bd ? { trait: bd[1].trim().toLowerCase(), amount:+bd[2], oncePerTurn:/once per turn/i.test(pl0) } : null;
   parseDamageStatics(c, pl0);
   parseWatcherStatics(c, pl0);
-  parseAuraStatics(c, pl0);
+  parseAuraStatics(c, pl0, continuousText(def.effect));
   // An aura printed under a 【During Pair(･X Pilot)】/【During Link】 gate (Providence Gundam) is on only while the gate is.
-  if (c.boardAura){ const line=String(def.effect||'').split(/<br\s*\/?>|\n/).map(plain).find(l=>/\ball (your|other|friendly)\b[^.]*\bunits\b[^.]*\bget ap\s*\+/i.test(l))||'';
+  if (c.boardAura){ const line=String(continuousText(def.effect)).split(/<br\s*\/?>|\n/).map(plain).find(l=>/\ball (your|other|friendly)\b[^.]*\bunits\b[^.]*\bget ap\s*\+/i.test(l))||'';
     if (/^【\s*During Pair/i.test(line)) c.boardAura.requirePair=true; else if (/^【\s*During Link/i.test(line)) c.boardAura.requireLink=true; }
 }
 // Continuous text on a Pilot card that the paired Unit has (3-3-9-2): Riddhe Marcenas, Chang Wufei, Odelo Henrik, Prospera Mercury.
@@ -6912,13 +6991,17 @@ function preventsLowApBattle(u, foeUnit, side){
   return true;
 }
 // Continuous auras and attack rules read off un-bracketed text.
-function parseAuraStatics(c, pl0){
+function parseAuraStatics(c, pl0, contText){
   const ungated = pl0.split('【')[0]; let m;
-  // "(During your turn,)(while you are Lv.N or higher,) all your / other / friendly [colour] (T) Units (that are Lv.N) get AP+N
-  // (during your opponent's turn)." (Penelope, Darilbalde, Diva, Miorine Rembran & Academy Ship)
-  const ln = pl0.split(/(?<=\.)\s+/).find(x=>/\ball (your|other|friendly)\s*(?:(?:green|blue|red|white|purple)\s*)?\([^)]+\)\s*units(?: that are lv\.?\s*\d+)? get ap\s*\+/i.test(x)) || '';
-  m = ln.match(/(during your turn, )?(?:while you are lv\.?\s*(\d+) or higher, )?all (your|other|friendly)\s*(?:(green|blue|red|white|purple)\s*)?\(([^)]+)\)\s*units(?: that are lv\.?\s*(\d+))? get ap\s*\+\s*(\d+)( during your opponent'?s turn)?/i);
-  c.boardAura = m ? { yourTurn:!!m[1], minLevel:m[2]?+m[2]:null, other:/other/i.test(m[3]), color:m[4]?m[4].toLowerCase():null, trait:m[5].trim().toLowerCase(), lv:m[6]?+m[6]:null, ap:+m[7], oppTurn:!!m[8] } : null;
+  // "(During your turn,)(while you are Lv.N or higher | while there are N or more cards in your trash,) all your / your other / other /
+  // friendly [colour] (T) Units (that are Lv.N) get AP+N (during your opponent's turn)." (Penelope, Darilbalde, Diva, Miorine Rembran &
+  // Academy Ship, Gundam X GD02-053). Read off continuous text only: an 【Activate】/【Attack】/【When Paired】 "all your (T) Units get AP+1
+  // (during this turn)" (Aspite GD06-124, Setsuna F. Seiei ST07-009, Char Aznable ST11-011) is a one-shot effect, not an aura.
+  // A bare "all other (T) Units" names both players' Units (Darilbalde EB01-036, Julieta's Reginlaze GD06-043); "your other" only yours.
+  const auraSrc = plain(contText!=null ? contText : pl0);
+  const ln = auraSrc.split(/(?<=\.)\s+/).find(x=>!/during this (?:turn|battle)/i.test(x) && /\ball (your other|your|other|friendly)\s*(?:(?:green|blue|red|white|purple)\s*)?\([^)]+\)\s*units(?: that are lv\.?\s*\d+)? get ap\s*\+/i.test(x)) || '';
+  m = ln.match(/(during your turn, )?(?:while you are lv\.?\s*(\d+) or higher, |while there are (\d+) or more cards in your trash, )?all (your other|your|other|friendly)\s*(?:(green|blue|red|white|purple)\s*)?\(([^)]+)\)\s*units(?: that are lv\.?\s*(\d+))? get ap\s*\+\s*(\d+)( during your opponent'?s turn)?/i);
+  c.boardAura = m ? { yourTurn:!!m[1], minLevel:m[2]?+m[2]:null, trashMin:m[3]?+m[3]:null, other:/other/i.test(m[4]), bothSides:/^other$/i.test(m[4]), color:m[5]?m[5].toLowerCase():null, trait:m[6].trim().toLowerCase(), lv:m[7]?+m[7]:null, ap:+m[8], oppTurn:!!m[9] } : null;
   // "All friendly Unit tokens get AP+N (during your opponent's turn)." (Cyclops Team)
   m = pl0.match(/all friendly unit tokens get ap\s*\+\s*(\d+)( during your opponent'?s turn)?/i);
   c.tokenAura = m ? { ap:+m[1], oppTurn:!!m[2] } : null;
@@ -7014,10 +7097,20 @@ function apScaleBonus(u, sc){
 function boardAuraBonus(u){
   const side = u.owner==='player' ? G.player : G.enemy; if (!side || u.type!=='unit') return 0;
   let b=0;
-  for (const src of [...side.field, side.base].filter(Boolean)){ const a=src.boardAura; if (!a || src.hp<=0) continue;
-    if (a.yourTurn && G.turn!==side.who) continue; if (a.oppTurn && G.turn===side.who) continue; if (a.other && src===u) continue;
-    if (a.requirePair && !duringPairMet(src)) continue; if (a.requireLink && !src.linked) continue;   // gated aura
-    if (a.minLevel!=null && totalRes(side)<a.minLevel) continue;                       // "while you are Lv.N or higher" (2-9-4)
+  const foe = side===G.player ? G.enemy : G.player;
+  // Aura sources: friendly Units and Base, the Pilot paired with a friendly Unit (Gym Ghingnham GD06-085: 【During Link】 on the Pilot is
+  // checked against its Unit), and an enemy source whose aura names "all other (T) Units" — both players' (Darilbalde).
+  const srcs = [];
+  for (const [sd, mine] of [[side, true], [foe, false]]){ if (!sd) continue;
+    for (const src of [...sd.field, sd.base].filter(Boolean)){
+      if (src.boardAura) srcs.push({ src, a:src.boardAura, sd, mine, host:src, viaPilot:false });
+      if (src.type==='unit' && src.pilotCard && src.pilotCard.boardAura) srcs.push({ src, a:src.pilotCard.boardAura, sd, mine, host:src, viaPilot:true }); } }
+  for (const { src, a, sd, mine, viaPilot } of srcs){ if (src.hp<=0) continue;
+    if (!mine && !a.bothSides) continue;
+    if (a.yourTurn && G.turn!==sd.who) continue; if (a.oppTurn && G.turn===sd.who) continue; if (a.other && src===u) continue;   // the source's controller's turn
+    if (a.requirePair && !(viaPilot ? !!src.pilot : duringPairMet(src))) continue; if (a.requireLink && !src.linked) continue;   // gated aura
+    if (a.minLevel!=null && totalRes(sd)<a.minLevel) continue;                         // "while you are Lv.N or higher" (2-9-4)
+    if (a.trashMin!=null && (sd.trash||[]).length<a.trashMin) continue;                 // "while there are N or more cards in your trash" (Gundam X)
     if (a.color && String(u.color||'').toLowerCase()!==a.color) continue;
     if (!hasTraitT(u, a.trait) || (a.lv!=null && (u.lv||0)!==a.lv)) continue; b+=a.ap; }
   if (u.token) for (const src of [...side.field, side.base].filter(Boolean)){ const a=src.tokenAura; if (a && src.hp>0 && !(a.oppTurn && G.turn===side.who)) b+=a.ap; }   // Cyclops Team
@@ -7117,6 +7210,14 @@ function parseWatcherStatics(c, pl0){
   // (Gundam Exia Repair GD05-050) — see battle().
   m = pl0.match(/when this unit deals battle damage to an enemy unit that is lv\.?\s*(\d+) or lower that has no paired pilot, destroy that enemy unit/i);
   c.battleDestroyLowLv = m ? +m[1] : null;
+  // The same ability with no Pilot clause, any Lv. or a condition: "When this Unit deals battle damage to an enemy Unit, destroy that
+  // enemy Unit." (Gundam Virtue (Trans-Am) GD04-054); "…that is Lv.5 or lower, if you have a (CB) Pilot in play, destroy…" (Gundam
+  // Virtue GD03-052); a Pilot's "【During Link】When this Unit deals battle damage to an enemy Unit that is Lv.5 or lower, destroy that
+  // enemy Unit." (Ennil El GD04-096 — read off the paired Pilot). Applied in battle() next to battleDestroyLowLv.
+  m = !c.battleDestroyLowLv && pl0.match(/(【\s*during (pair|link)[^】]*】\s*)?when this unit deals battle damage to an enemy unit(?: that is lv\.?\s*(\d+) or lower)?,\s*(?:if ([^,.]+),\s*)?destroy that enemy unit/i);
+  { const bc = m && m[4] ? parseCondition(m[4]) : null;
+    if (m && /(?:■|following effect[^.]*[:：])\s*$/.test(pl0.slice(0, m.index))) m = null;   // a granted "■When this Unit…" (Nyaan GD06-094) is not this card's own
+    c.battleDestroy = m && !(m[4] && !bc) ? { gate: m[2] ? m[2].toLowerCase() : null, maxLv: m[3]!=null ? +m[3] : null, cond: bc } : null; }
   // "Count up the number of your Units with "A"/"B" in their card name, plus this Unit. All enemy Units whose Lv. is equal to or
   // lower than that number are deployed rested." (Gundam Aerial Rebuild GD05-026) — see onUnitDeployed.
   m = pl0.match(/count up the number of your units with ((?:["“”'][^"“”']+["“”']\s*\/?\s*)+) in their card names?, plus this unit\. all enemy units whose lv\.? (?:is|are) equal to or lower than that number are deployed rested/i);
@@ -7147,6 +7248,11 @@ function parseDamageStatics(c, pl0){
   // "During your opponent's turn, this Unit can't receive effect damage from enemy Units that are Lv.N or lower." (Gouf Vijayanta)
   m = pl0.match(/during your opponent'?s turn, this unit can'?t receive effect damage from enemy units that are lv\.?\s*(\d+) or lower/i);
   c.noEffDmgFromUnitLv = m ? +m[1] : null;
+  // "Each enemy player's rested Units with the lowest Lv. won't be set as active during the start phase of their turn." (The-O ST14-001)
+  c.noReadyLowestLv = /each enemy player'?s rested units with the lowest lv\.? won'?t be set as active during the start phase of their turn/i.test(pl0);
+  // "During your turn, this Unit can't receive battle damage from enemy Units that are Lv.N or lower." (Forbidden Gundam GD02-006)
+  m = pl0.match(/during your turn, this unit can'?t receive battle damage from enemy units that are lv\.?\s*(\d+) or lower/i);
+  c.yourTurnLowLvGuard = m ? +m[1] : null;
   // "During your turn, while there are N or more cards in your trash, this Unit can't receive effect damage from enemy Commands." (Gundam Leopard)
   m = pl0.match(/during your turn, while there are (\d+) or more cards in your trash, this unit can'?t receive effect damage from enemy commands/i);
   c.noCmdDmgTrash = m ? +m[1] : null;
@@ -7162,6 +7268,10 @@ function parseDamageStatics(c, pl0){
   // 【Once per Turn】"When this Unit receives enemy battle damage, reduce it by N." (Destiny Gundam GD05-055) — battle damage only.
   m = pl0.match(/【\s*once per turn\s*】\s*when this unit receives enemy battle damage,?\s*reduce it by (\d+)/i);
   if (m){ c.onceDmgReduce = +m[1]; c.onceDmgBattleOnly = true; }
+  // "【Once per Turn】During your turn, when one of your other (T) Units receives damage from an enemy, place 1 EX Resource."
+  // (Gundam Pharact GD04-018) — battle or effect damage — see allyDmgExHook.
+  m = pl0.match(/(【\s*once per turn\s*】\s*)?(during your turn,\s*)?when one of your (other )?\(([^)]+)\)\s*units receives damage from an enemy,\s*place (\d+) ex resources?/i);
+  c.allyDmgEx = m ? { once:!!m[1], yourTurn:!!m[2], other:!!m[3], trait:m[4].trim().toLowerCase(), amount:+m[5] } : null;
 }
 // A card's card number, ignoring the alternate-art suffix: "GD01-001-p2" -> "GD01-001". Cards with the same card
 // number are the same card (2-1-1) — for bespoke effects and for the 4-copy deck limit (2-1-2).
@@ -7276,9 +7386,9 @@ function makeCard(def, owner){
     c.activeAttackByAp = !!(aam && /active enemy unit with ap[^.]*?this unit/i.test(aaText));
     c.activeAttackLink = !!(aam && /(when linked|during link)[^.]*may choose an active enemy/i.test(aaText));
     // continuous self AP/HP buffs that switch on while paired / linked
-    const pb = staticSelfBuff(def.effect, 'During Pair'); c.pairAp = pb.ap; c.pairHp = pb.hp; c.pairApPer = pb.apPer||null;
+    const pb = staticSelfBuff(def.effect, 'During Pair'); c.pairAp = pb.ap; c.pairHp = pb.hp; c.pairApPer = pb.apPer||null; c.pairApTurn = pb.apTurn||null;
     c.pairReq = pilotReqOf((plain(def.effect).match(/【\s*During Pair[^】]*】/i)||[''])[0]);   // 【During Pair･X Pilot】
-    const lb = staticSelfBuff(def.effect, 'During Link'); c.linkAp = lb.ap; c.linkHp = lb.hp; c.linkApPer = lb.apPer||null;
+    const lb = staticSelfBuff(def.effect, 'During Link'); c.linkAp = lb.ap; c.linkHp = lb.hp; c.linkApPer = lb.apPer||null; c.linkApTurn = lb.apTurn||null;
     // continuous team aura ("all your Units get AP+N") while paired/linked (e.g. Gundam + Amuro)
     c.teamAura = parseTeamAura(def.effect);
     c.traitAura = parseTraitAura(def.effect);     // 【During Link】"All your Units gain (Trait)"
@@ -7296,6 +7406,12 @@ function makeCard(def, owner){
     c.trashKeyword = parseTrashKeyword(def.effect);
     c.trashCantAttack = parseTrashCantAttack(def.effect);
     c.trashCostReduce = parseTrashCostReduce(def.effect);   // units can carry hand cost-reduction too
+    // One sentence, one bonus: "While there are N or more … cards in your trash, this Unit gets AP+N" / "this card in your hand gets
+    // cost -N" is also read by parseWhileSentences (whileBuff / handReduce, which keep any "During your turn," gate). Keep that one
+    // only, so the bonus isn't counted twice (Michaelis GD01-076, Gundam Aerial GD01-070, Rozen Zulu GD04-039, Zaku Ⅱ F2 GD06-060).
+    { const trashMin = cond => !cond ? null : cond.type==='trash' ? cond.min : cond.type==='and' ? (cond.conds.map(trashMin).find(x=>x!=null) ?? null) : null;
+      if (c.trashBuff && (c.whileBuff||[]).some(w=>trashMin(w.cond)===c.trashBuff.minCount)) c.trashBuff = null;
+      if (c.trashCostReduce && !c.trashCostReduce.variable && c.handReduce && trashMin(c.handReduce.cond)===c.trashCostReduce.minCount) c.trashCostReduce = null; }
     c.pilotCard = null; // set when a pilot is attached; cleared on reset
   } else if (def.type === 'pilot'){
     c.pAp = def.ap; c.pHp = def.hp;
@@ -7972,7 +8088,10 @@ function teamAuraBonus(u, stat){
   return b;
 }
 function effAp(u){
-  let ap = u.baseAp + (u.pilot?u.pilot.pAp:0) + (u.tempAp||0) + (u.battleAp||0) + (duringPairMet(u)?(u.pairAp||0):0) + (u.pilot?(u.pilotPairAp||0):0) + (u.linked?(u.linkAp||0)+(u.pilotLinkAp||0):0);
+  // A 【During Pair/Link】 AP bonus printed "during your turn" / "during your opponent's turn" counts only then (Landman Rodi).
+  const tOk = t => !t || (t==='your' ? G.turn===u.owner : G.turn!==u.owner);
+  let ap = u.baseAp + (u.pilot?u.pilot.pAp:0) + (u.tempAp||0) + (u.battleAp||0) + (duringPairMet(u)&&tOk(u.pairApTurn)?(u.pairAp||0):0) + (u.pilot&&tOk(u.pilotPairApTurn)?(u.pilotPairAp||0):0)
+         + (u.linked?(tOk(u.linkApTurn)?(u.linkAp||0):0)+(tOk(u.pilotLinkApTurn)?(u.pilotLinkAp||0):0):0);
   if (u.trashBuff && u.trashBuff.apBonus > 0 && G.player){
     const side = u.owner==='player' ? G.player : G.enemy;
     if (trashCount(side, u.trashBuff.trait) >= u.trashBuff.minCount) ap += u.trashBuff.apBonus;
@@ -8008,7 +8127,7 @@ function condKeyword(u, kw){
   for (const eff of texts){
     if (!eff) continue;
     if (u.linked && clauseGrantsKeyword(eff, kw, 'During Link', u)) return true;
-    if ((eff===u.effect ? duringPairMet(u) : u.pilot) && clauseGrantsKeyword(eff, kw, 'During Pair')) return true;
+    if ((eff===u.effect ? duringPairMet(u) : u.pilot) && clauseGrantsKeyword(eff, kw, 'During Pair', u)) return true;
     const p = plain(eff);
     if (eff===u.effect && u.whileKw && u.whileKw.some(w=>w.kw===kw && condMet(w.cond, side, u))) return true;
     if (u.pilotCard && eff===u.pilotCard.effect && u.pilotCard.whileKw && u.pilotCard.whileKw.some(w=>w.kw===kw && condMet(w.cond, side, u))) return true;
@@ -8083,7 +8202,7 @@ function effBreach(u){
 function effSupport(u){
   let s = u.support||0;
   if (u.type==='unit' && u.pilotCard) s = Math.max(s, supportAmount(u.pilotCard.srcEffect || u.pilotCard.effect));
-  return s;
+  return s + (u.tempSupport||0);   // a copy gained this turn (∀ Gundam GD04-067)
 }
 // A Unit is a <Blocker> if printed, or via "While you have a (Trait) Pilot in play" (Virtue).
 function effBlocker(u){
@@ -8110,7 +8229,7 @@ function lureTargets(atk, defSide){
   return defSide.field.filter(x=>{ if (x.hp<=0 || !x.rested || effUntargetable(x)) return false;
     if (x.lureTurn===G.turnSeq) return true;   // "During this turn, all enemy Units must choose that Unit as their attack target" (Destined Battle)
     const own=x.lureRested, viaPilot=x.pilotCard && x.pilotCard.lureRested;
-    const on = l => l && (!l.gate || (l.gate==='pair' ? (l===own ? duringPairMet(x) : !!x.pilot) : !!x.linked)) && !(l.exceptLink && atk.linked);
+    const on = l => l && (!l.gate || (l.gate==='pair' ? (l===own ? duringPairMet(x) : !!x.pilot) : !!x.linked)) && !(l.exceptLink && atk.linked) && (!l.cond || condMet(l.cond, defSide, x));
     // "Enemy Units choose one of your rested (T) Units / rested Unit tokens as their attack target…" (Sandrock Custom, Turn X)
     const group = defSide.field.concat(defSide.base?[defSide.base]:[]).some(s=>{ const g=s.lureGroup; return g && s.hp>0 && (g.token ? !!x.token : hasTraitT(x, g.trait)); });
     return on(own) || on(viaPilot) || group; });
@@ -8547,8 +8666,16 @@ function beginTurn(turn){
   G.turn=turn; G.mode='idle'; G.phase='start'; G.selected=null; G.pending=null; G.pendingHandIdx=-1;
   G.turnSeq=(G.turnSeq||0)+1;   // unique per turn (turnNumber counts rounds) — 【Once per Turn】 keys off this
   const s=me();
+  // "Each enemy player's rested Units with the lowest Lv. won't be set as active during the start phase of their turn." (The-O ST14-001)
+  const stayRested = new Set();
+  { const opp = s===G.player ? G.enemy : G.player;
+    if (opp && opp.field.some(x=>x.hp>0 && x.noReadyLowestLv)){
+      const rs = s.field.filter(u=>u.type==='unit' && u.rested && u.hp>0);
+      const lo = rs.length ? Math.min(...rs.map(u=>u.lv||0)) : null;
+      for (const u of rs) if ((u.lv||0)===lo) stayRested.add(u);
+      if (stayRested.size) log(`${[...stayRested].map(u=>'<b>'+u.name+'</b>').join(', ')} won't be set as active (The-O).`, s===G.player?'me':'ai'); } }
   // 1) Start Phase — Active Step: ready all rested cards; refresh per-turn abilities.
-  for (const u of s.field){ if(u.stunned){ u.stunned=false; } else if(!u.noActive){ u.rested=false; } u.sick=false; u.tempAp=0; u.battleAp=0; u.canAttackActive=false; u.activeAttackGrants=null; u.noDirectTurn=false; u.dmgReduce=0; u.dmgGuards=null; u.redirectTurn=null; u.killDrawTurn=0; resetTurnKeywords(u); u.ap=effAp(u); }
+  for (const u of s.field){ if(u.stunned){ u.stunned=false; } else if(!u.noActive && !stayRested.has(u)){ u.rested=false; } u.sick=false; u.tempAp=0; u.battleAp=0; u.canAttackActive=false; u.activeAttackGrants=null; u.noDirectTurn=false; u.dmgReduce=0; u.dmgGuards=null; u.redirectTurn=null; u.killDrawTurn=0; resetTurnKeywords(u); u.ap=effAp(u); }
   if (s.base){ s.base.rested=false; }
   // Start of the opponent's turn for the other side: "if another friendly (Trait) Unit is in play at the start of
   // your opponent's turn, during this turn …" (Shamblo) is checked now.
@@ -9355,6 +9482,23 @@ function applyActivateEffect(u, target, side, costUnit){
       else if (side===G.player && cands.length>1) showLookAtTop(cands, `${u.name}: pair a Pilot from your trash`, ()=>true, true, pick);
       else pick([...cands].sort((x,y)=>((y.pAp||0)+(y.pHp||0))-((x.pAp||0)+(x.pHp||0)))[0]);
     }
+  } else if (a.kind==='copyTrashKw'){
+    // ∀ Gundam GD04-067: choose a Unit card in either trash that has one of the listed keywords; this Unit gets AP+N and that card's
+    // printed keywords during this turn. With no such card, only the AP+N happens.
+    const kwsOf = c => a.kws.map(k=>({ k, n: ['repair','breach','support'].includes(k) ? innateKwAmount(c.effect, k) : (innateKeyword(c.effect, k==='high'?'high':k==='first'?'first':k) ? 1 : 0) })).filter(x=>x.n>0);
+    const cands = [...side.trash, ...foe.trash].filter(c=>c.type==='unit' && kwsOf(c).length);
+    const go = (pick)=>{
+      if (!side.field.includes(u)) return;
+      u.tempAp=(u.tempAp||0)+a.amount;
+      const got = pick ? kwsOf(pick) : [];
+      for (const x of got) grantKeyword(u, x.k, x.n);
+      u.ap=effAp(u); render();
+      log(`<b>${u.name}</b> gets AP+${a.amount}${got.length ? ` and ${got.map(x=>'&lt;'+kwLabel(x.k)+(['repair','breach','support'].includes(x.k)?' '+x.n:'')+'&gt;').join(' ')} (from <b>${pick.name}</b>)` : ''} this turn.`, cls);
+    };
+    if (!cands.length){ log(`<b>${u.name}</b>: no Unit card with a listed keyword in any trash.`, cls); go(null); }
+    else if (side===G.player && cands.length>1) showLookAtTop(cands, `${u.name}: choose 1 Unit card in a trash — this Unit gets its keywords this turn`, ()=>true, false, go);
+    else { const val=c=>kwsOf(c).reduce((s,x)=>s+({first:3,high:2.5,suppression:2,breach:1,repair:1,support:0.5,blocker:0.5}[x.k]||1)*(x.n||1),0);
+      go([...cands].sort((x,y)=>val(y)-val(x))[0]); }
   } else if (a.kind==='selfBattleBuff'){
     u.battleAp=(u.battleAp||0)+a.amount; u.ap=effAp(u); log(`<b>${u.name}</b> gets AP+${a.amount} during this battle.`, cls);
   } else if (a.kind==='setActiveAll'){
@@ -9414,8 +9558,10 @@ function applyActivateEffect(u, target, side, costUnit){
   } else if (['selfDamage','selfDamageThen','damageBoth','selfPingDraw'].includes(a.kind)){
     runTrigger(u, side, a, u.name);
   } else if (a.kind==='buff' && a.scope==='all-friendly'){
-    for (const t of side.field){ t.tempAp=(t.tempAp||0)+a.amount; t.ap=effAp(t); }
-    log(`<b>${u.name}</b>: all friendly Units get AP+${a.amount} this turn.`, cls);
+    // Only the Units the text names: "All friendly Link Units" (Earth House), "all your (Ghingnham Fleet) Units" (Aspite).
+    const us = a.filter ? friendlyTargets(side, Object.assign({}, a, { kind:'buff', source:u })) : side.field.filter(x=>x.hp>0);
+    for (const t of us){ t.tempAp=(t.tempAp||0)+a.amount; t.ap=effAp(t); }
+    log(`<b>${u.name}</b>: ${us.length ? us.map(x=>'<b>'+x.name+'</b>').join(', ')+` get${us.length===1?'s':''} AP+${a.amount} this turn` : 'no Unit to buff'}.`, cls);
   } else if (a.kind==='buff'){
     if (target){ if (a.dur==='battle') target.battleAp=(target.battleAp||0)+a.amount; else target.tempAp=(target.tempAp||0)+a.amount; target.ap=effAp(target); log(`<b>${u.name}</b>: <b>${target.name}</b> gets AP+${a.amount} ${a.dur==='battle'?'during this battle':'this turn'}.`, cls); }
     if (a.then) runTrigger(u, side, a.then, u.name);
@@ -9508,7 +9654,7 @@ function aiActivate(u){
   else { // friendly single target
     if (a.kind==='heal'){ target=[...ai.field].filter(t=>t.hp<effMaxHp(t)).sort((x,y)=>(effMaxHp(y)-y.hp)-(effMaxHp(x)-x.hp))[0]; if(!target) return false; }
     else if (a.kind==='selfPingBuff'){ target=pingFriendly(ai, a.self, true); if(!target) return false; }
-    else if (a.kind==='setActive'){ target=[...ai.field].filter(t=>t.rested && !t.sick && t.ap>0).sort((x,y)=>y.ap-x.ap)[0]; if(!target) return false; }
+    else if (a.kind==='setActive'){ target=(a.filter ? friendlyTargets(ai, a) : [...ai.field]).filter(t=>t.rested && (a.filter&&a.filter.blocker ? true : !t.sick && t.ap>0)).sort((x,y)=>y.ap-x.ap)[0]; if(!target) return false; }   // a Blocker is readied to block
     else { target=[...ai.field].filter(t=>!t.rested && !t.sick && t.ap>0).sort((x,y)=>y.ap-x.ap)[0]; if(!target) return false; }
   }
   applyActivateEffect(u, target, ai);
@@ -10186,7 +10332,9 @@ function parseOnKill(effect){
   // "deploy 1 [Token]((T)･APa･HPb) Unit token" (Hashmal GD05-006)
   if (!act && /^deploy \d+ (?:rested )?\[/.test(t)){ const specs=parseTokenSpecs(p.slice(p.toLowerCase().indexOf(t.slice(0,20)))); if (specs.length) act={ kind:'deployToken', specs }; }
   // "deal N damage to all enemy Units with M or less AP" (Tallgeese Ⅲ ST12-003)
-  else if ((d = t.match(/deal (\d+) damage to all enemy units(?: with (\d+) or less ap)?/))) act = { kind:'damageAllEnemy', amount:+d[1], maxAp: d[2]?+d[2]:null };
+  else if ((d = t.match(/deal (\d+) damage to all enemy units(?: with (\d+) or less ap)?/))){ act = { kind:'damageAllEnemy', amount:+d[1], maxAp: d[2]?+d[2]:null };
+    // "…to all enemy Units with <Blocker>." (Gundam Heavyarms Custom GD03-029) — the clause above stops at the "<".
+    if (/with\s*$/.test(t) && /^<\s*blocker\s*>/i.test(p.slice(m.index + m[0].length))) act.blocker = true; }
   // "look at the top 2 cards of your deck and return 1 to the top. Place the remaining card into your trash." (Wistario Afam)
   else if ((d = t.match(/look at the top (\d+) cards of your deck and return 1 to the top\. place the remaining cards? into your trash/))) act = { kind:'scryTopTrash', amount:+d[1] };
   // "look at the top card / N cards of your deck. If it is a (T) card, you may reveal it / You may reveal 1 (T) X card among
@@ -10239,8 +10387,8 @@ function applyOnKill(u, side, k, srcCard){
   if (k.kind==='deployToken'){ deployTokens({ kind:'token', specs:k.specs }, side, u.name, 'On kill', cls); return; }
   if (k.kind==='damageAllEnemy'){
     const foe = side===G.player?G.enemy:G.player;
-    const ts=foe.field.filter(x=>x.hp>0 && (k.maxAp==null || effAp(x)<=k.maxAp));
-    if (ts.length) log(`<b>${u.name}</b>: deals ${k.amount} to all enemy Units${k.maxAp!=null?` with ${k.maxAp} or less AP`:''}.`, cls);
+    const ts=foe.field.filter(x=>x.hp>0 && (k.maxAp==null || effAp(x)<=k.maxAp) && (!k.blocker || effBlocker(x)));
+    if (ts.length) log(`<b>${u.name}</b>: deals ${k.amount} to all enemy Units${k.maxAp!=null?` with ${k.maxAp} or less AP`:''}${k.blocker?' with &lt;Blocker&gt;':''}.`, cls);
     for (const t of [...ts]) damage(t, k.amount, foe);
     return;
   }
@@ -10290,6 +10438,11 @@ function applyOnKill(u, side, k, srcCard){
 // 【During Pair】【Once per Turn】"When this Unit would receive battle damage from an enemy Unit with
 // AP equal to or less than it, it doesn't receive that damage." (Full Armor Unicorn ST14-006)
 function preventsWeakBattleDamage(u, foeUnit, side){
+  // Forbidden Gundam: during its controller's turn, no battle damage from enemy Units that are Lv.N or lower.
+  if (u && u.yourTurnLowLvGuard!=null && foeUnit && side && G.turn===side.who && (foeUnit.lv||0)<=u.yourTurnLowLvGuard){
+    log(`<b>${u.name}</b> can't receive battle damage from <b>${foeUnit.name}</b> (Lv.${foeUnit.lv||0}) during your turn.`, side===G.player?'me':'ai');
+    return true;
+  }
   // Tallgeese Ⅱ: 【During Pair】while the opponent has an EX Resource, no battle damage from enemy Units that are Lv.N or lower.
   if (u && u.pairExGuard && foeUnit && side && duringPairMet(u)){
     const opp = side===G.player ? G.enemy : G.player;
@@ -10361,6 +10514,17 @@ function battle(atk, def, atkSide, defSide){
   for (const [src, sSide, tgt, tSide] of [[atk, atkSide, def, defSide], [def, defSide, atk, atkSide]]){
     const cap=src.battleDestroyLowLv; if (cap==null || src.type!=='unit' || tgt.type!=='unit') continue;
     if (!tSide.field.includes(tgt) || tgt.hp<=0 || !(tgt.hp<hp0.get(tgt)) || (tgt.lv||0)>cap || tgt.pilot) continue;
+    applyToTarget(src, sSide, { kind:'destroy' }, tgt, src.name);
+  }
+  // Gundam Virtue (Trans-Am) / Gundam Virtue / Ennil El (see battleDestroy in parseWatcherStatics).
+  for (const [src, sSide, tgt, tSide] of [[atk, atkSide, def, defSide], [def, defSide, atk, atkSide]]){
+    if (src.type!=='unit' || tgt.type!=='unit') continue;
+    const own=src.battleDestroy, viaP=src.pilotCard && src.pilotCard.battleDestroy;
+    const on = (w, pil) => w && (!w.gate || (w.gate==='link' ? !!src.linked : (pil ? !!src.pilot : duringPairMet(src))))
+                             && (w.maxLv==null || (tgt.lv||0)<=w.maxLv) && (!w.cond || condMet(w.cond, sSide, src));
+    if (!(on(own, false) || on(viaP, true))) continue;
+    if (!tSide.field.includes(tgt) || tgt.hp<=0 || !(tgt.hp<hp0.get(tgt))) continue;
+    log(`<b>${src.name}</b> dealt battle damage to <b>${tgt.name}</b> — it is destroyed.`, sSide===G.player?'me':'ai');
     applyToTarget(src, sSide, { kind:'destroy' }, tgt, src.name);
   }
   clearBattleScoped();                 // "during this battle" effects (e.g. Kira's AP-2) end now
@@ -10868,6 +11032,7 @@ function damage(u, dmg, side, kind, dealer){
   if (dmg<=0) return;   // ignore hits on an already-destroyed Unit / fully-reduced damage
   u.hp-=dmg;
   floatNum(u.uid, '-'+dmg, '#ff6b5e');
+  allyDmgExHook(u, side, kind, dealer);
   if (u.hp<=0){
     const i=side.field.indexOf(u); if(i>=0) side.field.splice(i,1);
     if (u.type==='base' && side.base===u) side.base=null;   // a Base can take (redirected) battle damage too
@@ -10892,6 +11057,24 @@ function damage(u, dmg, side, kind, dealer){
   if (kind!=='battle' && u.type==='unit') effDmgHook(u, side, G.effSrc||null, kind);
 }
 
+// "【Once per Turn】During your turn, when one of your other (T) Units receives damage from an enemy, place 1 EX Resource." (Gundam
+// Pharact): `u` (of `side`) has just received damage; an enemy dealt it (battle: the Unit it battles; effect: an enemy effect).
+function allyDmgExHook(u, side, kind, dealer){
+  if (!side || !u || u.type!=='unit' || kind==='self' || !G.player || !G.enemy) return;
+  const dl = dealer || (kind==='battle' && G.curBattle ? (G.curBattle.def===u ? G.curBattle.atk : G.curBattle.atk===u ? G.curBattle.def : null) : null);
+  const fromEnemy = kind==='battle' ? !!(dl && dl.owner && dl.owner!==u.owner) : effSrcIsEnemy(G.effSrc||null, u, kind);
+  if (!fromEnemy) return;
+  for (const src of [...side.field]){
+    const w = src.allyDmgEx; if (!w || src.hp<=0) continue;
+    if (w.other && src===u) continue;
+    if (w.yourTurn && G.turn!==side.who) continue;
+    if (!hasTraitT(u, w.trait)) continue;
+    if (w.once && src.allyDmgExTurn===G.turnSeq) continue;
+    src.allyDmgExTurn = G.turnSeq;
+    log(`<b>${src.name}</b>: <b>${u.name}</b> received enemy damage — place ${w.amount} EX Resource.`, side===G.player?'me':'ai');
+    runTrigger(src, side, { kind:'exResource', amount:w.amount }, src.name);
+  }
+}
 // 【Once per Turn】"During your turn, when you pair a Pilot with one of your Units, deploy N [Token]…"
 // (Qubeley ST13-001). The payoff sits on a DIFFERENT Unit than the one being paired, so it can't be a
 // 【When Paired】 trigger on the paired card — it's a board-wide watcher checked on every pairing.
@@ -10990,8 +11173,8 @@ function attachPilot(u, p, onDone){
   const side = u.owner==='player'?G.player:G.enemy;
   // The Pilot's own continuous 【During Pair】/【During Link】 self-buffs apply to the Unit it pilots
   // (e.g. Heero Yuy: 【During Link】AP+1/HP+1).
-  const pPair = staticSelfBuff(p.effect, 'During Pair'); u.pilotPairAp = pPair.ap; u.pilotPairHp = pPair.hp;
-  const pLink = staticSelfBuff(p.effect, 'During Link'); u.pilotLinkAp = pLink.ap; u.pilotLinkHp = pLink.hp;
+  const pPair = staticSelfBuff(p.effect, 'During Pair'); u.pilotPairAp = pPair.ap; u.pilotPairHp = pPair.hp; u.pilotPairApTurn = pPair.apTurn||null;
+  const pLink = staticSelfBuff(p.effect, 'During Link'); u.pilotLinkAp = pLink.ap; u.pilotLinkHp = pLink.hp; u.pilotLinkApTurn = pLink.apTurn||null;
   if (pLink.reqTrait && !hasTraitT(u, pLink.reqTrait)){ u.pilotLinkAp = 0; u.pilotLinkHp = 0; }   // "If this is an (AGE System) Unit, …"
   // Pilot HP plus any 【During Pair】 "this Unit gets HP+N" (Unit's and Pilot's) all raise current HP now.
   const pairOn = duringPairMet(u);   // 【During Pair･X Pilot】: only a qualifying Pilot switches it on
@@ -11010,9 +11193,9 @@ function attachPilot(u, p, onDone){
     u.linked=true; u.sick=false; justLinked=true;
     u.hp += (u.linkHp||0) + (u.pilotLinkHp||0);
     // keywords granted specifically by a 【During Link】 clause
-    if (clauseGrantsKeyword(u.effect,'blocker','During Link')) u.blocker=true;
-    if (clauseGrantsKeyword(u.effect,'first','During Link'))   u.firstStrike=true;
-    if (clauseGrantsKeyword(u.effect,'high','During Link'))    u.highManeuver=true;
+    if (clauseGrantsKeyword(u.effect,'blocker','During Link', u, true)) u.blocker=true;
+    if (clauseGrantsKeyword(u.effect,'first','During Link', u, true))   u.firstStrike=true;
+    if (clauseGrantsKeyword(u.effect,'high','During Link', u, true))    u.highManeuver=true;
     log(`Link established — <b>${u.name}</b> can attack this turn!`, u.owner==='player'?'me':'ai');
   }
   u.maxHp=effMaxHp(u); u.ap=effAp(u);
