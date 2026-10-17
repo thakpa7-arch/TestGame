@@ -11664,8 +11664,9 @@ function cmdModalKind(a){
 function cmdPlayable(a, side, card){
   if (!a || a.kind==='chain') return true;
   // "If <condition>, …" with nothing else to do: while the condition is false the Command would do nothing (A Miracle once an
-  // enemy Unit has attacked, Sisterly Care with no (Teiwaz) Link Unit), so it isn't offered.
-  if (a.kind==='cond' && !a.elseInner && !condOnTarget(a.cond) && !condMet(a.cond, side, card, a.other)) return false;
+  // enemy Unit has attacked, Sisterly Care with no (Teiwaz) Link Unit). Playing it for no effect is still legal, so only the AI
+  // skips it; the player may still play it.
+  if (side!==G.player && a.kind==='cond' && !a.elseInner && !condOnTarget(a.cond) && !condMet(a.cond, side, card, a.other)) return false;
   const foe=side===G.player?G.enemy:G.player, h=cmdHead(a, side, card);
   if (h.kind==='debuff' && h.scope==='all-enemy') return true;
   if ((h.kind==='damage' && h.scope!=='all-enemy' && h.scope!=='all-both') || ['rest','destroy','bounce','debuff','stun'].includes(h.kind)) return enemyTargets(foe, h).length>0;

@@ -73,7 +73,8 @@ const logs=()=>(el('log').children||[]).map(n=>(n.innerHTML||'').replace(/<[^>]+
   ok('Heart Set on Revenge (AI): returns the player Unit battling its <Blocker>; nothing when its battling Unit has no <Blocker>', okBlk && G.player.field.includes(atk2)); }
 // ===== GD02-113 Sisterly Care — If a friendly (Teiwaz) Link Unit is in play, choose 1 enemy Unit with 2 or less AP. Destroy it. =====
 { fresh('player'); const e=stick('enemy',2,5); const c=inHand('GD02-113'); play(c);
-  ok('Sisterly Care (player): with no friendly (Teiwaz) Link Unit it can\'t be played (it would do nothing)', G.enemy.field.includes(e) && G.player.hand.includes(c) && G.mode==='idle'); }
+  drainTasks(); passAll();
+  ok('Sisterly Care (player): with no friendly (Teiwaz) Link Unit it can still be played, for no effect', G.enemy.field.includes(e) && !G.player.hand.includes(c) && G.player.trash.includes(c) && G.mode==='idle'); }
 { fresh('player'); stick('player',3,3,{trait:'(Teiwaz)', linked:true}); const e=stick('enemy',2,5), big=stick('enemy',3,5); play(inHand('GD02-113'));
   if (G.mode==='trigger-target'){ A.fieldClick(e.uid); drainTasks(); }
   ok('Sisterly Care (player): with a (Teiwaz) Link Unit it destroys the 2-AP enemy Unit', !G.enemy.field.includes(e) && G.enemy.field.includes(big)); }
@@ -135,7 +136,8 @@ const logs=()=>(el('log').children||[]).map(n=>(n.innerHTML||'').replace(/<[^>]+
   ok('Graceful Demeanor (player Burst): choose 1 to 2 Lv.3-or-lower enemy Units — both returned', l1 && done && !G.enemy.field.includes(a) && !G.enemy.field.includes(b) && G.enemy.field.includes(c), JSON.stringify([m1,m2])); }
 // ===== GD04-118 World Distortion — If 2 or more friendly (UN) Units are in play, choose 1 enemy Unit with 5 or less HP. Return it. =====
 { fresh('player'); stick('player',1,1,{trait:'(UN)'}); const e=stick('enemy',3,5); const c=inHand('GD04-118'); play(c);
-  ok('World Distortion (player): with only 1 (UN) Unit it can\'t be played', G.enemy.field.includes(e) && G.player.hand.includes(c)); }
+  drainTasks(); passAll();
+  ok('World Distortion (player): with only 1 (UN) Unit it does nothing (still playable)', G.enemy.field.includes(e) && G.player.trash.includes(c) && G.mode==='idle'); }
 { fresh('player'); stick('player',1,1,{trait:'(UN)'}); stick('player',1,1,{trait:'(UN)'}); const e=stick('enemy',3,5); play(inHand('GD04-118'));
   if (G.mode==='trigger-target'){ A.fieldClick(e.uid); drainTasks(); }
   ok('World Distortion (player): with 2 (UN) Units the enemy Unit is returned', !G.enemy.field.includes(e)); }
@@ -210,8 +212,8 @@ const logs=()=>(el('log').children||[]).map(n=>(n.innerHTML||'').replace(/<[^>]+
   ok('Infinite Variations (AI): 1 white <Blocker> Unit — 1 player Unit gets AP-2', ps.filter(u=>A.effAp(u)===u.baseAp-2).length===1); }
 // ===== GD06-102 A Miracle — 【Action】If it is your opponent's turn and no enemy Units have attacked this turn, draw 2. =====
 { fresh('enemy'); const atk=stick('enemy',2,9); const mine=stick('player',1,9,{rested:true}); G.player.hand=[card('GD06-102','player')];
-  A.resolveAiAttack(atk, ()=>{}, mine); drainTasks(); const offered=!!(modal() && modal().btns.some(b=>/Miracle/.test(b))); passAll();
-  ok('A Miracle (player): not offered once an enemy Unit has attacked this turn', !offered && G.player.hand.length===1); }
+  A.resolveAiAttack(atk, ()=>{}, mine); drainTasks(); const offered=!!(modal() && modal().btns.some(b=>/Miracle/.test(b))); if (offered) press(/Miracle/); passAll();
+  ok('A Miracle (player): once an enemy Unit has attacked this turn it draws nothing', G.player.hand.length<=1 && G.player.hand.filter(x=>x.id!=='GD06-102').length===0); }
 { fresh('enemy'); G.player.hand=[card('GD06-102','player')]; A.offerPlayerActionStep(null, ()=>{}); drainTasks(); const offered=!!(modal() && modal().btns.some(b=>/Miracle/.test(b)));
   press(/Miracle/); drainTasks();
   ok("A Miracle (player): in the opponent's turn before any attack (End Phase action step) it draws 2", offered && G.player.hand.length===2); }
