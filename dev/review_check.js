@@ -307,6 +307,48 @@ fresh('player'); { for (let i=0;i<12;i++) inHand('ST01-005','player'); const rep
   for (let k=0;k<2 && G.mode==='discard';k++){ const c=G.player.hand[0]; G.player.hand.splice(0,1); A.sendToTrash(c,G.player); G.pending.discardLeft--; if (G.pending.discardLeft<=0){ const af=G.pending.after; G.mode='idle'; G.pending=null; af(); } }
   ok('extra: End Turn resumes an interrupted hand step (no wedge, Repair not re-applied)', reAsked && G.turn==='enemy' && rep.hp===hp1 && G.player.hand.length===10, `reAsked=${reAsked} turn=${G.turn} hp ${hp1}->${rep.hp}`); drainTasks(); }
 
+// ===== fourth review round =====
+// An AoE that destroys one Unit keeps resolving as itself: Acguy still protects the later (Marine) Units
+fresh('enemy'); { put('ST11-002','player',{rested:true}); const w=stick('player',1,1); const m1=stick('player',1,2,{trait:'(Marine)'}); const m2=stick('player',1,1,{trait:'(Marine)'});
+  G.player.field=[w, ...G.player.field.filter(x=>x!==w)];   // the unprotected 1/1 is hit first
+  const ara=inHand('GD02-107','enemy'); A.damageAll(ara, G.enemy, ara.action, ara.name); drainTasks();
+  ok('round4: after the AoE destroys one Unit, Acguy still shields the (Marine) Units', !G.player.field.includes(w) && m1.hp===2 && m2.hp===1, `m1=${m1.hp} m2=${m2.hp}`); }
+// The AI doesn't play an 【Action】-only Command in its main phase; "battling a friendly (AEUG) Unit" is a real limit
+fresh('enemy'); { inHand('GD06-112','enemy'); const u=stick('player',3,2); const done=A.aiMainStep(); drainTasks();
+  ok('round4: AI keeps Rivalry with Roux (【Action】 only) in its main phase', G.player.field.includes(u) && G.enemy.hand.length===1, 'played='+done); }
+fresh('player'); { const roux=card('GD06-112','player'); const e=stick('enemy',3,3); const mine=stick('player',2,2,{trait:'(AEUG)'}); const other=stick('player',2,2);
+  const out=A.enemyTargets(G.enemy, roux.action).length; G.curBattle={ atk:e, def:other }; const notAeug=A.enemyTargets(G.enemy, roux.action).length;
+  G.curBattle={ atk:e, def:mine }; const aeug=A.enemyTargets(G.enemy, roux.action).includes(e);
+  ok('round4: Rivalry with Roux only targets an enemy battling a friendly (AEUG) Unit', out===0 && notAeug===0 && aeug, `${out},${notAeug},${aeug}`); }
+// AoE filters, and the AI weighs its own losses on an "all Units" Command
+fresh('player'); { const sa=card('GD01-108','player'); const b=stick('enemy',1,2,{blocker:true}); const nb=stick('enemy',1,2); A.damageAll(sa, G.player, sa.action, sa.name);
+  ok('round4: Strategic Arms only hits Units with <Blocker>', !G.enemy.field.includes(b) && nb.hp===2); }
+fresh('player'); { const ara=card('GD02-107','player'); const l=stick('enemy',3,1,{linked:true}); const n=stick('enemy',3,1); A.damageAll(ara, G.player, ara.action, ara.name);
+  ok('round4: All-Range Attack skips Link Units', G.enemy.field.includes(l) && !G.enemy.field.includes(n)); }
+fresh('enemy'); { inHand('GD04-112','enemy'); for(let i=0;i<4;i++) stick('enemy',3,1,{lv:2}); stick('player',1,1,{lv:1}); stick('player',1,1,{lv:1}); A.aiMainStep(); drainTasks();
+  ok('round4: AI won\'t trade four of its Units for two with Inspector', G.enemy.field.length===4 && G.enemy.hand.length===1, `ai=${G.enemy.field.length}`); }
+// Two of the player's 【Destroyed】 choices from one AoE both resolve
+fresh('enemy'); { const g1=put('GD01-056','player'); const g2=put('GD01-056','player'); g1.hp=1; g2.hp=1; const x=stick('enemy',2,3); const y=stick('enemy',2,3);
+  const ara=inHand('GD02-107','enemy'); A.damageAll(ara, G.enemy, ara.action, ara.name); drainTasks();
+  const p1=modalUp(); clickBtn(new RegExp(x.name.replace(/[#/]/g,'.'))); drainTasks(); const p2=modalUp(); clickBtn(new RegExp(y.name.replace(/[#/]/g,'.'))); drainTasks();
+  ok('round4: both Geara Doga (Sleeves) 【Destroyed】 choices resolve', p1 && p2 && x.hp===2 && y.hp===2, `p1=${p1} p2=${p2} x=${x.hp} y=${y.hp}`); }
+// <Support> is used before the attack is declared, so the AI's block step / redirect see the boosted AP
+fresh('player'); { const q=put('GD06-018','enemy',{rested:true}); pair(q,'GD06-097'); const nz=stick('enemy',1,8,{trait:'(Neo Zeon)'}); const a=stick('player',2,9); stick('player',1,1,{support:2});
+  G.selected=a.uid; G.mode='attack-target'; A.fieldClick(q.uid); clickBtn(/Test/); drainTasks(); while(modalUp() && clickBtn(/Pass/)) drainTasks();
+  ok('round4: with Support taken before the attack, the AI\'s Qubeley redirects the lethal hit', G.enemy.field.includes(q) && nz.hp===4, `q=${G.enemy.field.includes(q)} nz=${nz.hp}`); }
+fresh('enemy'); { const atk=stick('enemy',3,5); stick('enemy',1,3,{support:2}); const t=stick('player',2,4,{rested:true}); const blk=stick('player',2,4,{blocker:true});
+  A.resolveAiAttackInner(atk, ()=>{}, t); const apAtBlock=A.effAp(atk); drainTasks();
+  ok('round4: the AI uses Support before declaring (the block step sees AP 5)', apAtBlock===5, 'AP at block='+apAtBlock); while(modalUp() && clickBtn(/Don't|Pass/)) drainTasks(); }
+// The AI's own Qubeley Mk-II attacks and is blocked by a lethal Unit: it redirects
+fresh('enemy'); { const q=put('GD06-018','enemy'); pair(q,'GD06-097'); q.sick=false; const nz=stick('enemy',1,9,{trait:'(Neo Zeon)'}); const t=stick('player',1,1,{rested:true}); const blk=stick('player',5,6,{blocker:true});
+  A.resolveAiAttackInner(q, ()=>{}, t); drainTasks(); clickBtn(new RegExp(blk.name.replace(/[#/]/g,'.'))); drainTasks(); while(modalUp() && clickBtn(/Pass/)) drainTasks();
+  ok('round4: the AI\'s attacking Qubeley redirects a lethal block', G.enemy.field.includes(q) && nz.hp===4, `q=${G.enemy.field.includes(q)} nz=${nz.hp}`); }
+// Escape on the AI's turn doesn't end the AI's battle
+fresh('enemy'); { const atk=stick('enemy',3,3); G.curAttack=atk; G.curBattle={atk, def:null}; A.G.mode='idle';
+    ok('round4: (setup) cancelAction exported', typeof A.cancelAction==='function');
+  if (A.cancelAction) A.cancelAction();
+  ok('round4: Escape/Cancel on the AI\'s turn keeps the battle in progress', G.curAttack===atk && G.curBattle && G.curBattle.atk===atk); }
+
 console.log('\n== review regression checks ==');
 console.log('passed:', pass, '| failed:', fail.length);
 for (const f of fail) console.log('  !', f);

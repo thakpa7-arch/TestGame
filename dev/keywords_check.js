@@ -60,15 +60,22 @@ fresh(); { const u=stick('player',2,5,{repair:2}); u.hp=1; A.endTurn(); drainTas
 fresh(); { const u=stick('enemy',2,5,{repair:2}); u.hp=1; A.endTurn();
   ok("Repair: does not heal at the end of YOUR turn", u.hp===1, 'hp='+u.hp); }
 // Support
+// <Support N> is 【Activate･Main】 Rest this Unit: one of your other Units gets AP+N this turn (13-1-3-1) — used in the
+// main phase, before an attack is declared. (a) Offered when the chosen target needs it:
 fresh(); { const atk=stick('player',2,5); const helper=stick('player',1,3,{support:2}); const def=stick('enemy',1,4,{rested:true});
-  A.battle(atk,def,G.player,G.enemy); drainTasks();
-  const asked=el('blockModal').classList.contains('show') && /Support/.test(el('blockMsg').innerHTML);   // 13-1-3-1: the player chooses to use it
+  G.selected=atk.uid; G.mode='attack-target'; A.fieldClick(def.uid);
+  const asked=el('blockModal').classList.contains('show') && /Support/.test(el('blockMsg').innerHTML);
+  const notYetDeclared=!atk.rested;                       // the offer comes before the attack is declared
   if (asked) el('blockBtns').children[0].onclick(); drainTasks();
-  ok('Support: the player is asked', asked);
+  ok('Support: offered before the attack is declared', asked && notYetDeclared);
   ok('Support: the helper rested', helper.rested===true); ok('Support: the boost let the attacker kill', !G.enemy.field.includes(def)); }
+// (b) Used from the Unit itself in the main phase
+fresh(); { const a=stick('player',2,5); const helper=stick('player',1,3,{support:2});
+  G.mode='support-target'; G.pending={ src:helper }; A.fieldClick(a.uid);
+  ok('Support: activated from the Unit gives another Unit AP+N this turn', helper.rested && A.effAp(a)===4 && G.mode==='idle'); }
 fresh(); { const atk=stick('player',2,5); stick('player',1,3,{support:2,rested:true}); const def=stick('enemy',1,4,{rested:true});
-  A.battle(atk,def,G.player,G.enemy); drainTasks();
-  ok('Support: a rested helper cannot be used', def.hp===2||G.enemy.field.includes(def)); }
+  G.selected=atk.uid; G.mode='attack-target'; A.fieldClick(def.uid); drainTasks();
+  ok('Support: a rested helper cannot be used', !el('blockModal').classList.contains('show') && (def.hp===2||G.enemy.field.includes(def))); }
 // Suppression vs plain
 fresh(); { const atk=stick('player',2,3,{suppression:true}); const s0=G.enemy.shields.length;
   G.selected=atk.uid; G.mode='attack-target'; A.attackDirect(); drainTasks();

@@ -2576,7 +2576,8 @@ function destroyAll(card, side, act, label){
 function damageAll(card, side, act, label){
   G.effSrc = card;
   const cls=side===G.player?'me':'ai', foe=side===G.player?G.enemy:G.player, f=act.filter||{};
-  const inRange=u=>(f.maxLv==null||(u.lv||0)<=f.maxLv)&&(f.maxAp==null||effAp(u)<=f.maxAp)&&(f.maxHp==null||u.hp<=f.maxHp);
+  const inRange=u=>(f.maxLv==null||(u.lv||0)<=f.maxLv)&&(f.maxAp==null||effAp(u)<=f.maxAp)&&(f.maxHp==null||u.hp<=f.maxHp)
+    &&(!f.blocker||effBlocker(u))&&(!f.notLinked||!u.linked);
   const list=[];
   for(const u of [...foe.field]) if(inRange(u)) list.push([u,foe]);
   if(act.scope==='all-both') for(const u of [...side.field]) if(inRange(u)) list.push([u,side]);
@@ -3214,6 +3215,9 @@ function targetFilter(t){
   if ((m=t.match(/(\d+) or less hp/i))) f.maxHp=+m[1];
   if (/lowest hp/i.test(t)) f.lowestHp=true;
   if (/\bdamaged enemy unit/i.test(t)) f.damaged=true;                        // "Choose 1 damaged enemy Unit"
+  if ((m=t.match(/enemy unit battling a friendly \(([^)]+)\) unit/i))) f.battlingFriendlyTrait=m[1].trim().toLowerCase();   // Rivalry with Roux
+  if (/units? with <\s*blocker\s*>/i.test(t)) f.blocker=true;                  // Strategic Arms: "all Units with <Blocker>"
+  if (/other than link units?/i.test(t)) f.notLinked=true;                     // All-Range Attack
   if (/enemy unit (?:that is )?battling this unit/i.test(t)) f.battlingSelf=true;   // "… battling this Unit" (Milliardo Peacecraft)
   if (/rested enemy/i.test(t)) f.rested=true;
   if (/active enemy/i.test(t)) f.active=true;
@@ -3240,6 +3244,8 @@ function enemyTargets(foe, act){
     && (!f.orFilter || f.orFilter.some(o=>(o.maxLv==null||(u.lv||0)<=o.maxLv) && (o.maxAp==null||effAp(u)<=o.maxAp) && (o.maxHp==null||u.hp<=o.maxHp)))
     && (!f.rested || u.rested) && (!f.active || !u.rested)
     && (!f.damaged || u.hp<effMaxHp(u))
+    && (!f.battlingFriendlyTrait || !!(G.curBattle && ((G.curBattle.def===u && G.curBattle.atk && hasTraitT(G.curBattle.atk, f.battlingFriendlyTrait))
+                                                    || (G.curBattle.atk===u && G.curBattle.def && hasTraitT(G.curBattle.def, f.battlingFriendlyTrait)))))
     && (!f.battlingSelf || !!(G.curBattle && act.source && ((G.curBattle.atk===act.source && G.curBattle.def===u) || (G.curBattle.def===act.source && G.curBattle.atk===u))))
     && (f.battlingFriendlyMinLv==null || !!(G.curBattle && ((G.curBattle.def===u && (G.curBattle.atk.lv||0)>=f.battlingFriendlyMinLv)
                                               || (G.curBattle.atk===u && G.curBattle.def && (G.curBattle.def.lv||0)>=f.battlingFriendlyMinLv)))));
@@ -4557,6 +4563,7 @@ function makeRoom(side, n, label, after, opt){
   }
   (function next(k){
     if (k>=need){ render(); fin(true); return; }
+    if (modalBusy()){ whenModalFree(()=>next(k)); return; }
     el('blockMsg').innerHTML=`<b>${label}</b>: battle area full — choose one of YOUR Units to place in the trash (not destroyed) to make room.`;
     const wrap=el('blockBtns'); wrap.innerHTML='';
     side.field.forEach(u=>{ const b=document.createElement('button');
@@ -5073,6 +5080,7 @@ function tokenScore(sp){ return sp.ap + sp.hp + (sp.blocker?2:0) + (sp.first?1:0
 function chooseTokenCount(specs, side, name, done){
   const ranged = (specs||[]).find(sp=>sp && sp.min!=null && sp.count>sp.min);
   if (!ranged || side!==G.player){ done(specs); return; }
+  if (modalBusy()){ whenModalFree(()=>chooseTokenCount(specs, side, name, done)); return; }
   // The answer pins the count: drop the range, or a re-entrant caller (deployTokensInteractive) would ask again forever.
   const fix=(n)=>done(specs.map(sp=>sp===ranged ? Object.assign({}, sp, { count:n, min:null }) : sp));
   el('blockMsg').innerHTML = `<b>${name}</b>: deploy how many <b>${ranged.name}</b> tokens?`;
@@ -5186,6 +5194,7 @@ function deployTokensInteractive(card, side, act, label, after){
   if (!queue.length || side!==G.player){ fin(); return; }
   (function nextTok(){
     if (!queue.length){ render(); fin(); return; }
+    if (modalBusy()){ whenModalFree(nextTok); return; }
     const mk=queue.shift();
     const cands=side.field.filter(u=>u.hp>0);
     if (!cands.length){ render(); fin(); return; }
@@ -6492,6 +6501,8 @@ function activateCostPayable(u, side){
 // the Main Phase or while a battle/attack is being declared — on either player's turn.
 function activatePhaseOk(u){
   const phase = u.activate.phase;
+  // A battle this Unit is in has an action step (8-4) for both players, whatever the UI mode is.
+  if (phase==='action' && G.curBattle && (G.curBattle.atk===u || G.curBattle.def===u)) return true;
   if (phase==='action'){
     // Action timing: the turn player's main phase, or an attack/battle window on either turn.
     return (G.turn===u.owner && (G.mode==='idle' || G.mode==='attack-target'))
@@ -6977,6 +6988,11 @@ function fieldClick(uidv){
     setPrompt(`${p.card.name}: rested ${p.picked.length}/${p.max}. Tap another or Cancel to finish.`);
     render(); return;
   }
+  if (G.mode==='support-target'){   // <Support N> used from the Unit: give one of your other Units AP+N this turn
+    const p=G.pending, t=G.player.field.find(x=>x.uid===uidv);
+    if (!t || t===p.src){ flashPrompt('Tap one of your OTHER Units.'); return; }
+    G.mode='idle'; G.pending=null; useSupport(p.src, t, G.player); defaultPrompt(); render(); return;
+  }
   if (G.mode==='trigger-multi'){
     const p=G.pending;
     if (!p.cands.includes(uidv)){ flashPrompt('Tap a highlighted Unit.'); return; }
@@ -7048,6 +7064,7 @@ function fieldClick(uidv){
     if (tgt){
       if (effUntargetable(tgt)){ flashPrompt(`${tgt.name} can't be chosen as an attack target.`); return; }
       if (!tgt.rested && !canHitActive(atk, tgt)){ flashPrompt('You can only attack a rested (turned) enemy unit. Attack the shields instead, or a rested unit.'); return; }
+      if (offerSupportFirst(atk, tgt, ()=>fieldClick(uidv))) return;
       declareAttack(atk, G.player);   // attack step (8-2): rest the attacker, on-attack self-buffs
       fireAttacked(tgt, G.enemy);     // "when this Unit is attacked" on the enemy Unit
       attackUnitHook(atk, G.player); G.curBattle={ atk, def:tgt };
@@ -7073,6 +7090,7 @@ function attackDirect(){
   const atk=G.player.field.find(c=>c.uid===G.selected); if(!atk) return;
   if (atk.rested || trashBlocksAttack(atk, G.player)){ flashPrompt(`${atk.name} can't attack right now.`); clearSel(); render(); return; }
   if (cantHitPlayer(atk)){ flashPrompt(`${atk.name} can't attack the enemy player directly — pick a rested enemy unit.`); return; }
+  if (G.enemy.base && offerSupportFirst(atk, G.enemy.base, ()=>attackDirect())) return;
   declareAttack(atk, G.player);   // attack step (8-2): rest the attacker, on-attack self-buffs, 【Attack】 effects
   resolveAttackTriggers(atk, G.player, ()=>{
     if (!attackerStillOut(atk, G.player)){ clearBattleScoped(); clearSel(); render(); checkEnd(); return; }
@@ -7130,19 +7148,7 @@ function strikePlayer(atk, defSide, done){
   const done0 = done || function(){}; done = ()=>{ clearBattleScoped(); done0(); };
   const side = defSide===G.player ? 'ai' : 'me';
   const atkSide = defSide===G.player ? G.enemy : G.player;
-  // <Support> may be used to finish the Base. It's the player's Unit and the player's call, so ask them.
-  if (defSide.base && atkSide===G.player && !atk._supportAsked){
-    const h = supportHelper(atk, atkSide, defSide.base);
-    if (h){
-      atk._supportAsked = true;
-      promptTargetChoice([h], `Rest <b>${h.name}</b> (&lt;Support ${effSupport(h)}&gt;) so <b>${atk.name}</b> gets AP+${effSupport(h)} and destroys the enemy <b>${defSide.base.name}</b>?`,
-        pick=>{ if (pick) useSupport(pick, atk, atkSide); strikePlayer(atk, defSide, done0); }, "Don't use Support");
-      return;
-    }
-  }
-  atk._supportAsked = false;
   fxLunge(atk);
-  if (defSide.base && atkSide!==G.player) applySupport(atk, atkSide, defSide.base);
   const ap = Math.max(0, atk.ap||0);
   if (ap<=0){ log(`<b>${atk.name}</b> has 0 AP — no damage is dealt.`, side); done(); return; }   // 5-5-5
   if (defSide.base){
@@ -7306,8 +7312,9 @@ function burstResolvePlayer(card, side, act, done){
 // Several of the player's effects can trigger off one event (a Unit's 【Destroyed】 and then a Base's, when
 // <Breach> kills both). There is one choice modal, so a later effect waits until it is free (10-1-6-5: the
 // player resolves them one after another) instead of replacing the open one.
+function modalBusy(){ return el('blockModal').classList.contains('show') || !!document.querySelector('.modal-overlay'); }
 function whenModalFree(fn){
-  if (el('blockModal').classList.contains('show') || document.querySelector('.modal-overlay')){ (G.modalQueue=G.modalQueue||[]).push(fn); return; }
+  if (modalBusy()){ (G.modalQueue=G.modalQueue||[]).push(fn); return; }
   fn();
 }
 function pumpModalQueue(){
@@ -7316,6 +7323,8 @@ function pumpModalQueue(){
   const fn=G.modalQueue.shift(); fn(); render();
 }
 function promptTargetChoice(cands, msg, cb, skipLabel){
+  // Another choice is open (two 【Destroyed】 effects from one AoE, a prompt during a block step…): wait for it.
+  if (modalBusy()){ whenModalFree(()=>promptTargetChoice(cands.filter(t=>!t || t.hp==null || t.hp>0), msg, cb, skipLabel)); return; }
   el('blockMsg').innerHTML = msg;
   const wrap=el('blockBtns'); wrap.innerHTML='';
   cands.forEach(t=>{
@@ -7599,21 +7608,7 @@ function battle(atk, def, atkSide, defSide){
     clearBattleScoped(); clearSel(); render(); checkEnd(); return;
   }
   atk.rested=true; G.curAttack=atk;
-  // <Support N>: an active friendly Unit may rest to give the attacker +N AP this turn. It's an optional
-  // ability its controller chooses to use (13-1-3-1): the player is asked, and only when the boost lets
-  // the attacker destroy the target; the AI decides for itself.
-  if (atkSide===G.player && !atk._supportAsked){
-    const h=supportHelper(atk, atkSide, def);
-    if (h && effSupport(h)>=def.hp-atk.ap){
-      atk._supportAsked=true;
-      promptTargetChoice([h], `Rest <b>${h.name}</b> (&lt;Support ${effSupport(h)}&gt;) so <b>${atk.name}</b> gets AP+${effSupport(h)} and destroys <b>${def.name}</b>?`,
-        pick=>{ if (pick) useSupport(pick, atk, atkSide); battle(atk, def, atkSide, defSide); }, "Don't use Support");
-      return;
-    }
-  }
-  atk._supportAsked=false;
   fxLunge(atk);
-  if (atkSide!==G.player) applySupport(atk, atkSide, def);
   G.curBattle = { atk, def };          // "while this Unit is battling…" conditions (e.g. Reginlaze Julia) read this
   // First Strike only triggers on this Unit's attack — i.e. on its owner's turn. The
   // attacker is always the turn player here, so only the attacker's First Strike applies;
@@ -7917,6 +7912,18 @@ function applySupport(atk, atkSide, def){
   const h = supportHelper(atk, atkSide, def);
   if (h) useSupport(h, atk, atkSide);
 }
+// The player picked an attack target that a <Support> boost would let the attacker destroy: offer the
+// 【Activate･Main】 first (it can't be used once the attack is declared). Returns true while the offer is open;
+// `again` re-runs the declaration afterwards.
+function offerSupportFirst(atk, def, again){
+  if (G._supportOffered===atk.uid){ G._supportOffered=null; return false; }
+  const h = supportHelper(atk, G.player, def);
+  if (!h || effSupport(h) < def.hp - atk.ap) return false;
+  G._supportOffered = atk.uid;
+  promptTargetChoice([h], `Before attacking: rest <b>${h.name}</b> (&lt;Support ${effSupport(h)}&gt;) so <b>${atk.name}</b> gets AP+${effSupport(h)} and can destroy <b>${def.name}</b>?`,
+    pick=>{ if (pick) useSupport(pick, atk, G.player); G.selected=atk.uid; G.mode='attack-target'; again(); }, "Don't use Support");
+  return true;
+}
 
 // <Breach N>: deal the breach damage to the FIRST card in the enemy shield area. A standing Base
 // sits in front of the shields, so it takes the hit first; otherwise the top Shield breaks (Burst may fire).
@@ -7971,7 +7978,13 @@ function pickAiBlocker(atk, blockers){
 // and a single-target enemy effect (e.g. Geara Doga (Sleeves)'s "Choose 1 enemy Unit, deal 1 damage")
 // opens a modal chooser so the player actually picks the target — a modal survives the post-combat
 // clearSel(), unlike a G.mode selection. The AI (and player effects with 0–1 legal targets) auto-resolve.
+// 【Destroyed】 resolves with the destroyed card as its source, then hands the source back: a multi-hit
+// effect (an AoE, "1 to 2 enemy Units") that destroys a Unit keeps resolving as itself (Acguy, Archangel).
 function fireDestroyed(u, side){
+  const prevSrc = G.effSrc;
+  try { fireDestroyedInner(u, side); } finally { G.effSrc = prevSrc; }
+}
+function fireDestroyedInner(u, side){
   G.effSrc = u;   // the card whose effect is resolving — effect damage reads it (damage-prevention statics)
   const tod=u.tempOnDestroyed;                                   // an effect it gained this turn (At the Risk of One's Life)
   if (tod && tod.turnSeq===G.turnSeq && (!tod.link || u.linked)){
@@ -7986,7 +7999,7 @@ function fireDestroyed(u, side){
     const enemyKinds = (dact.kind==='damage' && dact.scope!=='all-enemy' && dact.scope!=='all-both') || ['rest','destroy','bounce','debuff','stun'].includes(dact.kind);
     if (enemyKinds){
       const cands = enemyTargets(G.enemy, dact);
-      if (cands.length>=2){ promptTargetChoice(cands, `<b>${u.name}</b> 【Destroyed】 — choose an enemy Unit`, (t)=>{ applyToTarget(u, side, dact, t, 'Destroyed'); render(); checkEnd(); }); return; }
+      if (cands.length>=2){ promptTargetChoice(cands, `<b>${u.name}</b> 【Destroyed】 — choose an enemy Unit`, (t)=>{ if (t && !G.enemy.field.includes(t)) t=enemyTargets(G.enemy, dact)[0]||null; applyToTarget(u, side, dact, t, 'Destroyed'); render(); checkEnd(); }); return; }
       applyToTarget(u, side, dact, cands[0]||null, 'Destroyed'); return;
     }
   }
@@ -8325,6 +8338,7 @@ function aiTurn(){
 // action/target modal, or a field-tap selection (action-step / burst target, etc.). All such modes
 // are non-idle during the AI's turn (the AI never sets a player selection mode for itself).
 function aiPaused(){
+  if (G.modalQueue && G.modalQueue.length && !modalBusy()){ pumpModalQueue(); return true; }   // a waiting choice comes first
   if (el('blockModal') && el('blockModal').classList.contains('show')) return true;
   if (document.querySelector('.modal-overlay')) return true;   // a deck-look / exile picker is open
   return G.mode!=='idle';
@@ -8353,11 +8367,17 @@ function aiMainStep(){
   // removal — but only when it's worthwhile (an AoE that hits 2+, a kill, or a real threat to chip)
   G.effSrc = null;   // nothing is resolving between main-phase actions (a stale source mis-credits kills)
   const aoe = a=>a.scope==='all-enemy' || a.scope==='all-both';
-  const dmg = ai.hand.find(c=>c.type==='command' && c.action.kind==='damage' && canAfford(ai,c) && (aoe(c.action) || enemyTargets(pl, c.action).length));
+  // Only a Command with a 【Main】 can be played in the main phase (an 【Action】-only one waits for an action step).
+  const mainCmd = c=>c.type==='command' && /【\s*Main/.test(plain(c.effect||''));
+  // An AoE's net value: what it destroys of the enemy minus what it destroys of the AI's own board.
+  const aoeNet = a=>{ const f=a.filter||{}; const hit=u=>(f.maxLv==null||(u.lv||0)<=f.maxLv)&&(f.maxAp==null||effAp(u)<=f.maxAp)&&(f.maxHp==null||u.hp<=f.maxHp)&&(!f.blocker||effBlocker(u))&&(!f.notLinked||!u.linked);
+    const kills=s=>s.field.filter(u=>hit(u) && u.hp<=a.amount).reduce((n,u)=>n+keepVal(u),0);
+    return { foeHit: pl.field.filter(hit).length, net: kills(pl) - (a.scope==='all-both' ? kills(ai) : 0) }; };
+  const dmg = ai.hand.find(c=>mainCmd(c) && c.action.kind==='damage' && canAfford(ai,c) && (aoe(c.action) || enemyTargets(pl, c.action).length));
   if (dmg && pl.field.length){
     const isAoE = aoe(dmg.action);
     const tgt = isAoE ? null : aiRemovalTarget(dmg.action.amount, dmg.action);
-    const worthIt = isAoE ? pl.field.length>=2
+    const worthIt = isAoE ? (()=>{ const r=aoeNet(dmg.action); return r.foeHit>=2 && r.net>0; })()
       : (tgt && (tgt.hp<=dmg.action.amount || aiThreatScore(tgt)>=6));   // a kill, or a scary unit
     if (worthIt){
       const i=ai.hand.indexOf(dmg); ai.hand.splice(i,1); payCost(ai, effectiveCost(ai,dmg)); sendToTrash(dmg,ai); flashCard(dmg,'ENEMY COMMAND'); commandPlayed(dmg, ai); setTimeout(()=>afterCommandMain(dmg, ai), 0);
@@ -8367,7 +8387,7 @@ function aiMainStep(){
     }
   }
   // draw if low
-  const drawC = ai.hand.find(c=>c.type==='command' && c.action.kind==='draw' && c.action.amount>=2 && canAfford(ai,c));
+  const drawC = ai.hand.find(c=>mainCmd(c) && c.action.kind==='draw' && c.action.amount>=2 && canAfford(ai,c));
   if (drawC && ai.hand.length<=4){ const i=ai.hand.indexOf(drawC); ai.hand.splice(i,1); payCost(ai, effectiveCost(ai,drawC)); sendToTrash(drawC,ai); flashCard(drawC,'ENEMY COMMAND'); commandPlayed(drawC, ai); setTimeout(()=>afterCommandMain(drawC, ai), 0); for(let k=0;k<drawC.action.amount;k++) draw(ai); log(`${who(G.enemy)} plays <b>${drawC.name}</b>.`, 'ai'); return true; }
   // deploy a base if it improves the guard
   const baseC = ai.hand.find(c=>c.type==='base' && canAfford(ai,c) && (!ai.base || c.hp>ai.base.hp));
@@ -8415,10 +8435,10 @@ function aiMainStep(){
     }
   }
   // buff before attacks
-  const buff = ai.hand.find(c=>c.type==='command' && c.action.kind==='buff' && canAfford(ai,c));
+  const buff = ai.hand.find(c=>mainCmd(c) && c.action.kind==='buff' && canAfford(ai,c));
   if (buff && ai.field.some(u=>!u.sick&&!u.rested&&u.ap>0)){ const t=ai.field.filter(u=>!u.sick&&!u.rested&&u.ap>0).sort((a,b)=>b.ap-a.ap)[0]; const i=ai.hand.indexOf(buff); ai.hand.splice(i,1); payCost(ai, effectiveCost(ai,buff)); sendToTrash(buff,ai); flashCard(buff,'ENEMY COMMAND'); commandPlayed(buff, ai); setTimeout(()=>afterCommandMain(buff, ai), 0); t.tempAp=(t.tempAp||0)+buff.action.amount; t.ap=effAp(t); log(`${who(G.enemy)} empowers <b>${t.name}</b>.`, 'ai'); return true; }
   // token-creating command — play it when there's board room
-  const tokCmd = ai.hand.find(c=>c.type==='command' && c.action.kind==='token' && canAfford(ai,c) && !(c.action.tokenLimit && hasTraitToken(ai, c.action.tokenLimit)));
+  const tokCmd = ai.hand.find(c=>mainCmd(c) && c.action.kind==='token' && canAfford(ai,c) && !(c.action.tokenLimit && hasTraitToken(ai, c.action.tokenLimit)));
   if (tokCmd && ai.field.length<FIELD_MAX){ const i=ai.hand.indexOf(tokCmd); ai.hand.splice(i,1); payCost(ai, effectiveCost(ai,tokCmd)); sendToTrash(tokCmd,ai); flashCard(tokCmd,'ENEMY COMMAND'); commandPlayed(tokCmd, ai); setTimeout(()=>afterCommandMain(tokCmd, ai), 0); deployTokens(tokCmd.action, ai, tokCmd.name, tokCmd.name, 'ai'); return true; }
   return false;
 }
@@ -8664,6 +8684,7 @@ function collectPlayerActions(attacker){
 }
 function offerPlayerActionStep(attacker, cb){
   if (G.over){ cb(); return; }
+  if (modalBusy()){ whenModalFree(()=>offerPlayerActionStep(attacker, cb)); return; }   // after the open choice
   const opts=collectPlayerActions(attacker);
   if (!opts.length){ cb(); return; }
   const atkSide = attacker ? (G.player.field.includes(attacker) ? G.player : G.enemy) : null;
@@ -8704,6 +8725,9 @@ function resolveAiAttackInner(atk, done0, forced){
     target = goFace ? null : bestKill;
   }
   if (!target && cantHitPlayer(atk)){ render(); done(); return; }   // nothing it may legally attack
+  // <Support> is an 【Activate･Main】 (13-1-3-1): used in the main phase, before the attack is declared, so the
+  // player's block and action step see the boosted AP.
+  { const sd = target || (pl.base && !cantHitPlayer(atk) ? pl.base : null); if (sd) applySupport(atk, G.enemy, sd); }
   declareAttack(atk, G.enemy);   // attack step: rest + on-attack self-buffs
   if (target){ fireAttacked(target, pl); attackUnitHook(atk, G.enemy); G.curBattle={ atk, def:target }; }   // "when this Unit is attacked" (GP01Fb); Plutone
   resolveAttackTriggers(atk, G.enemy, ()=>{   // 【Attack】 effects (e.g. Marida's ping)
@@ -8713,6 +8737,7 @@ function resolveAiAttackInner(atk, done0, forced){
     const blockers = pl.field.filter(b=>effBlocker(b) && !b.rested && b.hp>0 && b!==target && blockerAllowed(b, atk));
     const afterBlock=(blk)=>{
       if (blk){ blk.rested=true; log(`You intercept with <b>${blk.name}</b> &lt;Blocker&gt;.`, 'me'); afterBlockDeclared(blk, G.player); G.curBattle={ atk, def:blk }; }
+      if (blk||target) aiBattleRedirect(atk, blk||target);   // the AI's attacker (e.g. Qubeley Mk-II) would die: redirect
       // Action step (8-4), then the damage step (8-5).
       offerPlayerActionStep(atk, ()=>{
         if (!attackerStillOut(atk, G.enemy)){ render(); done(); return; }
@@ -8734,6 +8759,7 @@ function aiDirectHit(atk, done){
 
 // Let the player choose ONE token spec to deploy (e.g. Striker Pack: Sword OR Launcher Strike).
 function promptTokenChoice(specs, cb){
+  if (modalBusy()){ whenModalFree(()=>promptTokenChoice(specs, cb)); return; }
   el('blockMsg').innerHTML = `Choose which Unit token to deploy:`;
   const wrap=el('blockBtns'); wrap.innerHTML='';
   specs.forEach(sp=>{
@@ -8746,6 +8772,7 @@ function promptTokenChoice(specs, cb){
   el('blockModal').classList.add('show');
 }
 function promptPlayerBlock(atk, blockers, target, cb){
+  if (modalBusy()){ whenModalFree(()=>promptPlayerBlock(atk, blockers.filter(b=>G.player.field.includes(b) && !b.rested && b.hp>0), target, cb)); return; }
   const tgtTxt = target ? `your <b>${target.name}</b>` : (G.player.base ? `your <b>${G.player.base.name}</b> base` : 'you directly');
   el('blockMsg').innerHTML = `${who(G.enemy)}'s <b>${atk.name}</b> (AP ${atk.ap}) attacks ${tgtTxt}. Intercept with a &lt;Blocker&gt;?`;
   const wrap=el('blockBtns'); wrap.innerHTML='';
@@ -8791,6 +8818,7 @@ function cardFace(c, ctx){
     if (G.mode==='activate-target' && G.pending?.activate?.action.scope==='enemy' && (!G.activateCands || G.activateCands.includes(c.uid))) cls.push('selectable');
     if (G.mode==='trigger-target' && (G.pending?.scope==='enemy'||G.pending?.scope==='self-ping-enemy'||G.pending?.scope==='rest-both-enemy') && G.pending.cands.includes(c.uid)) cls.push('selectable');
     if (G.mode==='trigger-multi' && G.pending?.cands.includes(c.uid) && !G.pending.picked.includes(c.uid)) cls.push('selectable');
+    if (G.mode==='support-target' && G.pending && c!==G.pending.src && G.player.field.includes(c)) cls.push('selectable');
     if (G.mode==='action-step-target' && G.pending?.cands.includes(c.uid)) cls.push('selectable');
   }
   const isBase = c.type==='base';
@@ -9227,6 +9255,12 @@ function inspect(c){
       ab.onclick=()=>{ closeInspect(); G.selected=c.uid; G.mode='attack-target'; setPrompt(`${c.name} attacking — tap a RESTED enemy unit, or the enemy base/shields to strike directly.`); render(); };
       btns.appendChild(ab);
     }
+    // <Support N> (13-1-3-1): 【Activate･Main】 Rest this Unit — one of your other Units gets AP+N this turn.
+    if (effSupport(c)>0 && !c.rested && c.hp>0 && G.phase!=='end' && G.player.field.some(x=>x!==c && x.hp>0)){
+      const sb=document.createElement('button'); sb.innerHTML=`⚡ &lt;Support ${effSupport(c)}&gt;: rest to give another Unit AP+${effSupport(c)}`;
+      sb.onclick=()=>{ closeInspect(); G.mode='support-target'; G.pending={ src:c }; setPrompt(`${c.name} <Support ${effSupport(c)}>: tap one of your other Units.`); render(); };
+      btns.appendChild(sb);
+    }
     for (const slot of [0,1]){
       if (slot===1){ if (!c.activate2) continue; swapActivate(c); }
       const act=c.activate, ready=activateReady(c);
@@ -9312,6 +9346,8 @@ function cancelAction(){
   }
   if (G.mode==='gd05-sac-own'){ gd05SacResolve(null); return; } // Cancel = decline Sazabi's sacrifice
   if (G.mode==='token-replace'){ const p=G.pending; G.mode='idle'; G.pending=null; if(p&&p.after) p.after(); else { clearSel(); render(); } return; }
+  // Nothing of the player's is pending on the opponent's turn: don't end the battle the AI is in the middle of.
+  if (G.turn!=='player') return;
   clearSel(); render();
 }
 el('rulesBtn').addEventListener('click', ()=>{
