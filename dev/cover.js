@@ -9,6 +9,7 @@ const IMPLEMENTED = new Set(['GD04-029','GD04-041','GD04-053','ST14-006','GD05-0
   'GD03-076','GD05-127','ST13-001','GD05-129','GD05-093','GD05-053','GD05-094','GD05-017','GD05-049','GD04-089',
   'GD01-023','GD02-011','GD04-125','ST09-001','GD05-066','GD01-066','EB01-067','GD04-001','GD05-046','EB01-009',
   'GD04-057','GD02-071','GD04-070']);
+IMPLEMENTED.add('GD04-042');   // Psycho Gundam (GQ): a text-read watcher (allyShieldBreakHook), not a static field
 const src = process.argv[2] ? JSON.parse(fs.readFileSync(process.argv[2],'utf8')) : [...A.CARD_BY_ID.values()];   // the merged pool: printings carry their base printing's text
 const dead={}; const seen=new Set(); let cards=0, clauses=0, deadClauses=0;
 const statics = c => c.blocker||c.breach||c.suppression||c.support||c.repair||c.onKill||c.onShieldBreak

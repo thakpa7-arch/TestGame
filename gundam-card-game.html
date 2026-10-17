@@ -2076,7 +2076,7 @@ function parseActivateEffect(t){
   if (/recover|heal/.test(t)){ d=t.match(/(\d+)\s*hp/);      return { kind:'heal', amount:d?+d[1]:1, scope: /^this unit recovers/.test(t) ? 'self' : 'friendly' }; }   // Elan Ceres heals itself
   if ((d=t.match(/deal (\d+) damage to all enemy/)))        return { kind:'damage', amount:+d[1], scope:'all-enemy' };
   if (/\brest it\b|rest that unit|rest 1 enemy unit/.test(t)) return { kind:'rest', scope:'enemy', filter:targetFilter(t) };
-  if ((d=t.match(/ap\s*-\s*(\d+)/)))                         return { kind:'debuff', amount:+d[1], scope:'enemy', filter:targetFilter(t) };
+  if ((d=t.match(/ap\s*-\s*(\d+)/)))                         return Object.assign({ kind:'debuff', amount:+d[1], scope:'enemy', filter:targetFilter(t) }, /during this battle/.test(t) ? { dur:'battle' } : {});   // Mirasoul, Graze Ein: AP-N ends with the battle
   if ((d=t.match(/deal (\d+) damage/)) && /enemy/.test(t))   return { kind:'damage', amount:+d[1], scope:'enemy', filter:targetFilter(t) };
   if ((d=t.match(/ap\s*\+\s*(\d+)/))){
     const all = /all (your |friendly )|all of your|1 to \d+ friendly/.test(t);
@@ -2444,6 +2444,12 @@ function parseTriggerInner(t){
   if ((d=tl.match(/draw (\d+)/i))){ if(/discard/.test(tl)){ const disc=tl.match(/discard (\d+)/i); const dn=+(disc?disc[1]:1); return tl.indexOf('discard')<tl.indexOf('draw') ? { kind:'discardDraw', discard:dn, draw:+d[1] } : { kind:'drawDiscard', draw:+d[1], discard:dn }; } return { kind:'draw', amount:+d[1] }; }
   return null;
 }
+// "Deal N damage to the first card in your/that opponent's shield area." — effect damage to the enemy Base (EX Base too) or,
+// with no Base, the top Shield (shieldAreaDamage).
+function shieldAreaDamageClause(t){
+  const m=String(t||'').match(/^\s*deal (\d+) damage to the first card in (?:your|that) opponent'?s shield area\.?\s*$/i);
+  return m ? { kind:'shieldAreaDamage', amount:+m[1] } : null;
+}
 // "Choose N [trait] cards from your trash. Exile them. If you do, [effect]."
 function parseTrashExile(t){
   // Two printed wordings: "choose N … from your trash. Exile them from the game. If you do, …" and the
@@ -2454,7 +2460,9 @@ function parseTrashExile(t){
   const rest = m[3].trim();
   // The payoff may itself be a trash retrieval ("choose 1 (Special Move) Command card from your trash.
   // Add it to your hand." — Shining Gundam), which parseTriggerInner doesn't cover.
-  let inner = parseTriggerInner(rest);
+  // "…deal N damage to the first card in your opponent's shield area." (Master Gundam) hits the Base / top Shield, not a Unit;
+  // a "choose 1 …" payoff keeps its target restriction ("choose 1 active enemy Unit" — Infinite Justice Gundam).
+  let inner = shieldAreaDamageClause(rest) || (/^choose 1\b/i.test(rest) ? parseClause(rest) : null) || parseTriggerInner(rest);
   if (!inner && /from your trash/i.test(rest) && /add it to your hand|to your hand/i.test(rest)){
     inner = { kind:'trashRetrieve', filter: trashRetrieveFilter(rest.replace(/^\s*add 1 /i,'choose 1 ')) };
   }
@@ -3102,6 +3110,14 @@ function armKillReady(card, side, act, label){
   log(`${label}: <b>${card.name}</b> — this turn, when a friendly ${(act.killTraits||[]).map(x=>'('+x+')').join('/')} Unit destroys an enemy Unit in battle, a rested one is set active.`, side===G.player?'me':'ai');
 }
 function killReadyHook(side, killer){
+  // Penelope (Flight Form): "During this turn, when one of your (T) Units destroys an enemy Unit with battle damage, …"
+  for (const w of (side && side.killWatchArms||[]).filter(x=>x.turnSeq===G.turnSeq)){
+    if (!killer || G.turn!==side.who || !(w.traits.length ? w.traits.some(tr=>hasTraitT(killer, tr)) : true)) continue;
+    const act=Object.assign({}, w.inner, { source:w.card });
+    if (!cmdModeLegal(act, side)) continue;
+    log(`<b>${w.card.name}</b>: <b>${killer.name}</b> destroyed an enemy Unit with battle damage.`, side===G.player?'me':'ai');
+    hookResolve(w.card, side, act, w.card.name);
+  }
   const arms=(side && side.killReadyArms||[]).filter(w=>w.turnSeq===G.turnSeq);
   for (const w of arms){
     if (!killer || !(w.killTraits||[]).some(tr=>hasTraitT(killer, tr))) continue;
@@ -3344,9 +3360,29 @@ function parseBurst(effect){
 function parseShieldBreak(effect){
   const t = plain(effect).toLowerCase();
   if (!/destroys?\s+(?:an?\s+)?enemy['s ]*\s*shield area card/.test(t)) return null;
+  // "When damage from one of your Units paired with a (T) Pilot destroys an enemy shield area card, …" (Psycho Gundam (GQ)) is a
+  // board watcher (allyShieldBreakHook), not this Unit's own trigger.
+  if (/when damage from one of your units/.test(t)) return null;
   let m;
   if ((m = t.match(/destroys? an enemy shield area card with (?:battle )?damage, choose 1 enemy unit\. it gets ap-(\d+) during this turn/)))
     return { kind:'debuff', amount:+m[1], oncePerTurn:/once per turn/.test(t), requirePair:/【\s*during pair/.test(t) };
+  // The payoff sentence(s), read by the shared clause parser so its target restriction stays ("choose 1 enemy Unit with 3 or
+  // less AP" — Dragon Gundam), with a leading "if <condition>," (Gundam Exia (Trans-Am)) and the 【During Pair/Link】【Once per
+  // Turn】 prefix of that ability (Dragon Gundam, McGillis Fareed).
+  { const pl = plain(effect);
+    const sm = pl.match(/((?:【[^】]*】\s*)*)(?:during your turn,\s*)?when this unit destroys an enemy shield area card with (?:battle )?damage,\s*([^【]*)/i);
+    if (sm && !/that enemy player may discard|set it as active/i.test(sm[2])){
+      const pre = (sm[1]||'').toLowerCase(); let body = sm[2].replace(/<[^>]*>/g,' ').trim(), cond = null;
+      const ci = body.match(/^if (.+?),\s*(.+)$/i);
+      if (ci){ cond = parseCondition(ci[1].toLowerCase()); body = ci[2]; }
+      const act = (!ci || cond) ? parseClause(body) : null;
+      if (act){
+        const gates = { oncePerTurn:/once per turn/.test(pre), requirePair:/during pair/.test(pre), requireLink:/during link/.test(pre) };
+        if (act.kind==='damage' && act.scope!=='all-enemy' && !cond) return Object.assign({ kind:'damage', amount:act.amount, filter:act.filter||null }, gates);
+        if (act.kind==='rest' && !cond) return Object.assign({ kind:'rest', maxLv:(act.filter&&act.filter.maxLv!=null)?act.filter.maxLv:null, filter:act.filter||null }, gates);
+        if (hookClauseKind(act.kind) || act.kind==='grantAttackActive') return Object.assign({ kind:'clause', act, cond }, gates);
+      }
+    } }
   if ((m = t.match(/deal (\d+) damage/))) return { kind:'damage', amount:+m[1] };
   // 【During Pair】【Once per Turn】"…choose 1 enemy Unit that is Lv.N or lower. Rest it." (Wing Gundam Zero EW)
   if ((m = t.match(/destroys? an enemy shield area card with battle damage, that enemy player may discard 1\. if they don'?t discard with this effect, you may deploy 1\s*\(([^)]+)\)\s*unit card that is lv\.?\s*(\d+) or lower from your hand/)))
@@ -3547,6 +3583,11 @@ function parseClause(raw){
   { const ch = parseChoiceClause(raw); if (ch) return ch; }
   raw = firstModal(raw);
   const t = raw.toLowerCase(); let d;
+  // "During this turn, when one of your (T) Units destroys an enemy Unit with battle damage, <effect>." (Penelope (Flight Form)'s
+  // 【Deploy】) — nothing happens now: it arms a watcher for the rest of the turn (killReadyHook).
+  { const kw = t.match(/^during this turn, when one of your ((?:\([^)]+\)\s*\/?\s*)*)units? destroys an enemy unit with battle damage,\s*(.+)$/);
+    if (kw){ const inner=parseClause(raw.slice(t.indexOf(kw[2])));
+      return inner ? { kind:'armKillWatch', traits:[...kw[1].matchAll(/\(([^)]+)\)/g)].map(x=>x[1].trim()), inner } : null; } }
   // Leading "During your turn, <effect>" — gate the effect on it being your turn (e.g. Reineforce Jr.
   // only deploys its Parts token when bursted/played on your own turn). The remainder may carry a
   // further "if <cond>," which the recursive parse handles.
@@ -3588,6 +3629,7 @@ function parseClause(raw){
     if (cond) return inner ? { kind:'cond', cond, inner, other:/\banother\b/.test(cm[1]) } : null;
     if (inner) return inner;                            // unknown condition → resolve ungated (legacy behaviour)
   }
+  { const sa = shieldAreaDamageClause(raw); if (sa) return sa; }   // "deal N damage to the first card in your opponent's shield area"
   // Costs paid with your own card, "Then, …" riders on the chosen Unit, amounts read at resolution, and the
   // "belonging to another player" / "enemy Base" / "enemy player … may draw" targets (parseG4Clause).
   { const g4 = parseG4Clause(raw); if (g4) return g4; }
@@ -3608,9 +3650,15 @@ function parseClause(raw){
   }
   // self-targeted buff: "This Unit gets AP+N during this turn" (and maybe gains <High-Maneuver>).
   // The High-Maneuver may be gated on "if it is a Link Unit" (e.g. Char Aznable's 【Attack】).
+  // "This Unit gets AP+N during this turn. If <cond>, all your (T) Units get AP+M instead." (Setsuna F. Seiei's 【Attack】) — with
+  // the condition met every (T) Unit of yours (this one included) gets the buff in place of the self-buff.
+  if ((d=t.match(/^this unit gets ap\+(\d+) during this turn\.\s*if (.+?),\s*all your\s*\(([^)]+)\)\s*units get ap\+(\d+)(?: during this turn)? instead\.?$/))){
+    const cond=parseCondition(d[2]);
+    if (cond) return { kind:'cond', cond, inner:{ kind:'buffAllFriendly', amount:+d[4], traits:[d[3].trim()] }, elseInner:{ kind:'selfbuff', amount:+d[1], hman:false, hmanIfLink:false } };
+  }
   if ((d=t.match(/this unit gets ap\+(\d+)/))){
     const hman = /<\s*high-?maneuver/.test(t);
-    return { kind:'selfbuff', amount:+d[1], hman, hmanIfLink: hman && /if it is a link unit/.test(t) };
+    return Object.assign({ kind:'selfbuff', amount:+d[1], hman, hmanIfLink: hman && /if it is a link unit/.test(t) }, /this unit gets ap\+\d+ during this battle/.test(t) ? { dur:'battle' } : {});   // Auel Neider: ends with the battle
   }
   if (/add (1|one)?\s*of your shields to your hand/.test(t)){
     const sd = t.match(/look at the top (\d+)/);
@@ -4274,6 +4322,8 @@ function enemyTargets(foe, act){
   // "with the highest / lowest Lv." — measured over every enemy Unit in play.
   if (f.highestLv || f.lowestLv){ const lvs=foe.field.filter(u=>u.hp>0).map(u=>u.lv||0);
     if (lvs.length){ const want=f.highestLv?Math.max(...lvs):Math.min(...lvs); list=list.filter(u=>(u.lv||0)===want); } }
+  // "with the lowest HP" (Gundam Exia (Trans-Am)) — the minimum over every enemy Unit in play; ties are the chooser's pick.
+  if (f.lowestHp){ const hps=foe.field.filter(u=>u.hp>0).map(u=>u.hp); if (hps.length){ const lo=Math.min(...hps); list=list.filter(u=>u.hp===lo); } }
   if (act.kind==='bouncePilot') list=list.filter(u=>!!u.pilotCard);   // "choose 1 enemy Pilot" — a Unit's paired Pilot
   // Tokens ARE valid targets for destroy/bounce (a bounced token just ceases to exist).
   if (act.kind==='rest') list=list.filter(u=>!u.rested);
@@ -4737,7 +4787,9 @@ function afterBlockDeclared(blk, side){
 // Gundam (Meikyo Shisui) on a (Special Move) Command — 【Once per Turn】, during your turn only.
 // `done` (optional): continue after any choice the player has to make here (Shining Gundam's target).
 function commandPlayed(card, side, done){
-  const fin=()=>{ if (done) done(); };
+  // Last: "When you activate a Command's 【Main】/【Action】 effect, …" (Unicorn Gundam (Awakened)) — on either player's turn.
+  let finished=false;
+  const fin=()=>{ if (finished) return; finished=true; if (card && side) cmdActWatchHook(card, side, done); else if (done) done(); };
   if (!card || !side){ fin(); return; }
   const ct=(card.trait||'').toLowerCase(); const foe=side===G.player?G.enemy:G.player; const cls=side===G.player?'me':'ai';
   if (!side.cmdTraits || side.cmdTraits.turnSeq!==G.turnSeq) side.cmdTraits={ turnSeq:G.turnSeq, set:new Set() };
@@ -5488,6 +5540,7 @@ function aiEffectUseful(card, side, a){
   if (a.kind==='trashRetrieve') return side.trash.some(c=>matchFilter(c, a.filter) && !c.token);
   if (a.kind==='damageBoth') return cmdModeLegal(a, side);
   if (a.kind==='resourceRamp') return (side.resourceDeck||0)>0 && totalRes(side)<RES_AREA_MAX;
+  if (a.kind==='shieldAreaDamage') return !!(foe.base || foe.shields.length);
   return true;
 }
 // A Command mode / effect that chooses a target can only be picked while that target can be chosen (10-1-8-1-1, 10-2-2).
@@ -5715,6 +5768,11 @@ function runTrigger(card, side, act, label){
     return;
   }
   if (act.kind==='gd05BaseFromTrash'){ gd05DeployBaseFromTrash(side, card, label); return; }
+  if (act.kind==='armKillWatch'){                // Penelope (Flight Form)
+    (side.killWatchArms = (side.killWatchArms||[]).filter(w=>w.turnSeq===G.turnSeq)).push({ turnSeq:G.turnSeq, card, traits:act.traits||[], inner:act.inner });
+    log(`${label}: <b>${card.name}</b> — this turn, when ${side===G.player?'your':'its'} ${(act.traits||[]).map(x=>'('+x+')').join('/')} Unit destroys an enemy Unit with battle damage, its effect resolves.`, side===G.player?'me':'ai');
+    return; }
+  if (act.kind==='shieldAreaDamage'){ shieldAreaDamage(card, side, side===G.player?G.enemy:G.player, act.amount, `${label}: <b>${card.name}</b>`); return; }   // Master Gundam
   if (act.kind==='gd05AxisDeploy'){ gd05AxisDeploy(side, card); return; }
   if (act.kind==='restOwnThen'){ restOwnThenAI(card, side, act, label); return; }
   if (act.kind==='selfRestThen'){ selfRestNow(card, side, label); if (act.inner) runTrigger(card, side, act.inner, label); return; }   // "Then, …"
@@ -6030,11 +6088,17 @@ function runTrigger(card, side, act, label){
   } else if (act.kind==='selfKeyword'){
     grantKeyword(card, act.kw, act.amount); card.ap=effAp(card);
     log(`${label}: <b>${name}</b> gains &lt;${kwLabel(act.kw)}${act.kw==='breach'?' '+act.amount:''}&gt; this turn.`, cls);
+  } else if (act.kind==='buffAllFriendly'){     // "all your (T) Units get AP+N" for this turn (Setsuna F. Seiei)
+    const ts=side.field.filter(x=>x.hp>0 && x.type==='unit' && (!act.traits || !act.traits.length || act.traits.some(tr=>hasTraitT(x, tr))));
+    for (const x of ts){ x.tempAp=(x.tempAp||0)+act.amount; x.ap=effAp(x); }
+    if (ts.length) log(`${label}: <b>${name}</b> — all ${side===G.player?'your':'its'}${act.traits&&act.traits.length?' '+act.traits.map(x=>'('+x+')').join('/'):''} Units get AP+${act.amount} this turn.`, cls);
   } else if (act.kind==='selfbuff'){
-    card.tempAp=(card.tempAp||0)+act.amount; card.ap=effAp(card);
+    const btl = act.dur==='battle' && (G.curBattle || G.curAttack);   // "during this battle" (Auel Neider) — cleared when the battle ends
+    if (btl) card.battleAp=(card.battleAp||0)+act.amount; else if (act.dur!=='battle') card.tempAp=(card.tempAp||0)+act.amount;
+    card.ap=effAp(card);
     const gotHM = act.hman && (!act.hmanIfLink || card.linked);
     if (gotHM) card.highManeuver=true;
-    log(`${label}: <b>${name}</b> gets AP+${act.amount} this turn${gotHM?' and &lt;High-Maneuver&gt;':''}.`, cls);
+    log(`${label}: <b>${name}</b> gets AP+${act.amount} ${act.dur==='battle'?(btl?'during this battle':'— no battle is in progress, no effect'):'this turn'}${gotHM?' and &lt;High-Maneuver&gt;':''}.`, cls);
   } else if (act.kind==='mill'){
     const milled=[]; for(let i=0;i<act.amount&&side.deck.length;i++){ const c=side.deck.pop(); sendToTrash(c,side); milled.push(c.name); revealMill(c,side); }
     if(milled.length) log(`${label}: <b>${name}</b> mills ${milled.length} — ${milled.join(', ')}.`, cls);
@@ -6916,7 +6980,8 @@ function parseAuraStatics(c, pl0){
   const ungated = pl0.split('【')[0]; let m;
   // "(During your turn,)(while you are Lv.N or higher,) all your / other / friendly [colour] (T) Units (that are Lv.N) get AP+N
   // (during your opponent's turn)." (Penelope, Darilbalde, Diva, Miorine Rembran & Academy Ship)
-  const ln = pl0.split(/(?<=\.)\s+/).find(x=>/\ball (your|other|friendly)\s*(?:(?:green|blue|red|white|purple)\s*)?\([^)]+\)\s*units(?: that are lv\.?\s*\d+)? get ap\s*\+/i.test(x)) || '';
+  const ln = pl0.split(/(?<=\.)\s+/).find(x=>/\ball (your|other|friendly)\s*(?:(?:green|blue|red|white|purple)\s*)?\([^)]+\)\s*units(?: that are lv\.?\s*\d+)? get ap\s*\+/i.test(x)
+    && !/\binstead\b|during this turn/i.test(x)) || '';   // a one-shot effect ("… instead", Setsuna F. Seiei's 【Attack】; "… during this turn", Aspite) isn't an aura
   m = ln.match(/(during your turn, )?(?:while you are lv\.?\s*(\d+) or higher, )?all (your|other|friendly)\s*(?:(green|blue|red|white|purple)\s*)?\(([^)]+)\)\s*units(?: that are lv\.?\s*(\d+))? get ap\s*\+\s*(\d+)( during your opponent'?s turn)?/i);
   c.boardAura = m ? { yourTurn:!!m[1], minLevel:m[2]?+m[2]:null, other:/other/i.test(m[3]), color:m[4]?m[4].toLowerCase():null, trait:m[5].trim().toLowerCase(), lv:m[6]?+m[6]:null, ap:+m[7], oppTurn:!!m[8] } : null;
   // "All friendly Unit tokens get AP+N (during your opponent's turn)." (Cyclops Team)
@@ -8599,7 +8664,9 @@ function finishEndPhase(){
   G.phase='end';
   if (!G.endStepDone){
     // End Step: <Repair> ("at the end of your turn") for the turn player's Units (13-1-1-1).
-    for (const u of s.field){ const _r=effRepair(u); if (_r>0 && u.hp>0 && u.hp<effMaxHp(u)){ const _b=u.hp; u.hp=Math.min(effMaxHp(u), u.hp+_r); if(u.hp>_b){ floatNum(u.uid,'+'+(u.hp-_b),'#7ee29a'); unitHealed(u, s); } } }
+    if (G.repairDoneSeq!==G.turnSeq){ G.repairDoneSeq=G.turnSeq; const busy0=modalBusy();
+      for (const u of s.field){ const _r=effRepair(u); if (_r>0 && u.hp>0 && u.hp<effMaxHp(u)){ const _b=u.hp; u.hp=Math.min(effMaxHp(u), u.hp+_r); if(u.hp>_b){ floatNum(u.uid,'+'+(u.hp-_b),'#7ee29a'); unitHealed(u, s); } } }
+      if (s===G.player && !busy0 && modalBusy()){ whenModalFree(()=>finishEndPhase()); return; } }   // a "when this Unit recovers HP" choice (Lupus Rex (EX))
     // "…gains the following effect during this turn: ■At the end of the turn, …" (GFreD).
     for (const sd of [G.player, G.enemy]){ if(!sd) continue;
       for (const u of [...sd.field]){ const g=u.eotGain; if (!g) continue; u.eotGain=null;
@@ -9171,6 +9238,11 @@ function activateReady(u){
   // "During this battle, battle damage this Unit would receive is dealt to … instead" (Qubeley Mk-II) only
   // means something while this Unit is battling — outside a battle it would just burn the once-per-turn.
   if (act && act.kind==='redirectBattle' && !(G.curBattle && (G.curBattle.atk===u || G.curBattle.def===u))) return false;
+  // "Choose 1 enemy Base/enemy Shield this Unit is battling" (Moebius) — only while it is attacking the enemy player.
+  if (act && act.kind==='baseShieldDamage' && !(G.curAttack===u && !G.curBattle)) return false;
+  // "… during this battle" (Gundam Aerial (Mirasoul Flight Unit)'s AP-1, AGE-2 Double Bullet's AP+4) only means something in a battle.
+  { const eff = act && act.kind==='cond' ? act.inner : act;
+    if (eff && ((eff.kind==='debuff' && eff.dur==='battle') || eff.kind==='selfBattleBuff') && !(G.curBattle || G.curAttack)) return false; }
   { const eff = act && act.kind==='cond' ? act.inner : act;
     if (eff && /^setActive/.test(eff.kind) && readyDenied(side)) return false; }   // Reginlaze Julia on the other side
   if (act && act.kind==='setActiveAll' && !side.field.some(x=>x.rested && x.hp>0 && (!act.traits.length || act.traits.some(tr=>(x.trait||'').toLowerCase().includes('('+tr+')'))) && (!act.blocker || effBlocker(x)))) return false;
@@ -9356,7 +9428,8 @@ function applyActivateEffect(u, target, side, costUnit){
       else pick([...cands].sort((x,y)=>((y.pAp||0)+(y.pHp||0))-((x.pAp||0)+(x.pHp||0)))[0]);
     }
   } else if (a.kind==='selfBattleBuff'){
-    u.battleAp=(u.battleAp||0)+a.amount; u.ap=effAp(u); log(`<b>${u.name}</b> gets AP+${a.amount} during this battle.`, cls);
+    if (!G.curBattle && !G.curAttack) log(`<b>${u.name}</b>: no battle is in progress, so "during this battle" has no effect.`, cls);
+    else { u.battleAp=(u.battleAp||0)+a.amount; u.ap=effAp(u); log(`<b>${u.name}</b> gets AP+${a.amount} during this battle.`, cls); }
   } else if (a.kind==='setActiveAll'){
     const us=side.field.filter(x=>x.hp>0 && x.rested && (!a.traits.length || a.traits.some(tr=>(x.trait||'').toLowerCase().includes('('+tr+')'))) && (!a.blocker || effBlocker(x)));
     for (const x of us){ if (!effReady(x, side)) break; if (a.noAttack) x.noAttackTurn=G.turnSeq; }
@@ -9391,17 +9464,9 @@ function applyActivateEffect(u, target, side, costUnit){
     else if (side===G.player && cands.length>1) showLookAtTop(cands, `${u.name}: deploy a Unit from your trash`, ()=>true, true, deploy);
     else deploy([...cands].sort((x,y)=>(y.lv||0)-(x.lv||0))[0]);
   } else if (a.kind==='baseShieldDamage'){
-    // "…enemy Base/enemy Shield this Unit is battling" — hit the Base while it guards, else a Shield.
-    const amt=shieldAreaEffDamage(foe, a.amount);
-    if (amt<=0){ /* fully reduced */ }
-    else if (foe.base && !foe.base.token && baseGuarded(foe, u, false)) log(`${who(foe)}'s <b>${foe.base.name}</b> can't receive that damage.`, cls);
-    else if (foe.base && !foe.base.token && foe.base.hp>0){
-      const b=foe.base; b.hp-=amt; floatNum(b.uid,'-'+amt,'#ff6b5e');
-      log(`<b>${u.name}</b> deals ${amt} to <b>${b.name}</b>.`, cls);
-      if (b.hp<=0){ foe.base=null; fx('die', b.uid); sendToTrash(b, foe); log(`${who(foe)}'s base is destroyed.`, cls); whenModalFree(()=>fireDestroyed(b, foe)); }
-    } else if (foe.shields.length){
-      breachShield(u, foe);
-    } else log(`<b>${u.name}</b>: nothing to hit.`, cls);
+    // "…enemy Base/enemy Shield this Unit is battling" — the first card in the shield area: the Base (an EX Base too) while
+    // there is one, else the top Shield. N damage destroys a Shield outright.
+    shieldAreaDamage(u, side, foe, a.amount, u.name);
   } else if (a.kind==='gd05GyuneiSac'){
     gd05GyuneiActivate(u, side);
   } else if (a.kind==='selfPingBuff'){
@@ -9420,7 +9485,8 @@ function applyActivateEffect(u, target, side, costUnit){
     if (target){ if (a.dur==='battle') target.battleAp=(target.battleAp||0)+a.amount; else target.tempAp=(target.tempAp||0)+a.amount; target.ap=effAp(target); log(`<b>${u.name}</b>: <b>${target.name}</b> gets AP+${a.amount} ${a.dur==='battle'?'during this battle':'this turn'}.`, cls); }
     if (a.then) runTrigger(u, side, a.then, u.name);
   } else if (a.kind==='debuff'){
-    if (target && !apReduceBlocked(target, foe)){ target.tempAp=(target.tempAp||0)-a.amount; target.ap=effAp(target); log(`<b>${u.name}</b>: <b>${target.name}</b> gets AP-${a.amount} this turn.`, cls); if (foe.field.includes(target)) apReducedHook(target, foe); }
+    if (target && a.dur==='battle' && !G.curBattle && !G.curAttack) log(`<b>${u.name}</b>: no battle is in progress, so "during this battle" has no effect.`, cls);
+    else if (target && !apReduceBlocked(target, foe)){ if (a.dur==='battle') target.battleAp=(target.battleAp||0)-a.amount; else target.tempAp=(target.tempAp||0)-a.amount; target.ap=effAp(target); log(`<b>${u.name}</b>: <b>${target.name}</b> gets AP-${a.amount} ${a.dur==='battle'?'during this battle':'this turn'}.`, cls); if (foe.field.includes(target)) apReducedHook(target, foe); }
   } else if (a.kind==='heal'){
     if (a.scope==='self') target=u;   // "this Unit recovers N HP"
     if (target){ const _b=target.hp; target.hp=Math.min(effMaxHp(target), target.hp+a.amount); if(target.hp>_b){ floatNum(target.uid,'+'+(target.hp-_b),'#7ee29a'); unitHealed(target, side); } log(`<b>${u.name}</b> repairs <b>${target.name}</b> (+${a.amount} HP).`, cls); }
@@ -9685,10 +9751,11 @@ function fieldClick(uidv){
     const u=G.player.field.find(c=>c.uid===uidv);
     if(u){
       const canAttack = !u.rested && (!u.sick || deployTurnAttackOk(u, G.enemy)) && u.ap>0;
+      // A 0-AP Unit may still attack (no rule forbids it — Moebius attacks to use its 【Activate･Action】): the inspector offers it.
       // A Unit that can BOTH attack and activate opens the inspector so the player chooses.
       if (activateReadyAny(u) && (canAttack || u.sick || u.ap<=0)){ inspect(u); return; }
       if (u.rested){ inspect(u); return; }
-      if (u.ap<=0){ flashPrompt(`${u.name} can't attack (no AP).`); inspect(u); return; }
+      if (u.ap<=0){ inspect(u); return; }
       if (u.sick && !deployTurnAttackOk(u, G.enemy)){ flashPrompt(deployTurnOnly(u) ? `${u.name} can only attack a rested enemy Unit on the turn it is deployed.` : `${u.name} has summoning sickness this turn.`); return; }
       if (trashBlocksAttack(u, G.player)){ flashPrompt(u.noAttack ? `${u.name} can't attack.` : `${u.name} can't attack until ${u.trashCantAttack.maxCount+1}+ cards are in your trash.`); return; }
       G.selected=uidv; G.mode='attack-target';
@@ -9854,25 +9921,43 @@ function strikePlayer(atk, defSide, done){
 function resolveShieldBreakTrigger(atk, defSide, done){
   G.effSrc = atk;   // the card whose effect is resolving — effect damage reads it (damage-prevention statics)
   done = done || function(){};
-  const sb = atk && (atk.onShieldBreak || (atk.pilotCard && atk.pilotCard.onShieldBreak));
   const atkSide = defSide===G.player ? G.enemy : G.player;
+  // The Unit's own trigger and the one its paired Pilot gives it (McGillis Fareed, Heero Yuy) — each resolves.
+  const list=[]; if (atk && atk.onShieldBreak) list.push({ src:atk, sb:atk.onShieldBreak }); if (atk && atk.pilotCard && atk.pilotCard.onShieldBreak) list.push({ src:atk.pilotCard, sb:atk.pilotCard.onShieldBreak });
+  (function next(i){ if (i>=list.length){ done(); return; } shieldBreakOne(atk, atkSide, defSide, list[i].src, list[i].sb, ()=>next(i+1)); })(0);
+}
+function shieldBreakOne(atk, atkSide, defSide, src, sb, done){
+  G.effSrc = atk;
   if (!sb || atkSide.who !== G.turn){ done(); return; }
+  const slot = src===atk ? 'shieldBreakTurn' : 'shieldBreakTurnP';                   // a Pilot's trigger keeps its own 【Once per Turn】 marker
   if (sb.requirePair && !duringPairMet(atk)){ done(); return; }                     // 【During Pair】 gate
-  if (sb.oncePerTurn && atk.shieldBreakTurn===G.turnSeq){ done(); return; }         // 【Once per Turn】
-  if (sb.kind==='discardOrDeploy'){ if (sb.oncePerTurn) atk.shieldBreakTurn=G.turnSeq; gaiaDiscardOrDeploy(atk, atkSide, defSide, sb, done); return; }
+  if (sb.requireLink && !atk.linked){ done(); return; }                             // 【During Link】 gate (McGillis Fareed)
+  if (sb.oncePerTurn && atk[slot]===G.turnSeq){ done(); return; }                   // 【Once per Turn】
+  if (sb.kind==='discardOrDeploy'){ if (sb.oncePerTurn) atk[slot]=G.turnSeq; gaiaDiscardOrDeploy(atk, atkSide, defSide, sb, done); return; }
   if (sb.kind==='selfReady'){                                                       // Zeta Gundam (EX) ST10-001
     if (!atkSide.field.includes(atk) || atk.hp<=0){ done(); return; }
-    if (sb.oncePerTurn) atk.shieldBreakTurn=G.turnSeq;
+    if (sb.oncePerTurn) atk[slot]=G.turnSeq;
     effReady(atk, atkSide); if (sb.noDirect) atk.noDirectTurn=true;
     log(`<b>${atk.name}</b> is set active${sb.noDirect?' — it can\'t attack that player again this turn':''}.`, atkSide===G.player?'me':'ai');
     done(); return;
   }
-  const act = sb.kind==='rest' ? { kind:'rest', filter: sb.maxLv!=null?{maxLv:sb.maxLv}:{}, source:atk }
+  // Any other payoff read by the clause parser: "if there are 10 or more (CB) cards in your trash, choose 1 enemy Unit with the
+  // lowest HP. Destroy it." (Gundam Exia (Trans-Am)), "choose 1 of your (Gjallarhorn) Units. During this turn, it may choose an
+  // active enemy Unit that is Lv.5 or lower as its attack target." (McGillis Fareed). Nothing happens without a legal choice.
+  if (sb.kind==='clause'){
+    if (sb.cond && !condMet(sb.cond, atkSide, atk)){ done(); return; }
+    const act=Object.assign({}, sb.act, { source:src });
+    if (!cmdModeLegal(act, atkSide)){ log(`<b>${src.name}</b>: shield destroyed — nothing it can choose.`, atkSide===G.player?'me':'ai'); done(); return; }
+    if (sb.oncePerTurn) atk[slot]=G.turnSeq;
+    flashCard(src, (atkSide===G.player?'YOUR':'ENEMY')+' EFFECT');
+    hookResolve(src, atkSide, act, src.name, done); return;
+  }
+  const act = sb.kind==='rest' ? { kind:'rest', filter: sb.filter || (sb.maxLv!=null?{maxLv:sb.maxLv}:{}), source:atk }
             : sb.kind==='debuff' ? { kind:'debuff', amount:sb.amount, scope:'enemy', dur:'turn', source:atk }
-                                 : { kind:'damage', amount:sb.amount, source:atk };
+                                 : { kind:'damage', amount:sb.amount, filter: sb.filter || {}, source:atk };   // "…with 3 or less AP" (Dragon Gundam)
   const cands = enemyTargets(defSide, act);
   if (!cands.length){ done(); return; }
-  if (sb.oncePerTurn) atk.shieldBreakTurn=G.turnSeq;
+  if (sb.oncePerTurn) atk[slot]=G.turnSeq;
   flashCard(atk, (atkSide===G.player?'YOUR':'ENEMY')+' EFFECT');
   if (atkSide===G.player){
     if (cands.length>=2){          // player's own turn → tap an enemy Unit to target
@@ -10032,12 +10117,12 @@ function declareAttack(atk, atkSide){
   const apply=(act)=>{
     if (!act) return;
     if (act.kind==='selfbuff'){
-      if (act.amount) atk.tempAp=(atk.tempAp||0)+act.amount;
+      if (act.amount){ if (act.dur==='battle') atk.battleAp=(atk.battleAp||0)+act.amount; else atk.tempAp=(atk.tempAp||0)+act.amount; }
       const gotHM = act.hman && (!act.hmanIfLink || atk.linked);
       if (gotHM) atk.highManeuver=true;
       atk.ap=effAp(atk);
       if (act.amount || gotHM)
-        log(`Attack: <b>${atk.name}</b> gets AP+${act.amount||0} this turn${gotHM?' and &lt;High-Maneuver&gt;':''}.`, cls);
+        log(`Attack: <b>${atk.name}</b> gets AP+${act.amount||0} ${act.dur==='battle'?'during this battle':'this turn'}${gotHM?' and &lt;High-Maneuver&gt;':''}.`, cls);
     } else if (act.kind==='selfKeyword'){
       grantKeyword(atk, act.kw, act.amount); atk.ap=effAp(atk);
       log(`Attack: <b>${atk.name}</b> gains &lt;${kwLabel(act.kw)}${act.kw==='breach'?' '+act.amount:''}&gt; this turn.`, cls);
@@ -10165,9 +10250,127 @@ function resolveAttackTriggers(atk, atkSide, done){
   })();
 }
 // Simultaneous battle, modified by First Strike (striker hits first; if foe dies, no return).
+// ---- event watchers read straight off the card text (cached per text) ----
+// `fn(effectText)` returns the watcher or null; it is parsed once per distinct text.
+function hookParsed(card, key, fn){
+  const e=card && card.effect; if (!e) return null;
+  const cache = hookParsed.cache || (hookParsed.cache = new Map()); const k=key+'\u0001'+e;
+  if (!cache.has(k)){ let w=null; try { w=fn(e); } catch(err){ w=null; } cache.set(k, w); }
+  return cache.get(k);
+}
+// Every Unit of `side` carrying watcher `key` — on its own text or on its paired Pilot's (whose text the Unit gains).
+function hookSources(side, key, fn){
+  const out=[]; if (!side) return out;
+  for (const u of side.field){ if (u.hp<=0 || u.type!=='unit') continue;
+    let w=hookParsed(u, key, fn); if (w) out.push({ host:u, card:u, w });
+    if (u.pilotCard && (w=hookParsed(u.pilotCard, key, fn))) out.push({ host:u, card:u.pilotCard, w }); }
+  return out;
+}
+// "【During Pair/Link】【Once per Turn】During your turn, when <event>, <payoff>": the gates printed before `m` (a match of the
+// event wording whose last group is the payoff text) and the payoff, parsed by the clause parser. null when it isn't read.
+function watchFrom(pl, m){
+  if (!m) return null;
+  const head = pl.slice(0, m.index), body = String(m[m.length-1]||'').replace(/<[^>]*>/g,' ').trim();
+  const gates = (head.match(/((?:【[^】]*】\s*)*)$/)||['',''])[1].toLowerCase();
+  const act = parseClause(body);
+  if (!act || !(hookClauseKind(act.kind) || act.kind==='cond')) return null;
+  return { act, once:/once per turn/.test(gates), requirePair:/during pair/.test(gates), requireLink:/during link/.test(gates), yourTurn:/^during your turn/i.test(m[0]) };
+}
+// Is watcher `w` on `host` switched on right now (its 【During Pair/Link】 and "During your turn" gates)?
+function watchGatesOk(w, host, side){
+  if (w.requireLink && !host.linked) return false;
+  if (w.requirePair && !duringPairMet(host)) return false;
+  if (w.yourTurn && G.turn!==side.who) return false;
+  return true;
+}
+// Fire watcher payoff `act` of `card` (hosted by `host`) for `side` once it has a legal choice and its 【Once per Turn】 allows.
+function fireWatch(card, host, side, key, w, why){
+  const act=Object.assign({}, w.act, { source:card });
+  if (!cmdModeLegal(act.kind==='cond' ? act.inner : act, side)) return false;
+  if (act.kind==='cond' && !condMet(act.cond, side, host, act.other)) return false;
+  if (!onceOk(card, key, w.once)) return false;
+  log(`<b>${card.name}</b>: ${why}.`, side===G.player?'me':'ai');
+  hookResolve(card, side, act.kind==='cond' ? Object.assign({}, act.inner, { source:card }) : act, card.name);
+  return true;
+}
+// "【During Pair】【Once per Turn】During your turn, when one of your (Tekkadan)/(Teiwaz) Units receives effect damage, …" (Gundam Gusion
+// Rebake Full City)
+function parseAllyEffDmgWatch(e){
+  const pl=plain(e); const m=pl.match(/(?:during your turn,\s*)?when one of your ((?:\([^)]+\)\s*\/?\s*)+)units? receives? effect damage,\s*([^【]*)/i);
+  const w=watchFrom(pl, m); if (!w) return null;
+  w.traits=[...m[1].matchAll(/\(([^)]+)\)/g)].map(x=>x[1].trim().toLowerCase()); return w;
+}
+// "【During Link】【Once per Turn】When damage from one of your Units paired with a (Cyber-Newtype) Pilot destroys an enemy shield area
+// card, …" (Psycho Gundam (GQ)) — battle damage or <Breach>.
+function parseAllyShieldBreakWatch(e){
+  const pl=plain(e); const m=pl.match(/when damage from one of your units(?: paired with an? \(([^)]+)\) pilot)? destroys an enemy shield area card,\s*([^【]*)/i);
+  const w=watchFrom(pl, m); if (!w) return null;
+  w.pilotTrait = m[1] ? m[1].trim().toLowerCase() : null; return w;
+}
+// "【During Link】When this rested Unit is set as active by an effect, …" (Graham Aker)
+function parseReadiedWatch(e){ const pl=plain(e); return watchFrom(pl, pl.match(/when this rested unit is set as active by an effect,\s*([^【]*)/i)); }
+// "【Once per Turn】During your turn, when this Unit recovers HP, choose 1 rested enemy Unit. Deal 1 damage to it." (Gundam Barbatos
+// Lupus Rex (EX)) — Four Murasame's draw is the older healWatch.
+function parseHealDmgWatch(e){ const pl=plain(e); return watchFrom(pl, pl.match(/(?:during your turn,\s*)?when this unit recovers hp,\s*(choose [^【]*)/i)); }
+// "When you activate a Command's 【Main】/【Action】 effect, choose 1 enemy Unit. It gets AP-2 during this turn." (Unicorn Gundam (Awakened))
+function parseCmdActWatch(e){ const pl=plain(e); return watchFrom(pl, pl.match(/(?:during your turn,\s*)?when you activate a command'?s\s*【\s*main\s*】\s*\/\s*【\s*action\s*】\s*effect,\s*([^【]*)/i)); }
+// One of `side`'s Units `u` received effect damage (Gusion Rebake Full City).
+function allyEffDmgHook(u, side){
+  for (const {host,card,w} of hookSources(side,'allyEffDmg',parseAllyEffDmgWatch)){
+    if (!watchGatesOk(w, host, side) || !w.traits.some(t=>hasTraitT(u, t))) continue;
+    fireWatch(card, host, side, 'allyEffDmg', w, `<b>${u.name}</b> received effect damage`);
+  }
+}
+// Damage from `atk` (a Unit of `atkSide`) destroyed an enemy shield area card (Psycho Gundam (GQ)).
+function allyShieldBreakHook(atk, atkSide){
+  if (!atk || atk.type!=='unit') return;
+  for (const {host,card,w} of hookSources(atkSide,'allyShieldBreak',parseAllyShieldBreakWatch)){
+    if (!watchGatesOk(w, host, atkSide)) continue;
+    if (w.pilotTrait && !(atk.pilotCard && hasTraitT(atk.pilotCard, w.pilotTrait))) continue;
+    fireWatch(card, host, atkSide, 'allyShieldBreak', w, `damage from <b>${atk.name}</b> destroyed an enemy shield area card`);
+  }
+}
+// A rested Unit `u` of `side` was set active by an effect (Graham Aker).
+function readiedHook(u, side){
+  for (const {host,card,w} of hookSources(side,'readiedWatch',parseReadiedWatch)){
+    if (host!==u || !watchGatesOk(w, host, side)) continue;
+    fireWatch(card, host, side, 'readiedWatch', w, `<b>${u.name}</b> was set active by an effect`);
+  }
+}
+// `u` recovered HP — "when this Unit recovers HP, choose … deal N damage" (Lupus Rex (EX)).
+function healDmgHook(u, side){
+  for (const {host,card,w} of hookSources(side,'healDmgWatch',parseHealDmgWatch)){
+    if (host!==u || card.healWatch || !watchGatesOk(w, host, side)) continue;
+    fireWatch(card, host, side, 'healDmgWatch', w, `<b>${u.name}</b> recovered HP`);
+  }
+}
+// `side` activated a Command's 【Main】/【Action】 (Unicorn Gundam (Awakened)). `done` continues once the player has chosen.
+function cmdActWatchHook(card, side, done){
+  const srcs=hookSources(side,'cmdActWatch',parseCmdActWatch).filter(x=>watchGatesOk(x.w, x.host, side));
+  (function next(i){
+    if (i>=srcs.length){ if (done) done(); return; }
+    const {host,card:src,w}=srcs[i];
+    const act=Object.assign({}, w.act, { source:src });
+    if (!cmdModeLegal(act, side) || !onceOk(src,'cmdActWatch',w.once)){ next(i+1); return; }
+    log(`<b>${src.name}</b>: ${side===G.player?'you':'the AI'} activated <b>${card.name}</b>.`, side===G.player?'me':'ai');
+    hookResolve(src, side, act, src.name, ()=>next(i+1));
+  })(0);
+}
+// Payoff kinds a hook (on-kill, shield break, watchers) can hand to hookResolve as a parsed clause.
+function hookClauseKind(k){ return ['trashRetrieve','bounce','rest','damage','destroy','debuff','buff','heal','draw'].includes(k); }
+// Resolve a hook's payoff `act` for `side`: the player chooses through modal choosers (they work mid-battle and on either
+// player's turn); the AI resolves it automatically. `done` (optional) runs afterwards.
+function hookResolve(card, side, act, label, done){
+  const fin=()=>{ render(); if (done) done(); };
+  if (!act){ fin(); return; }
+  act.source=card;
+  if (side!==G.player){ runTrigger(card, side, act, label); fin(); return; }
+  if (act.kind==='trashRetrieve'){ whenModalFree(()=>playerTrashRetrieve(card, side, act, label, fin)); return; }
+  resolveModal(card, side, act, label, fin);
+}
 // Parse a unit's "when this Unit destroys an enemy Unit with battle damage, <effect>" trigger.
-// Excludes the <Breach> reminder text (parenthesised, ends "…shield area."). Currently models the
-// self-contained payoffs (recover HP, draw); target-selecting ones (set-active/scry) are left null.
+// Excludes the <Breach> reminder text (parenthesised, ends "…shield area."). Self-contained payoffs (recover HP, draw, …) have
+// their own kinds; any other payoff the clause parser reads resolves as a 'clause' (the player chooses).
 function parseOnKill(effect){
   const p = plain(effect).replace(/\([^)]*shield area[^)]*\)/gi, '');
   // Optional qualifier on WHICH enemy Unit counts, e.g. "…destroys an enemy Unit paired with a
@@ -10184,9 +10387,15 @@ function parseOnKill(effect){
   // "choose 1 enemy Unit with N or less AP. Deal N damage to it." (Zeta Gundam GD06-035)
   else if ((d = t.match(/choose 1 enemy unit(?: with (\d+) or less ap)?\.\s*deal (\d+) damage to it/))) act = { kind:'damageEnemy', amount:+d[2], maxAp: d[1]?+d[1]:null };
   // "deploy 1 [Token]((T)･APa･HPb) Unit token" (Hashmal GD05-006)
-  if (!act && /^deploy \d+ (?:rested )?\[/.test(t)){ const specs=parseTokenSpecs(p.slice(p.toLowerCase().indexOf(t.slice(0,20)))); if (specs.length) act={ kind:'deployToken', specs }; }
-  // "deal N damage to all enemy Units with M or less AP" (Tallgeese Ⅲ ST12-003)
-  else if ((d = t.match(/deal (\d+) damage to all enemy units(?: with (\d+) or less ap)?/))) act = { kind:'damageAllEnemy', amount:+d[1], maxAp: d[2]?+d[2]:null };
+  // (a form read above stays: the chain below must not overwrite it — Infinite Justice's heal was replaced by a self-recover)
+  if (act){ /* already read */ }
+  else if (/^deploy \d+ (?:rested )?\[/.test(t)){ const specs=parseTokenSpecs(p.slice(p.toLowerCase().indexOf(t.slice(0,20)))); if (specs.length) act={ kind:'deployToken', specs }; }
+  // "deal N damage to all enemy Units with M or less AP" (Tallgeese Ⅲ ST12-003) / "…that are Lv.N or lower" (Heavyarms, Kyrios)
+  else if ((d = t.match(/deal (\d+) damage to all enemy units(?: with (\d+) or less ap)?(?: that are lv\.?\s*(\d+) or lower)?/))){
+    act = { kind:'damageAllEnemy', amount:+d[1], maxAp: d[2]?+d[2]:null, maxLv: d[3]?+d[3]:null };
+    // "…to all enemy Units with <Blocker>." (Gundam Heavyarms Custom) — the payoff text above stops at the "<".
+    if (/units with\s*$/.test(t) && /^<\s*blocker\s*>/i.test(p.slice(m.index+m[0].length))) act.withBlocker = true;
+  }
   // "look at the top 2 cards of your deck and return 1 to the top. Place the remaining card into your trash." (Wistario Afam)
   else if ((d = t.match(/look at the top (\d+) cards of your deck and return 1 to the top\. place the remaining cards? into your trash/))) act = { kind:'scryTopTrash', amount:+d[1] };
   // "look at the top card / N cards of your deck. If it is a (T) card, you may reveal it / You may reveal 1 (T) X card among
@@ -10204,6 +10413,10 @@ function parseOnKill(effect){
     const traits = [...t.matchAll(/\(([^)]+)\)/g)].map(x=>x[1].toLowerCase());
     act = { kind:'readyFriendly', traits, link:/link units?/.test(t), noAttack:/can'?t attack/.test(t) };
   }
+  // Any other payoff the shared clause parser reads — "choose 1 (Tekkadan) Unit card that is Lv.2 or lower from your trash. Add
+  // it to your hand." (Akihiro Altland), "choose 1 enemy Unit with 3 or less HP. Return it to its owner's hand." (Phoenix Gundam
+  // (Power Unleashed)). It resolves like a triggered effect: the player chooses, the AI picks.
+  if (!act){ const c=parseClause(String(m[4]||'').trim()); if (c && hookClauseKind(c.kind)) act = { kind:'clause', act:c }; }
   if (!act) return null;
   if (/once per turn/i.test(p.slice(0, p.indexOf(m[0])+m[0].length))) act.oncePerTurn = true;
   if (anyCard) act.anyCard = true;
@@ -10239,8 +10452,8 @@ function applyOnKill(u, side, k, srcCard){
   if (k.kind==='deployToken'){ deployTokens({ kind:'token', specs:k.specs }, side, u.name, 'On kill', cls); return; }
   if (k.kind==='damageAllEnemy'){
     const foe = side===G.player?G.enemy:G.player;
-    const ts=foe.field.filter(x=>x.hp>0 && (k.maxAp==null || effAp(x)<=k.maxAp));
-    if (ts.length) log(`<b>${u.name}</b>: deals ${k.amount} to all enemy Units${k.maxAp!=null?` with ${k.maxAp} or less AP`:''}.`, cls);
+    const ts=foe.field.filter(x=>x.hp>0 && (k.maxAp==null || effAp(x)<=k.maxAp) && (k.maxLv==null || (x.lv||0)<=k.maxLv) && (!k.withBlocker || effBlocker(x)));
+    if (ts.length) log(`<b>${u.name}</b>: deals ${k.amount} to all enemy Units${k.maxAp!=null?` with ${k.maxAp} or less AP`:''}${k.maxLv!=null?` that are Lv.${k.maxLv} or lower`:''}${k.withBlocker?' with &lt;Blocker&gt;':''}.`, cls);
     for (const t of [...ts]) damage(t, k.amount, foe);
     return;
   }
@@ -10260,21 +10473,20 @@ function applyOnKill(u, side, k, srcCard){
     deckOutCheck(side);
     return;
   }
-  if (k.kind==='healFriendly'){      // the most-damaged eligible friendly Unit recovers (Infinite Justice)
-    const cands=side.field.filter(x=>x.hp>0 && x.hp<effMaxHp(x) && (!k.trait || (x.trait||'').toLowerCase().includes('('+k.trait+')')))
+  if (k.kind==='healFriendly'){      // "choose 1 of your (Orb) Units. It recovers N HP." (Infinite Justice) — the player chooses; the AI heals the most damaged
+    const cands=side.field.filter(x=>x.hp>0 && x.type==='unit' && (!k.trait || (x.trait||'').toLowerCase().includes('('+k.trait+')')))
       .sort((a,b)=>(effMaxHp(b)-b.hp)-(effMaxHp(a)-a.hp));
-    const t=cands[0]; if (!t) return;
-    healUnit(t, side, k.amount, u.name);
+    if (!cands.length) return;
+    const heal=(t)=>{ if (t && side.field.includes(t)){ if (!healUnit(t, side, k.amount, u.name)) log(`<b>${u.name}</b>: <b>${t.name}</b> has no damage to recover.`, cls); } render(); };
+    if (side===G.player && cands.length>=2) promptTargetChoice(cands, `<b>${u.name}</b>: choose 1 of your${k.trait?' ('+k.trait+')':''} Units — it recovers ${k.amount} HP.`, heal, null);
+    else heal(cands[0]);
     return;
   }
   if (k.kind==='damageEnemy'){       // "choose 1 enemy Unit (with N or less AP). Deal N damage to it." (Zeta Gundam)
-    const foe = side===G.player?G.enemy:G.player;
-    const act={ kind:'damage', amount:k.amount, filter: k.maxAp!=null?{maxAp:k.maxAp}:{}, source:u };
-    const cands=enemyTargets(foe, act); const t=cands.length?rankTarget(cands, act):null;
-    if (!t) return;
-    log(`<b>${u.name}</b>: deals ${k.amount} damage to <b>${t.name}</b>.`, cls); damage(t, k.amount, foe);
+    hookResolve(srcCard||u, side, { kind:'damage', amount:k.amount, scope:'enemy', filter: k.maxAp!=null?{maxAp:k.maxAp}:{} }, u.name);
     return;
   }
+  if (k.kind==='clause'){ hookResolve(srcCard||u, side, Object.assign({}, k.act), u.name); return; }   // Akihiro Altland, Phoenix Gundam
   if (k.kind==='recover'){
     if (u.hp<=0 || !side.field.includes(u)) return;   // a destroyed Unit has nothing to recover
     healUnit(u, side, k.amount);
@@ -10354,6 +10566,8 @@ function battle(atk, def, atkSide, defSide){
   }
   battleSlayHook(atk, atkSide, def, defSide, defHp0);   // "…deals battle damage to an enemy Unit that is Lv.N or lower, destroy that enemy Unit" (Nyaan)
   battleSlayHook(def, defSide, atk, atkSide, atkHp0);
+  battleSlayTextHook(atk, atkSide, def, defSide, defHp0);   // the same printed on the Unit or its Pilot (Gundam Virtue, Ennil El)
+  battleSlayTextHook(def, defSide, atk, atkSide, atkHp0);
   // …and one gained for this battle (Wise Leader's Pride) — on the attacking or the defending Unit.
   if (def.type==='unit'){ grantedKillHook(atk, atkSide, def); grantedKillHook(def, defSide, atk); }
   // Gundam Exia Repair GD05-050: "When this Unit deals battle damage to an enemy Unit that is Lv.N or lower that has no paired
@@ -10375,6 +10589,32 @@ function battleSlayHook(dealer, dSide, victim, vSide, hp0){
   log(`<b>${dealer.name}</b> dealt battle damage to Lv.${victim.lv||0} <b>${victim.name}</b> — it is destroyed.`, dSide===G.player?'me':'ai');
   G.effSrc=dealer;
   const i=vSide.field.indexOf(victim); if (i>=0) vSide.field.splice(i,1); fx('die', victim.uid); sendToTrash(victim, vSide); fireDestroyed(victim, vSide);
+}
+// "(【During Link】)When this Unit deals battle damage to an enemy Unit (that is Lv.N or lower), (if you have a (CB) Pilot in play,)
+// destroy that enemy Unit." printed on a Unit (Gundam Virtue, Gundam Virtue (Trans-Am)) or on its paired Pilot (Ennil El). Not the
+// "…that has no paired Pilot" form (Exia Repair, battleDestroyLowLv) nor a ■ effect granted to another Unit (Nyaan).
+function parseBattleSlayWatch(e){
+  const pl=plain(e);
+  const m=pl.match(/((?:【[^】]*】\s*)*)when this unit deals battle damage to an enemy unit(?: that is lv\.?\s*(\d+) or lower)?,\s*(?:if (.+?),\s*)?destroy that enemy unit/i);
+  if (!m || /■\s*$/.test(pl.slice(0, m.index))) return null;
+  const cond = m[3] ? parseCondition(m[3].toLowerCase()) : null;
+  if (m[3] && !cond) return null;
+  const gates=(m[1]||'').toLowerCase();
+  return { maxLv: m[2]!=null ? +m[2] : null, cond, requireLink:/during link/.test(gates), requirePair:/during pair/.test(gates) };
+}
+function battleSlayTextHook(dealer, dSide, victim, vSide, hp0){
+  if (!dealer || dealer.type!=='unit' || !victim || victim.type!=='unit') return;
+  const srcs=[]; let w=hookParsed(dealer,'battleSlay',parseBattleSlayWatch); if (w) srcs.push({ card:dealer, w });
+  if (dealer.pilotCard && (w=hookParsed(dealer.pilotCard,'battleSlay',parseBattleSlayWatch))) srcs.push({ card:dealer.pilotCard, w });
+  for (const {card, w} of srcs){
+    if (!vSide.field.includes(victim) || victim.hp<=0 || !(victim.hp<hp0)) return;   // it must have taken the damage and still be there
+    if (w.maxLv!=null && (victim.lv||0)>w.maxLv) continue;
+    if (w.requireLink && !dealer.linked) continue;
+    if (w.requirePair && !duringPairMet(dealer)) continue;
+    if (w.cond && !condMet(w.cond, dSide, dealer)) continue;
+    log(`<b>${card.name}</b>: <b>${dealer.name}</b> dealt battle damage to <b>${victim.name}</b> — destroy it.`, dSide===G.player?'me':'ai');
+    applyToTarget(card, dSide, { kind:'destroy', source:card }, victim, card.name);
+  }
 }
 // Clear "during this battle" AP modifiers from every Unit once the battle ends.
 function clearBattleScoped(){
@@ -10532,6 +10772,7 @@ function payHook(side, payer, paid){
 }
 // `u` just received effect damage (it may have been destroyed by it — the effect still activates, 10-1-6-4).
 function effDmgHook(u, side, src, kind){
+  allyEffDmgHook(u, side);   // "when one of your (T) Units receives effect damage" (Gusion Rebake Full City)
   { const b=side.base; const tr=b && b.restMillOnEffDmg;
     if (tr && !b.rested && b.hp>0 && G.turn===side.who && tr.some(t=>hasTraitT(u, t)) && side.deck.length>10){
       b.rested=true; const c=side.deck.pop(); sendToTrash(c, side); revealMill(c, side);
@@ -10594,6 +10835,7 @@ function restedHook(u, side){
 // `u` recovered HP: Four Murasame (【During Link】, your turn, small hand) draws.
 function unitHealed(u, side){
   if (!u || !side) return;
+  healDmgHook(u, side);      // Lupus Rex (EX)
   const list=[]; if (u.healWatch) list.push({card:u, w:u.healWatch}); if (u.pilotCard && u.pilotCard.healWatch) list.push({card:u.pilotCard, w:u.pilotCard.healWatch});
   for (const {card,w} of list){
     if (w.link && !u.linked) continue; if (w.yourTurn && G.turn!==side.who) continue;
@@ -10659,6 +10901,7 @@ function enemyCardDestroyed(atk, atkSide, what){
   // 【During Pair･(Cyber-Newtype) Pilot】"When one of your (Titans) Units destroys an enemy shield area card with damage, this Unit
   // recovers 2 HP." (Psycho Gundam) — a Shield or the Base, by battle damage or <Breach>.
   if (what==='shield' || what==='base'){
+    allyShieldBreakHook(atk, atkSide);   // Psycho Gundam (GQ)
     for (const u of atkSide.field){ const w=u.allyShieldHeal; if (!w || u.hp<=0) continue;
       if (w.requirePair && !duringPairMet(u)) continue;
       if (!unitHasTrait(atk, atkSide, w.trait)) continue;
@@ -10713,6 +10956,31 @@ function offerSupportFirst(atk, def, again){
   return true;
 }
 
+// Deal `amount` effect damage from `src` (a card of `srcSide`) to the first card in `defSide`'s shield area: the Base (EX Base
+// included) while there is one, else the top Shield, which is destroyed (its 【Burst】 may resolve). Moebius' 【Activate･Action】,
+// Master Gundam's 【Attack】. `done` (optional) runs once any Burst has resolved.
+function shieldAreaDamage(src, srcSide, defSide, amount, label, done){
+  const fin=()=>{ render(); if (done) done(); };
+  const cls = srcSide===G.player?'me':'ai', onField = !!(src && src.type==='unit' && srcSide.field.includes(src));
+  const amt=shieldAreaEffDamage(defSide, amount), ws = defSide===G.player ? 'your' : "the opponent's";
+  if (amt<=0){ fin(); return; }
+  if (shieldGuarded(defSide, src)){ log(`${ws[0].toUpperCase()+ws.slice(1)} shield area cards can't receive damage from <b>${src.name}</b> during this battle.`, cls); fin(); return; }
+  if (defSide.base){
+    const b=defSide.base;
+    if (baseGuarded(defSide, src, false)){ log(`${ws} <b>${b.name}</b> can't receive that damage.`, cls); fin(); return; }
+    b.hp-=amt; floatNum(b.uid,'-'+amt,'#ff6b5e'); G.effSrc=src;
+    log(`${label||src.name}: deals ${amt} damage to ${ws} <b>${b.name}</b> (the first card in the shield area).`, cls);
+    if (b.hp<=0){ defSide.base=null; fx('die', b.uid); sendToTrash(b, defSide); log(`${ws[0].toUpperCase()+ws.slice(1)} <b>${b.name}</b> is destroyed.`, cls);
+      if (!b.token) whenModalFree(()=>fireDestroyed(b, defSide)); if (onField) enemyCardDestroyed(src, srcSide, 'base'); }
+    else fx('hit', b.uid);
+    fin(); return;
+  }
+  if (!defSide.shields.length){ log(`${label||src.name}: ${ws} shield area is empty — no effect.`, cls); fin(); return; }
+  const sh=defSide.shields.pop(); defSide.breakingShield=true; fx('shield');
+  log(`${label||src.name}: deals ${amt} damage to ${ws} first Shield — it is destroyed (${defSide.shields.length} left).`, cls);
+  if (onField) enemyCardDestroyed(src, srcSide, 'shield');
+  triggerBurst(sh, defSide, fin, true);
+}
 // <Breach N>: deal the breach damage to the FIRST card in the enemy shield area. A standing Base
 // sits in front of the shields, so it takes the hit first; otherwise the top Shield breaks (Burst may fire).
 function breachShield(atk, defSide){
@@ -10818,7 +11086,9 @@ function effReady(u, side){
   if (!u) return false;
   if (readyDenied(side)){ log(`<b>${u.name}</b> can't be set as active (an enemy effect prevents it).`, side===G.player?'me':'ai'); return false; }
   if (u===G.curAttack) u.readiedMidAttack=G.turnSeq;   // set active during its own attack (Privileged Position): the damage step mustn't rest it again
-  u.rested=false; return true;
+  const was=u.rested; u.rested=false;
+  if (was && u.type==='unit' && u.hp>0 && side && side.field.includes(u)) readiedHook(u, side);   // Graham Aker
+  return true;
 }
 // Rest a Unit as the result of an EFFECT. Gundam Throne Drei shrugs the first one off each turn.
 function effectRest(u, side){
@@ -11285,6 +11555,8 @@ function aiMainStep(){
       log(`${who(G.enemy)} plays <b>${modalC.name}</b>.`, 'ai'); applyCommand(modalC, ai, null, m); return true; } }
   return false;
 }
+// A 0-AP Unit whose 【Activate･Action】 hits the Base/Shield it is battling (Moebius): the AI attacks the player with it to use that.
+function aiShieldBomb(u){ const a=u && u.activate && u.activate.action; return !!(a && a.kind==='baseShieldDamage' && !cantHitPlayer(u) && (G.player.base || G.player.shields.length)); }
 // Plan which attacker hits which enemy Unit. The point is SEQUENCING: assign the WEAKEST attacker
 // that can cleanly kill each worthwhile threat, so the strongest bodies stay free to pressure the
 // player's shields instead of wasting themselves trading into a small Unit. Returns attacker.uid ->
@@ -11349,7 +11621,7 @@ function aiPostMain(){
   }
   render();
 
-  const attackers = ai.field.filter(u=>(!u.sick || deployTurnAttackOk(u, G.player)) && !u.rested && u.ap>0 && !trashBlocksAttack(u,ai));
+  const attackers = ai.field.filter(u=>(!u.sick || deployTurnAttackOk(u, G.player)) && !u.rested && (u.ap>0 || aiShieldBomb(u)) && !trashBlocksAttack(u,ai));
   // If swinging everything at the player wins this turn, commit to going face (take lethal).
   G.aiForceFace = aiHasLethal(attackers);
   if (G.aiForceFace) log(`${who(G.enemy)} goes for the win!`, 'ai');
@@ -11658,6 +11930,8 @@ function resolveAiAttackInner(atk, done0, forced){
         if (!attackerStillOut(atk, G.enemy)){ render(); done(); return; }
         const def = attackDefender(atk, pl, blk || target);
         if (def){ battle(atk, def, G.enemy, G.player); done(); return; }   // battle() ends it if `def` is gone
+        // Moebius: in its attack on the player, destroy it to deal 6 damage to the first card in the shield area.
+        if (aiShieldBomb(atk) && activateReady(atk)){ applyActivateEffect(atk, null, G.enemy); render(); done(); return; }
         if (!cantHitPlayer(atk)){ aiDirectHit(atk, done); return; }
         done();
       });
@@ -12174,9 +12448,9 @@ function inspect(c){
   const onField = G.player.field.some(x=>x.uid===c.uid);
   const isMyBase = G.player.base && G.player.base.uid===c.uid;
   if ((onField||isMyBase) && G.turn==='player' && G.mode==='idle' && !G.actionLock){
-    if (onField && !c.rested && (!c.sick || deployTurnAttackOk(c, G.enemy)) && c.ap>0){
+    if (onField && !c.rested && (!c.sick || deployTurnAttackOk(c, G.enemy))){
       const ab=document.createElement('button');
-      ab.innerHTML=`⚔ Attack with ${c.name}`;
+      ab.innerHTML=`⚔ Attack with ${c.name}${effAp(c)<=0?' (0 AP)':''}`;
       ab.onclick=()=>{ closeInspect(); G.selected=c.uid; G.mode='attack-target'; setPrompt(deployTurnOnly(c) ? `${c.name} (deployed this turn) attacking — tap a RESTED enemy unit.` : `${c.name} attacking — tap a RESTED enemy unit, or the enemy base/shields to strike directly.`); render(); };
       btns.appendChild(ab);
     }
