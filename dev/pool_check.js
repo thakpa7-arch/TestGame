@@ -246,7 +246,10 @@ fresh(); { const lc=put('EB01-023','player'); const hi=card(A.GUNDAM_CARDS.find(
   ok('Le Cygne: a Lv.6 top card goes to its owner\'s hand; a Lv.3 one does not', G.player.hand.includes(hi) && G.player.hand.length===hp+1 && G.enemy.hand.length===he); }
 // GD04-087 Elan Ceres (pilot, 【During Link】【Attack】) — battle damage the host would receive goes to an (Academy) Unit
 fresh(); { const host=stick('player',3,3,{linked:true}); host.pilot={pAp:1,pHp:2}; host.pilotCard=card('GD04-087','player'); const ac=stick('player',1,6,{trait:'(Academy)'});
-  A.declareAttack(host, G.player); A.resolveAttackTriggers(host, G.player, ()=>{}); drainTasks(); const d=stick('enemy',2,9,{rested:true});
+  A.declareAttack(host, G.player); A.resolveAttackTriggers(host, G.player, ()=>{}); drainTasks();
+  // "You may choose 1 of your (Academy) Units" — the player picks it in the chooser
+  { const b=[...el('blockBtns').children].find(x=>(x.innerHTML||'').includes(ac.name)); if (b){ el('blockModal').classList.remove('show'); b.onclick(); } drainTasks(); }
+  const d=stick('enemy',2,9,{rested:true});
   A.battle(host, d, G.player, G.enemy); drainTasks();
   ok('Elan Ceres: the (Academy) Unit takes the battle damage instead', host.hp===3 && ac.hp===4, `host=${host.hp} academy=${ac.hp}`); }
 // GD05-034 Gaia Gundam — 【During Pair】 shield-area destruction: the enemy may discard 1; if not, deploy a (Phantom Pain) Lv.4- Unit
