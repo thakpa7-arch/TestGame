@@ -198,7 +198,11 @@ function step(){
   }
   const ov = overlays();
   if (ov.length){ const m = ov[ov.length - 1]; const cl = clickables(m); if (!cl.length) return;
-    const b = pick(cl); act('overlay click ' + (b.textContent || '').slice(0, 30), () => b.onclick()); return; }
+    // A multi-pick picker (choose N cards, then confirm): once its confirm button is enabled, press it often
+    // enough that random tile toggling doesn't read as a stall.
+    const confirmBtn = cl.find(x => /\(\d+\/\d+\)/.test(x.textContent || ''));
+    const b = (confirmBtn && R() < 0.35) ? confirmBtn : pick(cl);
+    act('overlay click ' + (b.textContent || '').slice(0, 30), () => b.onclick()); return; }
   if (G.mode !== 'idle' && (G.turn === 'player' || G.mode === 'action-step-target' || G.mode === 'discard')){ modeStep(); return; }
   if (G.turn === 'player' && G.mode === 'idle'){
     if (G.actionLock) return; // waiting on something
