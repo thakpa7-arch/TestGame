@@ -6,6 +6,8 @@ let pass=0; const fail=[];
 function ok(name, cond, extra){ if(cond) pass++; else fail.push(name+(extra?'  ('+extra+')':'')); }
 function fresh(turn){
   drainTasks();
+  // no choice left open from the previous case
+  el('blockModal').classList.remove('show'); for (const n of [...(global.document.body.children||[])]) if (String(n.className||'').includes('modal-overlay')) n.remove(); G.modalQueue=[];
   Object.assign(G,{turn:turn||'player',turnNumber:3,turnSeq:(G.turnSeq||0)+1,phase:'main',mode:'idle',pending:null,over:false,winner:null,
     selected:null,firstPlayer:'player',skipDrawSide:null,aiForceFace:false,actionLock:false,cmdInFlight:null,curBattle:null,effSrc:null,
     player:A.makeSide('player'),enemy:A.makeSide('enemy'),playerDeckName:'T',enemyDeckName:'T'});
@@ -93,8 +95,11 @@ fresh(); { put('GD03-023','player'); const age=stick('player',3,3,{trait:'(AGE S
   ok('G-Bouncer: placing an EX Resource gives an (AGE System) Unit <High-Maneuver>', A.effHighManeuver(age)===true); }
 // GD05-018 Gundam Calibarn — an EX Resource is exiled: one of your Units takes 3 less enemy damage this turn
 fresh(); { const cb=put('GD05-018','player'); G.player.resMax=1; G.player.ex=1; G.player.resAvail=2; A.payCost(G.player, 2);
+  // "you may choose 1 of your Units" — the player is asked (with a decline button); choose Calibarn itself.
+  const askedC=el('blockModal').classList.contains('show') && /EX Resource was exiled/.test(el('blockMsg').innerHTML);
+  { const b=[...el('blockBtns').children].find(x=>(x.innerHTML||'').includes('Gundam Calibarn')); if (b) b.onclick(); drainTasks(); }
   const e=stick('enemy',1,1); A.applyToTarget(e, G.enemy, {kind:'damage', amount:4}, cb, 'Test');
-  ok('Calibarn: after an EX Resource is used, 4 effect damage becomes 1', cb.hp===4, 'hp='+cb.hp); }
+  ok('Calibarn: after an EX Resource is used, you may choose a Unit; 4 effect damage becomes 1', askedC && cb.hp===4, 'hp='+cb.hp); }
 // GD04-020 Gundam Lfrith Ur — your turn, a (Dawn of Fold) Command paid with an EX Resource: draw 1
 fresh(); { put('GD04-020','player'); const s=G.player; s.resMax=0; s.ex=1; s.resAvail=1; const h=s.hand.length;
   A.payCost(s, 1); A.commandPlayed({name:'DoF Cmd', type:'command', trait:'(Dawn of Fold)'}, s);
@@ -123,8 +128,10 @@ fresh('player'); { const r=put('GD02-010','player'); const h=G.player.hand.lengt
   A.applyToTarget(stick('enemy',1,1), G.enemy, {kind:'damage', amount:1}, r, 'T');
   ok('Raider draws 1 on enemy effect damage, once per turn', G.player.hand.length===h+1, `${h}->${G.player.hand.length}`); }
 fresh('player'); { const host=stick('player',2,4); host.pilot={pAp:1,pHp:2}; host.pilotCard=card('GD03-095','player'); const e=stick('enemy',3,3);
-  A.applyToTarget(stick('enemy',1,1), G.enemy, {kind:'damage', amount:1}, host, 'T');
-  ok('Azee Gurumin: an enemy Unit gets AP-1 when the host takes effect damage', A.effAp(e)===2, 'ap='+A.effAp(e)); }
+  A.applyToTarget(stick('enemy',1,1), G.enemy, {kind:'damage', amount:1}, host, 'T'); drainTasks();
+  // two enemy Units: the player chooses which one gets AP-1
+  { const b=[...el('blockBtns').children].find(x=>(x.innerHTML||'').includes(e.name)); if (el('blockModal').classList.contains('show') && b) b.onclick(); drainTasks(); }
+  ok('Azee Gurumin: an enemy Unit you choose gets AP-1 when the host takes effect damage', A.effAp(e)===2, 'ap='+A.effAp(e)); }
 fresh('player'); { const cg=put('GD03-060','player'); G.effSrc=cg; A.damage(cg, 1, G.player, 'self');   // your own effect pings it
   const toks=G.player.field.filter(u=>u.token);
   ok('CGS Commander: your turn effect damage deploys a rested CGS Mobile Worker token', toks.length===1 && toks[0].rested && /CGS/.test(toks[0].name), JSON.stringify(toks.map(t=>t.name+':'+t.rested))); }
@@ -175,18 +182,21 @@ fresh(); { const host=stick('player',4,4); host.pilot={pAp:1,pHp:1}; host.pilotC
   A.clearBattleScoped(); A.applyToTarget(host, G.player, {kind:'damage', amount:2}, stick('enemy',1,2), 'T');
   ok('…but not outside an attack', G.player.hand.length===h+1); }
 // GD03-097 Wistario Afam / GD04-090 Hallelujah Haptism / GD05-069 Gundam Maxter — dig on-kill
+// (the player looks and chooses in the deck-look overlay: the first tile = the top card)
+const lookOv=()=>(global.document.body.children||[]).find(n=>String(n.className||'').includes('modal-overlay'))||null;
+const lookPick=(pred)=>{ const o=lookOv(); if(!o) return false; const tiles=o.children[0].children[0].children; const t=[...tiles].find(x=>x.onclick && pred(x)); if(!t) return false; t.onclick(); drainTasks(); return true; };
 fresh(); { const host=stick('player',4,4,{linked:true}); host.pilot={pAp:1,pHp:2}; host.pilotCard=card('GD03-097','player'); const t0=G.player.trash.length, d0=G.player.deck.length;
-  killBattle(host); ok('Wistario Afam: top 2 — one back on top, one to the trash', G.player.trash.length===t0+1 && G.player.deck.length===d0-1, `trash+${G.player.trash.length-t0} deck-${d0-G.player.deck.length}`); }
+  killBattle(host); lookPick(()=>true); ok('Wistario Afam: top 2 — one back on top, one to the trash', G.player.trash.length===t0+1 && G.player.deck.length===d0-1, `trash+${G.player.trash.length-t0} deck-${d0-G.player.deck.length}`); }
 fresh(); { const host=stick('player',4,4,{linked:true}); host.pilot={pAp:2,pHp:1}; host.pilotCard=card('GD04-090','player'); const cb=card('GD01-004','player'); cb.trait='(CB)'; G.player.deck.push(cb); const h=G.player.hand.length;
-  killBattle(host); ok('Hallelujah: a (CB) top card is added to the hand', G.player.hand.includes(cb) && G.player.hand.length===h+1); }
+  killBattle(host); lookPick(()=>true); ok('Hallelujah: a (CB) top card is added to the hand', G.player.hand.includes(cb) && G.player.hand.length===h+1); }
 fresh(); { const mx=put('GD05-069','player'); const sp=A.GUNDAM_CARDS.find(d=>d.type==='command' && /\(Special Move\)/.test(d.trait||'')); const c=A.makeCard(sp,'player'); G.player.deck.splice(G.player.deck.length-2,0,c);
-  killBattle(mx); ok('Gundam Maxter: a (Special Move) Command among the top 4 goes to hand', G.player.hand.includes(c)); }
+  killBattle(mx); lookPick(x=>x.textContent===c.name || (x.style.cssText||'').includes(c.img||'@@')); ok('Gundam Maxter: a (Special Move) Command among the top 4 goes to hand', G.player.hand.includes(c)); }
 // ST10-001 Zeta Gundam (EX) — destroys an enemy shield-area card: set active, can't attack that player again
 fresh(); { const z=put('ST10-001','player'); A.declareAttack(z, G.player); A.strikePlayer(z, G.enemy, ()=>{}); drainTasks();
   ok('Zeta Gundam (EX) is set active and can\'t hit the player again this turn', !z.rested && A.cantHitPlayer(z)===true, `rested=${z.rested}`); }
 // once-per-turn on a Pilot's on-kill is tracked on the Pilot card
 fresh(); { const host=stick('player',4,9,{linked:true}); host.pilot={pAp:1,pHp:2}; host.pilotCard=card('GD03-097','player'); const t0=G.player.trash.length;
-  killBattle(host); killBattle(host); ok('a Pilot\'s 【Once per Turn】 on-kill fires once', G.player.trash.length===t0+1, 'trash+'+(G.player.trash.length-t0)); }
+  killBattle(host); lookPick(()=>true); killBattle(host); const again=lookPick(()=>true); ok('a Pilot\'s 【Once per Turn】 on-kill fires once', !again && G.player.trash.length===t0+1, 'trash+'+(G.player.trash.length-t0)); }
 
 // ===== continuous auras / attack rules =====
 // GD04-002 Penelope (Flight Form) — during your turn, all your (Earth Federation) Units get AP+1
@@ -354,8 +364,10 @@ fresh('enemy'); { put('GD03-020','player',{rested:true}); stick('player',1,1,{na
   A.battle(atk, fz, G.enemy, G.player); drainTasks(); ok('Zaku Ⅱ FZ: no enemy battle damage with an "Ad Balloon" Unit in play', fz.hp===hp && G.player.field.includes(fz)); }
 fresh('enemy'); { base('GD03-126'); const tk=A.makeToken({name:'T',ap:1,hp:1},'player'); G.player.field.push(tk); const a=A.effAp(tk); G.turn='player';
   ok('Cyclops Team: friendly tokens AP+1 during the opponent\'s turn only', a===2 && A.effAp(tk)===1, `${a},${A.effAp(tk)}`); }
-fresh('player'); { const b=base('GD03-129'); const t=stick('player',2,4,{trait:'(Tekkadan)'}); const tr=G.player.trash.length; G.effSrc=t; A.damage(t, 1, G.player, 'self');
-  ok('Hotarubi: your (Tekkadan) Unit takes effect damage → it rests and mills 1', b.rested && G.player.trash.length===tr+1); }
+fresh('player'); { const b=base('GD03-129'); const t=stick('player',2,4,{trait:'(Tekkadan)'}); const tr=G.player.trash.length; G.effSrc=t; A.damage(t, 1, G.player, 'self'); drainTasks();
+  // "you may rest this Base" — the player is asked; answer yes.
+  const asked=el('blockModal').classList.contains('show') && /rest this Base/.test(el('blockMsg').innerHTML); if (asked) el('blockBtns').children[0].onclick(); drainTasks();
+  ok('Hotarubi: your (Tekkadan) Unit takes effect damage → you may rest it and mill 1', asked && b.rested && G.player.trash.length===tr+1); }
 fresh('enemy'); { const b=base('GD04-123'); stick('player',1,1,{trait:'(Zeon)',rested:true}); const hp=b.hp; A.strikePlayer(stick('enemy',3,3,{lv:4}), G.player, ()=>{}); drainTasks();
   const a=b.hp; A.strikePlayer(stick('enemy',3,3,{lv:5}), G.player, ()=>{}); drainTasks();
   ok('A Baoa Qu: no battle damage from a Lv.4 attacker while you have a rested (Zeon) Unit; Lv.5 still hits', a===hp && b.hp===hp-3, `${hp}->${a}->${b.hp}`); }
