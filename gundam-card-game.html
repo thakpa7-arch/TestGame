@@ -2903,13 +2903,21 @@ function parseClause(raw){
     if (cond) return inner ? { kind:'cond', cond, inner, other:/\banother\b/.test(cm[1]) } : null;
     if (inner) return inner;                            // unknown condition → resolve ungated (legacy behaviour)
   }
+  // Costs paid with your own card, "Then, …" riders on the chosen Unit, amounts read at resolution, and the
+  // "belonging to another player" / "enemy Base" / "enemy player … may draw" targets (parseG4Clause).
+  { const g4 = parseG4Clause(raw); if (g4) return g4; }
   // Trash-interacting clauses must be checked FIRST — their inner text (e.g. "Rest it.")
   // would otherwise match a generic rule below and skip the trash cost/retrieval.
   if (/from your trash/.test(t)){
     const texileEarly = parseTrashExile(t);
     if (texileEarly) return texileEarly;
     if (/add it to your hand/.test(t)){
-      return { kind:'trashRetrieve', filter: trashRetrieveFilter(t) };
+      const tr = { kind:'trashRetrieve', filter: trashRetrieveFilter(t) };
+      // "…Add it to your hand. If you do, discard 1." — only once a card was actually taken (Banshee ST12-009,
+      // Defurse GD03-064, Gundam AGE-2 Normal (SP Ver.)); "You may choose 1 … from your trash" may be declined.
+      const td = t.match(/add it to your hand\.?\s*if you do,?\s*discard (\d+)/); if (td) tr.thenDiscard = +td[1];
+      if (/^\s*you may choose 1\b/.test(t)) tr.may = true;
+      return tr;
     }
   }
   // "Choose 1 (to N) of your Units. During this turn, when they destroy an enemy card/Unit with
@@ -2958,6 +2966,12 @@ function parseClause(raw){
     const rest=parseClause(d[2]);
     if (rest && rest.kind==='resActive' && /not set (?:one of your|any of your)? ?resources? as active with an effect this turn/.test(d[2])) rest.noPriorResActive=true;
     return { kind:'resourceRamp', amount:+d[1], then: rest };
+  }
+  // "Place N rested Resource(s). Then, <effect>." — the rider happens whether or not a Resource could be placed
+  // (Gundam Deathscythe GD01-025: "Then, this Unit gains <First Strike> during this turn.").
+  if ((d=t.match(/^place (\d+) rested resources?\.\s*then,\s*(.+)$/))){
+    const rest=parseClause(g4StripReminder(raw.slice(raw.search(/then,/i)+5)));
+    if (rest) return { kind:'resourceRamp', amount:+d[1], then: rest };
   }
   if (/\bresources?\b/.test(t) && /set (?:it|them) as active/.test(t)){
     const rm = t.match(/(\d+)\s+(?:of your |rested )*resources?/);
@@ -3049,6 +3063,7 @@ function parseClause(raw){
     else if (bm){ kw='breach'; amt=+bm[1]; }
     else if (/<\s*blocker/.test(t)) kw='blocker';
     else if (/<\s*suppression/.test(t)) kw='suppression';
+    else if (/it gains\s*<\s*repair\s*\d+/.test(t)){ kw='repair'; amt=+t.match(/it gains\s*<\s*repair\s*(\d+)/)[1]; }   // Amatsu EB01-006, Paptimus Scirocco GD03-084
     if (kw) return { kind:'grantKw', kw, amount:amt, scope:'friendly', filter:friendlyFilter(t) };
   }
   // "Choose 1 of your … Unit. It gets AP+N during this turn." (chosen friendly buff)
@@ -3218,6 +3233,15 @@ function friendlyFilter(t){
     if (/\bother\b/.test(m[1])) f.other=true;
     if (/\bdamaged\b/.test(m[1])) f.damaged=true;
   }
+  // Words printed BEFORE "friendly" ("other active friendly (Clan) Unit", "rested friendly white … Unit"), the
+  // active/rested state, an exact "that is Lv.N", and "friendly Unit with <Keyword>" (Beside Pain, Yuu Kajima).
+  { const pre=t.match(/\b((?:other |active |rested |damaged )+)friendly\b/); const adj=((m&&m[1])||'')+' '+((pre&&pre[1])||'');
+    if (/\bother\b/.test(adj)) f.other=true;
+    if (/\bdamaged\b/.test(adj)) f.damaged=true;
+    if (/\bactive\b/.test(adj)) f.active=true;
+    if (/\brested\b/.test(adj)) f.rested=true;
+    const le=t.match(/(?:of your|friendly)[^.]*?units? that (?:is|are) lv\.?\s*(\d+)\b(?!\s*or)/); if (le) f.lvEq=+le[1];
+    const kw=t.match(/(?:of your|friendly)[^.]*?units? with <\s*([a-z][a-z\- ]*?)\s*\d*\s*>/); if (kw && g4KwKey(kw[1])) f.kw=g4KwKey(kw[1]); }
   const lv=t.match(/lv\.?(\d+) or lower/i); if(lv) f.maxLv=+lv[1];
   const ap=t.match(/(\d+) or more ap/i); if(ap) f.minAp=+ap[1];
   return Object.keys(f).length?f:null;
@@ -3260,6 +3284,13 @@ function targetFilter(t){
   if (/enemy unit (?:that is )?battling this unit/i.test(t)) f.battlingSelf=true;   // "… battling this Unit" (Milliardo Peacecraft)
   if (/rested enemy/i.test(t)) f.rested=true;
   if (/active enemy/i.test(t)) f.active=true;
+  // Restrictions on WHICH enemy Unit may be chosen (enemyTargets reads them):
+  if (/enemy units? with the highest lv/i.test(t)) f.highestLv=true;           // Ξ Gundam ST08-001, Gundam Kimaris Vidar GD06-038
+  if (/enemy units? with the lowest lv/i.test(t)) f.lowestLv=true;             // Strike Freedom Gundam GD05-002
+  if ((m=t.match(/enemy units? with <\s*([a-z][a-z\- ]*?)\s*\d*\s*>/i)) && g4KwKey(m[1])) f.kw=g4KwKey(m[1]);   // "with <Repair>" (Psycho Zaku (EX)), "with <Blocker>" (Shenlong, Altron…)
+  if ((m=t.match(/enemy units? with (\d+) hp\b/i))) f.hpEq=+m[1];              // "with 1 HP" — exactly (Perfect Strike Gundam, Darilbalde)
+  if (/enemy units? tokens?\b/i.test(t)) f.token=true;                        // "Choose 1 enemy Unit token" (Sayla's Light-Type Guncannon)
+  if (/enemy units? with no paired pilot/i.test(t)) f.unpaired=true;          // Super Gundam GD03-075
   return Object.keys(f).length?f:null;
 }
 // Valid enemy targets for a single-target removal/debuff action (respects act.filter).
@@ -3288,6 +3319,11 @@ function enemyTargets(foe, act){
     && (!f.battlingSelf || !!(G.curBattle && act.source && ((G.curBattle.atk===act.source && G.curBattle.def===u) || (G.curBattle.def===act.source && G.curBattle.atk===u))))
     && (f.battlingFriendlyMinLv==null || !!(G.curBattle && ((G.curBattle.def===u && (G.curBattle.atk.lv||0)>=f.battlingFriendlyMinLv)
                                               || (G.curBattle.atk===u && G.curBattle.def && (G.curBattle.def.lv||0)>=f.battlingFriendlyMinLv)))));
+  // "with <Keyword>", "with N HP" (exactly), "Unit token", "with no paired Pilot"; then "with the highest/lowest Lv."
+  // among ALL the enemy Units in play.
+  list=list.filter(u=>(!f.kw || g4HasKw(u, f.kw)) && (f.hpEq==null || u.hp===f.hpEq) && (!f.token || !!u.token) && (!f.unpaired || !u.pilot));
+  if (f.highestLv || f.lowestLv){ const lvs=foe.field.filter(u=>u.hp>0).map(u=>u.lv||0);
+    if (lvs.length){ const want=f.highestLv?Math.max(...lvs):Math.min(...lvs); list=list.filter(u=>(u.lv||0)===want); } }
   // Tokens ARE valid targets for destroy/bounce (a bounced token just ceases to exist).
   if (act.kind==='rest') list=list.filter(u=>!u.rested);
   return list;
@@ -3300,7 +3336,10 @@ function friendlyTargets(side, act){
     && (!f.color || (u.color||'').toLowerCase()===f.color)
     && (!f.damaged || u.hp<effMaxHp(u))
     && (!f.traits || f.traits.some(tr=>(u.trait||'').toLowerCase().includes(tr)))
-    && (!f.other || u!==act.source));
+    && (!f.other || u!==act.source)
+    // A Pilot's "your other Units" means other than the Unit it is paired with (Paptimus Scirocco).
+    && (!f.other || !(act.source && act.source.type==='pilot' && u.pilotCard===act.source))
+    && (!f.kw || g4HasKw(u, f.kw)) && (!f.active || !u.rested) && (!f.rested || !!u.rested) && (f.lvEq==null || (u.lv||0)===f.lvEq));
   if (act.kind==='heal') list=list.filter(u=>u.hp<effMaxHp(u));
   return list;
 }
@@ -3326,6 +3365,7 @@ function rankTarget(cands, act){
 function applyToTarget(card, side, act, target, label){
   G.effSrc = card;   // the card whose effect is resolving — effect damage reads it (damage-prevention statics)
   if (!target) return;
+  if (act.perAp || act.perTrash){ act = g4Concretize(card, side, act, label); if (!act) return; }   // an amount read now (Providence, Z Gundam (Biosensor))
   const cls=side===G.player?'me':'ai', foe=side===G.player?G.enemy:G.player, name=card.name;
   if (act.kind==='damage'){ log(`${label}: <b>${name}</b> deals ${act.amount} to <b>${target.name}</b>.`,cls); damage(target,act.amount,foe); if (act.drawOnKill && target.hp<=0){ for(let i=0;i<act.drawOnKill;i++) draw(side); log(`${label}: <b>${name}</b> — draw ${act.drawOnKill} (this effect destroyed an enemy Unit).`,cls); } }
   else if (act.kind==='rest'){ if (effectRest(target, foe)) log(`${label}: <b>${name}</b> rests <b>${target.name}</b>.`,cls); }
@@ -3345,7 +3385,7 @@ function applyToTarget(card, side, act, target, label){
               : act.amount; if(act.dur==='battle'){ target.battleAp=(target.battleAp||0)-amt; } else { target.tempAp=(target.tempAp||0)-amt; } target.ap=effAp(target); log(`${label}: <b>${target.name}</b> gets AP-${amt} this ${act.dur==='battle'?'battle':'turn'}.`,cls); if (amt>0 && foe.field.includes(target)) apReducedHook(target, foe); }
   else if (act.kind==='buff'){ if (act.dur==='battle') target.battleAp=(target.battleAp||0)+act.amount; else target.tempAp=(target.tempAp||0)+act.amount; target.ap=effAp(target); log(`${label}: <b>${target.name}</b> gets AP+${act.amount} ${act.dur==='battle'?'during this battle':'this turn'}.`,cls); if (act.then) runTrigger(card, side, act.then, label); }
   else if (act.kind==='heal'){ const _b=target.hp; target.hp=Math.min(effMaxHp(target), target.hp+(act.amount>=99?effMaxHp(target):act.amount)); if(target.hp>_b){ floatNum(target.uid,'+'+(target.hp-_b),'#7ee29a'); unitHealed(target, side); } log(`${label}: <b>${name}</b> repairs <b>${target.name}</b>.`,cls); }
-  else if (act.kind==='grantKw'){ grantKeyword(target, act.kw, act.amount); target.ap=effAp(target); log(`${label}: <b>${target.name}</b> gains &lt;${kwLabel(act.kw)}${act.kw==='breach'?' '+act.amount:''}&gt; this turn.`,cls); }
+  else if (act.kind==='grantKw'){ grantKeyword(target, act.kw, act.amount); target.ap=effAp(target); log(`${label}: <b>${target.name}</b> gains &lt;${kwLabel(act.kw)}${(act.kw==='breach'||act.kw==='repair')?' '+act.amount:''}&gt; this turn.`,cls); }
   else if (act.kind==='grantAttackActive'){ target.canAttackActive=true; log(`${label}: <b>${target.name}</b> may attack active enemy Units this turn.`,cls); }
   else if (act.kind==='stun'){ if (effectRest(target, foe)){ target.stunned=true; log(`${label}: <b>${name}</b> rests <b>${target.name}</b> — it won't ready next turn.`,cls); } }
   if (act.restIfEx && side.lastExUsed>0 && foe.field.includes(target) && target.hp>0 && !target.rested){ if (effectRest(target, foe)) log(`${label}: paid with an EX Resource — <b>${target.name}</b> is rested.`, cls); }
@@ -3354,6 +3394,7 @@ function applyToTarget(card, side, act, target, label){
   if (act.kind==='grantDestroyedReady'){ target.tempOnDestroyed={ turnSeq:G.turnSeq, readyTrait:act.readyTrait, link:act.link };
     log(`${label}: <b>${target.name}</b> gains "${act.link?'【During Link】':''}【Destroyed】 set a friendly (${act.readyTrait}) Unit active" this turn.`, cls); }
   if (act.kind==='grantReduce'){ target.dmgReduce=(target.dmgReduce||0)+act.amount; log(`${label}: <b>${target.name}</b> ${act.amount>=99?"can't receive battle damage":"reduces damage by "+act.amount} this turn.`,cls); }
+  if (act.thenTarget) g4ThenRider(card, side, act, target, label);   // "Then, (if …,) it gets AP-2 / … draw 1" on the same Unit
 }
 // Rest the chosen friendly Units, then deal damage equal to the count to all enemy Units in Lv range.
 function applySelfRestDamage(card, side, act, chosen, label){
@@ -3463,6 +3504,8 @@ function parseCondition(t){
   if ((m=t.match(/^there is a player with (\d+) or (?:less|fewer) shields$/))) return { type:'anyPlayerShieldsMax', max:+m[1] };
   if (/^(?:you are|this unit is) attacking the enemy player$/.test(t)) return { type:'attackingPlayer' };
   if (/^(?:you are|this unit is) attacking an enemy unit$/.test(t)) return { type:'attackingUnit' };
+  if ((m=t.match(/^there are (\d+) or more enemy players$/))) return { type:'enemyPlayers', min:+m[1] };          // EB01 multiplayer text (Justice Gundam (EX))
+  if ((m=t.match(/^this is an? (blue|white|red|green|purple) unit$/))) return { type:'hostColor', color:m[1] };   // a Pilot's "If this is a blue Unit" (Orga, Crot, and Shani)
   return null;
 }
 // Whole-trait match: "(Zeon)" must not be satisfied by "(Neo Zeon)" — every printed trait is parenthesised.
@@ -3550,6 +3593,11 @@ function condMet(cond, side, source, other){
     case 'pairedPilotReq':   return !!(source && source.pilot && pilotMeetsReq(source.pilotCard, cond));   // 【During Pair･X Pilot】
     case 'linked':           return !!(source && source.linked);   // 【During Link】 gate
     case 'attackingDamaged': return true;   // during an Attack trigger we are attacking something
+    case 'enemyPlayers':     return 1 >= cond.min;   // a two-player game has exactly one enemy player
+    case 'hostColor': {      // the Unit carrying the text: the card itself, or the Unit a Pilot is paired with
+      const host = source && source.type==='pilot' ? side.field.find(x=>x.pilotCard===source) : source;
+      return !!(host && String(host.color||'').toLowerCase()===cond.color);
+    }
     default: return true;
   }
 }
@@ -3831,10 +3879,16 @@ function playerTrashRetrieve(card, side, act, label, after){
   const fin=()=>{ if (after) after(); };
   const cands=side.trash.filter(c=>matchFilter(c, act.filter) && !c.token);
   if (!cands.length){ log(`${label||'Effect'}: <b>${card.name}</b> — no ${act.filter||'card'} in your trash.`, 'me'); fin(); return; }
-  const take=(c)=>{ const i=side.trash.indexOf(c); if (i>=0){ side.trash.splice(i,1); if (c.type==='unit'||c.type==='base') resetUnit(c); side.hand.push(c); refreshTrashStats(side);
-      log(`${label||'Effect'}: <b>${card.name}</b> — you add <b>${c.name}</b> from your trash to your hand.`, 'me'); } render(); fin(); };
-  if (cands.length===1){ take(cands[0]); return; }
-  whenModalFree(()=>showLookAtTop(cands, `${card.name}: choose 1 ${act.filter||'card'} from your trash to add to your hand`, ()=>true, false, (c)=>take(c||cands[0])));
+  const take=(c)=>{
+    // "You may choose 1 …" (Defurse): taking nothing is allowed — and then there is no "If you do, discard".
+    if (!c){ log(`${label||'Effect'}: <b>${card.name}</b> — you don't take a card from your trash.`, 'me'); render(); fin(); return; }
+    const i=side.trash.indexOf(c); if (i>=0){ side.trash.splice(i,1); if (c.type==='unit'||c.type==='base') resetUnit(c); side.hand.push(c); refreshTrashStats(side);
+      log(`${label||'Effect'}: <b>${card.name}</b> — you add <b>${c.name}</b> from your trash to your hand.`, 'me');
+      // "If you do, discard N." — you choose the discard (Banshee ST12-009, Defurse GD03-064).
+      if (act.thenDiscard){ render(); whenModalFree(()=>playerDiscard(side, act.thenDiscard, card.name, ()=>{ render(); fin(); })); return; } }
+    render(); fin(); };
+  if (cands.length===1 && !act.may){ take(cands[0]); return; }
+  whenModalFree(()=>showLookAtTop(cands, `${card.name}: ${act.may?'you may choose':'choose'} 1 ${act.filter||'card'} from your trash to add to your hand${act.thenDiscard?` (then discard ${act.thenDiscard})`:''}`, ()=>true, !!act.may, (c)=>take(act.may ? c : (c||cands[0]))));
 }
 // Destroy a Unit as the result of a card effect; when by your own (Neo Zeon) effect, set the turn
 // flag (for Axis) and apply Jagd-Doga-style trash-return.
@@ -4052,6 +4106,224 @@ function gd05AxisDeploy(side, base, after){
     showLookAtTop(cands, `${base.name}: deploy 1 (Neo Zeon) Unit (Lv.3 or lower) from your hand`, ()=>true, false, (chosen)=>{ deploy(chosen); render(); });
   else deploy([...cands].sort((a,b)=>((b.baseAp||0)+(b.baseHp||0))-((a.baseAp||0)+(a.baseHp||0)))[0]);
 }
+// ---- Triggered-clause costs, riders and targets on Units / Pilots / Bases ----
+// Wording the generic rules in parseClause can't express: a cost paid with your own card ("Choose 1 active friendly
+// Base. Rest it. If you do, …"), a "Then, (if …,) it gets AP-2" rider on the Unit chosen first, an amount read when the
+// effect resolves ("for each 4 AP this Unit has"), and targets outside the Unit area ("enemy Base", "a rested Unit
+// belonging to another player", "Choose 1 enemy player. They may draw 1."). Both sides use the same resolver: the
+// player chooses through modals, the AI decides; g4Resolve runs `after` once the whole effect is done.
+// A trailing reminder sentence "(At the end of your turn, this Unit recovers …)" is dropped — a "(Trait)" never ends in ".".
+function g4StripReminder(s){ return String(s||'').replace(/\s*\([^()]*\.\)/g,'').trim(); }
+function g4KwKey(s){ s=String(s||'').toLowerCase().trim();
+  return /^first/.test(s)?'first':/^high/.test(s)?'high':/^breach/.test(s)?'breach':/^blocker/.test(s)?'blocker'
+       : /^suppression/.test(s)?'suppression':/^repair/.test(s)?'repair':/^support/.test(s)?'support':null; }
+function g4HasKw(u, kw){ const sd=u && (u.owner==='player'?G.player:G.enemy); return !!(sd && condMet({ type:'selfHasKw', kw }, sd, u)); }
+function g4Kind(k){ return k==='revealToDeckBottom'||k==='readyEnemy'||k==='damageBase'||k==='foeMayDraw'||k==='restCostThen'||k==='readyChosen'; }
+function parseG4Clause(raw){
+  // "Lv." before a number would end a sentence for the [^.] matches below: hold it as "Lv‧" while matching.
+  const p=g4StripReminder(String(raw||'').replace(/\s+/g,' ').trim()).replace(/\bLv\.(?=\s?\d)/gi,'Lv․');
+  const U=s=>String(s||'').replace(/․/g,'.').trim();
+  let m;
+  // "Reveal 1 (T) Unit card from your hand. Return it to the bottom of your deck. If you do, draw 2." (Penelope ST08-006)
+  if ((m=p.match(/^reveal (\d+) (.+?) cards? from your hand\.\s*return (?:it|them) to the bottom of your deck\.\s*if you do,\s*(.+)$/i))){
+    const inner=parseClause(U(m[3])); if (inner) return { kind:'revealToDeckBottom', count:+m[1], filter:U(m[2]).toLowerCase(), inner };
+  }
+  // "Choose 1 rested Unit belonging to another player. Set it as active. Draw 1." (Zeta Gundam Ⅲ P2 Type EB01-005)
+  if ((m=p.match(/^choose 1 rested units? belonging to (?:another player|an enemy player)\.\s*set it as active\.?\s*(.*)$/i)))
+    return { kind:'readyEnemy', then: m[1].trim() ? parseClause(U(m[1])) : null };
+  // "Choose 1 enemy Base. Deal N damage to it." (Gundam Epyon ST12-001, Zssa (Sleeves) GD04-043)
+  if ((m=p.match(/^choose 1 enemy base\.\s*deal (\d+) damage to it\.?$/i))) return { kind:'damageBase', amount:+m[1] };
+  // "Choose 1 enemy player. They may draw 1. If they draw with this effect, draw 1." (Jona Basta EB01-062)
+  if ((m=p.match(/^choose 1 enemy player\.\s*they may draw (\d+)\.\s*if they draw with this effect,\s*(.+)$/i))){
+    const inner=parseClause(U(m[2])); if (inner) return { kind:'foeMayDraw', amount:+m[1], inner };
+  }
+  // "(You may) choose 1 [other] [active] friendly … Unit/Base [that is Lv.N] | 1 of your [other] [active] (T) Units. Rest it.
+  // If you do, <effect>." Resting your own card is the COST: the effect happens only once it is paid (Red Gundam GD03-039,
+  // Rick Dias (Red) GD02-075, Gundam Geminass 02 EB01-057). A closing "This Unit gains <Kw> during this turn." is its own
+  // sentence and happens either way (Gundam Barbatos Lupus).
+  if ((m=p.match(/^(you may )?choose 1 ([^.]*?\b(?:friendly|of your)\b[^.]*?)\.\s*rest it\.\s*if you do,\s*(.+)$/i)) && !/\benemy\b/i.test(m[2])){
+    const phrase=U(m[2]).toLowerCase(), base=/\bbases?\b/.test(phrase) && !/\bunits?\b/.test(phrase);
+    let body=m[3], after=null;
+    const tail=body.match(/^(.*?\.)\s*(this unit gains <[^>]+> during this turn\.?)$/i);
+    if (tail){ body=tail[1]; after=parseClause(U(tail[2])); }
+    const inner=parseClause(U(body));
+    if (inner) return { kind:'restCostThen', may:!!m[1], base, filter: base ? null : friendlyFilter('choose 1 '+phrase), inner, after,
+      // "…whose Lv. is equal to or lower than that Unit / the Unit rested with this ability" — capped by the Unit you rested.
+      costLvCap: /equal to or lower than (?:that unit|the unit rested with this (?:ability|effect))/i.test(U(body)) };
+  }
+  // "Choose 1 rested friendly white (G Generation) Unit. Set it as active. It can't attack during this turn." (Lacus Clyne & Eternal)
+  if ((m=p.match(/^choose 1 ([^.]*?\b(?:friendly|of your)\b[^.]*?units?(?: with <[^>]+>)?)\.\s*set it as active\.?\s*(it can'?t attack during this turn\.?)?$/i)) && /\brested\b/i.test(m[1]))
+    return { kind:'readyChosen', filter: Object.assign({}, friendlyFilter('choose 1 '+U(m[1]).toLowerCase())||{}, { rested:true }), noAttack: !!m[2] };
+  // "Choose 1 enemy Unit. Deal 1 damage to it for each 4 AP this Unit has." (Providence Gundam GD03-033)
+  if ((m=p.match(/^choose 1 enemy unit([^.]*)\.\s*deal (\d+) damage to it for each (\d+) ap this unit has\.?$/i)))
+    return { kind:'damage', amount:+m[2], perAp:+m[3], scope:'enemy', filter:targetFilter(U('choose 1 enemy unit'+m[1]).toLowerCase()) };
+  // "Choose 1 enemy Unit. For each (AEUG) Unit card in your trash, it gets AP-1 during this turn." (Z Gundam (Biosensor) GD03-071)
+  if ((m=p.match(/^choose 1 enemy unit([^.]*)\.\s*for each ([a-z0-9\/() \-]+?) cards? in your trash, it gets ap-(\d+)( during this battle| during this turn)?\.?$/i)))
+    return { kind:'debuff', amount:+m[3], perTrash:m[2].trim().toLowerCase(), scope:'enemy', dur:/battle/i.test(m[4]||'')?'battle':'turn', filter:targetFilter(U('choose 1 enemy unit'+m[1]).toLowerCase()) };
+  // "<Choose 1 … it>. Then, [if <cond>,] it gets AP-N / it gains <Kw> / <effect, if it is a (T) Unit>." — the rider follows the
+  // Unit chosen first (G-Falcon DX ST14-005, Paptimus Scirocco GD03-084); it needs that Unit still in play.
+  if ((m=p.match(/^(choose 1 [^.]*\.\s*[^.]*\bit\b[^.]*\.)\s*then,\s*(?:if ([^,]+),\s*)?(.+)$/i))){
+    const main=parseClause(U(m[1]));
+    if (main && ['rest','damage','debuff','buff','grantKw','bounce','destroy','stun','heal'].includes(main.kind) && !/^all/.test(main.scope||'') && !main.thenTarget){
+      const rider={}, cond=m[2]?U(m[2]).toLowerCase():null, body=U(m[3]); let d;
+      if (cond){ const tm=cond.match(/^it is an?\s*\(([^)]+)\)\s*unit$/); if (tm) rider.targetTrait=tm[1].trim().toLowerCase(); else if (!(rider.cond=parseCondition(cond))) return null; }
+      if ((d=body.match(/^it gets ap([+-])(\d+)( during this battle| during this turn)?\.?$/i))) rider.onTarget={ kind:d[1]==='-'?'debuff':'buff', amount:+d[2], dur:/battle/i.test(d[3]||'')?'battle':'turn' };
+      else if ((d=body.match(/^it gains <\s*([a-z][a-z\- ]*?)\s*(\d+)?\s*> during this turn\.?$/i)) && g4KwKey(d[1])) rider.onTarget={ kind:'grantKw', kw:g4KwKey(d[1]), amount:+(d[2]||0) };
+      else if (rider.targetTrait && !/\bits?\b/i.test(body)) rider.inner=parseClause(body);
+      if (rider.onTarget || rider.inner){ main.thenTarget=rider; return main; }
+    }
+  }
+  return null;
+}
+// The rider of a "Then, …" on the Unit chosen first: only while that Unit is still in play.
+function g4ThenRider(card, side, act, target, label){
+  const r=act.thenTarget, foe=side===G.player?G.enemy:G.player;
+  if (!r || !target || target.hp<=0 || !(side.field.includes(target) || foe.field.includes(target))) return;
+  if (r.targetTrait && !hasTraitT(target, r.targetTrait)) return;
+  if (r.cond && !condMet(r.cond, side, card)) return;
+  if (r.onTarget) applyToTarget(card, side, Object.assign({}, r.onTarget, { source:card }), target, label);
+  else if (r.inner) runTrigger(card, side, r.inner, label);
+}
+// "Deal N damage to it for each M AP this Unit has" / "For each (T) Unit card in your trash, it gets AP-N" — the amount
+// when the effect resolves. Returns null when it comes to 0 (nothing happens).
+function g4Concretize(card, side, act, label){
+  const host = card && card.type==='pilot' ? (side.field.find(x=>x.pilotCard===card) || card) : card;
+  const n = act.perAp ? Math.floor(effAp(host)/act.perAp) : trashCount(side, act.perTrash);
+  const a = Object.assign({}, act, { amount:(act.amount||0)*n, perAp:null, perTrash:null });
+  if (a.amount<=0){ log(`${label}: <b>${card.name}</b> — ${act.perAp ? `it has ${effAp(host)} AP, so no damage` : `no ${act.perTrash} card in the trash, so no AP is lost`}.`, side===G.player?'me':'ai'); return null; }
+  return a;
+}
+// <Repair> heals at the end of your turn: the AI gives it to the Unit missing the most HP, else its strongest.
+function g4RepairPick(cands){ return [...cands].sort((a,b)=>((effMaxHp(b)-b.hp)-(effMaxHp(a)-a.hp)) || (effAp(b)-effAp(a)))[0] || null; }
+// The payoff of a rest-cost, with "…equal to or lower than that Unit" capped by the card actually rested.
+function g4CostCapped(act, c){
+  if (!act.costLvCap || !c) return act.inner;
+  const f=Object.assign({}, act.inner.filter||{}); f.maxLv=Math.min(f.maxLv!=null?f.maxLv:99, c.lv||0);
+  return Object.assign({}, act.inner, { filter:f });
+}
+// Would this payoff do anything right now? (The AI only pays an optional cost when it would.)
+function g4PayoffUseful(side, a){
+  if (!a) return false;
+  const foe=side===G.player?G.enemy:G.player;
+  if (['damage','rest','bounce','bounceDeck','destroy','debuff','stun'].includes(a.kind)) return enemyTargets(foe, a).length>0;
+  return true;
+}
+// "Choose 1 enemy Base. Deal N damage to it." — the EX Base token is a Base too.
+function g4DamageBase(card, side, act, label){
+  const cls=side===G.player?'me':'ai', foe=side===G.player?G.enemy:G.player, b=foe.base;
+  G.effSrc=card;
+  if (!b || b.hp<=0){ log(`${label}: <b>${card.name}</b> — ${foe===G.player?'you have':who(foe)+' has'} no Base to damage.`, cls); return; }
+  if (baseGuarded(foe, card.type==='unit'?card:null, false)){ log(`${who(foe)}'s <b>${b.name}</b> can't receive that damage.`, cls); return; }
+  const amt=shieldAreaEffDamage(foe, act.amount); if (amt<=0) return;
+  b.hp-=amt; floatNum(b.uid,'-'+amt,'#ff6b5e');
+  log(`${label}: <b>${card.name}</b> deals ${amt} to ${foe===G.player?'your':who(foe)+"'s"} <b>${b.name}</b> Base.`, cls);
+  if (b.hp<=0){ foe.base=null; fx('die', b.uid); sendToTrash(b, foe); log(`${foe===G.player?'Your':who(foe)+"'s"} <b>${b.name}</b> Base is destroyed.`, cls); if (!b.token) whenModalFree(()=>fireDestroyed(b, foe)); }
+}
+function g4Resolve(card, side, act, label, after){
+  const fin=()=>{ if (after) after(); };
+  const human=side===G.player, cls=human?'me':'ai', foe=human?G.enemy:G.player, name=card.name;
+  const whose=(s)=>s===G.player ? 'your' : `${who(s)}'s`;
+  // A follow-up effect resolves like the rest of this one: the player's choices go through the interactive resolver.
+  const go=(a, done)=>{ const d=done||fin; if (!a){ d(); return; } if (human) resolvePlayerTrigger(card, side, a, label, d); else { runTrigger(card, side, a, label); d(); } };
+  if (act.kind==='damageBase'){ g4DamageBase(card, side, act, label); render(); fin(); return; }
+  if (act.kind==='revealToDeckBottom'){
+    const cands=side.hand.filter(c=>matchFilter(c, act.filter));
+    if (!cands.length){ log(`${label}: <b>${name}</b> — no ${act.filter} card in ${human?'your':'its'} hand to reveal, so no draw.`, cls); fin(); return; }
+    const pay=(c)=>{ if (!c || !side.hand.includes(c)){ fin(); return; }
+      side.hand.splice(side.hand.indexOf(c),1); side.deck.unshift(c);   // index 0 is the bottom of the deck
+      log(`${label}: <b>${name}</b> — ${human?'you reveal':who(side)+' reveals'} <b>${c.name}</b> and ${human?'return':'returns'} it to the bottom of the deck.`, cls);
+      render(); go(act.inner); };
+    if (human && cands.length>=2){ whenModalFree(()=>showLookAtTop(cands, `${name}: reveal 1 ${act.filter} card from your hand — it goes to the bottom of your deck`, ()=>true, false, pay)); return; }
+    pay(human ? cands[0] : [...cands].sort((a,b)=>cardValue(a)-cardValue(b))[0]); return;
+  }
+  if (act.kind==='readyEnemy'){
+    const cands=foe.field.filter(u=>u.hp>0 && u.rested);
+    const apply=(t)=>{ if (t && foe.field.includes(t) && t.rested && effReady(t, foe)) log(`${label}: <b>${name}</b> sets ${whose(foe)} <b>${t.name}</b> active.`, cls); render(); go(act.then); };
+    if (!cands.length){ log(`${label}: <b>${name}</b> — no rested enemy Unit to set active.`, cls); go(act.then); return; }
+    if (human && cands.length>=2){ promptTargetChoice(cands, `<b>${name}</b> 【${label}】 — choose 1 rested enemy Unit. It is set as active.`, (t)=>apply(t||cands[0])); return; }
+    // The AI stands up the enemy Unit it minds least (an active Unit can't be attacked, but it can block).
+    apply(human ? cands[0] : [...cands].sort((a,b)=>aiThreatScore(a)-aiThreatScore(b))[0]); return;
+  }
+  if (act.kind==='readyChosen'){
+    const cands=friendlyTargets(side, { filter:act.filter, source:card }).filter(u=>u.rested);
+    const apply=(t)=>{ if (t && side.field.includes(t) && t.rested && effReady(t, side)){ if (act.noAttack) t.noAttackTurn=G.turnSeq;
+        log(`${label}: <b>${name}</b> sets <b>${t.name}</b> active${act.noAttack?" — it can't attack during this turn":''}.`, cls); } render(); fin(); };
+    if (!cands.length){ log(`${label}: <b>${name}</b> — no matching rested Unit to set active.`, cls); fin(); return; }
+    if (human && cands.length>=2){ promptTargetChoice(cands, `<b>${name}</b> 【${label}】 — choose 1 of your rested Units to set as active.`, (t)=>apply(t||cands[0])); return; }
+    apply(human ? cands[0] : [...cands].sort((a,b)=>((effBlocker(b)?5:0)-(effBlocker(a)?5:0)) || (cardValue(b)-cardValue(a)))[0]); return;
+  }
+  if (act.kind==='foeMayDraw'){
+    const yes=()=>{ for (let i=0;i<act.amount;i++) draw(foe); log(`${label}: <b>${name}</b> — ${foe===G.player?'you draw':who(foe)+' draws'} ${act.amount}.`, cls); render(); checkEnd(); if (G.over){ fin(); return; } go(act.inner); };
+    const no=()=>{ log(`${label}: <b>${name}</b> — ${foe===G.player?"you don't draw":who(foe)+" doesn't draw"}, so ${human?'you get':who(side)+' gets'} no draw.`, cls); render(); fin(); };
+    if (!foe.deck.length){ no(); return; }
+    if (foe===G.player){   // the choice is the opponent's — here, yours
+      whenModalFree(()=>{
+        el('blockMsg').innerHTML=`<b>${name}</b> 【${label}】 — you may draw ${act.amount}. If you do, ${who(side)} draws ${act.inner && act.inner.kind==='draw' ? act.inner.amount : 1} as well.`;
+        const wrap=el('blockBtns'); wrap.innerHTML='';
+        const b1=document.createElement('button'); b1.textContent=`Draw ${act.amount}`; b1.onclick=()=>{ el('blockModal').classList.remove('show'); yes(); pumpModalQueue(); };
+        const b2=document.createElement('button'); b2.className='ghost'; b2.textContent="Don't draw"; b2.onclick=()=>{ el('blockModal').classList.remove('show'); no(); pumpModalQueue(); };
+        wrap.appendChild(b1); wrap.appendChild(b2); el('blockModal').classList.add('show'); });
+      return;
+    }
+    // The AI takes the card unless its hand is full or its deck is running out.
+    if (foe.hand.length < HAND_MAX && foe.deck.length > 3) yes(); else no(); return;
+  }
+  if (act.kind==='restCostThen'){
+    let cands = act.base ? (side.base && !side.base.rested && side.base.hp>0 ? [side.base] : [])
+                         : friendlyTargets(side, { filter:act.filter, source:card }).filter(u=>!u.rested);
+    // "When you rest your Base with one of your Units' effects, you may rest this Unit instead." (GD03-079)
+    if (act.base && cands.length && card.type==='unit')
+      cands = cands.concat(side.field.filter(u=>u.hp>0 && !u.rested && /when you rest your base with one of your units'? effects?, you may rest this unit instead/i.test(plain(u.effect||''))));
+    const tail=()=>go(act.after);
+    const pay=(c)=>{
+      if (!c){ log(`${label}: <b>${name}</b> — ${human?"you don't rest":who(side)+" doesn't rest"} a card, so the effect doesn't happen.`, cls); render(); tail(); return; }
+      c.rested=true;   // the cost: your own card, rested by you (not an enemy effect-rest)
+      log(`${label}: <b>${name}</b> — ${human?'you rest your':who(side)+' rests its'} <b>${c.name}</b>${act.base && c.type==='unit'?' instead of the Base':''}.`, cls);
+      render(); go(g4CostCapped(act, c), tail);
+    };
+    if (!cands.length){ log(`${label}: <b>${name}</b> — no active ${act.base?'friendly Base':'friendly Unit that qualifies'} to rest, so the effect doesn't happen.`, cls); tail(); return; }
+    if (human){
+      if (cands.length>=2 || act.may){ promptTargetChoice(cands, `<b>${name}</b> 【${label}】 — ${act.may?'you may rest':'rest'} ${act.base?(cands.length>1?'your Base (or a Unit that may be rested instead)':'your Base'):'1 of your Units'} to use its effect.`, pay, act.may?"Don't rest":null); return; }
+      pay(cands[0]); return;
+    }
+    // The AI rests the card it misses least (a Unit that can't attack this turn, then the weakest) — the highest Lv when the
+    // payoff is capped by it. An optional cost is paid only when the payoff would do something.
+    const pick = act.base ? cands[0]
+               : act.costLvCap ? [...cands].sort((a,b)=>(b.lv||0)-(a.lv||0))[0]
+               : [...cands].sort((a,b)=>((a.sick?0:10)+effAp(a)) - ((b.sick?0:10)+effAp(b)))[0];
+    if (act.may && !g4PayoffUseful(side, g4CostCapped(act, pick))){ log(`${label}: <b>${name}</b> — doesn't rest a card (nothing to gain).`, cls); tail(); return; }
+    pay(pick); return;
+  }
+  if (act.kind==='allLookTop'){
+    // "All players each look at the top card of their deck. If it is Lv.N or higher, they may reveal it and add it to their
+    // hand. They return any remaining card to the top or bottom." — the turn player first (1-3-4); you decide for yours.
+    const order = G.turn===side.who ? [side, foe] : [foe, side];
+    let i=0;
+    const next=()=>{
+      if (i>=order.length || G.over){ render(); fin(); return; }
+      const sd=order[i++];
+      if (!sd.deck.length){ next(); return; }
+      const top=sd.deck[sd.deck.length-1], canAdd = top.type!=='resource' && (top.lv||0)>=act.minLv;
+      if (sd!==G.player){   // the AI takes a qualifying card, sends a weak one to the bottom, keeps a strong one on top
+        if (canAdd){ sd.deck.pop(); sd.hand.push(top); log(`${label}: ${who(sd)} reveals <b>${top.name}</b> (Lv.${top.lv}) and adds it to their hand.`, cls); deckOutCheck(sd); }
+        else if (cardValue(top)<3){ sd.deck.pop(); sd.deck.unshift(top); log(`${label}: ${who(sd)} puts the top card on the bottom.`, cls); }
+        else log(`${label}: ${who(sd)} keeps the top card on top.`, cls);
+        next(); return;
+      }
+      whenModalFree(()=>{
+        el('blockMsg').innerHTML=`<b>${name}</b> 【${label}】 — the top card of your deck is <b>${top.name}</b> (Lv.${top.lv||0}).${canAdd?' You may reveal it and add it to your hand.':''}`;
+        const wrap=el('blockBtns'); wrap.innerHTML='';
+        const at=()=>sd.deck.lastIndexOf(top);   // move the card by identity: other effects may have resolved meanwhile
+        const btn=(txt, fn)=>{ const b=document.createElement('button'); b.textContent=txt; b.onclick=()=>{ el('blockModal').classList.remove('show'); fn(); render(); next(); pumpModalQueue(); }; wrap.appendChild(b); };
+        if (canAdd) btn('Reveal & add to hand', ()=>{ const k=at(); if (k<0) return; sd.deck.splice(k,1); sd.hand.push(top); log(`${label}: you reveal <b>${top.name}</b> (Lv.${top.lv}) and add it to your hand.`, 'me'); revealDraw(top,'ADDED'); deckOutCheck(sd); });
+        btn('Keep on top', ()=>log(`${label}: you keep the top card on top of your deck.`, 'me'));
+        btn('Send to bottom', ()=>{ const k=at(); if (k<0) return; sd.deck.splice(k,1); sd.deck.unshift(top); log(`${label}: you put the top card on the bottom of your deck.`, 'me'); });
+        el('blockModal').classList.add('show'); });
+    };
+    next(); return;
+  }
+  fin();
+}
 // Resolve a triggered action for `side`, auto-targeting sensibly. `label` is 'Deploy' / 'Pair'.
 function runTrigger(card, side, act, label){
   G.effSrc = card;   // the card whose effect is resolving — effect damage reads it (damage-prevention statics)
@@ -4075,12 +4347,17 @@ function runTrigger(card, side, act, label){
   if (act.kind==='gd05AxisDeploy'){ gd05AxisDeploy(side, card); return; }
   // Conditional effect: only resolve the inner effect when the board condition holds.
   if (act.kind==='cond'){ const ok=condMet(act.cond, side, card, act.other); if (ok) runTrigger(card, side, act.inner, label); else if (act.elseInner) runTrigger(card, side, act.elseInner, label); return; }
+  if (act.perAp || act.perTrash){ act = g4Concretize(card, side, act, label); if (!act) return; act.source = card; }   // "for each 4 AP" / "for each (T) Unit card in your trash"
+  if (g4Kind(act.kind)){ g4Resolve(card, side, act, label, null); return; }
   const cls = side===G.player?'me':'ai';
   const foe = side===G.player?G.enemy:G.player;
   const name = card.name;
   if (act.kind==='grantKw'){
-    const t = rankTarget(friendlyTargets(side,act),act) || side.field.filter(u=>!u.token && (act.scope!=='friendly'||u!==card))[0] || card;
-    if (t){ grantKeyword(t, act.kw, act.amount); t.ap=effAp(t); log(`${label}: <b>${t.name}</b> gains &lt;${kwLabel(act.kw)}${act.kw==='breach'?' '+act.amount:''}&gt; this turn.`, cls); }
+    // Only a Unit meeting the text's restriction can be chosen ("your other Units", "(T) Units") — with none, nothing gains it.
+    const cands = friendlyTargets(side, act);
+    const t = act.kw==='repair' ? g4RepairPick(cands) : rankTarget(cands, act);
+    if (t) applyToTarget(card, side, act, t, label);
+    else log(`${label}: <b>${name}</b> — no Unit can gain &lt;${kwLabel(act.kw)}&gt;.`, cls);
   } else if (act.kind==='grantAttackActive'){
     const targets = act.all ? side.field.filter(u=>!u.token) : [act.scope==='self' ? card : (rankTarget(friendlyTargets(side,act),act) || card)];
     for (const t of targets) if(t){ t.canAttackActive=true; }
@@ -4352,10 +4629,15 @@ function runTrigger(card, side, act, label){
     const cands=side.trash.filter(c=>matchFilter(c,act.filter)&&!c.token);
     if(cands.length){
       cands.sort((a,b)=>cardValue(b)-cardValue(a));
-      const best=cands[0]; side.trash.splice(side.trash.indexOf(best),1);
+      const best=cands[0];
+      // "You may … If you do, discard 1." — the AI only swaps when the card it takes beats the one it would discard.
+      if (act.may && act.thenDiscard && !(side.hand.length && cardValue(best) > Math.min(...side.hand.map(cardValue)))){
+        log(`${label}: <b>${name}</b> — doesn't take a card from the trash.`, cls); return; }
+      side.trash.splice(side.trash.indexOf(best),1);
       if(best.type==='unit'||best.type==='base') resetUnit(best);
       side.hand.push(best);
       log(`${label}: <b>${name}</b> retrieves <b>${best.name}</b> from trash → hand.`, cls);
+      if (act.thenDiscard) autoDiscard(side, act.thenDiscard, name);   // "If you do, discard N."
     }
   } else if (act.kind==='trashGate'){
     const count=trashCount(side,act.trait);
@@ -4416,6 +4698,9 @@ function resolvePlayerTrigger(card, side, act, label, after){
     }
     return resolvePlayerTrigger(card, side, act.inner, label, after);
   }
+  if (act.perAp || act.perTrash){ act = g4Concretize(card, side, act, label); if (!act){ fin(); return; } act.source = card; }
+  if (g4Kind(act.kind) || act.kind==='allLookTop'){ g4Resolve(card, side, act, label, fin); return; }
+  if (act.kind==='trashRetrieve' && side===G.player){ playerTrashRetrieve(card, side, act, label, fin); return; }   // you pick the card (and may decline a "You may")
   if (act.kind==='shieldToHand'){               // take the shield, then chain the "Then,…" part
     const chain=()=>{ if (act.then) return resolvePlayerTrigger(card, side, act.then, label, after); fin(); };
     if (act.scryN===2 && G.player.deck.length>=2 && side.who===G.turn){
@@ -7690,6 +7975,7 @@ function resolveAttackTriggers(atk, atkSide, done){
     const a=acts[i++];
     if (atkSide===G.player) resolvePlayerTrigger(atk, atkSide, a, 'Attack', next);
     else if (a.kind==='gd05Sac') gd05Sacrifice(atkSide, atk, next);   // the player may have to choose a Unit — continue after
+    else if (a.kind==='foeMayDraw' || a.kind==='allLookTop') g4Resolve(atk, atkSide, a, 'Attack', next);   // you answer for your own draw / top card
     else { runTrigger(atk, atkSide, a, 'Attack'); next(); }
   })();
 }
