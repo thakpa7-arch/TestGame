@@ -100,10 +100,13 @@ const setTrash=(who, ids)=>{ side(who).trash=ids.map(i=>card(i, who)); A.refresh
 
 // ---- Gamow GD01-127: 【Activate･Action】Rest this Base：Choose 1 friendly (ZAFT) Unit with 5 or more AP. It gains <Breach 3> during this battle.
 { fresh('player'); const b=card('GD01-127','player'); b.sick=false; G.player.base=b;
-  const z=stick('player',5,5,{trait:'(ZAFT)'}), nz=stick('player',6,5,{trait:'(OZ)'}), z4=stick('player',4,5,{trait:'(ZAFT)'});
-  A.startActivate(b); drainTasks();
-  ok('Gamow: only a (ZAFT) Unit with 5 or more AP is a candidate (never the Base)', JSON.stringify(G.activateCands)===JSON.stringify([z.uid]), JSON.stringify(G.activateCands));
-  A.cancelAction(); }
+  const z=stick('player',5,5,{trait:'(ZAFT)'}), nz=stick('player',6,5,{trait:'(OZ)'}), z4=stick('player',4,5,{trait:'(ZAFT)'}), z2=stick('player',6,5,{trait:'(ZAFT)'});
+  ok('Gamow: not usable in the main phase (【Activate･Action】)', !A.activateReady(b));
+  // In the action step of z's attack: the chooser lists only the (ZAFT) Units with 5 or more AP.
+  const foe=stick('enemy',1,9,{rested:true}); A.fieldClick(z.uid); drainTasks(); A.fieldClick(foe.uid); drainTasks(); press(/Gamow/); const m=modal();
+  const names=m ? m.btns.join('|') : '';
+  ok('Gamow: only a (ZAFT) Unit with 5 or more AP is a candidate (never the Base)', !!m && names.includes(z.name) && names.includes(z2.name) && !names.includes(nz.name) && !names.includes(z4.name) && !names.includes(b.name), names);
+  G.over=true; }
 { fresh('player'); const b=card('GD01-127','player'); b.sick=false; G.player.base=b;
   const z=stick('player',5,5,{trait:'(ZAFT)'}); const foe=stick('enemy',1,2,{rested:true}); const sh0=G.enemy.shields.length;
   A.fieldClick(z.uid); drainTasks(); A.fieldClick(foe.uid); drainTasks();
@@ -333,10 +336,12 @@ ok("Bertigo: the 【Destroyed】 named in its text is not a trigger of its own",
 
 // ---- SUMO Silver Type GD06-069: 【Activate･Action】【Once per Turn】①：Choose 1 of your damaged (Dianna Counter) Units. It recovers 1 HP.
 { fresh('player'); const s=put('GD06-069','player'); const n=put('GD02-080','player'); n.hp=1;
-  ok("SUMO Silver Type: with only a damaged non-(Dianna Counter) Unit it can't be used", !A.activateReady(s));
-  const f=put('GD06-074','player'); f.hp=1; ok('SUMO Silver Type: a damaged (Dianna Counter) Unit makes it usable', A.activateReady(s));
-  A.startActivate(s); drainTasks(); ok('SUMO Silver Type: only the (Dianna Counter) Unit is a candidate', JSON.stringify(G.activateCands)===JSON.stringify([f.uid]));
-  A.fieldClick(f.uid); drainTasks(); ok('SUMO Silver Type: it recovers 1', f.hp===2 && n.hp===1); }
+  G.endActionStep=true; ok("SUMO Silver Type: with only a damaged non-(Dianna Counter) Unit it can't be used", !A.activateReady(s)); G.endActionStep=false;
+  const f=put('GD06-074','player'); f.hp=1; ok('SUMO Silver Type: not usable in the main phase (【Activate･Action】)', !A.activateReady(s));
+  // The End Phase's action step (7-6-3): End Turn opens it.
+  A.endTurn(); drainTasks(); ok('SUMO Silver Type: a damaged (Dianna Counter) Unit makes it usable', !!modal() && modal().btns.some(b=>/SUMO Silver/.test(b)));
+  press(/SUMO Silver/); ok('SUMO Silver Type: only the (Dianna Counter) Unit is a candidate (no choice to make)', !(modal() && /choose the Unit/.test(modal().msg)));
+  ok('SUMO Silver Type: it recovers 1', f.hp===2 && n.hp===1); G.over=true; }
 { fresh('enemy'); const s=put('GD06-069','player'); const f1=put('GD06-074','player',{rested:true}), f2=put('GD06-079','player'); f1.hp=1; f2.hp=1; const n=put('GD02-080','player'); n.hp=1; const atk=stick('enemy',1,9);
   A.resolveAiAttack(atk, ()=>{}, f1); drainTasks(); if (modal() && /intercept/i.test(modal().msg)) press(/Don't/); press(/SUMO Silver/); const m=modal();
   ok('SUMO Silver Type in an action step: with two damaged (Dianna Counter) Units you choose (no (AEUG) Unit listed)', !!m && m.btns.length===2 && !m.btns.some(b=>/Nemo/.test(b)), JSON.stringify(m&&m.btns));

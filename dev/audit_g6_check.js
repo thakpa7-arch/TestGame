@@ -393,8 +393,9 @@ for (const id of ['GD06-058','GD05-030','GD05-048','GD05-078']){
 
 // ---- Unicorn Gundam 02 Banshee (Destroy Mode) ST12-006: its second ability 【Activate･Action】Exile 4 cards: <Suppression> during this battle ----
 { fresh('player'); const b=put('ST12-006','player'); for (let i=0;i<4;i++) G.player.trash.push(card('ST01-001','player')); G.enemy.base=null;
-  A.fieldClick(b.uid); drainTasks(); const insp=G.mode==='idle';   // it has a ready ability, so the card viewer opens (Attack / Activate)
-  G.selected=b.uid; G.mode='attack-target'; A.attackDirect(); drainTasks();   // = the viewer's "Attack" button
+  // Its 【Activate･Action】 isn't usable in the main phase (13-2-2-1) and the 【Activate･Main】 needs a Pilot, so a tap starts its attack.
+  A.fieldClick(b.uid); drainTasks(); const insp=G.mode==='attack-target' && !A.activateReadyAny(b);
+  A.attackDirect(); drainTasks();
   const m=modal(); const offered=insp && m && m.btns.some(x=>/Banshee/.test(x)); press(/Banshee/); passAll(); drainTasks();
   ok('Banshee: its 【Activate･Action】 is offered in the action step and gives <Suppression> for the battle (2 shields)', offered && G.enemy.shields.length===4 && G.player.exile.length===4, `${offered} shields ${G.enemy.shields.length} exile ${G.player.exile.length}`);
   ok('Banshee: the <Suppression> ends with the battle', !A.effSuppression(b)); }
