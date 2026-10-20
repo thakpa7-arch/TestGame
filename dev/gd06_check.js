@@ -132,12 +132,15 @@ fresh(); { const wz=put('GD06-073','player'); const e=stick('enemy',2,2,{lv:3});
 // GD06-080 Kou Uraki — 【Activate･Action】【Once per Turn】if you drew with an effect this turn: a Unit recovers 2
 fresh(); { const u=stick('player',3,5); u.hp=1; const kou=A.makeCard(A.CARD_BY_ID.get('GD06-080'),'player'); A.attachPilot(u, kou, ()=>{}); drainTasks();
   ok('Kou Uraki gives the paired Unit his 【Activate･Action】', !!(u.activate && u.activate.phase==='action'));
+  // 【Activate･Action】 is used in an action step (13-2-2-1) — here the End Phase's (7-6-3), which endTurn opens with this flag.
+  G.endActionStep=true;
   let opts=A.collectPlayerActions(null);
   ok('…not usable before drawing with an effect', !opts.some(o=>o.label.includes('⚡')));
   A.draw(G.player); opts=A.collectPlayerActions(null);
   ok('…usable after an effect draw', opts.some(o=>o.label.includes('⚡')));
+  G.endActionStep=false; ok('…but not in the main phase', !A.collectPlayerActions(null).some(o=>o.label.includes('⚡'))); G.endActionStep=true;
   const hp0=u.hp; const o=opts.find(o=>o.label.includes('⚡')); if (o) o.run(()=>{}); drainTasks();
-  ok('…and the damaged Unit recovers 2 HP', u.hp===hp0+2, `hp ${hp0}->${u.hp}`); }
+  ok('…and the damaged Unit recovers 2 HP', u.hp===hp0+2, `hp ${hp0}->${u.hp}`); G.endActionStep=false; }
 // GD06-086 Mashymre Cello / GD06-100 Corin Nander — cost -1 when a qualifying Unit is there to pair with
 fresh(); { const m=A.makeCard(A.CARD_BY_ID.get('GD06-086'),'player'); G.player.hand.push(m); const c0=A.effectiveCost(G.player, m);
   put('GD06-020','player'); const c1=A.effectiveCost(G.player, m);   // Hamma-Hamma links with [Mashymre Cello]

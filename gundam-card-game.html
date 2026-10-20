@@ -9430,7 +9430,7 @@ function beginTurn(turn){
   s.neoZeonSelfKill=false;   // "destroyed by your own (Neo Zeon) effect this turn" resets each turn
   // 2) Draw Phase — draw 1. There is no first-turn exception (7-3-1): the player going second is
   // compensated with the EX Resource instead.
-  G.phase='draw';
+  G.phase='draw'; G.endActionStep=false;
   draw(s);
   if (G.over) return;
   // 3) Resource Phase — place the top card of the 10-card Resource Deck (active), if the area has room (4-4-2).
@@ -9460,9 +9460,11 @@ function endTurn(){
   }
   // 5) End Phase — Action Step: EITHER player may use Action abilities/commands before the Repair
   // Step, so offer the human their Action window whether it's their own End Phase or the AI's.
+  G.endActionStep=true;   // 【Activate･Action】 abilities are usable now (7-6-3)
   offerPlayerActionStep(null, finishEndPhase);
 }
 function finishEndPhase(){
+  G.endActionStep=false;   // the End Phase's action step is over
   checkEnd(); if (G.over) return;
   const s=me();
   G.phase='end';
@@ -9986,17 +9988,12 @@ function restOwnBase(side, sub){
   b.rested=true; log(`<b>${b.name}</b> is rested.`, side===G.player?'me':'ai'); return true;
 }
 // Phase/timing gate: 【Activate･Main】 abilities may only be used by the turn player during
-// their own Main Phase. 【Activate･Action】 abilities may be used during an Action Step — i.e.
-// the Main Phase or while a battle/attack is being declared — on either player's turn.
+// their own Main Phase. 【Activate･Action】 abilities only in an action step (13-2-2-1) — a battle's (8-4)
+// or the End Phase's (7-6-3) — by either player, never in the main phase.
+function actionStepOpen(){ return !!(G.curAttack || G.curBattle || G.endActionStep); }
 function activatePhaseOk(u){
   const phase = u.activate.phase;
-  // A battle this Unit is in has an action step (8-4) for both players, whatever the UI mode is.
-  if (phase==='action' && G.curBattle && (G.curBattle.atk===u || G.curBattle.def===u)) return true;
-  if (phase==='action'){
-    // Action timing: the turn player's main phase, or an attack/battle window on either turn.
-    return (G.turn===u.owner && (G.mode==='idle' || G.mode==='attack-target'))
-        || (G.turn!==u.owner && G.mode==='attack-target');
-  }
+  if (phase==='action') return actionStepOpen();
   // Main timing: strictly the controller's own Main Phase (idle, not mid-battle).
   return G.turn===u.owner && G.mode==='idle';
 }
@@ -10051,7 +10048,7 @@ function activateReady(u){
   if (act && act.kind==='baseShieldDamage' && !(G.curAttack===u && !G.curBattle)) return false;
   // "… during this battle" (Gundam Aerial (Mirasoul Flight Unit)'s AP-1, AGE-2 Double Bullet's AP+4) only means something in a battle.
   { const eff = act && act.kind==='cond' ? act.inner : act;
-    if (eff && ((eff.kind==='debuff' && eff.dur==='battle') || eff.kind==='selfBattleBuff') && !(G.curBattle || G.curAttack)) return false; }
+    if (eff && ((['debuff','buff','grantKw','grantReduce'].includes(eff.kind) && (eff.dur==='battle' || (eff.guard && eff.guard.dur==='battle'))) || eff.kind==='selfBattleBuff') && !(G.curBattle || G.curAttack)) return false; }
   { const eff = act && act.kind==='cond' ? act.inner : act;
     if (eff && /^setActive/.test(eff.kind) && readyDenied(side)) return false;   // Reginlaze Julia on the other side
     // A restricted "Choose 1 … Unit" with no Unit that qualifies can't be used ("1 of your damaged (Dianna Counter) Units" — SUMO
@@ -10752,16 +10749,28 @@ function aiBattleBoost(mine, other){
   if (!mine || !other || !G.enemy.field.includes(mine) || !G.curBattle || other.type!=='unit') return;
   for (const s of [G.enemy.base, ...G.enemy.field].filter(Boolean)) for (const slot of [0,1]){
     if (slot===1){ if (!s.activate2) continue; swapActivate(s); }
-    const a=s.activate && s.activate.action;
-    let use=false;
-    if (a && a.dur==='battle' && (a.kind==='grantKw' || a.kind==='buff') && a.scope==='friendly' && activateReady(s)){
+    const a0=s.activate && s.activate.action;
+    const ready=!!(a0 && activateReady(s));   // timing, cost and any "If …" condition (Daryl Lorenz, Graze Ein)
+    const a=a0 && a0.kind==='cond' ? a0.inner : a0;
+    let use=false, tgt=mine;
+    if (ready && a && a.dur==='battle' && (a.kind==='grantKw' || a.kind==='buff') && a.scope==='friendly'){
       bindActSource(s);
       if (friendlyTargets(G.enemy, a).includes(mine)){
         if (a.kind==='grantKw') use = a.kw==='breach' && G.curBattle.atk===mine && G.player.shields.length>0 && effAp(mine)>=other.hp;
         else use = effAp(mine)<other.hp && effAp(mine)+a.amount>=other.hp;
       }
     }
-    if (use){ flashCard(s,'ENEMY ACTION'); applyActivateEffect(s, mine, G.enemy); }
+    // "Choose 1 enemy Unit [battling this Unit]. It gets AP-N during this battle." (Gundam Aerial (Mirasoul Flight Unit), Graze Ein):
+    // on the Unit battling `mine` when the AP-N keeps `mine` alive.
+    else if (ready && a && a.kind==='debuff' && a.dur==='battle' && a.scope==='enemy'){
+      bindActSource(s);
+      if (enemyTargets(G.player, a).includes(other)){ tgt=other; use = effAp(other)>=mine.hp && effAp(other)-a.amount<mine.hp && !effFirstStrike(mine); }
+    }
+    // "This Unit gets AP+N during this battle." (Gundam AGE-2 Double Bullet) when the AP+N lets it destroy the other Unit.
+    else if (ready && a && a.kind==='selfBattleBuff' && s===mine){ tgt=null; use = effAp(mine)<other.hp && effAp(mine)+a.amount>=other.hp; }
+    // "During this battle, when this Unit receives enemy damage, reduce it by N." (Gundam Schwarzette) when it then survives the hit.
+    else if (ready && a && a.kind==='grantReduce' && a.scope==='self' && s===mine && a.guard && a.guard.dur==='battle'){ tgt=null; use = effAp(other)>=mine.hp && effAp(other)-a.amount<mine.hp; }
+    if (use){ flashCard(s,'ENEMY ACTION'); applyActivateEffect(s, tgt, G.enemy); }
     if (slot===1) swapActivate(s);
   }
 }
@@ -12722,6 +12731,7 @@ function aiPostMain(){
   const ai=G.enemy;
   // Use ready activated abilities before attacks: the base's freely (it can't attack anyway),
   // and a unit's only when it's enemy removal or the unit couldn't attack this turn regardless.
+  // (Only 【Activate･Main】 ones are ready here; 【Activate･Action】 waits for an action step — aiActionAbilities.)
   const baseAct = activateReady(ai.base) ? [ai.base] : [];
   const unitAct = ai.field.filter(u=>activateReady(u) && (u.sick || ['damage','debuff'].includes(u.activate.action.kind)));
   for (const c of [...baseAct, ...unitAct]){ if (activateReady(c)) aiActivate(c); }
@@ -13192,7 +13202,7 @@ function collectPlayerActions(attacker){
         && (u.activate.action.kind!=='cond' || condMet(u.activate.action.cond, G.player, u, u.activate.action.other))
         && (u.activate.action.kind!=='redirectBattle' || (G.curBattle && (G.curBattle.atk===u || G.curBattle.def===u) && autoActivateTarget(u, attacker)))
         && (!['enemy','friendly'].includes(((u.activate.action.kind==='cond'?u.activate.action.inner:u.activate.action)||{}).scope) || autoActivateTarget(u, attacker))   // a Unit it may choose exists
-        && activateCostPayable(u, G.player));
+        && activateCostPayable(u, G.player) && activateReady(u));   // the full readiness check (timing, battle-only effects, Moebius…)
     if (slot===1) swapActivate(u);
     if (ok){
       opts.push({ label:`⚡ ${u.name}`, sub:String(act.text||'').replace(/</g,'&lt;').replace(/>/g,'&gt;'), run:(afterCb)=>{ useActivateSlot(u, act); flashCard(u,'YOUR ACTION');   // "<Breach 3>" isn't a tag
@@ -13291,9 +13301,48 @@ function collectPlayerActions(attacker){
   }
   return opts;
 }
+// AI, any action step (a battle on either turn, or an End Phase): its 【Activate･Action】 heals and damage — G-Sky Easy, Gundam
+// Mk-Ⅲ, SUMO Silver Type, Elan Ceres, Kou Uraki, Gundam Aerial ST13-006, Milliardo Peacecraft. (The "during this battle" ones are
+// aiBattleRedirect / aiBattleBoost's, Banshee's aiDirectHit's, Moebius' resolveAiAttack's.) Returns true when it used one.
+function aiActionAbilities(attacker){
+  const ai=G.enemy, pl=G.player; if (G.over || !ai || !actionStepOpen()) return false;
+  let used=false;
+  for (const s of [ai.base, ...ai.field].filter(Boolean)) for (const slot of [0,1]){
+    if (!ai.field.includes(s) && ai.base!==s) break;
+    if (slot===1){ if (!s.activate2) continue; swapActivate(s); }
+    const act=s.activate;
+    if (act && act.phase==='action' && activateReady(s)){
+      const a0=act.action, a=a0.kind==='cond' ? a0.inner : a0, cost=act.cost||{};
+      // A resource cost on its own turn waits for the End Phase (its post-combat deploys come first).
+      const resOk = !(cost.resource || cost.type==='resource') || G.turn!=='enemy' || !attacker;
+      if (a && a.kind==='heal' && resOk){
+        // "this Unit recovers" (Elan Ceres) only when it is damaged; "choose 1 … Unit" through aiActivate (a damaged one or nothing).
+        if (a.scope==='self'){ if (s.hp<effMaxHp(s)){ flashCard(s,'ENEMY ACTION'); applyActivateEffect(s, null, ai); used=true; } }
+        else if (aiActivate(s)){ flashCard(s,'ENEMY ACTION'); used=true; }
+      } else if (a && a.kind==='damage' && a.scope==='enemy' && resOk){
+        bindActSource(s);
+        const ec=enemyTargets(pl, a).filter(t=>t.hp>0);
+        const kills=ec.filter(t=>t.hp<=a.amount).sort((x,y)=>aiThreatScore(y)-aiThreatScore(x));
+        // …or the Unit battling one of its Units, when the damage lets that battle destroy it.
+        const b=G.curBattle, mineB=b && (ai.field.includes(b.atk) ? b.atk : ai.field.includes(b.def) ? b.def : null), foeB=mineB && (mineB===b.atk ? b.def : b.atk);
+        const setUp = foeB && ec.includes(foeB) && effAp(mineB)<foeB.hp && effAp(mineB)+a.amount>=foeB.hp ? foeB : null;
+        // A rest-a-Unit cost is only worth a kill in a battle (it would cost an attack or a block); in an End Phase its
+        // Units are done for the turn, so it chips the strongest target. A free one (Milliardo Peacecraft) is always used.
+        const freeRest = !attacker;
+        const t = kills[0] || setUp || (cost.type==='restUnit' && !freeRest ? null : [...ec].sort((x,y)=>effAp(y)-effAp(x))[0]);
+        if (t && !(AI_LVL==='easy' && Math.random()<0.4)){ flashCard(s,'ENEMY ACTION'); applyActivateEffect(s, t, ai); used=true; }
+      }
+    }
+    if (slot===1 && s.activate2) swapActivate(s);
+  }
+  if (used) render();
+  return used;
+}
 function offerPlayerActionStep(attacker, cb){
   if (G.over){ cb(); return; }
   if (modalBusy()){ whenModalFree(()=>offerPlayerActionStep(attacker, cb)); return; }   // after the open choice
+  // The AI's 【Activate･Action】 abilities, then (once any choice they opened for the player is closed) the step goes on.
+  if (aiActionAbilities(attacker) && (G.over || modalBusy())){ if (G.over){ cb(); return; } whenModalFree(()=>offerPlayerActionStep(attacker, cb)); return; }
   // The AI may play an 【Action】 Command first, and again after each of the player's plays (the step ends when both pass).
   if (aiActionStep(attacker, ()=>aiActionResume(attacker, cb))) return;
   const opts=collectPlayerActions(attacker);

@@ -122,8 +122,11 @@ fresh('player'); { const u=stick('player',3,3); pair(u,'GD01-097'); for(let i=0;
   A.applyActivateEffect(u, null, G.player);
   ok('#10 Guel Jeturk: only with 8+ cards in the opponent\'s hand, and the Unit can\'t attack afterwards', !a && b && !u.rested && u.noAttackTurn===G.turnSeq, `a=${a} b=${b} rested=${u.rested} noAtk=${u.noAttackTurn}`); }
 fresh('player'); { const u=stick('player',3,3); pair(u,'GD01-098'); const e=stick('enemy',2,2); u.hp=A.effMaxHp(u)-1;
-  const a=A.activateReadyAny(u); e.ap=1; e.baseAp=1; const b=A.activateReadyAny(u); const hp0=u.hp; A.applyActivateEffect(u, null, G.player);
-  ok('#10 Elan Ceres: needs an enemy at 1 AP or less, and heals its own Unit', !a && b && u.hp===hp0+1, `a=${a} b=${b} hp ${hp0}->${u.hp}`); }
+  G.endActionStep=true;   // 【Activate･Action】: in an action step (13-2-2-1) — the End Phase's, which endTurn opens
+  const a=A.activateReadyAny(u); e.ap=1; e.baseAp=1; const b=A.activateReadyAny(u);
+  G.endActionStep=false; const main=A.activateReadyAny(u); G.endActionStep=true;
+  const hp0=u.hp; A.applyActivateEffect(u, null, G.player); G.endActionStep=false;
+  ok('#10 Elan Ceres: needs an enemy at 1 AP or less, and heals its own Unit (in an action step, never the main phase)', !a && b && !main && u.hp===hp0+1, `a=${a} b=${b} main=${main} hp ${hp0}->${u.hp}`); }
 fresh('player'); { const u=stick('player',3,3); pair(u,'ST12-011'); const e=stick('enemy',3,5); e.hp=4;
   const outside=A.collectPlayerActions(null).some(o=>/Milliardo|damaged/i.test(o.sub+o.label));
   G.curBattle={ atk:e, def:u }; G.curAttack=e; const inside=A.collectPlayerActions(e).length>0;
