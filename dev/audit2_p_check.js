@@ -213,11 +213,11 @@ const pairCmd=(u, cmdId)=>{ const c=card(cmdId,'player'); G.player.hand.push(c);
 // ===== Gundam Calibarn GD05-018 — "When one of your EX Resources is exiled from the game, you may choose 1 of your Units. … reduce it by 3." =====
 { fresh('player'); const cb=put('GD05-018','player'); const o=stick('player',1,9,{name:'O'}); G.player.ex=1; G.player.resMax=0; G.player.resAvail=1; A.payCost(G.player, 1); drainTasks();
   const m=modal(); pressUnit(o);
-  ok('Gundam Calibarn player: you choose which of your Units gets the reduction', btnsHave(m,[cb,o]) && m.btns.some(b=>/Don't/.test(b)) && o.dmgReduce===3 && !cb.dmgReduce, JSON.stringify(m));
+  ok('Gundam Calibarn player: you choose which of your Units gets the reduction', btnsHave(m,[cb,o]) && m.btns.some(b=>/Don't/.test(b)) && (o.dmgGuards||[]).some(g=>g.amount===3) && !(cb.dmgGuards||[]).some(g=>g.amount===3), JSON.stringify(m));
   fresh('player'); const cb2=put('GD05-018','player'); G.player.ex=1; G.player.resMax=0; G.player.resAvail=1; A.payCost(G.player, 1); drainTasks(); const m2=modal(); press(/Don't/);
-  ok('Gundam Calibarn player: "you may" — asked even when it is your only Unit, and you may decline', !!m2 && !cb2.dmgReduce);
+  ok('Gundam Calibarn player: "you may" — asked even when it is your only Unit, and you may decline', !!m2 && !(cb2.dmgGuards||[]).some(g=>g.amount===3));
   fresh('enemy'); const cb3=put('GD05-018','enemy'); G.enemy.ex=1; G.enemy.resMax=0; G.enemy.resAvail=1; A.payCost(G.enemy, 1); drainTasks();
-  ok('Gundam Calibarn AI: takes the reduction itself', !modal() && cb3.dmgReduce===3); }
+  ok('Gundam Calibarn AI: takes the reduction itself', !modal() && (cb3.dmgGuards||[]).some(g=>g.amount===3)); }
 
 // ===== Gundam Heavyarms Custom (EW) GD05-079 — "If you have another (G Team)/(Preventer) Unit in play, choose 1 enemy Unit that is Lv.4 or lower." =====
 { fresh('player'); const h=put('GD05-079','player'); stick('player',1,1,{trait:'(Preventer)'}); const e4=stick('enemy',3,3,{lv:4}), e5=stick('enemy',3,3,{lv:5});
