@@ -39,7 +39,7 @@ const { chromium } = require('/opt/node22/lib/node_modules/playwright');
         if (document.getElementById('blockModal').classList.contains('show')){
           const bs=[...document.getElementById('blockBtns').children]; if (bs.length){ bs[rnd(bs.length)].click(); return 'modal'; } }
         const ov=document.querySelector('.modal-overlay');
-        if (ov){ const items=[...ov.querySelectorAll('.card, button')].filter(x=>x.offsetParent!==null); if (items.length){ items[rnd(items.length)].click(); return 'overlay'; } }
+        if (ov){ const items=[...ov.querySelectorAll('*')].filter(x=>x.offsetParent!==null && (x.matches('.card, button') || x.onclick)); if (items.length){ items[rnd(items.length)].click(); return 'overlay'; } }
         if (G.turn!=='player' && G.mode==='idle') return 'wait';
         if (G.mode!=='idle'){
           // targeting / choosing: click a highlighted Unit, or Cancel
