@@ -3445,10 +3445,10 @@ function destroyPilotCands(foe, act){ return enemyTargets(foe, act).filter(u=>u.
 function destroyPairedPilot(card, side, u, label){
   const foe=side===G.player?G.enemy:G.player, cls=side===G.player?'me':'ai', pc=u && u.pilotCard;
   if (!pc || !foe.field.includes(u)) return;
-  const maxBefore=effMaxHp(u);
+  syncWhileHp(u); const maxBefore=effMaxHp(u);
   u.pilot=null; u.pilotCard=null; u.linked=false; if (u.activateFromPilot) dropPilotActivate(u);
   u.pilotPairAp=0; u.pilotPairHp=0; u.pilotLinkAp=0; u.pilotLinkHp=0; if (u.baseLv!=null) u.lv=u.baseLv;
-  u.hp -= Math.max(0, maxBefore-effMaxHp(u)); u.ap=effAp(u); u.maxHp=effMaxHp(u);
+  u.hp -= Math.max(0, maxBefore-effMaxHp(u)); u.ap=effAp(u); u.maxHp=effMaxHp(u); u.whileHpOn=whileHpBonus(u);
   sendToTrash(pc, foe);
   log(`${label}: <b>${card.name}</b> destroys Pilot <b>${pc.name}</b> (paired with <b>${u.name}</b>).`, cls);
   if (u.hp<=0){ const i=foe.field.indexOf(u); if(i>=0) foe.field.splice(i,1); fx('die',u.uid); log(`<b>${u.name}</b> is destroyed.`, foe===G.player?'me':'ai'); sendToTrash(u, foe); fireDestroyed(u, foe); }
@@ -4630,9 +4630,12 @@ function applyDmgGuards(u, dmg, side, kind, dealer){
     if (g.enemy && !enemyHit) continue;
     if (g.maxAp!=null || g.maxLv!=null || g.maxHp!=null){
       if (kind!=='battle' || !dealer) continue;                                     // the caps name the enemy Unit dealing battle damage
-      if (g.maxAp!=null && effAp(dealer)>g.maxAp) continue;
+      // Battle damage is dealt simultaneously: the dealer's AP / HP are read as they were before this battle's damage (Gundam Ashtaron).
+      const cb=G.curBattle, apNow=(cb && cb.ap0 && cb.ap0.has(dealer)) ? cb.ap0.get(dealer) : effAp(dealer);
+      const hpNow=(cb && cb.hp0 && cb.hp0.has(dealer)) ? cb.hp0.get(dealer) : dealer.hp;
+      if (g.maxAp!=null && apNow>g.maxAp) continue;
       if (g.maxLv!=null && (dealer.lv||0)>g.maxLv) continue;
-      if (g.maxHp!=null && dealer.hp>g.maxHp) continue;
+      if (g.maxHp!=null && hpNow>g.maxHp) continue;
     }
     if (g.prevent){ log(`<b>${u.name}</b> can't receive battle damage from <b>${dealer?dealer.name:'that Unit'}</b>${g.src?' ('+g.src+')':''}.`, cls); dmg=0; }
     else { const before=dmg; dmg=Math.max(0, dmg-g.amount); log(`<b>${u.name}</b> reduces the damage by ${before-dmg}${g.src?' ('+g.src+')':''}.`, cls); }
@@ -4693,6 +4696,7 @@ function targetFilter(t){
   if (/\bdamaged enemy unit/i.test(t)) f.damaged=true;                        // "Choose 1 damaged enemy Unit"
   if ((m=t.match(/enemy unit battling a friendly \(([^)]+)\) unit/i))) f.battlingFriendlyTrait=m[1].trim().toLowerCase();   // Rivalry with Roux
   if (/units? with <\s*blocker\s*>/i.test(t)) f.blocker=true;                  // Strategic Arms: "all Units with <Blocker>"
+  if (/\benemy unit\/base\b/i.test(t)) f.orBase=true;                        // "choose 1 enemy Unit/Base that is Lv.8 or lower. Destroy it." (Gundam DX)
   if (/other than link units?/i.test(t)) f.notLinked=true;                     // All-Range Attack
   if (/enemy unit (?:that is )?battling this unit/i.test(t)) f.battlingSelf=true;   // "… battling this Unit" (Milliardo Peacecraft)
   if (/rested enemy/i.test(t)) f.rested=true;
@@ -4763,6 +4767,8 @@ function enemyTargets(foe, act){
   if (act.kind==='bouncePilot') list=list.filter(u=>!!u.pilotCard);   // "choose 1 enemy Pilot" — a Unit's paired Pilot
   // Tokens ARE valid targets for destroy/bounce (a bounced token just ceases to exist).
   if (act.kind==='rest') list=list.filter(u=>!u.rested);
+  // "enemy Unit/Base" (Gundam DX): the enemy Base (an EX Base too) is a legal target when it meets the Lv. restriction.
+  { const b=foe.base; if (f.orBase && act.kind==='destroy' && b && b.hp>0 && (capLv==null || (b.lv||0)<=capLv) && (f.minLv==null || (b.lv||0)>=f.minLv)) list=[...list, b]; }
   return list;
 }
 function friendlyTargets(side, act){
@@ -4807,7 +4813,7 @@ function rankTarget(cands, act){
   if (!cands.length) return null;
   const arr=[...cands];
   if (act.filter && act.filter.lowestHp) return arr.sort((a,b)=>a.hp-b.hp)[0];
-  if (act.kind==='destroy') return arr.sort((a,b)=>(b.baseAp+b.baseHp)-(a.baseAp+a.baseHp))[0];
+  if (act.kind==='destroy') return arr.sort((a,b)=>((b.baseAp||0)+(b.baseHp||0))-((a.baseAp||0)+(a.baseHp||0)))[0];
   if (act.kind==='heal')   return arr.sort((a,b)=>(effMaxHp(b)-b.hp)-(effMaxHp(a)-a.hp))[0];
   if (act.kind==='damage'){
     // Effect damage should buy board control: if this ping can KILL any Unit, finish the scariest one
@@ -4853,6 +4859,9 @@ function applyToTarget(card, side, act, target, label){
     sound('bounce');
     log(`${label}: <b>${name}</b> returns <b>${target.name}</b> to the bottom of its owner's deck.`,cls);
   }
+  else if (act.kind==='destroy' && target===foe.base){
+    const b=target; foe.base=null; fx('die', b.uid); sendToTrash(b, foe); log(`${label}: <b>${name}</b> destroys ${who(foe)}'s <b>${b.name}</b> base.`, cls);
+    if (!b.token) whenModalFree(()=>fireDestroyed(b, foe)); }
   else if (act.kind==='destroy' && effDestroyGuarded(target, foe, side)){ /* Kindhearted: it can't be destroyed by enemy effects */ }
   else if (act.kind==='destroy'){ log(`${label}: <b>${name}</b> destroys <b>${target.name}</b>.`,cls); const i=foe.field.indexOf(target); if(i>=0)foe.field.splice(i,1); fx('die',target.uid); sendToTrash(target,foe); fireDestroyed(target, foe); }
   else if (act.kind==='debuff'){
@@ -4899,10 +4908,10 @@ function applyToTarget(card, side, act, target, label){
 // so the Unit is destroyed if that leaves it at 0 HP.
 function detachPilotToHand(u, owner, who0, cls){
   const pc=u && u.pilotCard; if (!pc || !owner.field.includes(u)) return;
-  const maxBefore=effMaxHp(u);
+  syncWhileHp(u); const maxBefore=effMaxHp(u);
   u.pilot=null; u.pilotCard=null; u.linked=false; if (u.activateFromPilot) dropPilotActivate(u);
   u.pilotPairAp=0; u.pilotPairHp=0; u.pilotLinkAp=0; u.pilotLinkHp=0; if (u.baseLv!=null) u.lv=u.baseLv;
-  u.hp -= Math.max(0, maxBefore-effMaxHp(u)); u.ap=effAp(u); u.maxHp=effMaxHp(u);
+  u.hp -= Math.max(0, maxBefore-effMaxHp(u)); u.ap=effAp(u); u.maxHp=effMaxHp(u); u.whileHpOn=whileHpBonus(u);
   owner.hand.push(pc); sound('bounce');
   log(`${who0} returns Pilot <b>${pc.name}</b> (paired with <b>${u.name}</b>) to ${owner===G.player?'your':'its owner\'s'} hand.`, cls);
   if (u.hp<=0){ const i=owner.field.indexOf(u); if(i>=0) owner.field.splice(i,1); fx('die',u.uid); log(`<b>${u.name}</b> is destroyed.`, owner===G.player?'me':'ai'); sendToTrash(u, owner); fireDestroyed(u, owner); }
@@ -7148,6 +7157,12 @@ function resolvePlayerTrigger(card, side, act, label, after){
     // "Choose 1 rested Unit" (Rosamia Badam) offers your own rested Units as well.
     const anySide = act.kind==='damage' && !!(act.filter && act.filter.anySide);
     const cands = anySide ? [...enemyTargets(G.enemy, act), ...anySideOwn(G.player, act)] : enemyTargets(G.enemy, act);
+    if (G.enemy.base && cands.includes(G.enemy.base)){   // "enemy Unit/Base" (Gundam DX): pick from a list
+      promptTargetChoice(cands, `<b>${card.name}</b> 【${label}】 — choose 1 enemy Unit/Base to destroy.`, (t)=>{
+        if (t && !(t===G.enemy.base || G.enemy.field.includes(t))) t=null;
+        if (t) applyToTarget(card, side, act, t, label); render(); fin(); }, null);
+      return;
+    }
     if (cands.length>=1){
       G.mode='trigger-target';
       G.pending={ card, side, act, label, after, scope:anySide?'any':'enemy', cands: cands.map(c=>c.uid) };
@@ -7454,7 +7469,7 @@ function resetUnit(u){
   u.slayGrant=null; u.killDrawHand=null;   // effects it gained this turn end when it leaves play
   u.battleOnKill=null; u.noTargetTurn=null;   // effects it gained while in play (Wise Leader's Pride, The Orca of Red Sea)
   u.pilotPairAp=0; u.pilotPairHp=0; u.pilotLinkAp=0; u.pilotLinkHp=0;
-  u.ap=u.baseAp; u.hp=u.baseHp; u.maxHp=u.baseHp; if (u.baseLv!=null) u.lv=u.baseLv;
+  u.ap=u.baseAp; u.hp=u.baseHp; u.maxHp=u.baseHp; u.whileHpOn=0; if (u.baseLv!=null) u.lv=u.baseLv;
   u.blocker=innateKeyword(u.effect,'blocker'); u.firstStrike=innateKeyword(u.effect,'first'); u.highManeuver=innateKeyword(u.effect,'high');
   u.breach=breachAmount(u.effect); u.suppression=innateKeyword(u.effect,'suppression'); u.support=supportAmount(u.effect);
 }
@@ -7482,6 +7497,29 @@ function refreshTrashStats(side){
   const dyn = x => x.trashBuff || x.trashKeyword || (x.whileBuff && x.whileBuff.length);
   for (const u of side.field){ if (dyn(u)) u.ap = effAp(u); }
   if (side.base && dyn(side.base)) side.base.ap = effAp(side.base);
+  for (const s of [G.player, G.enemy]) if (s) for (const u of s.field) syncWhileHp(u, s);   // "while there are N … in (an enemy's) trash … HP+N"
+}
+// A conditional "this Unit gets HP+N" (whileBuff, on the Unit or its paired Pilot — Michaelis GD01-076, Sting Oakley GD05-091) raises
+// the Unit's HP, not only its cap: HP is max HP minus damage taken. u.whileHpOn remembers the bonus already counted in u.hp, so when
+// the condition switches on (or off) the remaining HP moves by the difference. Losing it can leave the Unit at 0 HP: it is then
+// destroyed (rule management), once the effect being resolved has finished.
+function whileHpBonus(u, side){
+  side = side || (u.owner==='player' ? G.player : G.enemy); if (!side) return 0;
+  let b=0; for (const w of [...(u.whileBuff||[]), ...((u.type==='unit' && u.pilotCard && u.pilotCard.whileBuff)||[])]) if (w.hp && condMet(w.cond, side, u)) b += w.hp;
+  return b;
+}
+function syncWhileHp(u, side){
+  if (!u || u.type!=='unit' || !(u.hp>0)) return;
+  if (!(u.whileBuff && u.whileBuff.length) && !(u.pilotCard && u.pilotCard.whileBuff && u.pilotCard.whileBuff.length) && !u.whileHpOn) return;
+  side = side || (u.owner==='player' ? G.player : G.enemy); if (!side) return;
+  const now=whileHpBonus(u, side), was=u.whileHpOn||0; if (now===was) return;
+  u.whileHpOn=now; u.hp += now-was; u.maxHp=effMaxHp(u);
+  if (u.hp>0) return;
+  setTimeout(()=>{
+    if (!side.field.includes(u) || u.hp>0 || G.over) return;
+    side.field.splice(side.field.indexOf(u),1); fx('die',u.uid); log(`<b>${u.name}</b> is destroyed (its HP fell to 0).`, side===G.player?'me':'ai');
+    sendToTrash(u, side); fireDestroyed(u, side); render(); checkEnd();
+  }, 0);
 }
 // Send a card to the trash zone (tokens are simply removed with no trash entry).
 function sendToTrash(card, side){
@@ -7937,6 +7975,8 @@ function parseDamageStatics(c, pl0){
   // "During your turn, this Unit can't receive battle damage from enemy Units that are Lv.N or lower." (Forbidden Gundam GD02-006)
   m = pl0.match(/during your turn, this unit can'?t receive battle damage from enemy units that are lv\.?\s*(\d+) or lower/i);
   c.yourTurnLowLvGuard = m ? +m[1] : null;
+  // "During your turn, while this Unit is battling an enemy Unit with <Blocker>, this Unit can't receive battle damage." (Zudah Unit 1 EB01-037)
+  c.yourTurnVsBlockerGuard = /during your turn, while this unit is battling an enemy unit with (?:<|&lt;)\s*blocker\s*(?:>|&gt;), this unit can'?t receive battle damage/i.test(pl0);
   // "During your turn, while there are N or more cards in your trash, this Unit can't receive effect damage from enemy Commands." (Gundam Leopard)
   m = pl0.match(/during your turn, while there are (\d+) or more cards in your trash, this unit can'?t receive effect damage from enemy commands/i);
   c.noCmdDmgTrash = m ? +m[1] : null;
@@ -11436,6 +11476,11 @@ function applyOnKill(u, side, k, srcCard){
 // 【During Pair】【Once per Turn】"When this Unit would receive battle damage from an enemy Unit with
 // AP equal to or less than it, it doesn't receive that damage." (Full Armor Unicorn ST14-006)
 function preventsWeakBattleDamage(u, foeUnit, side){
+  // Zudah Unit 1: during its controller's turn, no battle damage while battling an enemy Unit with <Blocker> (printed or granted).
+  if (u && u.yourTurnVsBlockerGuard && foeUnit && foeUnit.type==='unit' && side && G.turn===side.who && foeUnit.owner!==u.owner && effBlocker(foeUnit)){
+    log(`<b>${u.name}</b> can't receive battle damage while battling <b>${foeUnit.name}</b> (&lt;Blocker&gt;) during your turn.`, side===G.player?'me':'ai');
+    return true;
+  }
   // Forbidden Gundam: during its controller's turn, no battle damage from enemy Units that are Lv.N or lower.
   if (u && u.yourTurnLowLvGuard!=null && foeUnit && side && G.turn===side.who && (foeUnit.lv||0)<=u.yourTurnLowLvGuard){
     log(`<b>${u.name}</b> can't receive battle damage from <b>${foeUnit.name}</b> (Lv.${foeUnit.lv||0}) during your turn.`, side===G.player?'me':'ai');
@@ -11490,6 +11535,7 @@ function battle(atk, def, atkSide, defSide){
     damage(redirectOf(atk, atkSide),dd,atkSide,'battle',def); } };
   const defHp0=def.hp, atkHp0=atk.hp;
   const hp0 = new Map([[atk, atk.hp], [def, def.hp]]);
+  if (G.curBattle){ G.curBattle.hp0 = hp0; G.curBattle.ap0 = new Map([[atk, a], [def, d]]); }   // pre-damage values for battle-damage guards
   if (fs==='me'){ hitDef(); if (def.hp>0) hitAtk(); }
   else { hitDef(); hitAtk(); }
   if (def.type==='unit' && def.hp<=0) killReadyHook(atkSide, atk);   // Immortal Colasour: a friendly (T) Unit destroyed an enemy Unit in battle
@@ -13616,7 +13662,7 @@ function render(){
   // on both sides — combat and the display both read the cached values.
   for (const s of [G.player, G.enemy]){
     if (!s) continue;
-    for (const u of s.field){ if (u.hp>0){ u.ap = effAp(u); u.maxHp = effMaxHp(u); } }
+    for (const u of s.field){ if (u.hp>0){ syncWhileHp(u, s); u.ap = effAp(u); u.maxHp = effMaxHp(u); } }
   }
   el('poolCount').textContent = `${POOL_STATS.cards} CARDS · ${POOL_STATS.printings}`;
   el('turnInfo').innerHTML = `Turn <b>${G.turnNumber}</b> · ${G.turn==='player'?'<b>Your</b> move':'<b>'+who(G.enemy)+'</b> acting'}`;
