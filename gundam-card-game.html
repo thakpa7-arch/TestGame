@@ -2366,7 +2366,7 @@ function payAltPlay(side, c, picks){
   const hi=side.hand.indexOf(c); if (hi>=0) side.hand.splice(hi,1);
   for (const x of picks){
     if (ap.pay==='discard'){ const i=side.hand.indexOf(x); if (i<0) continue; side.hand.splice(i,1); sendToTrash(x, side); log(`<b>${c.name}</b>: ${side===G.player?'you discard':who(side)+' discards'} <b>${x.name}</b> to play it as if it has ${ap.lv} Lv. and cost.`, cls); }
-    else if (ap.pay==='destroy'){ log(`<b>${c.name}</b>: ${side===G.player?'you destroy':who(side)+' destroys'} <b>${x.name}</b> to play it as if it has ${ap.lv} Lv. and cost.`, cls); gd05DestroyUnit(x, side, false); }
+    else if (ap.pay==='destroy'){ log(`<b>${c.name}</b>: ${side===G.player?'you destroy':who(side)+' destroys'} <b>${x.name}</b> to play it as if it has ${ap.lv} Lv. and cost.`, cls); gd05DestroyUnit(x, side, false, 'cost'); }
   }
   if (hi>=0) side.hand.splice(Math.min(hi, side.hand.length), 0, c);
   c.altPaid=G.turnSeq;
@@ -3379,7 +3379,7 @@ function cmdAuto(card, side, act, label){
       // Rest the Unit whose Lv. reaches the best target; among equals, the least useful one.
       const best=u=>{ const ts=enemyTargets(foe, restedInner(act, u)); return ts.length ? Math.max(...ts.map(x=>aiThreatScore(x)+((x.hp<=(act.inner.amount||0))?5:0))) : -1; };
       const u=[...c].sort((a,b)=>best(b)-best(a) || cardValue(a)-cardValue(b))[0];
-      u.rested=true; log(`${label}: <b>${name}</b> — ${side===G.player?'you rest your':'rests its'} <b>${u.name}</b>.`, cls);
+      effectRest(u, side, true); log(`${label}: <b>${name}</b> — ${side===G.player?'you rest your':'rests its'} <b>${u.name}</b>.`, cls);   // "Rest it." happened even if it sets itself active again (Throne Drei)
       runTrigger(card, side, restedInner(act, u), label); return true; }
     case 'massBuff': case 'massHeal': applyMassCmd(card, side, act, label); return true;
     case 'noEnemyEffDestroy':
@@ -3515,7 +3515,7 @@ function cmdPlayer(card, side, act, label, fin, modal){
     case 'restFriendlyThen': {
       choose(friendlyTargets(side, act), `<b>${name}</b>: choose 1 active friendly Unit to rest.`, u=>{
         if (!u){ log(`${label}: <b>${name}</b> — no active friendly Unit to rest.`, 'me'); fin(); return; }
-        u.rested=true; log(`${label}: <b>${name}</b> — you rest your <b>${u.name}</b>.`, 'me');
+        effectRest(u, G.player, true); log(`${label}: <b>${name}</b> — you rest your <b>${u.name}</b>.`, 'me');   // counts as rested even if Throne Drei sets itself active
         if (G.cmdInFlight && G.cmdInFlight.card===card) G.cmdInFlight=null;   // the cost is paid: the Command is locked in
         cmdStep(card, side, restedInner(act, u), label, ()=>{ render(); fin(); }, modal); });
       return true; }
@@ -4920,7 +4920,7 @@ function applyRedirectTurn(card, side, act, target, label){
 // Rest the chosen friendly Units, then deal damage equal to the count to all enemy Units in Lv range.
 function applySelfRestDamage(card, side, act, chosen, label){
   const cls=side===G.player?'me':'ai', foe=side===G.player?G.enemy:G.player;
-  for (const u of chosen) u.rested=true;   // a COST paid by your own Units — not an effect-rest
+  for (const u of chosen) effectRest(u, side, true);   // your own effect rests them ("Rest them." — Throne Drei may set itself active again; it still counts)
   const n=chosen.length;
   if (n) log(`${label}: <b>${card.name}</b> rests ${n} of ${side===G.player?'your':'its'} own Unit${n>1?'s':''} — ${chosen.map(u=>u.name).join(', ')}.`, cls);
   if (n>0){
@@ -4938,11 +4938,24 @@ function restBothFriendly(side, act){
   return restBothCands(side, act).sort((a,b)=>effAp(a)-effAp(b))[0] || null;
 }
 // Rest the chosen friendly and the chosen enemy (Gun EZ). Either may be null if none was legal.
-function applyRestBoth(card, side, act, friendly, enemy, label){
+function applyRestBoth(card, side, act, friendly, enemy, label, useBase){
   const cls=side===G.player?'me':'ai';
-  if (friendly){ effectRest(friendly, side); log(`${label}: <b>${card.name}</b> rests ${side===G.player?'your':'its'} <b>${friendly.name}</b>.`, cls); }   // rested by an effect (GuAIZ, Throne Drei)
+  if (friendly && useBase && side.base && !side.base.rested){ side.base.rested=true; log(`${label}: <b>${side.base.name}</b> is rested instead of ${side===G.player?'your':'its'} <b>${friendly.name}</b>.`, cls); }
+  else if (friendly){ effectRest(friendly, side, true); log(`${label}: <b>${card.name}</b> rests ${side===G.player?'your':'its'} <b>${friendly.name}</b>.`, cls); }   // rested by an effect (GuAIZ, Throne Drei)
   const foe = side===G.player?G.enemy:G.player;
   if (enemy){ if (effectRest(enemy, foe)) log(`${label}: <b>${card.name}</b> rests enemy <b>${enemy.name}</b>.`, cls); }
+}
+// applyRestBoth with White Ark GD05-124: "During your turn, when you would rest a Unit with a friendly (League Militaire) Unit's
+// effect, you may rest this Base instead." — for the friendly half the player is asked; the AI always rests the Base instead
+// (as it does for 【Activate】 rest costs). `done` runs once the Units are rested.
+function restBothSub(card, side, act, friendly, enemy, label, done){
+  const fin=()=>{ if (done) done(); };
+  if (!friendly || !restSubstituteOk(card, side)){ applyRestBoth(card, side, act, friendly, enemy, label); fin(); return; }
+  if (side!==G.player){ applyRestBoth(card, side, act, friendly, enemy, label, true); fin(); return; }
+  askYesNo(`<b>${side.base.name}</b>: <b>${card.name}</b>'s effect would rest your <b>${friendly.name}</b>. Rest <b>${side.base.name}</b> instead?`,
+    `Rest ${side.base.name}`, `Rest ${friendly.name}`,
+    ()=>{ applyRestBoth(card, side, act, friendly, enemy && G.enemy.field.includes(enemy) ? enemy : null, label, true); fin(); },
+    ()=>{ applyRestBoth(card, side, act, friendly, enemy && G.enemy.field.includes(enemy) ? enemy : null, label); fin(); });
 }
 // Do the Shield-to-hand portion of a base/unit effect (shield + optional scry), without the trailing "Then,…".
 function doShieldToHand(card, side, act, label, skipScry){
@@ -5562,17 +5575,16 @@ function playerTrashRetrieve(card, side, act, label, after){
   whenModalFree(()=>showLookAtTop(cands, `${card.name}: ${act.may?'you may choose':'choose'} 1 ${what} from your trash to add to your hand${act.thenDiscard?` (then discard ${act.thenDiscard})`:''}`, ()=>true, !!act.may, (c)=>take(act.may ? c : (c||cands[0]))));
 }
 // Destroy a Unit as the result of a card effect; when by your own (Neo Zeon) effect, set the turn
-// flag (for Axis) and apply Jagd-Doga-style trash-return.
-function gd05DestroyUnit(u, owner, byOwnNeoZeon){
+// flag (for Axis) and apply Jagd-Doga-style trash-return. `cause` 'cost' = destroyed to pay a cost (not "by an effect").
+function gd05DestroyUnit(u, owner, byOwnNeoZeon, cause){
   const i=owner.field.indexOf(u); if(i<0) return; owner.field.splice(i,1);
   const cls=owner===G.player?'me':'ai';
   fx('die', u.uid); log(`<b>${u.name}</b> is destroyed.`, cls);
   sendToTrash(u, owner);
   if (byOwnNeoZeon) owner.neoZeonSelfKill=true;
-  const da=parseTrigger(u.effect,'Destroyed');
-  if (da) resolveDestroyedAct(u, owner, da, null);   // the player chooses its targets/cards/discards; the AI resolves it
-  else runTrigger(u, owner, da, 'Destroyed');
-  firePilotDestroyed(u, owner);   // the 【Destroyed】 its Pilot gave it (Quess Paraya, Judau Ashta…)
+  // Its 【Destroyed】 (and its Pilot's), plus the "destroyed by an effect" watchers (Alpha Azieru) and a 【Destroyed】 it
+  // gained this turn (At the Risk of One's Life) — the same path as any other destroy effect.
+  { const pc=G.destroyCause; G.destroyCause = cause||'effect'; try { fireDestroyed(u, owner); } finally { G.destroyCause=pc; } }
   if (byOwnNeoZeon && gd05ReturnsOnSelfKill(u)){
     const ti=owner.trash.indexOf(u); if(ti>=0){ owner.trash.splice(ti,1); resetUnit(u); owner.hand.push(u); log(`<b>${u.name}</b> returns from trash to ${owner===G.player?'your':'its'} hand.`, cls); }
   }
@@ -5949,7 +5961,7 @@ function g4Resolve(card, side, act, label, after){
       if (act.base){ log(`${label}: <b>${name}</b> — ${human?'you rest':who(side)+' rests'} ${human?'your':'its'} Base to use its effect.`, cls);
         restOwnBase(side, aiBase ? (subOk ? undefined : null) : (c===side.base ? null : c)); }   // the Base, or (by choice) a G-Defenser instead
       else {
-        c.rested=true;   // the cost: your own card, rested by you (not an enemy effect-rest)
+        effectRest(c, side, true);   // "You may rest … If you do": your own effect rests it (it counts even if Throne Drei sets itself active)
         log(`${label}: <b>${name}</b> — ${human?'you rest your':who(side)+' rests its'} <b>${c.name}</b>.`, cls);
       }
       render(); go(g4CostCapped(act, c), tail);
@@ -5991,7 +6003,7 @@ function askOptional(msg, yesLabel, noLabel, onYes, onNo){
 function restOwnCands(side, act, card){ return friendlyTargets(side, Object.assign({}, act, { source:card })).filter(u=>!u.rested && u.type==='unit'); }
 // Rest your own Unit as the cost of the effect.
 function payRestOwn(card, side, u, label){
-  effectRest(u, side);   // "Rest it." happened even if the Unit sets itself active again (Throne Drei)
+  effectRest(u, side, true);   // "Rest it." happened even if the Unit sets itself active again (Throne Drei)
   log(`${label}: <b>${card.name}</b> rests ${side===G.player?'your':'its'} <b>${u.name}</b>.`, side===G.player?'me':'ai');
 }
 // AI: how much the payoff is worth with Unit `u` rested for it (0 = nothing to hit), and what resting `u` costs.
@@ -6345,7 +6357,7 @@ function runTrigger(card, side, act, label){
   if (act.kind==='payRestSelf'){
     act.inner.source=card;
     if (!card.rested && side.field.includes(card) && aiEffectUseful(card, side, act.inner)){
-      card.rested=true; log(`${label}: <b>${name}</b> rests itself.`, cls); runTrigger(card, side, act.inner, label);
+      effectRest(card, side, true); log(`${label}: <b>${name}</b> rests itself.`, cls); runTrigger(card, side, act.inner, label);
     }
     return;
   }
@@ -6419,7 +6431,7 @@ function runTrigger(card, side, act, label){
   } else if (act.kind==='restBoth'){
     // AI auto: rest a low-value friendly of its own and the strongest legal enemy.
     const f=restBothFriendly(side, act), e=rankTarget(enemyTargets(foe,{kind:'rest',filter:act.enemyFilter}), {kind:'rest'});
-    applyRestBoth(card, side, act, f, e, label);
+    restBothSub(card, side, act, f, e, label);   // White Ark: the AI rests the Base instead
   } else if (act.kind==='selfRestDamage'){
     // Tap up to `max` of your OWN matching active Units, then deal that many to all enemy Units in range.
     const cands=side.field.filter(u=>!u.rested && !u.token && u!==card && matchTrashTrait(u, act.trait));
@@ -6854,7 +6866,7 @@ function resolvePlayerTrigger(card, side, act, label, after){
     const cost = res ? `pay ${'①②③④⑤⑥⑦⑧⑨'[act.amount-1]||act.amount}` : 'rest this Unit';
     askYesNo(`<b>${card.name}</b> 【${label}】: ${cost}? If you do: ${act.text||'its effect'}`, res ? `Pay ${'①②③④⑤⑥⑦⑧⑨'[act.amount-1]||act.amount}` : 'Rest it', "Don't",
       ()=>{ if (res){ payCost(side, act.amount); payHook(side, card, act.amount); log(`${label}: <b>${card.name}</b> — you pay ${act.amount}.`, cls); }
-            else { card.rested=true; log(`${label}: <b>${card.name}</b> — you rest it.`, cls); }
+            else { effectRest(card, side, true); log(`${label}: <b>${card.name}</b> — you rest it.`, cls); }
             resolvePlayerTrigger(card, side, act.inner, label, then); },
       ()=>{ log(`${label}: <b>${card.name}</b> — you don't ${res?'pay':'rest it'}.`, cls); then(); });
     return;
@@ -7050,7 +7062,7 @@ function resolvePlayerTrigger(card, side, act, label, after){
         setPrompt(`${card.name}: now tap an ENEMY Unit to rest.`);
         render(); return;
       }
-      applyRestBoth(card, side, act, chosenFriendly, ecands[0]||null, label); fin(); return;
+      restBothSub(card, side, act, chosenFriendly, ecands[0]||null, label, fin); return;
     };
     if (fcands.length>=2){
       G.mode='trigger-target';
@@ -7287,7 +7299,7 @@ function restOwnNThen(card, side, act, label, after){
   const pay=(picked)=>{
     picked=picked.filter(u=>side.field.includes(u) && !u.rested).slice(0, act.count);
     if (picked.length < act.count){ fin(); return; }
-    for (const u of picked) u.rested=true;   // your own effect rests your own Units
+    for (const u of picked) effectRest(u, side, true);   // your own effect rests your own Units (they count even if Throne Drei sets itself active)
     log(`${label}: <b>${card.name}</b> — ${side===G.player?'you rest':'the AI rests'} ${picked.map(u=>'<b>'+u.name+'</b>').join(', ')}.`, cls);
     if (side===G.player && G.cmdInFlight && G.cmdInFlight.card===card) G.cmdInFlight=null;   // paid: the Command can't be taken back now
     const inner=Object.assign({}, act.inner, { refUnit:picked[0] });   // "whose Lv. is … the Unit rested with this" (maxLvRef)
@@ -10560,11 +10572,11 @@ function fieldClick(uidv){
       const ec=enemyTargets(G.enemy, { kind:'rest', filter:p.act.enemyFilter });
       if (ec.length>=2){ G.pending={ card:p.card, side:p.side, act:p.act, label:p.label, after:p.after, scope:'rest-both-enemy', fuid:t.uid, cands:ec.map(c=>c.uid) };
         setPrompt(`${p.card.name}: now tap an ENEMY Unit to rest.`); render(); return; }
-      G.mode='idle'; G.pending=null; applyRestBoth(p.card, p.side, p.act, t, ec[0]||null, p.label); done(); return;
+      G.mode='idle'; G.pending=null; restBothSub(p.card, p.side, p.act, t, ec[0]||null, p.label, done); return;
     }
     if (p.scope==='rest-both-enemy'){
       const ft=G.player.field.find(c=>c.uid===p.fuid)||null;
-      G.mode='idle'; G.pending=null; applyRestBoth(p.card, p.side, p.act, ft, t, p.label); done(); return;
+      G.mode='idle'; G.pending=null; restBothSub(p.card, p.side, p.act, ft, t, p.label, done); return;
     }
     if (p.scope==='self-ping'){
       // chose the friendly Unit to ping; damageBoth then needs an enemy choice
@@ -11308,7 +11320,7 @@ function parseOnKill(effect){
   // turn." (Tallgeese Ⅲ) — a rested body comes back up, but only to block.
   else if (/set it as active/.test(t) && /rested/.test(t)){
     const traits = [...t.matchAll(/\(([^)]+)\)/g)].map(x=>x[1].toLowerCase());
-    act = { kind:'readyFriendly', traits, link:/link units?/.test(t), noAttack:/can'?t attack/.test(t) };
+    act = { kind:'readyFriendly', traits, link:/link units?/.test(t), noAttack:/can'?t attack/.test(t), other:/\bother\b/.test(t) };   // no "other": this Unit itself qualifies
   }
   // Any other payoff the shared clause parser reads — "choose 1 (Tekkadan) Unit card that is Lv.2 or lower from your trash. Add
   // it to your hand." (Akihiro Altland), "choose 1 enemy Unit with 3 or less HP. Return it to its owner's hand." (Phoenix Gundam
@@ -11339,7 +11351,7 @@ function applyOnKill(u, side, k, srcCard){
   if (k.oncePerTurn && !onceOk(srcCard||u, 'onKill', true)) return;   // per card: a Pilot's payoff has its own marker
   const cls = side===G.player ? 'me' : 'ai';
   if (k.kind==='readyFriendly'){
-    const ok=(x)=>x!==u && x.rested && x.hp>0 && (!k.link || x.linked)
+    const ok=(x)=>(!k.other || x!==u) && x.rested && x.hp>0 && (!k.link || x.linked)
       && (!k.traits || !k.traits.length || k.traits.some(tr=>(x.trait||'').toLowerCase().includes('('+tr+')')));
     const cands = side.field.filter(ok), best=[...cands].sort((a,b)=>effAp(b)-effAp(a))[0];
     hookPick(side, cands, best, `<b>${(srcCard||u).name}</b>: choose 1 of your rested Units to set as active${k.noAttack?" (it can't attack during this turn)":''}.`, t=>{
@@ -11772,7 +11784,7 @@ function apReducedHook(u, side){
     log(`<b>${u.name}</b>: its AP was reduced — deals ${w.amount} to <b>${t.name}</b>.`, side===G.player?'me':'ai'); damage(t, w.amount, foe); });
 }
 // One of `side`'s Units was rested by an opponent's effect during the opponent's turn: Doritea pings an enemy Unit.
-function restedHook(u, side){
+function restedHook(u, side, own){
   if (!side) return;
   // GuAIZ (Commander Type) GD03-038: "During your turn, when this Unit is rested by an effect, choose 1 of your (T) Units. It gets
   // AP+N during this turn." — the player chooses (a chooser when two or more qualify); the AI takes its best attacker.
@@ -11786,7 +11798,7 @@ function restedHook(u, side){
         if (side===G.player && cands.length>=2) promptTargetChoice([best, ...cands.filter(x=>x!==best)], `<b>${u.name}</b> was rested by an effect — choose 1 of your (${w.trait}) Units to get AP+${w.ap} this turn.`, apply, null);
         else apply(best);
       } } }
-  if (G.turn===side.who) return;
+  if (G.turn===side.who || own) return;   // Doritea: only an opponent's effect, during the opponent's turn
   const foe=side===G.player?G.enemy:G.player;
   for (const {card,w} of watchSources(side,'restedWatch')){
     const cands=foe.field.filter(x=>x.hp>0 && !effUntargetable(x));
@@ -12058,15 +12070,16 @@ function effReady(u, side){
   if (was && u.type==='unit' && u.hp>0 && side && side.field.includes(u)) readiedHook(u, side);   // Graham Aker
   return true;
 }
-// Rest a Unit as the result of an EFFECT. Gundam Throne Drei shrugs the first one off each turn.
-function effectRest(u, side){
+// Rest a Unit as the result of an EFFECT. Gundam Throne Drei shrugs the first one off each turn. `own`: the effect is
+// one of `side`'s own (Throne Eins, Human Karma, Gun EZ) — not an opponent's effect (Doritea).
+function effectRest(u, side, own){
   if (u.unrestOnce && u.unrestTurn!==G.turnSeq && !readyDenied(side)){
     u.unrestTurn = G.turnSeq;
     log(`<b>${u.name}</b> is set active again (once per turn).`, side===G.player?'me':'ai');
     u.rested=false; return false;
   }
   const was=u.rested; u.rested=true;
-  if (!was) restedHook(u, side);
+  if (!was) restedHook(u, side, own);
   return true;
 }
 // `dealer` (optional): the card dealing the damage. Battle damage defaults to the other combatant, effect
