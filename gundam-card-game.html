@@ -12546,6 +12546,7 @@ function aiTurn(){
   if (G.over) return;
   G._aiGuard = 0;
   G._aiPostDeploy = false;   // hard AI holds new bodies until after it attacks
+  G._aiPostCombat = null; G._aiPostUtil = null; G._aiAttackPlan = null;   // (turnSeq-keyed) its attack step is still to come
   aiMainLoop();
 }
 // The AI must not advance its turn while the player is resolving a forced choice — an open block/
@@ -12605,6 +12606,8 @@ function aiMainStep(){
       return true;
     }
   }
+  // The rest of the pool's removal-like 【Main】 Commands (board wipes, shield destruction, exile-cost removal, Pilot removal…).
+  if (aiExtraCommand('early')) return true;
   // draw if low
   const drawC = ai.hand.find(c=>mainCmd(c) && c.action.kind==='draw' && c.action.amount>=2 && canAfford(ai,c));
   if (drawC && ai.hand.length<=4){ aiPayAltIfNeeded(ai, drawC); const i=ai.hand.indexOf(drawC); ai.hand.splice(i,1); payCost(ai, effectiveCost(ai,drawC)); sendToTrash(drawC,ai); flashCard(drawC,'ENEMY COMMAND'); commandPlayed(drawC, ai); setTimeout(()=>afterCommandMain(drawC, ai), 0); for(let k=0;k<drawC.action.amount;k++) draw(ai); log(`${who(G.enemy)} plays <b>${drawC.name}</b>.`, 'ai'); return true; }
@@ -12713,7 +12716,308 @@ function aiMainStep(){
       log(`${who(G.enemy)} plays <b>${c.name}</b> on <b>${t.name}</b>.`, 'ai');
       if (c.action.kind==='chain') runTrigger(c, ai, Object.assign({}, c.action, { firstTarget:t }), c.name); else applyCommand(c, ai, t, h);
       return true; } }
+  // Everything else in the pool: attack enablers before combat, utility with spare resources, post-combat set-ups.
+  if (aiExtraCommand('late')) return true;
   return false;
+}
+// ---- AI: the rest of the Command pool ----
+// The Commands no path above casts (active-attack grants, <Breach>/<Repair> grants, set-active, stun, exile/self-cost removal,
+// digs, ramp, reanimation, board wipes…). Each one is judged on what its printed text does on this board, and played only when it
+// helps: before combat when it makes the attack plan better, after combat when it sets up the player's turn, and with spare
+// resources (what the hard AI's held deploys and the 【Action】 Commands it keeps for the player's turn don't need, never an EX
+// Resource) when it is card advantage. 'early' = removal-like plays (before the AI deploys), 'late' = everything else.
+// Units that swing in this turn's attack step (aiPostMain's list).
+function aiReadyAttackers(){ const ai=G.enemy; return ai.field.filter(u=>(!u.sick || deployTurnAttackOk(u, G.player)) && !u.rested && (u.ap>0 || aiShieldBomb(u)) && !trashBlocksAttack(u,ai)); }
+// Does attacker `a` destroy `t` in battle: its AP reaches t's HP — or a Backup grant destroys the Lv.N-or-lower Unit it damages.
+function aiKillsInBattle(a, t){ if (effAp(a)>=t.hp) return true; const g=a.battleDestroyGrant; return !!(g && g.turnSeq===G.turnSeq && t.type==='unit' && (t.lv||0)<=g.maxLv && effAp(a)>0); }
+// What this turn's attack plan (planAiAttacks) destroys, and how much a temporary change (`apply()` makes it and returns its undo)
+// adds to that.
+function aiPlanWorth(){ const seen=new Set(); let v=0; for (const t of planAiAttacks(aiReadyAttackers()).values()) if (!seen.has(t)){ seen.add(t); v+=keepVal(t)+1; } return v; }
+function aiPlanGain(apply){ const before=aiPlanWorth(); const undo=apply(); let after; try { after=aiPlanWorth(); } finally { undo(); } return after-before; }
+// Commit attacker `u` to attack `t` this turn (aiPostMain adds it to its plan) — the attack a Command was played for.
+function aiForceAttack(u, t){ const tp=(G._aiAttackPlan && G._aiAttackPlan.turnSeq===G.turnSeq) ? G._aiAttackPlan : (G._aiAttackPlan={ turnSeq:G.turnSeq, map:new Map() }); tp.map.set(u.uid, t); }
+// A battle a ready attacker isn't planned for because it would go down with the threat it destroys — and survives once that
+// Unit loses `amt` AP (or once `guardOk(t)` keeps its battle damage off it). Best one: { u, t, g }.
+function aiSurvivableKill(ready, ts, amt, guardOk){
+  const pl=G.player, plan=planAiAttacks(ready), planned=new Set(plan.values()); let best=null;
+  for (const t of ts){
+    if (planned.has(t) || t.hp<=0 || effUntargetable(t) || aiThreatScore(t)<4) continue;
+    for (const u of ready){
+      if (plan.has(u.uid) || effFirstStrike(u) || !(t.rested || canHitActive(u, t)) || !aiKillsInBattle(u, t)) continue;
+      const back=Math.max(0, effAp(t)-(u.dmgReduce||0));
+      if (back<u.hp) continue;                                            // it survives anyway
+      if (guardOk ? !guardOk(u, t) : back-amt>=u.hp) continue;            // …and still wouldn't with the help
+      const g=keepVal(t)+1; if (!best || g>best.g) best={ u, t, g };
+    }
+  }
+  return best;
+}
+// Resources left for a non-urgent play of `self`: minus the held deploys (hard AI before combat), minus — for `utility` — the
+// 【Action】 Commands it keeps for the player's turn, minus EX Resources.
+function aiSpareRes(utility, self){
+  const ai=G.enemy; let held=0, act=0;
+  if (ai.field.length<FIELD_MAX && AI_LVL==='hard' && !G._aiPostDeploy) for (const u of ai.hand) if (u.type==='unit' && canAfford(ai,u)) held=Math.max(held, effectiveCost(ai,u));
+  if (utility) act=aiActionReserve(self);
+  return ai.resAvail - ai.ex - held - act;
+}
+// The most the AI's other 【Action】 Commands in hand cost — kept for the player's turn.
+function aiActionReserve(self){ const ai=G.enemy; let r=0; for (const c of ai.hand) if (c!==self && c.type==='command' && /【\s*Action/.test(plain(c.effect||'')) && canAfford(ai,c)) r=Math.max(r, effectiveCost(ai,c)); return r; }
+// What resting the AI's own active Unit costs it: before combat a Unit that would attack loses its attack; otherwise it can be
+// attacked on the player's turn and, with <Blocker>, can't block.
+function aiOwnRestCost(u, pre, ready){ if (pre && ready.includes(u)) return 3+effAp(u); return 0.5 + (effBlocker(u)?1.5:0) + (keepVal(u)>=6?0.5:0); }
+// What resting the player's active Unit `u` is worth before the AI's attacks: an active <Blocker> stops blocking; a threat its
+// ready attackers can then destroy becomes attackable.
+function aiRestWorth(u, ready){
+  let v = effBlocker(u) && ready.length ? 3 : 0;
+  if (aiThreatScore(u)>=4 && ready.some(x=>aiKillsInBattle(x, u) && (effFirstStrike(x) || effAp(u)<x.hp))) v += keepVal(u);
+  return v;
+}
+// The AP and HP an enemy Unit loses with its Pilot (effAp / effMaxHp's Pilot, pair and link parts).
+function aiPilotLoss(u){
+  const pr=duringPairMet(u);
+  return { ap:(u.pilot?u.pilot.pAp||0:0) + (pr?u.pairAp||0:0) + (u.pilot?u.pilotPairAp||0:0) + (u.linked?(u.linkAp||0)+(u.pilotLinkAp||0):0),
+           hp:(u.pilot?u.pilot.pHp||0:0) + (pr?u.pairHp||0:0) + (u.pilot?u.pilotPairHp||0:0) + (u.linked?(u.linkHp||0)+(u.pilotLinkHp||0):0) };
+}
+// "Choose N … cards from your trash. Exile them from the game. If you do, <effect>" with the AI's chosen target.
+function aiExileThen(card, side, act, t){
+  const cls=side===G.player?'me':'ai', n=exileFromTrash(side, act.count, act.trait);
+  log(`<b>${card.name}</b>: exiles ${n} ${act.trait?act.trait+' ':''}card${n===1?'':'s'} from the trash.`, cls);
+  if (n<act.count) return;
+  const inn=Object.assign({}, act.inner, { source:card });
+  if (t && G.player.field.includes(t) && t.hp>0) applyToTarget(card, side, inn, t, card.name); else runTrigger(card, side, inn, card.name);
+}
+// "Choose 1 active friendly Unit. Rest it. If you do, choose 1 enemy Unit whose Lv. is …. Deal 3 damage to it." (Human Karma)
+function aiRestFriendlyThen(card, side, act, u, t){
+  const cls=side===G.player?'me':'ai';
+  if (!side.field.includes(u) || u.rested){ log(`<b>${card.name}</b> — no active friendly Unit to rest.`, cls); return; }
+  effectRest(u, side, true); log(`<b>${card.name}</b> — rests its <b>${u.name}</b>.`, cls);
+  const inn=Object.assign({}, restedInner(act, u), { source:card, refUnit:u });
+  if (t && G.player.field.includes(t) && enemyTargets(G.player, inn).includes(t)) applyToTarget(card, side, inn, t, card.name); else runTrigger(card, side, inn, card.name);
+}
+// The ways the AI could play `c` in its main phase now: [{ s (worth), msg, run }].
+function aiExtraCmdOptions(c, tier){
+  const ai=G.enemy, pl=G.player, a0=c.action; if (!a0) return [];
+  a0.source=c;
+  if (!cmdPlayable(a0, ai, c)) return [];
+  let a=a0; for (let k=0; k<4 && a && a.kind==='cond' && !condOnTarget(a.cond); k++) a = condMet(a.cond, ai, c, a.other) ? a.inner : (a.elseInner||null);
+  if (!a || a.kind==='cond') return [];
+  a.source=c;
+  const cost=effectiveCost(ai,c), pre=G._aiPostCombat!==G.turnSeq, ready=aiReadyAttackers();
+  const spare=u=>aiSpareRes(u, c) >= cost;
+  const hasAct=/【\s*Action/.test(plain(c.effect||''));
+  const out=[], add=(s, msg, run)=>out.push({ s, msg, run }), cast=(t)=>()=>applyCommand(c, ai, t, a);
+  const k=a.kind, own=u=>ai.field.includes(u);
+  if (tier==='early'){
+    // "Destroy all Units that are Lv.4 or lower." — when it takes two or more enemy Units and clearly more than the AI's own.
+    if (k==='destroyAll'){ const f=a.filter||{};
+      const hit=u=>u.hp>0 && (f.maxLv==null||(u.lv||0)<=f.maxLv) && (f.maxAp==null||effAp(u)<=f.maxAp) && (f.maxHp==null||u.hp<=f.maxHp);
+      const foeHit=pl.noEnemyEffDestroyTurn===G.turnSeq ? [] : pl.field.filter(hit);
+      const net=foeHit.reduce((n,u)=>n+keepVal(u),0) - (a.scope==='all-enemy' ? 0 : ai.field.filter(hit).reduce((n,u)=>n+keepVal(u),0));
+      if (foeHit.length>=2 && net>=5) add(net, 'destroying every Unit in range', cast(null)); }
+    // "Destroy the first 2 cards in that player's shield area."
+    if (k==='destroyShieldArea' && (pl.base || pl.shields.length)) add(6, null, cast(null));
+    // "Choose N … cards from your trash. Exile them. If you do, destroy / deal 3 damage to …" — on a real threat it removes.
+    if (k==='trashExile' && trashCount(ai, a.trait)>=a.count){ const inn=Object.assign({}, a.inner, { source:c });
+      for (const t of enemyTargets(pl, inn)){
+        const th=aiThreatScore(t), blocks=effBlocker(t) && !t.rested && ready.length>0;
+        if (hasAct && !blocks && th<7) continue;   // an 【Action】 one keeps a plain removal for the player's turn (aiActionStep)
+        let s=null;
+        if (inn.kind==='destroy'){ if (pl.noEnemyEffDestroyTurn!==G.turnSeq && (th>=5 || keepVal(t)>=6)) s=keepVal(t)+2; }
+        else if (inn.kind==='damage'){ if (aiEffDmg(t, inn.amount)>=t.hp && (th>=4 || keepVal(t)>=4)) s=keepVal(t)+1; }
+        if (s!=null) add(s - 0.2*a.count, `on <b>${t.name}</b>`, ()=>aiExileThen(c, ai, a, t)); } }
+    // "Choose 1 Pilot paired with an enemy Unit … Destroy it." — when the Unit dies with it, or loses a big Pilot / its Link.
+    if (k==='destroyPilot') for (const t of destroyPilotCands(pl, a)){
+      const l=aiPilotLoss(t), dies=t.hp<=l.hp, s=dies ? keepVal(t)+2 : cardValue(t.pilotCard) + (t.linked?2:0) + l.ap*0.5;
+      if (dies || s>=(hasAct?6:4)) add(s, `on <b>${t.pilotCard.name}</b>`, ()=>destroyPairedPilot(c, ai, t, c.name)); }
+    // "If 3 or more enemy Units are in play, choose 1 rested enemy Unit. Deal 2 damage to it." — a kill.
+    if (k==='damage' && a0.kind==='cond' && a.scope!=='all-enemy' && a.scope!=='all-both') for (const t of enemyTargets(pl, a)){
+      if (aiEffDmg(t, dmgAmountFor(a, t))>=t.hp && keepVal(t)>=3) add(keepVal(t)+1, `on <b>${t.name}</b>`, cast(t)); }
+    // "You and that player each choose 1 of your own Units … damage step only." — the player answers with the Unit that suits
+    // them best, so only when every answer still costs them a Unit worth more than the AI's.
+    if (k==='mutualDuel'){ const mine=ai.field.filter(u=>u.hp>0 && u.type==='unit'), theirs=pl.field.filter(u=>u.hp>0 && u.type==='unit');
+      if (mine.length && theirs.length){
+        const m=[...mine].sort((x,y)=>(effFirstStrike(y)?1:0)-(effFirstStrike(x)?1:0) || effAp(y)-effAp(x) || y.hp-x.hp)[0];   // mutualDuel's own pick
+        const res=p=>{ const M=aiActVirt(m,[]), P=aiActVirt(p,[]); const pDies=aiBattleHit(P, M)>=p.hp, mDies=!(effFirstStrike(m) && pDies) && aiBattleHit(M, P)>=m.hp;
+          return (pDies?keepVal(p):0) - (mDies?keepVal(m):0); };
+        const worst=Math.min(...theirs.map(res));
+        if (worst>=2) add(worst+1, null, cast(null)); } }
+    return out;
+  }
+  // ---- 'late' ----
+  // "Choose 1 friendly Unit. It recovers N HP." (【Main】-only; the 【Action】 heals wait for a battle).
+  if (k==='heal' && !hasAct && spare(true)) for (const t of friendlyTargets(ai, a).filter(own)){
+    const g=Math.min(a.amount>=99?99:a.amount, effMaxHp(t)-t.hp); if (g>=2 && keepVal(t)>=3) add(g+keepVal(t)*0.1, `on <b>${t.name}</b>`, cast(t)); }
+  // "Choose 1 friendly damaged Unit. It recovers 2 HP. Then, draw 1." / "Draw 1. Then, if …, rest …" (cantrips)
+  if (k==='chain' && !hasAct && spare(true)){ const s0=a.steps[0];
+    if (s0.kind==='heal'){ const h=Object.assign({}, s0, { source:c });
+      const best=friendlyTargets(ai, h).filter(own).map(t=>({ t, g:Math.min(h.amount, effMaxHp(t)-t.hp) })).sort((x,y)=>y.g-x.g)[0];
+      if (best && (best.g>=2 || (best.g>=1 && ai.hand.length<=3))) add(best.g+1, `on <b>${best.t.name}</b>`, ()=>runTrigger(c, ai, Object.assign({}, a, { firstTarget:best.t }), c.name)); }
+    else if (s0.kind==='draw' && ai.hand.length<=6 && ai.deck.length>(s0.amount||1)+3) add(1, null, ()=>runTrigger(c, ai, a, c.name)); }
+  // "All friendly Units that are Lv.4 or lower recover 2 HP."
+  if (k==='massHeal' && spare(true)){ const tot=massCmdUnits(ai, a).filter(own).reduce((n,u)=>n+Math.min(a.amount, effMaxHp(u)-u.hp),0); if (tot>=3) add(tot, null, cast(null)); }
+  // "It gains <Breach N> during this turn." — on an attacker the plan sends to destroy an enemy Unit, while the player has a
+  // shield area card to hit.
+  if (k==='grantKw' && a.kw==='breach' && pre && (pl.base || pl.shields.length) && spare(false)){
+    const plan=planAiAttacks(ready); const t=friendlyTargets(ai, a).filter(u=>own(u) && plan.has(u.uid) && effBreach(u)<(a.amount||1)).sort((x,y)=>keepVal(plan.get(y.uid))-keepVal(plan.get(x.uid)))[0];
+    if (t) add(1+(a.amount||1), `on <b>${t.name}</b>`, cast(t)); }
+  // "It gains <Repair 2> during this turn." — on a damaged Unit that is done fighting this turn.
+  if (k==='grantKw' && a.kw==='repair' && spare(true)){
+    const b=friendlyTargets(ai, a).filter(u=>own(u) && !(pre && ready.includes(u))).map(u=>({ u, g:Math.min(a.amount||1, effMaxHp(u)-u.hp-effRepair(u)) })).sort((x,y)=>y.g-x.g)[0];
+    if (b && b.g>=2 && keepVal(b.u)>=3) add(b.g, `on <b>${b.u.name}</b>`, cast(b.u)); }
+  // "During this turn, it may choose an active enemy Unit (with 6 or less AP / Lv.4 or lower …) as its attack target." — before
+  // combat, on a ready attacker that then destroys (and survives) a threat the plan couldn't reach, or trades into a much bigger one.
+  if (k==='grantAttackActive' && pre && spare(false)){
+    let best=null;
+    for (const u of grantCands(c, ai, a).filter(x=>own(x) && ready.includes(x))){
+      const g=aiPlanGain(()=>{ const gr=Object.assign({ turnSeq:G.turnSeq }, a.enemyFilter||{}); (u.activeAttackGrants=u.activeAttackGrants||[]).push(gr);
+        return ()=>{ const i=u.activeAttackGrants.indexOf(gr); if (i>=0) u.activeAttackGrants.splice(i,1); }; });
+      if (g>=3 && (!best || g>best.s)) best={ u, s:g, trade:null };
+      // A trade: it destroys a far more valuable active Unit and goes down with it.
+      for (const t of pl.field.filter(x=>x.hp>0 && !x.rested && !effUntargetable(x) && !canHitActive(u, x) && activeGrantAllows(a.enemyFilter, u, x))){
+        const tg=keepVal(t)-keepVal(u);
+        if (aiKillsInBattle(u, t) && tg>=3 && aiThreatScore(t)>=6 && (!best || tg>best.s)) best={ u, s:tg, trade:t }; } }
+    if (best) add(best.s, `on <b>${best.u.name}</b>${best.trade?` (to attack <b>${best.trade.name}</b>)`:''}`, ()=>{
+      if (best.trade) aiForceAttack(best.u, best.trade);
+      applyCommand(c, ai, best.u, a); }); }
+  // "Choose N of your active Units. Rest them. If you do, deal 3 damage to an enemy Unit / each enemy player rests 1 of theirs."
+  if (k==='restOwnN' && spare(false)){
+    const cands=restOwnNCands(ai, a, c);
+    if (cands.length>=a.count){
+      const val=u=>(u.sick||G.turn!==ai.who?0:10)+keepVal(u);   // restOwnNThen's own picks
+      const picked=((a.inner.filter && a.inner.filter.maxLvRef) ? [...cands].sort((x,y)=>(y.lv||0)-(x.lv||0)) : [...cands].sort((x,y)=>val(x)-val(y))).slice(0, a.count);
+      const restCost=picked.reduce((n,u)=>n+aiOwnRestCost(u, pre, ready),0);
+      let gain=0;
+      if (a.inner.kind==='damage'){ const inn=Object.assign({}, a.inner, { refUnit:picked[0], source:c }); const t=rankTarget(enemyTargets(pl, inn), inn);
+        if (t && aiEffDmg(t, dmgAmountFor(inn, t))>=t.hp) gain=keepVal(t)+2; }
+      else if (a.inner.kind==='foeRestOwn' && pre){ const act=pl.field.filter(u=>u.hp>0 && u.type==='unit' && !u.rested);   // the player rests the one it minds least
+        if (act.length) gain=Math.min(...act.map(u=>aiRestWorth(u, ready))); }
+      if (gain-restCost>=3) add(gain-restCost, null, cast(null)); } }
+  // Human Karma in the main phase: rest a Unit that won't attack (summoning-sick) to destroy an enemy Unit with 3 damage.
+  if (k==='restFriendlyThen' && spare(false)){ let best=null;
+    for (const u of friendlyTargets(ai, a).filter(own)){ const inn=Object.assign({}, restedInner(a, u), { source:c, refUnit:u });
+      for (const t of enemyTargets(pl, inn)){ if (aiEffDmg(t, dmgAmountFor(inn, t))<t.hp) continue;
+        const s=keepVal(t)+2-aiOwnRestCost(u, pre, ready); if (s>=3 && (!best || s>best.s)) best={ u, t, s }; } }
+    if (best) add(best.s, `resting <b>${best.u.name}</b> for <b>${best.t.name}</b>`, ()=>aiRestFriendlyThen(c, ai, a, best.u, best.t)); }
+  // "Choose 1 rested Unit with <Blocker>. Set it as active. It can't attack during this turn." — after combat, a Blocker that
+  // attacked stands up to block (and can't be attacked) on the player's turn.
+  if (k==='setActiveFriendly' && !pre && spare(true) && pl.field.some(x=>x.hp>0 && effAp(x)>0)){
+    const t=readyCands(ai, a, c).filter(own).sort((x,y)=>keepVal(y)-keepVal(x))[0];
+    if (t && (effBlocker(t) || keepVal(t)>=4)) add(2+keepVal(t)*0.2, `on <b>${t.name}</b>`, ()=>applyReadyChosen(c, ai, a, t, c.name)); }
+  // "Place 1 EX Resource." (AGE Device, its condition met) — with resources that would otherwise go unused.
+  if (k==='exResource' && !(pre && AI_LVL==='hard') && spare(true) && ai.ex<EX_MAX && totalRes(ai)<RES_AREA_MAX) add(1.5, null, cast(null));
+  // "Place 1 rested Resource." — while a card in hand still needs a higher Lv.
+  if (k==='resourceRamp' && spare(true) && (ai.resourceDeck||0)>0 && totalRes(ai)<RES_AREA_MAX && ai.hand.some(x=>x!==c && (x.lv||0)>totalRes(ai))) add(2, null, cast(null));
+  // Card selection with spare resources: look at the top N for a (T) card, draw-and-discard, a Pilot back from the trash…
+  if (k==='dig' && spare(true) && ai.hand.length<=6 && ai.deck.length>=a.amount+3){ const cap=digLvCap(c, ai, a);
+    const p=ai.deck.filter(x=>digPickable(x, ai, a, cap)).length/ai.deck.length, hit=1-Math.pow(1-p, a.amount);   // its own decklist's odds
+    if (hit>=0.5) add(2*hit, null, cast(null)); }
+  if (k==='digTop' && spare(true) && ai.hand.length<=6 && ai.deck.length>=a.amount+3) add(1 + (a.then && cmdHead(a.then, ai, c).kind==='draw' ? 1 : 0), null, cast(null));
+  if (k==='allLookTop' && spare(true) && ai.hand.length<=6 && ai.deck.length>=4){ const p=ai.deck.filter(x=>(!a.cardType || x.type===a.cardType) && (a.minLv==null || (x.lv||0)>=a.minLv)).length/ai.deck.length;
+    if (p>=0.6) add(1, null, cast(null)); }
+  if ((k==='drawDiscard' || k==='discardDraw') && spare(true) && ai.deck.length>a.draw+2){ const others=ai.hand.length-1;
+    const net = k==='drawDiscard' ? a.draw-a.discard : (others>=a.discard ? a.draw-a.discard : 0);
+    if (net>=1 && others+a.draw<=7) add(1+net, null, cast(null)); }
+  if (k==='draw' && a0.kind==='cond' && !hasAct && spare(true) && ai.hand.length<=5 && ai.deck.length>a.amount+2) add(1+a.amount, null, cast(null));   // "If there are 6 or more rested Units in play, draw 2."
+  if (k==='trashRetrieve' && spare(true) && ai.hand.length<=6){ const b=ai.trash.filter(x=>matchFilter(x, a.filter) && !x.token).sort((x,y)=>cardValue(y)-cardValue(x))[0];
+    if (b && cardValue(b)>=3) add(1+cardValue(b)*0.2, `for <b>${b.name}</b>`, cast(null)); }
+  // "Choose 1 … Unit card from your trash. (Pay its cost to) deploy it." — a body worth its price, into a free slot (the hard AI
+  // waits until after combat like its other deploys).
+  if (k==='reanimate' && ai.field.length<FIELD_MAX && !(pre && AI_LVL==='hard')){
+    const ftr=(parseFilter(a.filter).traits)||null;
+    const fits=x=>x.type==='unit' && !x.token && matchFilter(x, a.filter) && (!a.free || !ftr || ftr.some(tr=>hasTraitT(x, tr))) && (a.maxLv==null || trashLv(ai, x)<=a.maxLv);
+    const left=aiSpareRes(false, c)-cost;
+    const best=ai.trash.filter(x=>fits(x) && (a.free || effectiveCost(ai, x)<=left)).sort((x,y)=>(y.baseAp+y.baseHp)-(x.baseAp+x.baseHp))[0];   // reanimate's own pick
+    if (best && left>=0){ const worth = a.free ? (best.cost||0)-cost+cardValue(best)*0.3 : cardValue(best)-4;
+      if (worth>=1) add(2+worth, `bringing back <b>${best.name}</b>`, cast(null)); } }
+  // "Choose 1 active friendly (T) Unit and 1 active enemy Unit. Rest them." — before combat: a Unit that wouldn't attack for an
+  // enemy Blocker / a threat the attackers can then destroy.
+  if (k==='restBoth' && pre && spare(false)){
+    const f=restBothCands(ai, a).filter(u=>own(u) && !ready.includes(u)).sort((x,y)=>aiOwnRestCost(x, pre, ready)-aiOwnRestCost(y, pre, ready))[0];
+    const e=enemyTargets(pl, { kind:'rest', filter:a.enemyFilter, source:c }).map(u=>({ u, v:aiRestWorth(u, ready) })).sort((x,y)=>y.v-x.v)[0];
+    if (f && e && e.v-aiOwnRestCost(f, pre, ready)>=2) add(e.v-aiOwnRestCost(f, pre, ready), `on <b>${e.u.name}</b>`, ()=>restBothSub(c, ai, a, f, e.u, c.name)); }
+  // "Choose 1 rested friendly Base. Set it as active. If you do, all enemy Units get AP-1 during this turn." — when the AP-1
+  // lets the attack plan destroy more.
+  if (k==='readyBaseThen' && pre && ai.base && ai.base.rested && spare(false) && a.inner && a.inner.kind==='debuff' && a.inner.scope==='all-enemy'){
+    const w=aiSurvivableKill(ready, pl.field.filter(u=>!aiApLocked(u) && !apReduceBlocked(u, pl)), a.inner.amount||1);
+    if (w) add(w.g, null, ()=>{ aiForceAttack(w.u, w.t); applyCommand(c, ai, null, a); }); }
+  // "During this turn, if a friendly (T) Unit destroys an enemy Unit with battle damage, set a rested (T) Unit active." — when
+  // the plan has a (T) Unit destroy one.
+  if (k==='armKillReady' && pre && spare(false)){ const plan=planAiAttacks(ready);
+    if ([...plan.keys()].some(uid=>{ const u=ai.field.find(x=>x.uid===uid); return u && (a.killTraits||[]).some(tr=>hasTraitT(u, tr)); })) add(2, null, cast(null)); }
+  // "Choose 1 rested enemy Unit … It won't be set as active during the start phase of your opponent's next turn." — after combat.
+  if (k==='stun' && (!pre || !ready.length) && spare(false)){
+    const t=enemyTargets(pl, a).filter(u=>u.rested).sort((x,y)=>aiThreatScore(y)-aiThreatScore(x))[0];
+    if (t && (aiThreatScore(t)>=5 || effBlocker(t))) add(1+aiThreatScore(t)*0.3, `on <b>${t.name}</b>`, cast(t)); }
+  // "Choose 1 of your Units. When it deals battle damage to an enemy Unit that is Lv.5 or lower during this turn, destroy that
+  // enemy Unit." — on the attacker that then destroys a threat it couldn't by AP alone.
+  if (k==='grantBattleDestroy' && pre && spare(false)){ let best=null;
+    for (const u of friendlyTargets(ai, a).filter(x=>own(x) && ready.includes(x))){
+      const g=aiPlanGain(()=>{ const old=u.battleDestroyGrant; u.battleDestroyGrant={ turnSeq:G.turnSeq, maxLv:a.maxLv, card:c }; return ()=>{ u.battleDestroyGrant=old; }; });
+      if (g>=3 && (!best || g>best.g)) best={ u, g }; }
+    if (best) add(best.g, `on <b>${best.u.name}</b>`, ()=>applyCmdGrant(c, ai, a, best.u, c.name)); }
+  // "Place the top 2 cards of your deck into your trash. If you do, deal damage equal to the (T) cards placed …" — when its own
+  // decklist makes the kill likely.
+  if (k==='millCount' && spare(true) && ai.deck.length>=10){
+    const p=ai.deck.filter(x=>matchTrashTrait(x, a.countTrait)).length/ai.deck.length, n=a.amount||2;
+    const pk=h=>{ let s=0; for (let j=h; j<=n; j++){ let comb=1; for (let q=0;q<j;q++) comb=comb*(n-q)/(q+1); s+=comb*Math.pow(p,j)*Math.pow(1-p,n-j); } return s; };
+    const inn=Object.assign({}, a.inner, { source:c });
+    const b=enemyTargets(pl, inn).filter(t=>keepVal(t)>=3).map(t=>({ t, pr:pk(t.hp) })).sort((x,y)=>y.pr*keepVal(y.t)-x.pr*keepVal(x.t))[0];
+    if (b && b.pr>=0.5) add(b.pr*keepVal(b.t), null, cast(null)); }
+  // "Choose 1 of your Units. Destroy it. If you do, look at the top 4 … deploy 1 Unit card that is Lv.4 or lower" — a token or a
+  // spent small Unit for a likely better one.
+  if (k==='selfSacThen' && a.inner && a.inner.kind==='digDeploy' && spare(false) && ai.deck.length>=4){
+    const cands=ai.field.filter(u=>u!==c && u.hp>0);
+    const v=u=>((u.baseAp||0)+(u.baseHp||0))+(u.pilot?5:0), sac=cands.find(u=>u.token) || [...cands].sort((x,y)=>v(x)-v(y))[0];   // its own pick
+    if (sac && !(pre && ready.includes(sac))){ const inn=a.inner;
+      const pool=ai.deck.filter(x=>x.type==='unit' && matchFilter(x, inn.filter) && (inn.maxLv==null || (x.lv||0)<=inn.maxLv));
+      const hit=1-Math.pow(1-pool.length/ai.deck.length, inn.amount||4), avg=pool.length ? pool.reduce((n,x)=>n+cardValue(x),0)/pool.length : 0;
+      const s=hit*avg-keepVal(sac); if (hit>=0.6 && s>=2) add(s, `destroying <b>${sac.name}</b>`, cast(null)); } }
+  // "It can't receive battle damage from enemy Units that are Lv.3 or lower during this turn." (【Main】-only) — on an attacker the
+  // plan sends into such a Unit that would destroy it back, or one a low-Lv. Blocker would.
+  if (k==='grantReduce' && !hasAct && pre && spare(false)){ const plan=planAiAttacks(ready), g=aiGuardOf(a), cands=grantCands(c, ai, a).filter(x=>own(x) && ready.includes(x)); let best=null;
+    const covers=(u, x)=>!!x && (g.maxLv==null || (x.lv||0)<=g.maxLv) && (g.maxAp==null || effAp(x)<=g.maxAp) && (g.maxHp==null || x.hp<=g.maxHp);
+    for (const u of cands){
+      const saves=x=>covers(u, x) && effAp(x)>=u.hp && !effFirstStrike(u);
+      const t=plan.get(u.uid);
+      const s = saves(t) ? keepVal(u) : (!t && !effHighManeuver(u) && pl.field.some(b=>effBlocker(b) && !b.rested && b.hp>0 && saves(b))) ? keepVal(u)*0.5 : 0;
+      if (s>=3 && (!best || s>best.s)) best={ u, s, t:null }; }
+    // …or a kill the plan passed up because the attacker would go down with it.
+    const w=aiSurvivableKill(cands, pl.field, 0, covers);
+    if (w && (!best || w.g>best.s)) best={ u:w.u, s:w.g, t:w.t };
+    if (best) add(best.s, `on <b>${best.u.name}</b>`, ()=>{ if (best.t) aiForceAttack(best.u, best.t); applyCommand(c, ai, best.u, a); }); }
+  // "Choose 1 enemy Unit. It gets AP-2 during this turn." (【Main】-only) — when it lets the plan destroy more; Cyclone Punch is
+  // worth it for its pair-from-trash too.
+  if (k==='debuff' && a.scope!=='all-enemy' && !hasAct){
+    const pairB = c.pairFromTrashAfterMain && c.pilotMode && ai.field.some(u=>u.type==='unit' && !u.pilot && !u.noPilot && u.hp>0 && hasTraitT(u, c.pairFromTrashAfterMain)) ? 3 : 0;
+    const best = pre ? aiSurvivableKill(ready, enemyTargets(pl, a).filter(t=>!aiApLocked(t) && !apReduceBlocked(t, pl)), a.amount||0) : null;
+    const t = best ? best.t : rankTarget(enemyTargets(pl, a), a), s=(best?best.g:0)+pairB;
+    if (t && s>=3 && spare(false)) add(s, `on <b>${t.name}</b>`, ()=>{ if (best) aiForceAttack(best.u, best.t); applyCommand(c, ai, t, a); }); }
+  return out;
+}
+// Cast the best of the pool's remaining Commands for this tier (see above). Returns true when it played one.
+function aiExtraCommand(tier){
+  const ai=G.enemy; if (G.over || !ai) return false;
+  if (G.turn!=='enemy' || G.curAttack || G.curBattle) return false;   // 【Main】: its own main phase, no attack in progress
+  const mainCmd=c=>c.type==='command' && /【\s*Main/.test(plain(c.effect||''));
+  let best=null;
+  for (const c of ai.hand){
+    if (!mainCmd(c) || !c.action || !canAfford(ai,c)) continue;
+    for (const o of aiExtraCmdOptions(c, tier)) if (o.s>0 && (!best || o.s>best.s)) best=Object.assign(o, { c });
+  }
+  if (!best) return false;
+  const c=best.c; aiPayAltIfNeeded(ai, c);
+  const cost=effectiveCost(ai,c); ai.hand.splice(ai.hand.indexOf(c),1); payCost(ai, cost); sendToTrash(c,ai);
+  flashCard(c,'ENEMY COMMAND'); commandPlayed(c, ai); setTimeout(()=>afterCommandMain(c, ai), 0);
+  log(`${who(ai)} plays <b>${c.name}</b>${best.msg?` ${best.msg}`:''}.`, 'ai');
+  G.effSrc=c; best.run();
+  return true;
+}
+// After combat (easy / normal AI): the Commands that set up the player's turn, one per tick, then the turn ends.
+function aiPostUtilLoop(){
+  checkEnd(); if (G.over) return;
+  if (aiPaused()){ setTimeout(aiPostUtilLoop, 200); return; }
+  if (G._aiGuard++ < 40 && (aiExtraCommand('early') || aiExtraCommand('late'))){ render(); setTimeout(aiPostUtilLoop, FLASH_MS+150); return; }
+  log(`${who(G.enemy)} ends its turn.`, 'ai'); endTurn();
 }
 // A 0-AP Unit whose 【Activate･Action】 hits the Base/Shield it is battling (Moebius): the AI attacks the player with it to use that.
 function aiShieldBomb(u){ const a=u && u.activate && u.activate.action; return !!(a && a.kind==='baseShieldDamage' && !cantHitPlayer(u) && (G.player.base || G.player.shields.length)); }
@@ -12733,7 +13037,7 @@ function planAiAttacks(attackers){
   for (const tgt of threats){
     const cands = attackers.filter(a=>!used.has(a.uid)
         && !effUntargetable(tgt) && (tgt.rested || canHitActive(a,tgt))           // can legally attack it
-        && effAp(a)>=tgt.hp                              // and kill it
+        && aiKillsInBattle(a, tgt)                       // and kill it
         && (effFirstStrike(a) || effAp(tgt)<effAp(a) || cantHitPlayer(a)));  // and survive (or it can't go face anyway)
     if (!cands.length) continue;
     // cheapest sufficient killer: a Unit that can't pressure the player anyway first, then lowest AP,
@@ -12787,6 +13091,11 @@ function aiPostMain(){
   G.aiForceFace = aiHasLethal(attackers);
   if (G.aiForceFace) log(`${who(G.enemy)} goes for the win!`, 'ai');
   const plan = planAiAttacks(attackers);
+  // The attacks a Command was played for this turn (Rasid's Orders' trade into a bigger active Unit, the AP-2 that lets an
+  // attacker survive its kill) join the plan.
+  { const tp=G._aiAttackPlan;
+    if (!G.aiForceFace && tp && tp.turnSeq===G.turnSeq) for (const [uid, t] of tp.map){ const a=attackers.find(x=>x.uid===uid);
+      if (a && !plan.has(uid) && ![...plan.values()].includes(t) && G.player.field.includes(t) && t.hp>0 && !effUntargetable(t) && (t.rested || canHitActive(a, t))) plan.set(uid, t); } }
   // Sequence: take the planned kills first (with their small assigned attackers, clearing threats),
   // then push the remaining bodies at the player's shields strongest-first.
   attackers.sort((a,b)=>{
@@ -12805,8 +13114,11 @@ function aiPostMain(){
       (function endStep(){
         if (G.over) return;
         if (aiPaused()){ setTimeout(endStep, 200); return; }   // wait out any pending player choice
+        G._aiPostCombat=G.turnSeq;   // still its main phase, but its attacks are done
         // Hard AI held its non-blitz deploys until after attacking — now place them, then end.
         if (AI_LVL==='hard' && !G._aiPostDeploy){ G._aiPostDeploy=true; G._aiGuard=0; aiPostCombatLoop(); return; }
+        // The other levels: the Commands that only pay off after combat (re-ready a Blocker, keep a rested Unit down…).
+        if (AI_LVL!=='hard' && G._aiPostUtil!==G.turnSeq){ G._aiPostUtil=G.turnSeq; G._aiGuard=0; aiPostUtilLoop(); return; }
         log(`${who(G.enemy)} ends its turn.`, 'ai'); endTurn();
       })();
       return;
@@ -13102,6 +13414,14 @@ function aiActValue(ctx, mods){
   }
   return v;
 }
+// Who the model says dies in this battle (AI's Unit `mine` vs the player's `theirs`), as it stands.
+function aiBattleOutcome(ctx){
+  if (!ctx || !ctx.mine || !ctx.theirs) return { mineDies:false, theirsDies:false };
+  const M=aiActVirt(ctx.mine, []), T=aiActVirt(ctx.theirs, []), mineAtk=ctx.attacker===ctx.mine, A=mineAtk?M:T, D=mineAtk?T:M;
+  const fs = effFirstStrike(A.u) || (D.u.foeFirstStrike && G.turn!==D.u.owner);
+  const defDies = aiBattleHit(D, A)>=D.hp, atkDies = !(fs && defDies) && !A.u.noBattleDmgBattle && aiBattleHit(A, D)>=A.hp;
+  return mineAtk ? { mineDies:atkDies, theirsDies:defDies } : { mineDies:defDies, theirsDies:atkDies };
+}
 // The ways the AI could play Command `c` now: [{ h (the part it aims), mode, t (its target), mods, extra }].
 function aiActionPlans(c, ctx){
   const ai=G.enemy, pl=G.player, a=c.action; if (!a) return [];
@@ -13118,6 +13438,15 @@ function aiActionPlans(c, ctx){
     const battleOnly = h.dur==='battle' || (h.guard && h.guard.dur==='battle') || h.kind==='shieldGuard';
     if (battleOnly && !ctx.attacker) continue;
     for (const p of aiHeadOptions(c, h, ctx)){ p.h=h; p.mode=mode; out.push(p); }
+  }
+  // "… Rest it. Then, you may choose 1 of your Units with "Shining Gundam" in its card name. It gets <First Strike> during this
+  // turn." (Shining Finger) — also for the <First Strike> alone, on its attacking Unit (the rest takes a target when there is one).
+  if (a.kind==='chain' && a.steps[1] && a.steps[1].kind==='grantKw' && a.steps[1].kw==='first' && ctx.mine && ctx.attacker===ctx.mine && !effFirstStrike(ctx.mine)){
+    const s0=a.steps[0], s1=Object.assign({}, a.steps[1], { source:c }), mine=ctx.mine;
+    if (friendlyTargets(ai, s1).includes(mine)) out.push({ h:s1, mode:null, t:null, mods:[{ u:mine, first:true }], resolve:()=>{
+      G.effSrc=c; const r=Object.assign({}, s0, { source:c }), rt=rankTarget(enemyTargets(G.player, r), r);
+      if (rt) applyToTarget(c, ai, r, rt, c.name); else log(`<b>${c.name}</b> — no enemy Unit it can choose to rest.`, 'ai');
+      if (ai.field.includes(mine) && mine.hp>0) applyToTarget(c, ai, s1, mine, c.name); } });
   }
   // "Then, draw 1" and other trailing parts of a chain are a small bonus on top of what its first part does.
   if (a.kind==='chain') for (const p of out) p.extra=(p.extra||0)+0.5;
@@ -13159,7 +13488,112 @@ function aiHeadOptions(c, h, ctx){
     if (et) out.push({ t:null, mods:[...(ft ? [{ u:ft, dmg:h.amount }] : []), { u:et, dmg:aiEffDmg(et, h.amount) }] });
     return out;
   }
+  // "Choose 1 Pilot paired with an enemy Unit … Destroy it." — its AP/HP leave with it (the Unit dies if that takes its last HP).
+  if (k==='destroyPilot'){
+    for (const t of destroyPilotCands(pl, h)){ const l=aiPilotLoss(t);
+      out.push({ t, mods:[{ u:t, ap:-l.ap, dmg:l.hp }], extra:cardValue(t.pilotCard)*0.5, resolve:()=>destroyPairedPilot(c, ai, t, c.name) }); }
+    return out;
+  }
+  // "Choose 1 friendly Base and 1 enemy Unit with 3 or less HP. Rest them." (resting its own Base costs it little)
+  if (k==='restBaseEnemy'){ const bc = ai.base && !ai.base.rested && ai.base.hp>0 ? 0.5 : 0;
+    for (const t of enemyTargets(pl, { kind:'rest', filter:h.enemyFilter, source:c })) out.push({ t, mods:[{ u:t, rest:true }], extra:-bc, resolve:()=>applyRestBaseEnemy(c, ai, t, c.name) });
+    return out;
+  }
+  // "Choose N Unit cards from your trash. Exile them. If you do, deal 3 damage to / destroy an enemy Unit." (the exiled cards
+  // are a small cost)
+  if (k==='trashExile'){
+    if (trashCount(ai, h.trait)<h.count) return out;
+    const inn=Object.assign({}, h.inner, { source:c });
+    if (enemyPickKind(inn)) for (const t of enemyTargets(pl, inn)){
+      const mods = inn.kind==='damage' ? [{ u:t, dmg:aiEffDmg(t, dmgAmountFor(inn, t)) }] : inn.kind==='destroy' && pl.noEnemyEffDestroyTurn!==G.turnSeq ? [{ u:t, removed:'destroy' }] : null;
+      if (mods) out.push({ t, mods, extra:-0.2*h.count, resolve:()=>aiExileThen(c, ai, h, t) }); }
+    return out;
+  }
+  // "Choose 1 active friendly Unit. Rest it. If you do, … deal 3 damage to an enemy Unit." — resting a Unit of its own costs it
+  // a block / an attack.
+  if (k==='restFriendlyThen'){
+    for (const u of friendlyTargets(ai, h).filter(x=>ai.field.includes(x))){
+      const inn=Object.assign({}, restedInner(h, u), { source:c, refUnit:u });
+      const rc = G.turn==='player' ? 1+(effBlocker(u)?1.5:0) : (!u.sick && effAp(u)>0 && !trashBlocksAttack(u, ai) ? 3 : 0.5);
+      for (const t of enemyTargets(pl, inn)) out.push({ t, mods:[{ u:t, dmg:aiEffDmg(t, dmgAmountFor(inn, t)) }], extra:-rc, resolve:()=>aiRestFriendlyThen(c, ai, h, u, t) }); }
+    return out;
+  }
+  // "Choose a number of enemy Units up to the number of white Units with <Blocker> you have in play. They get AP-2 during this
+  // turn." — the Unit in this battle first, then the strongest.
+  if (k==='debuffUpTo'){
+    const n=debuffUpToCount(ai, h); if (!n) return out;
+    const cs=enemyTargets(pl, { kind:'debuff', filter:null }).filter(u=>!aiApLocked(u) && !apReduceBlocked(u, pl));
+    const picks=[...cs].sort((x,y)=>((y===ctx.theirs)?1:0)-((x===ctx.theirs)?1:0) || effAp(y)-effAp(x)).slice(0, n);
+    if (picks.length) out.push({ t:null, mods:picks.map(u=>({ u, ap:-(h.amount||0) })), resolve:()=>{ for (const t of picks) if (pl.field.includes(t)) applyToTarget(c, ai, { kind:'debuff', amount:h.amount, dur:h.dur, scope:'enemy' }, t, c.name); } });
+    return out;
+  }
+  // Speculative protection on the player's turn, cast with resources that ready again at the AI's start phase and that its other
+  // 【Action】 Commands don't need: Kindhearted ("friendly Units can't be destroyed by enemy effects", then draw 1) while a key Unit
+  // could be picked off; Fighting Alone ("can't receive effect damage from enemy Units") while a player Unit's text can deal that
+  // Unit lethal effect damage.
+  const specOk = G.turn==='player' && !ctx.endPhase && ai.resAvail-ai.ex-effectiveCost(ai,c) >= aiActionReserve(c);
+  if (k==='noEnemyEffDestroy'){
+    if (specOk && ai.noEnemyEffDestroyTurn!==G.turnSeq && pl.hand.length>=2 && ai.field.some(u=>u.hp>0 && keepVal(u)>=5)) out.push({ t:null, mods:[], extra:1.5 });
+    return out;
+  }
+  if (k==='grantNoUnitEffDmg'){
+    if (!specOk) return out;
+    const dmgTxt=pl.field.map(x=>{ const m=plain(x.effect||'').match(/deal (\d+) damage/i); return m ? +m[1] : 0; });
+    const u=friendlyTargets(ai, h).filter(x=>ai.field.includes(x) && x.noUnitEffDmgTurn!==G.turnSeq && keepVal(x)>=5 && dmgTxt.some(n=>n>=x.hp)).sort((x,y)=>keepVal(y)-keepVal(x))[0];
+    if (u) out.push({ t:u, mods:[], extra:keepVal(u)*0.4, resolve:()=>applyCmdGrant(c, ai, h, u, c.name) });
+    return out;
+  }
+  // The player's Units that may still attack this turn (not the one attacking now).
+  const yetToAttack = ()=> G.turn!=='player' || ctx.endPhase ? [] : pl.field.filter(x=>x!==ctx.attacker && x.hp>0 && !x.rested && effAp(x)>0 && (!x.sick || deployTurnAttackOk(x, ai)) && !trashBlocksAttack(x, pl));
+  // "Choose 1 of your rested Units. During this turn, all enemy Units must choose that Unit as their attack target." — the
+  // sturdy body soaks the attacks still to come that would break shields (or the Base).
+  if (k==='grantLure'){
+    const rest=yetToAttack().filter(x=>!cantHitPlayer(x)).sort((x,y)=>effAp(y)-effAp(x)); if (!rest.length) return out;
+    const shieldV = ai.base ? 1 : ai.shields.length<=2 ? 3 : 1.5;
+    for (const L of friendlyTargets(ai, h).filter(x=>ai.field.includes(x) && x.rested && !effUntargetable(x))){
+      let hp=L.hp, soaked=0; for (const x of rest){ if (hp<=0) break; soaked++; hp-=effAp(x); }
+      const v=soaked*shieldV - (hp<=0 ? keepVal(L) : 0);
+      if (v>0) out.push({ t:L, mods:[], extra:v, resolve:()=>applyCmdGrant(c, ai, h, L, c.name) }); }
+    return out;
+  }
+  // "Choose 1 friendly (Marine) Unit. Enemy Units can't choose it as their attack target this turn." — a rested Unit (not the
+  // one already attacked) that a Unit still to attack would destroy.
+  if (k==='grantNoAttackTarget'){
+    const rest=yetToAttack();
+    for (const u of friendlyTargets(ai, h).filter(x=>ai.field.includes(x) && x.rested && x!==ctx.mine && x.noTargetTurn!==G.turnSeq))
+      if (rest.some(x=>effAp(x)>=u.hp)) out.push({ t:u, mods:[], extra:keepVal(u)*0.7, resolve:()=>applyToTarget(c, ai, h, u, c.name) });
+    return out;
+  }
+  // "Choose 1 rested Unit with <Blocker> / 1 of your (Titans) Link Units battling an enemy Unit. Set it as active." — on the
+  // player's turn a Blocker stands up to block the attacks still to come; a Unit in this battle that survives it ends active.
+  if (k==='setActiveFriendly'){
+    if (h.filter && h.filter.battlingEnemy){
+      if (mine && ctx.theirs && mine.rested && friendlyTargets(ai, h).includes(mine) && !aiBattleOutcome(ctx).mineDies)
+        out.push({ t:mine, mods:[], extra:(G.turn==='player'?2:1.5)+(effBlocker(mine)?1.5:0), resolve:()=>applyReadyChosen(c, ai, h, mine, c.name) });
+      return out;
+    }
+    const rest=yetToAttack(); if (!rest.length) return out;
+    const t=readyCands(ai, h, c).filter(x=>ai.field.includes(x) && x!==mine && effBlocker(x)).sort((x,y)=>keepVal(y)-keepVal(x))[0];
+    if (t) out.push({ t, mods:[], extra:2.5, resolve:()=>applyReadyChosen(c, ai, h, t, c.name) });
+    return out;
+  }
   if (!mine) return out;   // the rest help the AI's Unit in this battle
+  // "It gains during this battle: when this Unit destroys an enemy Unit with battle damage, destroy an enemy Unit with 2 or less
+  // AP." — while its Unit is about to destroy the one it battles.
+  if (k==='grantBattleKill'){
+    if (!ctx.theirs || !friendlyTargets(ai, h).includes(mine) || !aiBattleOutcome(ctx).theirsDies) return out;
+    const inn=Object.assign({}, h.inner, { source:c });
+    const b=enemyTargets(pl, inn).filter(u=>u!==ctx.theirs && (inn.kind!=='destroy' || pl.noEnemyEffDestroyTurn!==G.turnSeq)).sort((x,y)=>keepVal(y)-keepVal(x))[0];
+    if (b) out.push({ t:mine, mods:[], extra:keepVal(b), resolve:()=>applyToTarget(c, ai, h, mine, c.name) });
+    return out;
+  }
+  // "It gains: 【During Link】【Destroyed】 Choose 1 friendly (League Militaire) Unit. Set it as active." — on its Unit that is
+  // about to be destroyed in this battle, with a rested (T) Unit to stand up.
+  if (k==='grantDestroyedReady'){
+    if (!friendlyTargets(ai, h).includes(mine) || (h.link && !mine.linked) || !ctx.theirs || !aiBattleOutcome(ctx).mineDies) return out;
+    if (ai.field.some(x=>x!==mine && x.hp>0 && x.rested && hasTraitT(x, h.readyTrait))) out.push({ t:mine, mods:[], extra:2, resolve:()=>applyToTarget(c, ai, h, mine, c.name) });
+    return out;
+  }
   if (k==='selfPingBuff'){ const t=pingFriendly(ai, h.self, true, h.other ? c : null); if (t===mine) out.push({ t:null, mods:[{ u:mine, dmg:h.self, ap:h.ap }] }); return out; }
   if (k==='buffMulti'){ const picks=friendlyTargets(ai, h).sort((a,b)=>effAp(b)-effAp(a)).slice(0, h.count);
     if (picks.includes(mine) && (!h.exact || picks.length>=h.count)) out.push({ t:null, mods:picks.map(u=>({ u, ap:h.amount })) }); return out; }
@@ -13219,6 +13653,7 @@ function aiResolveActionPlan(c, p){
   G.effSrc=c;
   if (t && !(G.player.field.includes(t) || G.enemy.field.includes(t))){ log(`<b>${c.name}</b>: <b>${t.name}</b> is no longer in play — no effect.`, 'ai'); return; }
   if (p.mode) log(`<b>${c.name}</b>: ■${p.mode.modeText||''}`, 'ai');
+  if (p.resolve){ p.resolve(); return; }   // a shape with its own resolution (the engine's helpers, with the AI's chosen Units)
   if (h.kind==='healBuff'){ applyHealBuff(c, ai, h, t, c.name); return; }
   if (a.kind==='chain'){ runTrigger(c, ai, Object.assign({}, a, t ? { firstTarget:t } : {}), c.name); return; }
   applyCommand(c, ai, t||null, h);
@@ -13416,7 +13851,7 @@ function resolveAiAttackInner(atk, done0, forced){
   let target = (forced && attackable.includes(forced)) ? forced : null;
   if (!target){
     // A clean kill destroys the target and survives the counter (or strikes first).
-    const bestKill = attackable.filter(u=> effAp(atk)>=u.hp && (effFirstStrike(atk) || effAp(u)<atk.hp))
+    const bestKill = attackable.filter(u=> aiKillsInBattle(atk, u) && (effFirstStrike(atk) || effAp(u)<atk.hp))
                                .sort((a,b)=>aiThreatScore(b)-aiThreatScore(a))[0] || null;
     // Go face when: committing to lethal, the unit can't trade, no worthwhile trade exists, or the
     // player is low on defenses (close out the game by pressuring shields) unless the trade kills a
