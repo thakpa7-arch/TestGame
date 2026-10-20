@@ -202,7 +202,11 @@ function step(){
     // A multi-pick picker (choose N cards, then confirm): once its confirm button is enabled, press it often
     // enough that random tile toggling doesn't read as a stall.
     const confirmBtn = cl.find(x => /\(\d+\/\d+\)/.test(x.textContent || ''));
-    const b = (confirmBtn && R() < 0.35) ? confirmBtn : pick(cl);
+    // Still short of N picks ("Confirm (9/12)"): mostly add an unpicked tile, so a large "choose 12" doesn't random-walk forever.
+    const findCount = n => { for (const ch of (n.children || [])){ const t = String(ch.textContent || ''); if (/\(\d+\/\d+\)/.test(t)) return t; const r = findCount(ch); if (r) return r; } return ''; };
+    const cm = findCount(m).match(/\((\d+)\/(\d+)\)/);
+    const unpicked = cm && +cm[1] < +cm[2] ? cl.filter(x => x.dataset && x.dataset.uid && !/34d399/i.test(String((x.style && x.style.borderColor) || ''))) : [];
+    const b = (confirmBtn && R() < 0.35) ? confirmBtn : (unpicked.length && R() < 0.8) ? pick(unpicked) : pick(cl);
     act('overlay click ' + (b.textContent || '').slice(0, 30), () => b.onclick()); return; }
   if (G.mode !== 'idle' && (G.turn === 'player' || G.mode === 'action-step-target' || G.mode === 'discard')){ modeStep(); return; }
   if (G.turn === 'player' && G.mode === 'idle'){

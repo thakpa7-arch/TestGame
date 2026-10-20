@@ -2956,7 +2956,10 @@ function damageAll(card, side, act, label){
   if(act.scope==='all-both') for(const u of [...side.field]) if(inRange(u)) list.push([u,side]);
   if(!list.length) return;
   log(`${label}: <b>${card.name}</b> deals ${act.amount} to ${act.scope==='all-both'?'all':'all enemy'} Units${f.maxLv?' Lv.'+f.maxLv+' or lower':''}${f.maxLvRef&&act.refUnit?' Lv.'+(act.refUnit.lv||0)+' or lower':''}.`, cls);
-  for(const [u,s] of list) damage(u, act.amount, s, s===side?'self':undefined);
+  // Every Unit is hit at the same time: their 【Destroyed】 effects resolve afterwards, the active player's first (Q108).
+  const tok=deferDestroyedBegin();
+  try { for(const [u,s] of list) damage(u, act.amount, s, s===side?'self':undefined); } finally { deferDestroyedStop(tok); }
+  deferDestroyedEnd(tok);
 }
 // Player "look at top 2, keep 1 on top, the other to trash".
 function playerScryMill(card, side, after, act){
@@ -3302,21 +3305,19 @@ function shieldGuarded(defSide, atk){
   return (g.maxLv!=null && (atk.lv||0)<=g.maxLv) || (g.maxAp!=null && effAp(atk)<=g.maxAp);
 }
 // "Destroy the first N cards in that player's shield area": the Base while one is deployed, then shields from the top
-// (each destroyed shield may resolve its 【Burst】).
+// (each destroyed shield may resolve its 【Burst】). The N cards are destroyed together: every one is removed and revealed first,
+// then their 【Burst】 effects resolve in the order their owner chooses (Q406/Q407) — a Burst-deployed Base isn't hit afterwards.
 function destroyShieldArea(card, side, n, label, done){
   const foe=side===G.player?G.enemy:G.player, cls=side===G.player?'me':'ai';
-  let k=0;
-  (function next(){
-    if (k>=n || G.over){ render(); if (done) done(); return; }
-    k++;
-    if (foe.base){ const b=foe.base; foe.base=null; fx('die', b.uid); sendToTrash(b, foe);
-      log(`${label}: <b>${card.name}</b> destroys ${who(foe)}'s <b>${b.name}</b> base.`, cls);
-      if (!b.token) whenModalFree(()=>fireDestroyed(b, foe)); next(); return; }
-    if (foe.shields.length){ const sh=foe.shields.pop(); foe.breakingShield=true; fx('shield');
-      log(`${label}: <b>${card.name}</b> destroys a ${who(foe)} shield (${foe.shields.length} left).`, cls);
-      triggerBurst(sh, foe, next, true); return; }
-    next();
-  })();
+  if (G.over){ render(); if (done) done(); return; }
+  let k=0; const revealed=[];
+  if (n>0 && foe.base){ const b=foe.base; foe.base=null; fx('die', b.uid); sendToTrash(b, foe); k++;
+    log(`${label}: <b>${card.name}</b> destroys ${who(foe)}'s <b>${b.name}</b> base.`, cls);
+    if (!b.token) whenModalFree(()=>fireDestroyed(b, foe)); }
+  while (k<n && foe.shields.length){ k++; revealed.push(foe.shields.pop()); foe.breakingShield=true; fx('shield');
+    log(`${label}: <b>${card.name}</b> destroys a ${who(foe)} shield (${foe.shields.length} left).`, cls); }
+  if (!revealed.length){ render(); if (done) done(); return; }
+  resolveBurstsTogether(revealed, foe, done);
 }
 // "During this turn, if a friendly (T) Unit destroys an enemy Unit with battle damage, choose 1 rested friendly (T)
 // Unit. Set it as active. It can't attack during this turn." (Immortal Colasour)
@@ -11009,20 +11010,15 @@ function strikePlayer(atk, defSide, done){
     // <Suppression>: damage to shields hits the first 2 cards simultaneously, else just 1.
     const supp = atk && effSuppression(atk);
     const n = supp ? 2 : 1;
-    let broke=0, k=0;
-    // Shields break one at a time so each Burst can resolve (a player Burst may need a choice).
-    (function nextShield(){
-      if (k>=n || defSide.shields.length===0){
-        if (broke>0) resolveShieldBreakTrigger(atk, defSide, done);   // attacker's "on shield break" effect
-        else done();
-        return;
-      }
-      k++;
-      const sh=defSide.shields.pop(); defSide.breakingShield=true; fx('shield'); broke++;
+    // The (up to 2) Shields are destroyed and revealed together; then their 【Burst】 effects resolve in the order their owner
+    // chooses (13-1-7-4), and after them the attacker's "on shield break" effect.
+    const revealed=[];
+    for (let k=0; k<n && defSide.shields.length>0; k++){
+      const sh=defSide.shields.pop(); defSide.breakingShield=true; fx('shield'); revealed.push(sh);
       log(`<b>${atk.name}</b> destroys a ${who(defSide)} shield!${supp?' &lt;Suppression&gt;':''} (${defSide.shields.length} left)`, side);
       enemyCardDestroyed(atk, atkSide, 'shield');
-      triggerBurst(sh, defSide, nextShield, true);
-    })();
+    }
+    resolveBurstsTogether(revealed, defSide, ()=>resolveShieldBreakTrigger(atk, defSide, done));
     return;
   }
   endGame(defSide===G.player ? G.enemy : G.player); done();
@@ -11096,7 +11092,76 @@ function shieldBreakOne(atk, atkSide, defSide, src, sb, done, byEffect){
 // A broken shield is revealed; if it has a 【Burst】 it may resolve. When `allowChoice` is set and
 // it's the player's Burst, a target-requiring Burst lets the player pick (via the modal picker, since
 // Bursts fire on the opponent's turn). `done` is called once the Burst finishes resolving.
+// The Shield's owner chooses whether to activate its 【Burst】 (Q40/Q73): the player is asked; declined, the card is placed into
+// the trash. A Burst whose "If …" condition isn't met does nothing either way, so it isn't asked about.
 function triggerBurst(card, side, done, allowChoice){
+  done = done || function(){};
+  const bz = card && card.burst;
+  if (!bz || (bz.cond && !condMet(bz.cond, side, card))){ resolveBurst(card, side, done, allowChoice); return; }
+  const decline=()=>{
+    log(`${side===G.player?"You don't":who(side)+" doesn't"} activate the 【Burst】 of <b>${card.name}</b> — it is placed into the trash.`, side===G.player?'me':'ai');
+    if (!side.trash.includes(card)) sendToTrash(card, side);
+    render(); done();
+  };
+  if (side===G.player){
+    const line=String(card.effect||'').split(/<br\s*\/?>/i).find(s=>/【\s*Burst\s*】/.test(s))||'';
+    const txt=plain(line).replace(/^.*?【\s*Burst\s*】\s*/,'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    askOptional(`<b>Burst — ${card.name}</b>: your Shield was destroyed.${txt?`<br><span style="opacity:.8;font-size:11px">【Burst】${txt}</span>`:''}<br>Activate its 【Burst】?`,
+      'Activate 【Burst】', "Don't activate", ()=>resolveBurst(card, side, done, allowChoice), decline);
+    return;
+  }
+  if (!aiWantsBurst(card, side)){ decline(); return; }
+  resolveBurst(card, side, done, allowChoice);
+}
+// The AI activates its 【Burst】 effects: each is free value (a card, a deploy, a resource, a removal), so it never declines.
+function aiWantsBurst(card, side){ return true; }
+// Several shield-area cards destroyed at the same time (Interwoven Blessings, <Suppression>): they are all revealed first, then
+// their 【Burst】 effects resolve one at a time, in an order the Shields' owner chooses (Q406/Q407). Revealed cards without a
+// 【Burst】 go straight to the trash. The player picks from a list when two or more Bursts are waiting; the AI takes them top first.
+function resolveBurstsTogether(cards, side, done){
+  const pend=[];
+  for (const c of cards){ if (c && c.burst) pend.push(c); else if (c) sendToTrash(c, side); }
+  if (cards.length>1) log(`${side===G.player?'Your':who(side)+"'s"} destroyed Shields are revealed: ${cards.map(c=>'<b>'+c.name+'</b>').join(', ')}.`, side===G.player?'me':'ai');
+  (function next(){
+    if (!pend.length){ render(); if (done) done(); return; }
+    if (G.over){ for (const c of pend.splice(0)) if (!side.trash.includes(c)) sendToTrash(c, side); render(); if (done) done(); return; }
+    if (side===G.player && pend.length>=2){
+      chooseOrder(pend.map(c=>`${c.name} — 【Burst】${clauseText(c, 'Burst', 110)}`),
+        `<b>Burst</b>: ${pend.length} of your Shields with 【Burst】 were destroyed together. Choose the one to resolve first.`,
+        i=>triggerBurst(pend.splice(i,1)[0], side, next, true));
+      return;
+    }
+    triggerBurst(pend.shift(), side, next, true);
+  })();
+}
+// The text of `card`'s first 【…kw…】 clause, HTML-escaped (plain() decodes "<Breach 1>"), cut to `max` characters — for choosers.
+function clauseText(card, kw, max){
+  const m=plain(card && card.effect || '').match(new RegExp('【[^】]*'+kw+'[^】]*】\\s*(?:【[^】]*Once per Turn[^】]*】\\s*)?([^【]*)','i'));
+  let t=m ? m[1].trim() : '';
+  if (max && t.length>max) t=t.slice(0, max-1)+'…';
+  return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+// The player orders their own effects that trigger at the same time (10-1-6-5, Q107): pick the one to resolve next from `labels`.
+// `cb(i)` runs with the chosen index. Queued behind any open choice.
+function chooseOrder(labels, msg, cb){
+  if (modalBusy()){ whenModalFree(()=>chooseOrder(labels, msg, cb)); return; }
+  el('blockMsg').innerHTML=msg;
+  const wrap=el('blockBtns'); wrap.innerHTML='';
+  labels.forEach((t,i)=>{ const b=document.createElement('button'); b.innerHTML=t;
+    b.onclick=()=>{ el('blockModal').classList.remove('show'); cb(i); pumpModalQueue(); }; wrap.appendChild(b); });
+  el('blockModal').classList.add('show');
+}
+// Run the player's simultaneous triggered effects `items` ([{label, run(next)}]) in the order they choose — the chooser opens only
+// when two or more are waiting. The AI (and a lone item) resolves them in the given order. `done` runs after the last one.
+function runInChosenOrder(side, items, msg, done){
+  const rest=items.slice();
+  (function next(){
+    if (!rest.length || G.over){ if (done) done(); return; }
+    if (side===G.player && rest.length>=2){ chooseOrder(rest.map(x=>x.label), msg, i=>rest.splice(i,1)[0].run(next)); return; }
+    rest.shift().run(next);
+  })();
+}
+function resolveBurst(card, side, done, allowChoice){
   G.effSrc = card;   // the card whose effect is resolving — effect damage reads it (damage-prevention statics)
   done = done || function(){};
   // The caller already popped this shield off the shield zone and handed it over, so this function owns
@@ -11380,13 +11445,14 @@ function pilotActionAction(atk){
 function attackerStillOut(atk, atkSide){ return !!(atk && atk.hp>0 && atkSide && atkSide.field.includes(atk)); }
 function resolveAttackTriggers(atk, atkSide, done){
   const acts=[];
-  const add=(act, slot)=>{
+  const printedBy=new Map();   // act -> the card whose text it is (the Unit, its Pilot or a watcher) — for the order chooser
+  const add=(act, slot, card)=>{
     if (!act || act.kind==='selfbuff' || act.kind==='selfKeyword' || act.kind==='selfBattleReduce' || act.kind==='battleNoBlockLv') return;
     if (act.oncePerTurn){ if (atk[slot]===G.turnSeq) return; atk[slot]=G.turnSeq; }
-    act.source=atk; acts.push(act);
+    act.source=atk; acts.push(act); printedBy.set(act, card);
   };
-  add(gatedAttackAction(atk.effect, atk), 'atkOnceTurn');
-  add(pilotAttackAction(atk), 'atkPilotOnceTurn');
+  add(gatedAttackAction(atk.effect, atk), 'atkOnceTurn', atk);
+  add(pilotAttackAction(atk), 'atkPilotOnceTurn', atk.pilotCard);
   // "(【During Pair】)When one of your other Units with <K> attacks, choose 1 enemy Unit whose Lv. is equal to or lower than that
   // Unit. Rest it." (The-O GD03-002) — the watcher's effect, resolved with the watcher as its source.
   const owners=new Map();
@@ -11395,17 +11461,36 @@ function resolveAttackTriggers(atk, atkSide, done){
     if (w.kw && !condMet({ type:'selfHasKw', kw:w.kw }, atkSide, atk)) continue;
     if (!onceOk(card,'allyAttackWatch',w.once)) continue;
     const act=Object.assign({}, w.act, w.lvCapAttacker ? { filter:Object.assign({}, w.act.filter||{}, { maxLv:atk.lv||0 }) } : {});
-    act.source=card; acts.push(act); owners.set(act, card);
+    act.source=card; acts.push(act); owners.set(act, card); printedBy.set(act, card);
   }
-  let i=0;
-  (function next(){
-    if (i>=acts.length || !attackerStillOut(atk, atkSide)){ done(); return; }
-    const a=acts[i++], src=owners.get(a)||atk;
+  // These 【Attack】 effects trigger together, so their controller picks the order (10-1-6-5, Q550/Q552): the player from a list
+  // when two or more are waiting. The AI resolves an "If <condition>, …" effect that isn't met yet last — the others (a Pilot's
+  // AP+1, Chad Chadan's self-damage) may switch it on.
+  const rest=acts.slice();
+  if (atkSide!==G.player){
+    const late=a=>{ if (a.kind!=='cond' || a.elseInner) return 0; try { return condMet(a.cond, atkSide, owners.get(a)||atk, a.other) ? 0 : 1; } catch(e){ return 0; } };
+    const rank=new Map(rest.map(a=>[a, late(a)]));
+    rest.sort((x,y)=>rank.get(x)-rank.get(y));
+  }
+  const lbl=a=>{ const c=printedBy.get(a)||owners.get(a)||atk;
+    return `${c.name}${c===atk.pilotCard?' (Pilot)':''} — 【Attack】${clauseText(c, 'Attack', 110)}`; };
+  const go=(a)=>{
+    const src=owners.get(a)||atk;
     if (atkSide===G.player) resolvePlayerTrigger(src, atkSide, a, 'Attack', next);
     else if (a.kind==='gd05Sac') gd05Sacrifice(atkSide, atk, next);   // the player may have to choose a Unit — continue after
     else if (a.kind==='foeMayDraw' || a.kind==='allLookTop') g4Resolve(src, atkSide, a, 'Attack', next);   // you answer for your own draw / top card
     else { runTrigger(src, atkSide, a, 'Attack'); next(); }
-  })();
+  };
+  function next(){
+    if (!rest.length || !attackerStillOut(atk, atkSide)){ done(); return; }
+    if (atkSide===G.player && rest.length>=2){
+      chooseOrder(rest.map(lbl), `<b>${atk.name}</b> attacks — ${rest.length} 【Attack】 effects trigger together. Choose the one to resolve first.`,
+        i=>{ const a=rest.splice(i,1)[0]; if (!attackerStillOut(atk, atkSide)){ done(); return; } go(a); });
+      return;
+    }
+    go(rest.shift());
+  }
+  next();
 }
 // Simultaneous battle, modified by First Strike (striker hits first; if foe dies, no return).
 // ---- event watchers read straight off the card text (cached per text) ----
@@ -11745,8 +11830,13 @@ function battle(atk, def, atkSide, defSide){
   const defHp0=def.hp, atkHp0=atk.hp;
   const hp0 = new Map([[atk, atk.hp], [def, def.hp]]);
   if (G.curBattle){ G.curBattle.hp0 = hp0; G.curBattle.ap0 = new Map([[atk, a], [def, d]]); }   // pre-damage values for battle-damage guards
-  if (fs==='me'){ hitDef(); if (def.hp>0) hitAtk(); }
-  else { hitDef(); hitAtk(); }
+  // The 【Destroyed】 effects of Units destroyed by this battle damage wait until the active player's battle triggers (<Breach>,
+  // "when this Unit destroys an enemy Unit" payoffs) have resolved: active player first (Q56, 10-1-6-6).
+  const dtok=deferDestroyedBegin();
+  try {
+    if (fs==='me'){ hitDef(); if (def.hp>0) hitAtk(); }
+    else { hitDef(); hitAtk(); }
+  } finally { deferDestroyedStop(dtok); }
   if (def.type==='unit' && def.hp<=0) killReadyHook(atkSide, atk);   // Immortal Colasour: a friendly (T) Unit destroyed an enemy Unit in battle
   if (atk.hp<=0 && def.type==='unit') killReadyHook(defSide, def);
   // <Breach N>: when this attack destroys an enemy Unit, hit the top enemy shield.
@@ -11758,6 +11848,7 @@ function battle(atk, def, atkSide, defSide){
   if (def.type==='unit' && def.hp<=0){                                            // "when this Unit destroys an enemy Unit…" — fires even if the attacker died too (10-1-6-4)
     battleKillPayoffs(atk, atkSide, def);
   }
+  deferDestroyedEnd(dtok);   // now the destroyed Units' 【Destroyed】 effects (active player's first)
   battleSlayHook(atk, atkSide, def, defSide, defHp0);   // "…deals battle damage to an enemy Unit that is Lv.N or lower, destroy that enemy Unit" (Nyaan)
   battleSlayHook(def, defSide, atk, atkSide, atkHp0);
   battleSlayTextHook(atk, atkSide, def, defSide, defHp0);   // the same printed on the Unit or its Pilot (Gundam Virtue, Ennil El)
@@ -12295,9 +12386,40 @@ function pickAiBlocker(atk, blockers){
 // effect" (Q368).
 function fireDestroyedBy(u, side, cause){ const pc=G.destroyCause; G.destroyCause=cause; try { fireDestroyed(u, side); } finally { G.destroyCause=pc; } }
 function fireDestroyed(u, side){
+  if (G.deferDestroyed){ G.deferDestroyed.push({ u, side, cause:G.destroyCause }); return; }   // one event destroying several cards: see deferDestroyedEnd
   const prevSrc = G.effSrc, cause = G.destroyCause;   // 'battle' / 'cost' / 'effectDamage' / 'rules' (set by the caller) — anything else is a destroy effect
   const prevD = G.destroying; G.destroying = { u, cause };   // "If this Unit is destroyed with battle damage" (Haro) reads it
   try { G.destroyCause = null; fireDestroyedInner(u, side, cause); } finally { G.effSrc = prevSrc; G.destroyCause = cause; G.destroying = prevD; }
+}
+// One event that destroys cards on both sides (an all-Units effect, the battle damage step): the 【Destroyed】 effects it triggers
+// are collected while it happens (deferDestroyedBegin … End) and resolved afterwards — all of the active player's first, then the
+// standby player's (10-1-6-6, Q108), behind any open choice such as a 【Burst】 (10-1-6-8). With two or more of the player's own
+// 【Destroyed】 effects waiting, the player picks their order (10-1-6-5). Begin returns null when an outer event already collects.
+function deferDestroyedBegin(){ if (G.deferDestroyed) return null; G.deferDestroyed=[]; return G.deferDestroyed; }
+function deferDestroyedStop(tok){ if (tok && G.deferDestroyed===tok) G.deferDestroyed=null; }
+function deferDestroyedEnd(tok){
+  deferDestroyedStop(tok);
+  if (!tok || !tok.length) return;
+  whenModalFree(()=>flushDestroyed(tok));
+}
+function hasDestroyedText(u){
+  const re=/【[^】]*Destroyed[^】]*】/i;
+  return !!(u && ((u.tempOnDestroyed && u.tempOnDestroyed.turnSeq===G.turnSeq) || re.test(plain(u.effect||'')) || (u.pilotCard && re.test(plain(u.pilotCard.effect||'')))));
+}
+function flushDestroyed(list){
+  if (G.over) return;
+  const active = G.turn===G.enemy.who ? G.enemy : G.player, standby = active===G.player ? G.enemy : G.player;
+  const fire=e=>{ const pc=G.destroyCause; G.destroyCause=e.cause; try { fireDestroyed(e.u, e.side); } finally { G.destroyCause=pc; } };
+  const runSide=(sd, then)=>{
+    const es=list.filter(e=>e.side===sd);
+    const trig=sd===G.player ? es.filter(e=>hasDestroyedText(e.u)) : [];
+    if (trig.length<2){ es.forEach(fire); then(); return; }
+    es.filter(e=>!trig.includes(e)).forEach(fire);
+    const lbl=e=>{ const src=[e.u, e.u.pilotCard].find(c=>c && /【[^】]*Destroyed[^】]*】/i.test(plain(c.effect||'')))||e.u;
+      return `${e.u.name}${src!==e.u?' ('+src.name+')':''} — 【Destroyed】${clauseText(src, 'Destroyed', 110)}`; };
+    runInChosenOrder(sd, trig.map(e=>({ label:lbl(e), run:(next)=>{ fire(e); next(); } })), `${trig.length} of your 【Destroyed】 effects trigger together. Choose the one to resolve first.`, then);
+  };
+  runSide(active, ()=>whenModalFree(()=>{ if (!G.over) runSide(standby, ()=>{ render(); }); }));
 }
 // Alpha Azieru GD05-054: "【Once per Turn】When one of your Units is destroyed by an effect, draw N." (a Unit destroyed with battle
 // damage or as a cost doesn't count; Alpha Azieru sees its own destruction too).
@@ -12606,7 +12728,23 @@ function attachPilot(u, p, onDone){
 }
 // Resolve a list of triggers in order. Player-side triggers go through the interactive resolver
 // (so single-target pings let you choose); AI-side triggers auto-resolve. `done` runs at the end.
+// They trigger together (a 【When Paired】 on both the Unit and its Pilot, 【When Linked】, pairing watchers), so when two or more of
+// the player's can actually do something, the player picks the order from a list (10-1-6-5, Q107); the AI keeps the listed order.
 function runTriggerSeq(list, side, done){
+  if (side===G.player){
+    const gatedOff=t=>{ const a=t.act; if (!a || a.kind!=='cond' || !a.cond || !['pairedPilotReq','paired','linked'].includes(a.cond.type)) return false;
+      try { return !condMet(a.cond, side, t.card, a.other); } catch(e){ return false; } };
+    const live=list.filter(t=>t.act && !gatedOff(t));
+    if (live.length>=2){
+      const lbl=t=>{ const kw=t.label==='Link'?'When Linked':'When Paired';
+        const txt=clauseText(t.card, kw, 110);
+        return txt ? `${t.card.name} — 【${kw}】${txt}` : `${t.card.name} — its effect for a Pilot being paired`; };
+      const items=live.map(t=>({ label:lbl(t), run:(next)=>{ flashCard(t.card, 'YOUR '+(t.label==='Link'?'LINK':'PAIR')+' EFFECT'); resolvePlayerTrigger(t.card, side, t.act, t.label, next); } }));
+      // Gated-off triggers do nothing; let them through the usual resolver first, then the player orders the rest.
+      runTriggerSeq(list.filter(t=>t.act && !live.includes(t)), side, ()=>runInChosenOrder(side, items, `${live.length} of your effects trigger together. Choose the one to resolve first.`, done));
+      return;
+    }
+  }
   let i=0;
   (function nxt(){
     while (i<list.length){

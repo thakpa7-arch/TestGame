@@ -174,6 +174,7 @@ for (const w of ['player','enemy']){
 { fresh('player'); setTrash('player', GG.slice(0,2)); const u=put('ST10-007','player');
   const pilot=[...A.CARD_BY_ID.values()].find(d=>d.type==='pilot' && (d.trait||'').includes('(G Generation)') && !/-p\d+$/.test(d.id));
   A.attachPilot(u, card(pilot.id,'player')); drainTasks();
+  if (modal() && /resolve first/.test(modal().msg)) press(/Barbatos/);   // the Pilot's own 【When Paired】 triggers too: Barbatos first (Q107)
   const m=modal(); ok('Q304 Barbatos 4th Form player: Development 2 exile offered when Linked with no Lv.4- Command in trash', u.linked && !!m && /exile 2/.test(m.msg), `linked=${u.linked} ${JSON.stringify(m)}`);
   press(/^Exile/); ok('Q304 player: 2 exiled, nothing added to hand', G.player.exile.length===2 && G.player.hand.length===0 && !modal()); }
 // Q324 Gundam Aquarius EB01-060 (【When Paired】, only an enemy Lv.6 Unit)

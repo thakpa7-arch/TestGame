@@ -1,6 +1,6 @@
 // Audit group g6: static abilities, watchers, 【Activate】 parsing, deploy-turn attack permissions and attack-target lures.
 // Each case uses the real card, on the player's side through the UI path when the player chooses, and on the AI's side.
-const H=require('./harness.js'); const {A,drainTasks,ERRORS}=H; const G=A.G;
+const H=require('./harness.js'); const {A,ERRORS}=H; const drainTasks=require('./burst_yes.js')(H); const G=A.G;   // drainTasks answers the 【Burst】 yes/no with yes
 const doc=global.document; const el=id=>doc.getElementById(id);
 let pass=0; const fail=[];
 function ok(name, cond, extra){ if(cond) pass++; else fail.push(name+(extra?'  ('+extra+')':'')); }

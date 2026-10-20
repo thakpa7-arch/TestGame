@@ -1,7 +1,7 @@
 // Audit 2, group c: Command actions (inferCommand, the Command shapes, parseSelfPing). Each case plays the real card — the
 // player's side through the UI (playFromHand, the Action Step modal, the target choosers, the trash picker), the AI's side
 // through applyCommand / triggerBurst / its main step.
-const H=require('./harness.js'); const {A,drainTasks,ERRORS}=H; const G=A.G;
+const H=require('./harness.js'); const {A,ERRORS}=H; const drainTasks=require('./burst_yes.js')(H); const G=A.G;   // drainTasks answers the 【Burst】 yes/no with yes
 const doc=global.document; const el=id=>doc.getElementById(id);
 let pass=0; const fail=[];
 function ok(name, cond, extra){ if(cond) pass++; else fail.push(name+(extra?'  ('+extra+')':'')); }
