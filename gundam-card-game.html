@@ -10128,8 +10128,12 @@ function activateFriendlyCands(act){
   return act.filter && act.filter.anySide ? [...own, ...friendlyTargets(G.enemy, act)] : own;
 }
 function resolveActivate(u, target, costUnit){      // player path
+  const m0=G.mode;
   applyActivateEffect(u, target, G.player, costUnit);
   G.activateCostUnit=null; G.activatePrepaid=false;
+  // The effect may have opened a choice of its own synchronously (a Unit deployed from the trash/hand resolving its 【Deploy】
+  // "choose 1 enemy Unit" puts the board in trigger-target mode — Impulse Gundam → Sword Impulse): keep it open.
+  if (G.mode!==m0 && G.mode!=='idle' && !/^activate/.test(G.mode)){ G.activateCands=null; G.activateRestSub=null; G.selected=null; render(); checkEnd(); return; }
   clearSel(); render(); checkEnd();
 }
 function applyActivateEffect(u, target, side, costUnit){
@@ -10274,8 +10278,8 @@ function applyActivateEffect(u, target, side, costUnit){
       side.trash.splice(side.trash.indexOf(c),1); refreshTrashStats(side);
       resetUnit(c); c.rested=false; c.sick=!c.blitz; side.field.push(c); sound('deploy');
       log(`<b>${u.name}</b> deploys <b>${c.name}</b> from the trash.`, cls);
-      if (side===G.player) resolvePlayerTrigger(c, side, trashDeployAct(c), 'Deploy', ()=>{ render(); });
-      else runTrigger(c, side, trashDeployAct(c), 'Deploy');
+      if (side===G.player) resolvePlayerTrigger(c, side, trashDeployAct(c), 'Deploy', ()=>{ onUnitDeployed(c, side, ()=>render()); });
+      else { runTrigger(c, side, trashDeployAct(c), 'Deploy'); onUnitDeployed(c, side, null, true); }
       });
     };
     if (!cands.length) log(`<b>${u.name}</b>: nothing eligible in the trash.`, cls);
@@ -10877,6 +10881,9 @@ function triggerBurst(card, side, done, allowChoice){
         doShieldToHand(card, side, da, 'Deploy'); deployTokensInteractive(card, side, da.then, 'Deploy', ()=>{ render(); finish(); }); return; }
       // Saint Gabriel Institute (you choose which card stays on top) / Kudelia & Isaribi ("Then, you may choose … Rest them.").
       if (side===G.player && da && da.kind==='shieldToHand' && ((da.scryN===2 && !da.then) || (da.then && da.then.kind==='restBoth'))){ resolvePlayerTrigger(card, side, da, 'Deploy', ()=>{ render(); finish(); }); return; }
+      // "Add 1 of your Shields to your hand. Then, choose 1 of your Units / 1 enemy Unit …" (Valiant, Freeden Ⅱ, Rewloola, Kusanagi…):
+      // the player chooses the "Then" part's Unit from a modal chooser (board taps are off on the opponent's turn).
+      if (side===G.player && da && da.kind==='shieldToHand' && da.then){ doShieldToHand(card, side, da, 'Deploy'); resolveModal(card, side, da.then, 'Deploy', ()=>{ render(); finish(); }); return; }
       runTrigger(card, side, da, 'Deploy'); finish(); };
     if (card.type==='base'){ sendToTrash(side.base, side); side.base=card; card.rested=false; card.sick=false; log(`Burst! ${who(side)} deploys base <b>${card.name}</b>.`, sideCls); burstDeploy(); return; }
     // a full battle area makes room for the Burst-deployed Unit (11-4-2)
@@ -10913,6 +10920,8 @@ function burstResolvePlayer(card, side, act, done){
   const foe = side===G.player?G.enemy:G.player;
   // A modal Command activated by its 【Burst】: the player picks the mode.
   if (act && act.kind==='modal' && side===G.player){ chooseCommandMode(card, side, m=>{ if (!m){ done(); return; } resolveChosenMode(card, side, m, 'Burst', done); }, true, act); return; }
+  // "Choose 1 … card from your trash. Add it to your hand." (Reformationist, A New Sign, AGE Device): the player picks which card.
+  if (act && act.kind==='trashRetrieve' && side===G.player){ playerTrashRetrieve(card, side, act, 'Burst', ()=>{ render(); done(); }); return; }
   const enemyKinds = (act.kind==='damage' && act.scope!=='all-enemy' && act.scope!=='all-both') || ['rest','destroy','bounce','debuff','stun'].includes(act.kind);
   if (enemyKinds){
     const cands = enemyTargets(foe, act);
@@ -11944,7 +11953,7 @@ function breachShield(atk, defSide){
   const sh=defSide.shields.pop(); defSide.breakingShield=true; fx('shield');
   log(`<b>${atk.name}</b> &lt;Breach&gt; destroys a ${who(defSide)} shield! (${defSide.shields.length} left)`, side);
   enemyCardDestroyed(atk, atkSide, 'shield');
-  triggerBurst(sh, defSide);
+  triggerBurst(sh, defSide, null, true);   // the player's Burst choices open modal choosers here too
 }
 
 // ---- Blocker decision helpers (AI as defender) ----
