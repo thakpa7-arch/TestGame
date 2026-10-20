@@ -3707,7 +3707,14 @@ function parseBurst(effect){
 }
 // "When this Unit destroys an enemy shield area card with battle damage, ... deal N damage to it."
 // A Unit-attached trigger that fires after its battle damage breaks an enemy shield (its own turn only).
+// "…with damage" (Dragon Gundam, Heero Yuy) also counts effect damage — <Breach>, shield-area damage effects (Q361) — and is marked
+// anyDamage; "…with battle damage" (Sinanju, Wing Gundam Zero (EW), Gaia Gundam…) stays battle-only.
 function parseShieldBreak(effect){
+  const r = parseShieldBreakText(effect);
+  if (r && /when this unit destroys an enemy shield area card with damage/i.test(plain(effect))) r.anyDamage = true;
+  return r;
+}
+function parseShieldBreakText(effect){
   const t = plain(effect).toLowerCase();
   if (!/destroys?\s+(?:an?\s+)?enemy['s ]*\s*shield area card/.test(t)) return null;
   // "When damage from one of your Units paired with a (T) Pilot destroys an enemy shield area card, …" (Psycho Gundam (GQ)) is a
@@ -5319,7 +5326,7 @@ function gd06SelfDuel(card, side, act, label, after){
     const ca=effAp(card), ta=effAp(pick), pHp0=pick.hp, cHp0=card.hp;
     const hitT=()=>{ if (foe.field.includes(pick) && !preventsWeakBattleDamage(pick, card, foe)) damage(redirectOf(pick, foe), ca, foe, 'battle'); };
     const hitC=()=>{ if (side.field.includes(card) && !preventsWeakBattleDamage(card, pick, side)) damage(redirectOf(card, side), ta, side, 'battle'); };
-    if (effFirstStrike(card)){ hitT(); if (pick.hp>0) hitC(); } else { hitT(); hitC(); }
+    if (atkFirstStrike(card, pick)){ hitT(); if (pick.hp>0) hitC(); } else { hitT(); hitC(); }   // Carta's Graze Ritter hands it <First Strike> (Q500)
     if (pick.hp<=0){
       if (effBreach(card)>0) breachShield(card, foe);
       battleKillPayoffs(card, side, pick);
@@ -5504,8 +5511,11 @@ function gd05NuBattleResolve(side, card, pick, chosen){
   // A battle (5-22-3), so battle-damage payoffs apply as in gd06SelfDuel: its own <Breach 5> (during your turn) and
   // "when this Unit destroys an enemy Unit with battle damage" (Amuro Ray recovers 2 HP).
   const prevB=G.curBattle, prevA=G.curAttack; G.curBattle={ atk:card, def:pick };
+  // Nu Gundam is the attacking Unit (5-22-3): with <First Strike> — its own or one Carta's Graze Ritter hands it (Q346, 13-1-5-4) —
+  // it deals its damage first and a target it destroys deals none back; otherwise both deal damage at once.
+  const fs=atkFirstStrike(card, pick);
   damage(pick, ca, foe, 'battle', card);
-  if (card.hp>0) damage(card, ta, side, 'battle', pick);
+  if (card.hp>0 && !(fs && (pick.hp<=0 || !foe.field.includes(pick)))) damage(card, ta, side, 'battle', pick);
   if (pick.hp<=0){
     if (effBreach(card)>0 && G.turn===side.who) breachShield(card, foe);
     battleKillPayoffs(card, side, pick);
@@ -7401,7 +7411,7 @@ function mutualDuel(card, side, label, after){
     const aa=effAp(a), da=effAp(d);
     const hitD=()=>{ if (foe.field.includes(d) && !preventsWeakBattleDamage(d, a, foe) && !preventsLowApBattle(d, a, foe)) damage(redirectOf(d, foe), aa, foe, 'battle', a); };
     const hitA=()=>{ if (side.field.includes(a) && !preventsWeakBattleDamage(a, d, side) && !preventsLowApBattle(a, d, side)) damage(redirectOf(a, side), da, side, 'battle', d); };
-    if (effFirstStrike(a)){ hitD(); if (d.hp>0) hitA(); } else { hitD(); hitA(); }
+    if (atkFirstStrike(a, d)){ hitD(); if (d.hp>0) hitA(); } else { hitD(); hitA(); }   // Carta's Graze Ritter hands it <First Strike> (Q447)
     if (d.hp<=0){ if (effBreach(a)>0) breachShield(a, foe); battleKillPayoffs(a, side, d); }
     grantedKillHook(a, side, d); grantedKillHook(d, foe, a);
     clearBattleScoped(); render(); checkEnd(); fin();
@@ -7410,7 +7420,7 @@ function mutualDuel(card, side, label, after){
   // else its least valuable Unit.
   const respond=(s, vs)=>{
     const c=units(s); const score=x=>{
-      const kills = effAp(x)>=vs.hp && !(effFirstStrike(vs) && effAp(vs)>=x.hp);
+      const kills = effAp(x)>=vs.hp && !(atkFirstStrike(vs, x) && effAp(vs)>=x.hp);
       const lives = effAp(vs)<x.hp;
       return (kills&&lives?3:lives?2:kills?1:0);
     };
@@ -8934,6 +8944,10 @@ function whileKwAmount(u, kw){
   return best;
 }
 function effFirstStrike(u){ return !!(u && (u.firstStrike || u.battleFirst || condKeyword(u,'first'))); }
+// <First Strike> for the attacking Unit `atk` battling `def`: its own, or the one the Unit it battles hands it ("During your opponent's
+// turn, the enemy Unit battling this Unit gains <First Strike>" — Carta's Graze Ritter). A damage-step-only battle begun by an effect
+// uses it too (13-1-5-4; Q346, Q447, Q455, Q500) — only the attacking Unit's First Strike counts (13-1-5-1).
+function atkFirstStrike(atk, def){ return !!(effFirstStrike(atk) || (def && def.foeFirstStrike && G.turn!==def.owner)); }
 function effHighManeuver(u){ return !!(u && (u.highManeuver || u.battleHigh || condKeyword(u,'high'))); }
 // Effective <Repair N>: a gained copy adds its amount to the printed one (13-1-1-2).
 function effRepair(u){
@@ -10081,8 +10095,8 @@ function activateReady(u){
   // deploy (Neo Core Fighter), nothing rested to set active (SUMO Gold Type).
   if (act && act.kind==='deployFromHandLv' && !side.hand.some(c=>c.type==='unit' && matchTrashTrait(c, act.trait) && (act.minLv==null || (c.lv||0)>=act.minLv))) return false;
   // "During this battle, battle damage this Unit would receive is dealt to … instead" (Qubeley Mk-II) only
-  // means something while this Unit is battling — outside a battle it would just burn the once-per-turn.
-  if (act && act.kind==='redirectBattle' && !(G.curBattle && (G.curBattle.atk===u || G.curBattle.def===u))) return false;
+  // means something during a battle its side is in — outside one it would just burn the once-per-turn (see redirectBattleUsable).
+  if (act && act.kind==='redirectBattle' && !redirectBattleUsable(u)) return false;
   // "Choose 1 enemy Base/enemy Shield this Unit is battling" (Moebius) — only while it is attacking the enemy player.
   if (act && act.kind==='baseShieldDamage' && !(G.curAttack===u && !G.curBattle)) return false;
   // "… during this battle" (Gundam Aerial (Mirasoul Flight Unit)'s AP-1, AGE-2 Double Bullet's AP+4) only means something in a battle.
@@ -10435,11 +10449,25 @@ function applyActivateEffect(u, target, side, costUnit){
     const foeU = target || rankTarget(enemyTargets(foe,{kind:'damage'}), {kind:'damage'});
     if (!tok || !foeU){ log(`<b>${u.name}</b>: no Unit token or no enemy Unit to duel.`, cls); }
     else {
-      log(`<b>${u.name}</b>: <b>${tok.name}</b> and <b>${foeU.name}</b> trade damage.`, cls);
-      const ta=effAp(tok), fa=effAp(foeU);
-      // This IS a battle (just the damage step), so battle-damage prevention applies to both sides.
-      if (side.field.includes(tok) && !preventsWeakBattleDamage(foeU, tok, foe)) damage(foeU, ta, foe, 'battle', tok);
-      if ((foe.field.includes(foeU) || fa>0) && !preventsWeakBattleDamage(tok, foeU, side)) damage(tok, fa, side, 'battle', foeU);
+      // This IS a battle (just the damage step; the token, chosen first, is the attacking Unit — 5-22-4): battle-damage prevention
+      // applies to both sides, <First Strike> applies (13-1-5-4 — its own or the one Carta's Graze Ritter hands it, Q455), and a kill
+      // is "destroys an enemy Unit with battle damage" (Q456). 【Attack】 / "when … attacks" don't trigger.
+      const fs=atkFirstStrike(tok, foeU);
+      log(`<b>${u.name}</b>: <b>${tok.name}</b> and <b>${foeU.name}</b> battle — damage step only${fs?' — &lt;First Strike&gt;':''}.`, cls);
+      G.curBattle={ atk:tok, def:foeU };
+      const ta=effAp(tok), fa=effAp(foeU), tHp0=tok.hp, fHp0=foeU.hp;
+      const hitF=()=>{ if (side.field.includes(tok) && foe.field.includes(foeU) && !preventsWeakBattleDamage(foeU, tok, foe) && !preventsLowApBattle(foeU, tok, foe)) damage(redirectOf(foeU, foe), ta, foe, 'battle', tok); };
+      const hitT=()=>{ if (side.field.includes(tok) && !preventsWeakBattleDamage(tok, foeU, side) && !preventsLowApBattle(tok, foeU, side)) damage(redirectOf(tok, side), fa, side, 'battle', foeU); };
+      if (fs){ hitF(); if (foeU.hp>0 && foe.field.includes(foeU)) hitT(); } else { hitF(); hitT(); }
+      if (foeU.hp<=0) killReadyHook(side, tok);
+      if (tok.hp<=0) killReadyHook(foe, foeU);
+      if (foeU.hp<=0){
+        if (effBreach(tok)>0 && G.turn===side.who) breachShield(tok, foe);
+        battleKillPayoffs(tok, side, foeU);
+      }
+      grantedKillHook(tok, side, foeU); grantedKillHook(foeU, foe, tok);
+      battleSlayHook(tok, side, foeU, foe, fHp0); battleSlayHook(foeU, foe, tok, side, tHp0);
+      clearBattleScoped();
     }
   } else if (a.kind==='gd05AxisDeploy'){
     gd05AxisDeploy(side, u);                              // Axis: player chooses the (Neo Zeon) Unit to deploy; AI auto-picks
@@ -10879,17 +10907,21 @@ function strikePlayer(atk, defSide, done){
 // "When this Unit destroys an enemy shield area card with battle damage, deal N to a chosen enemy Unit."
 // Fires only on the attacker's own turn. `defSide` is the side whose shield broke — the damage
 // targets a Unit on that same side (the attacker's enemy). e.g. Sinanju.
-function resolveShieldBreakTrigger(atk, defSide, done){
+// `byEffect`: the shield area card was destroyed with effect damage (<Breach>, a shield-area damage effect) — only the "…with damage"
+// triggers apply (Dragon Gundam, Heero Yuy — Q361), and the player chooses through a modal (it can come mid-battle).
+function resolveShieldBreakTrigger(atk, defSide, done, byEffect){
   G.effSrc = atk;   // the card whose effect is resolving — effect damage reads it (damage-prevention statics)
   done = done || function(){};
   const atkSide = defSide===G.player ? G.enemy : G.player;
   // The Unit's own trigger and the one its paired Pilot gives it (McGillis Fareed, Heero Yuy) — each resolves.
   const list=[]; if (atk && atk.onShieldBreak) list.push({ src:atk, sb:atk.onShieldBreak }); if (atk && atk.pilotCard && atk.pilotCard.onShieldBreak) list.push({ src:atk.pilotCard, sb:atk.pilotCard.onShieldBreak });
-  (function next(i){ if (i>=list.length){ done(); return; } shieldBreakOne(atk, atkSide, defSide, list[i].src, list[i].sb, ()=>next(i+1)); })(0);
+  if (byEffect) for (let i=list.length-1;i>=0;i--) if (!list[i].sb.anyDamage) list.splice(i,1);
+  (function next(i){ if (i>=list.length){ done(); return; } shieldBreakOne(atk, atkSide, defSide, list[i].src, list[i].sb, ()=>next(i+1), byEffect); })(0);
 }
-function shieldBreakOne(atk, atkSide, defSide, src, sb, done){
+function shieldBreakOne(atk, atkSide, defSide, src, sb, done, byEffect){
   G.effSrc = atk;
-  if (!sb || atkSide.who !== G.turn){ done(); return; }
+  if (!sb || (atkSide.who !== G.turn && !sb.anyDamage)){ done(); return; }   // battle damage to shields only comes on the attacker's turn
+  if (byEffect && (!atkSide.field.includes(atk) || atk.hp<=0)){ done(); return; }
   const slot = src===atk ? 'shieldBreakTurn' : 'shieldBreakTurnP';                   // a Pilot's trigger keeps its own 【Once per Turn】 marker
   if (sb.requirePair && !duringPairMet(atk)){ done(); return; }                     // 【During Pair】 gate
   if (sb.requireLink && !atk.linked){ done(); return; }                             // 【During Link】 gate (McGillis Fareed)
@@ -10921,6 +10953,11 @@ function shieldBreakOne(atk, atkSide, defSide, src, sb, done){
   if (sb.oncePerTurn) atk[slot]=G.turnSeq;
   flashCard(atk, (atkSide===G.player?'YOUR':'ENEMY')+' EFFECT');
   if (atkSide===G.player){
+    if (cands.length>=2 && (byEffect || G.turn!==atkSide.who)){   // mid-battle / opponent's turn: choose through a modal (it queues behind a Burst)
+      promptTargetChoice(cands, `<b>${atk.name}</b>: it destroyed an enemy shield area card — choose 1 enemy Unit to ${sb.kind==='rest'?'rest':sb.kind==='debuff'?'give AP-'+sb.amount:'deal '+sb.amount+' damage to'}.`,
+        t=>{ const c=t && enemyTargets(defSide, act).includes(t) ? t : null; if (c) applyToTarget(atk, G.player, act, c, atk.name); render(); done(); }, null);
+      return;
+    }
     if (cands.length>=2){          // player's own turn → tap an enemy Unit to target
       G.mode='trigger-target';
       G.pending={ card:atk, side:G.player, act, label:atk.name, after:done, scope:'enemy', cands:cands.map(c=>c.uid) };
@@ -11672,11 +11709,24 @@ function clearBattleScoped(){
 }
 // Where battle damage to `u` actually lands this battle: a friendly Unit/Base it was redirected to
 // (Qubeley Mk-II's 【Activate･Action】), if that card is still in play — else `u` itself.
+// Redirects chain, each card's applying at most once (Q494: A to B and B to A — A receives it).
 function redirectOf(u, side){
-  const rt=u && u.redirectTurn && u.redirectTurn.turnSeq===G.turnSeq ? u.redirectTurn.to : null;   // Lunamaria Hawke (this turn)
-  const r=u && (u.redirectTo || rt);
-  if (r && r!==u && r.hp>0 && (side.field.includes(r) || side.base===r)){ log(`<b>${u.name}</b>'s battle damage is dealt to <b>${r.name}</b> instead.`, side===G.player?'me':'ai'); return r; }
-  return u;
+  const used=new Set(); let cur=u;
+  while (cur && !used.has(cur)){
+    used.add(cur);
+    const rt=cur.redirectTurn && cur.redirectTurn.turnSeq===G.turnSeq ? cur.redirectTurn.to : null;   // Lunamaria Hawke (this turn)
+    const r=cur.redirectTo || rt;
+    if (!(r && r!==cur && r.hp>0 && (side.field.includes(r) || side.base===r))) break;
+    log(`<b>${cur.name}</b>'s battle damage is dealt to <b>${r.name}</b> instead.`, side===G.player?'me':'ai');
+    cur=r;
+  }
+  return cur||u;
+}
+// "During this battle, battle damage this Unit would receive is dealt to … instead" (Qubeley Mk-Ⅱ) can be used while a battle a
+// card of its side is in goes on — by a Unit that isn't battling too, as damage redirected to it would reach it (Q494).
+function redirectBattleUsable(u){
+  const b=G.curBattle; if (!b || !u) return false;
+  return [b.atk, b.def].some(x=>x && x.owner===u.owner);
 }
 // Is the card producing effect damage an enemy of `u`? Its owner decides; with no source on record, the
 // caller's kind does ('self' is your own effect).
@@ -11702,9 +11752,15 @@ function effectDamagePrevented(u, side, src, kind, dmg){
       const w=g.restedEffGuard; if (!w || !g.rested || g.hp<=0) continue;
       if ((u.trait||'').toLowerCase().includes('('+w.trait+')') && u.hp<=w.maxHp) return stop(g.name);
     }
-    for (const g of [...side.field, side.base].filter(Boolean)){ const w=g.smallEffGuard;   // Archangel GD05-123
-      if (w && g.hp>0 && u.type==='unit' && hasTraitT(u, w.trait) && dmg!=null && dmg<=w.max) return stop(`${g.name}: ${dmg} or less`); }
   }
+  return false;
+}
+// Archangel GD05-123: "During your opponent's turn, friendly (Orb) Units can't receive 2 or less enemy effect damage." Read on the
+// amount left after every reduction (Q416: 3 damage reduced to 2 or less isn't received), so damage() checks it after them.
+function smallEffDamagePrevented(u, side, src, kind, dmg){
+  if (!u || !side || u.type!=='unit' || G.turn===side.who || !effSrcIsEnemy(src, u, kind)) return false;
+  for (const g of [...side.field, side.base].filter(Boolean)){ const w=g.smallEffGuard;
+    if (w && g.hp>0 && hasTraitT(u, w.trait) && dmg<=w.max){ log(`<b>${u.name}</b> can't receive that effect damage (${g.name}: ${w.max} or less).`, side===G.player?'me':'ai'); return true; } }
   return false;
 }
 // Can `side`'s Base take this damage at all? Argama GD02-129 (no enemy effect damage), A Baoa Qu / Ptolemaios (no damage from
@@ -12042,7 +12098,8 @@ function shieldAreaDamage(src, srcSide, defSide, amount, label, done){
     b.hp-=amt; floatNum(b.uid,'-'+amt,'#ff6b5e'); G.effSrc=src;
     log(`${label||src.name}: deals ${amt} damage to ${ws} <b>${b.name}</b> (the first card in the shield area).`, cls);
     if (b.hp<=0){ defSide.base=null; fx('die', b.uid); sendToTrash(b, defSide); log(`${ws[0].toUpperCase()+ws.slice(1)} <b>${b.name}</b> is destroyed.`, cls);
-      if (!b.token) whenModalFree(()=>fireDestroyed(b, defSide)); if (onField) enemyCardDestroyed(src, srcSide, 'base'); }
+      if (!b.token) whenModalFree(()=>fireDestroyed(b, defSide)); if (onField) enemyCardDestroyed(src, srcSide, 'base');
+      if (onField){ resolveShieldBreakTrigger(src, defSide, fin, true); return; } }   // "…destroys an enemy shield area card with damage" (Q361)
     else fx('hit', b.uid);
     fin(); return;
   }
@@ -12050,7 +12107,7 @@ function shieldAreaDamage(src, srcSide, defSide, amount, label, done){
   const sh=defSide.shields.pop(); defSide.breakingShield=true; fx('shield');
   log(`${label||src.name}: deals ${amt} damage to ${ws} first Shield — it is destroyed (${defSide.shields.length} left).`, cls);
   if (onField) enemyCardDestroyed(src, srcSide, 'shield');
-  triggerBurst(sh, defSide, fin, true);
+  triggerBurst(sh, defSide, onField ? ()=>resolveShieldBreakTrigger(src, defSide, fin, true) : fin, true);
 }
 // <Breach N>: deal the breach damage to the FIRST card in the enemy shield area. A standing Base
 // sits in front of the shields, so it takes the hit first; otherwise the top Shield breaks (Burst may fire).
@@ -12064,7 +12121,8 @@ function breachShield(atk, defSide){
   if (defSide.base){
     const b=defSide.base; b.hp-=amt; floatNum(b.uid,'-'+amt,'#ff6b5e');
     log(`<b>${atk.name}</b> &lt;Breach ${amt}&gt; hits ${who(defSide)}'s <b>${b.name}</b> base for ${amt}.`, side);
-    if (b.hp<=0){ defSide.base=null; fx('die', b.uid); sendToTrash(b, defSide); log(`${who(defSide)}'s ${b.name} base is destroyed by Breach.`, side); if (!b.token) whenModalFree(()=>fireDestroyed(b, defSide)); enemyCardDestroyed(atk, atkSide, 'base'); }
+    if (b.hp<=0){ defSide.base=null; fx('die', b.uid); sendToTrash(b, defSide); log(`${who(defSide)}'s ${b.name} base is destroyed by Breach.`, side); if (!b.token) whenModalFree(()=>fireDestroyed(b, defSide)); enemyCardDestroyed(atk, atkSide, 'base');
+      resolveShieldBreakTrigger(atk, defSide, null, true); }   // "when this Unit destroys an enemy shield area card with damage" (Dragon Gundam, Q361)
     else fx('hit', b.uid);
     return;
   }
@@ -12072,7 +12130,7 @@ function breachShield(atk, defSide){
   const sh=defSide.shields.pop(); defSide.breakingShield=true; fx('shield');
   log(`<b>${atk.name}</b> &lt;Breach&gt; destroys a ${who(defSide)} shield! (${defSide.shields.length} left)`, side);
   enemyCardDestroyed(atk, atkSide, 'shield');
-  triggerBurst(sh, defSide, null, true);   // the player's Burst choices open modal choosers here too
+  triggerBurst(sh, defSide, ()=>resolveShieldBreakTrigger(atk, defSide, null, true), true);   // the player's Burst choices open modal choosers here too; then Dragon Gundam (Q361)
 }
 
 // ---- Blocker decision helpers (AI as defender) ----
@@ -12211,6 +12269,7 @@ function damage(u, dmg, side, kind, dealer){
     log(`<b>${u.name}</b> reduces the damage by ${u.onceDmgReduce} (once per turn).`, side===G.player?'me':'ai');
   }
   if (dmg<=0) return;   // ignore hits on an already-destroyed Unit / fully-reduced damage
+  if (kind!=='battle' && smallEffDamagePrevented(u, side, G.effSrc||null, kind, dmg)) return;   // Archangel, on the reduced amount (Q416)
   u.hp-=dmg;
   floatNum(u.uid, '-'+dmg, '#ff6b5e');
   allyDmgExHook(u, side, kind, dealer);
@@ -13241,7 +13300,7 @@ function collectPlayerActions(attacker){
     const ok = (u.activate && u.activate.phase==='action' && (!u.activate.oncePerTurn || !u.activatedThisTurn) && u.hp>0
         && (!u.activate.requireLink || u.linked) && (!u.activate.requirePair || duringPairMet(u))
         && (u.activate.action.kind!=='cond' || condMet(u.activate.action.cond, G.player, u, u.activate.action.other))
-        && (u.activate.action.kind!=='redirectBattle' || (G.curBattle && (G.curBattle.atk===u || G.curBattle.def===u) && autoActivateTarget(u, attacker)))
+        && (u.activate.action.kind!=='redirectBattle' || (redirectBattleUsable(u) && autoActivateTarget(u, attacker)))
         && (!['enemy','friendly'].includes(((u.activate.action.kind==='cond'?u.activate.action.inner:u.activate.action)||{}).scope) || autoActivateTarget(u, attacker))   // a Unit it may choose exists
         && activateCostPayable(u, G.player) && activateReady(u));   // the full readiness check (timing, battle-only effects, Moebius…)
     if (slot===1) swapActivate(u);
