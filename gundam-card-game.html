@@ -4782,7 +4782,8 @@ function enemyTargets(foe, act){
   if (f.lowestHp){ const hps=foe.field.filter(u=>u.hp>0).map(u=>u.hp); if (hps.length){ const lo=Math.min(...hps); list=list.filter(u=>u.hp===lo); } }
   if (act.kind==='bouncePilot') list=list.filter(u=>!!u.pilotCard);   // "choose 1 enemy Pilot" — a Unit's paired Pilot
   // Tokens ARE valid targets for destroy/bounce (a bounced token just ceases to exist).
-  if (act.kind==='rest') list=list.filter(u=>!u.rested);
+  // "Choose 1 enemy Unit … Rest it." may choose an already-rested Unit (Q466, Q529, Q554): resting it does nothing, but a rider
+  // on the same Unit (G-Falcon DX's / Heavyarms Custom (EW)'s AP-2) still applies. The AI prefers active ones (rankTarget).
   // "enemy Unit/Base" (Gundam DX): the enemy Base (an EX Base too) is a legal target when it meets the Lv. restriction.
   { const b=foe.base; if (f.orBase && act.kind==='destroy' && b && b.hp>0 && (capLv==null || (b.lv||0)<=capLv) && (f.minLv==null || (b.lv||0)>=f.minLv)) list=[...list, b]; }
   return list;
@@ -4867,6 +4868,7 @@ function rankTarget(cands, act){
     const pool=kills.length?kills:arr;
     return pool.sort((a,b)=>aiThreatScore(b)-aiThreatScore(a))[0];
   }
+  if (act.kind==='rest') return arr.sort((a,b)=>(a.rested?1:0)-(b.rested?1:0) || effAp(b)-effAp(a))[0];   // an active one first
   return arr.sort((a,b)=>effAp(b)-effAp(a))[0];   // rest / bounce / debuff / buff
 }
 // The damage a single-target hit deals to `u`: "If it has <Repair>, deal 3 damage instead." (Rozen Zulu).
@@ -4892,7 +4894,7 @@ function applyToTarget(card, side, act, target, label){
     // "Deal 2 damage to it and this Unit." (Gundam Leopard Destroy) — the source Unit takes the same hit.
     if (act.alsoSelf && card.type==='unit' && side.field.includes(card) && card.hp>0){ log(`${label}: <b>${name}</b> deals ${act.amount} to itself.`,cls); damage(card, act.amount, side, 'self'); }
     if (act.drawOnKill && target.hp<=0){ for(let i=0;i<act.drawOnKill;i++) draw(side); log(`${label}: <b>${name}</b> — draw ${act.drawOnKill} (this effect destroyed an enemy Unit).`,cls); } }
-  else if (act.kind==='rest'){ if (effectRest(target, foe)) log(`${label}: <b>${name}</b> rests <b>${target.name}</b>.`,cls); }
+  else if (act.kind==='rest'){ const was=target.rested; if (effectRest(target, foe)) log(was ? `${label}: <b>${target.name}</b> is already rested.` : `${label}: <b>${name}</b> rests <b>${target.name}</b>.`,cls); }
   else if (act.kind==='bounce'){ const i=foe.field.indexOf(target); if(i>=0)foe.field.splice(i,1); returnToHand(target,foe); log(`${label}: <b>${name}</b> returns <b>${target.name}</b> to hand.`,cls); }
   else if (act.kind==='bounceDeck'){
     const i=foe.field.indexOf(target); if(i>=0) foe.field.splice(i,1);
@@ -6132,6 +6134,7 @@ function aiEffectUseful(card, side, a){
   if (card && !a.source) a.source = card;
   if (a.kind==='cond') return condMet(a.cond, side, card, a.other) && aiEffectUseful(card, side, a.inner);
   if (a.kind==='seq') return a.acts.some(x=>aiEffectUseful(card, side, x));
+  if (a.kind==='rest' && !a.sameRider && !a.thenTarget) return enemyTargets(foe, a).some(u=>!u.rested);   // resting a rested Unit does nothing
   if (enemyPickKind(a) || ['restMulti','damageMulti','destroyMulti','bounceMulti'].includes(a.kind)) return enemyTargets(foe, a).length>0;
   if (a.kind==='heal') return side.field.some(u=>u.hp>0 && u.hp<effMaxHp(u) && (!a.filter || friendlyTargets(side, a).includes(u)));
   if (['buff','grantKw','grantReduce','buffMulti'].includes(a.kind)) return friendlyTargets(side, a).length>0;
@@ -6162,7 +6165,7 @@ function aiModeScore(card, side, a){
   switch (a.kind){
     case 'destroy': case 'bounce': case 'bounceDeck': return best(enemyTargets(foe, a), u=>keepVal(u)) + (a.kind==='destroy'?2:0);
     case 'damage': return best(enemyTargets(foe, a), u=> u.hp<=a.amount ? keepVal(u)+2 : Math.min(a.amount, u.hp)*0.8);
-    case 'rest': case 'stun': return best(enemyTargets(foe, a), u=>effAp(u)*0.8);
+    case 'rest': case 'stun': return best(enemyTargets(foe, a), u=>(a.kind==='rest' && u.rested) ? 0 : effAp(u)*0.8);
     case 'restMulti': return enemyTargets(foe, a).map(u=>effAp(u)*0.8).sort((x,y)=>y-x).slice(0, a.count).reduce((s,x)=>s+x, 0);
     case 'debuff': return best(enemyTargets(foe, a), u=>Math.min(a.amount, effAp(u))*0.9);
     case 'heal': return best(side.field, u=>Math.min(a.amount>=99?99:a.amount, effMaxHp(u)-u.hp));
@@ -8944,7 +8947,15 @@ function condKeyword(u, kw){
     m = p.match(new RegExp('(【\\s*during link\\s*】\\s*)?(during your turn,\\s*)?while this unit is battling an enemy unit with an?\\s*【\\s*([^】]+?)\\s*】\\s*effect,\\s*(?:it|this unit) gains?\\s*<\\s*'+kw,'i'));
     if (m && (!m[1] || u.linked) && (!m[2] || G.turn===side.who) && G.curBattle){
       const b=G.curBattle, opp = b.atk===u ? b.def : b.def===u ? b.atk : null;
-      const has=(x)=>!!x && new RegExp('【\\s*'+m[3].replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\s*】','i').test(plain(x.effect||'').replace(/\b(with an?|has an?|have an?)\s*【[^】]*】\s*effects?/gi,''));
+      // Only a clause that is active counts (Q222): one gated 【During Pair(･X Pilot)】 needs the enemy Unit paired (with
+      // such a Pilot), one gated 【During Link】 needs it linked.
+      const gateOk=(pre)=>(pre.match(/【[^】]*】/g)||[]).every(g=>
+        /during link/i.test(g) ? !!opp.linked : /during pair/i.test(g) ? !!(opp.pilot && opp.pilotCard && (!pilotReqOf(g) || pilotMeetsReq(opp.pilotCard, pilotReqOf(g)))) : true);
+      const has=(x)=>{ if (!x) return false;
+        const re=new RegExp('((?:【[^】]*】\\s*)*?)【\\s*'+m[3].replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\s*】','gi');
+        const t=plain(x.effect||'').replace(/\b(with an?|has an?|have an?)\s*【[^】]*】\s*effects?/gi,''); let r;
+        while ((r=re.exec(t))) if (gateOk(r[1])) return true;
+        return false; };
       if (opp && opp.type==='unit' && foe.field.includes(opp) && (has(opp) || has(opp.pilotCard))) return true;
     }
   }
@@ -10028,7 +10039,7 @@ function activateCostPayable(u, side){
   if (c.type==='discard') return side.hand.filter(x=>matchTrashTrait(x, c.trait)).length >= (c.count||1);
   if (c.type==='none') return true;                       // no framework cost (e.g. cost is a self-sacrifice)
   if (c.type==='rest') return !u.rested;                  // a rest cost needs an active card
-  if (c.type==='restUnit') return side.field.filter(x=>!x.rested && (!c.excludeSelf || x!==u) && matchTrashTrait(x, c.trait)).length + (restSubstituteOk(u, side)?1:0) >= (c.count||1); // enough friendly Units to rest (tokens count)
+  if (c.type==='restUnit') return side.field.filter(x=>!x.rested && (!c.excludeSelf || x!==u) && matchTrashTrait(x, c.trait)).length >= (c.count||1); // enough friendly Units to rest (tokens count); White Ark only stands in for one that exists (Q417)
   if (c.type==='destroyToken') return side.field.filter(x=>x.token && x.hp>0).length >= c.count;
   if (c.type==='destroyUnits') return destroyCostCands(u, side, c).length >= c.count;
   if (c.type==='exile' && c.parts) return !!exilePartsPick(side.trash, c.parts);   // "1 (A) card and 1 (B) card" — different cards
@@ -10203,9 +10214,10 @@ function startActivate(u, discardPicked){
   if (cost.type==='restUnit'){
     const need = cost.count||1;
     const cc = restCostCands(u, G.player);
-    // White Ark: "you may rest this Base instead" — you choose (with too few Units to rest, the Base is the only way to pay).
+    // White Ark: "you may rest this Base instead" — you choose. It only replaces a Unit that could be rested: with too few
+    // Units the cost can't be paid at all (Q417).
     if (restSubstituteOk(u, G.player) && G.activateRestSub==null){
-      if (cc.length<need) G.activateRestSub=true;
+      if (cc.length<need) G.activateRestSub=false;
       else { const b=G.player.base; closeInspect();
         askOptional(`<b>${b.name}</b>: rest this Base instead of ${need>1?'one of the Units':'a Unit'} for <b>${u.name}</b>'s cost?`, `Rest ${b.name}`, `Rest ${need>1?'Units':'a Unit'}`,
           ()=>{ G.activateRestSub=true; startActivate(u); }, ()=>{ G.activateRestSub=false; startActivate(u); });
@@ -10313,11 +10325,10 @@ function applyActivateEffect(u, target, side, costUnit){
       const more=side.field.filter(x=>!x.rested && !picks.includes(x) && (!cost.excludeSelf || x!==u) && matchTrashTrait(x, cost.trait)).sort((x,y)=>x.ap-y.ap);
       for (const v of more){ if(picks.length>=need) break; picks.push(v); }
     }
-    // White Ark: the player's choice (G.activateRestSub, asked in startActivate); the AI always rests the Base instead. With too
-    // few Units to pay, the Base pays anyway.
-    const canSub=restSubstituteOk(u, side);
+    // White Ark: the player's choice (G.activateRestSub, asked in startActivate); the AI always rests the Base instead. It only
+    // stands in for a Unit that could be rested (Q417): with too few Units it can't pay.
+    const canSub=restSubstituteOk(u, side) && picks.length>=need;
     let useSub=canSub && (side!==G.player || G.activateRestSub!==false);
-    if (canSub && !useSub && picks.length<need) useSub=true;
     if (side===G.player) G.activateRestSub=null;
     if (useSub){ side.base.rested=true; log(`<b>${side.base.name}</b> is rested instead of a Unit.`, cls); }
     picks=picks.slice(0, need-(useSub?1:0));
@@ -12260,7 +12271,7 @@ function effReady(u, side){
 // Rest a Unit as the result of an EFFECT. Gundam Throne Drei shrugs the first one off each turn. `own`: the effect is
 // one of `side`'s own (Throne Eins, Human Karma, Gun EZ) — not an opponent's effect (Doritea).
 function effectRest(u, side, own){
-  if (u.unrestOnce && u.unrestTurn!==G.turnSeq && !readyDenied(side)){
+  if (u.unrestOnce && !u.rested && u.unrestTurn!==G.turnSeq && !readyDenied(side)){   // an already-rested Unit isn't "rested by" it
     u.unrestTurn = G.turnSeq;
     log(`<b>${u.name}</b> is set active again (once per turn).`, side===G.player?'me':'ai');
     u.rested=false; return false;
@@ -13043,8 +13054,8 @@ function playerResolvedCmd(a){
 function retargetCands(side, act, attacker){
   if (!attacker) return [];
   const f=(act && act.filter)||{};
-  const cur = G.curBattle && G.curBattle.atk===attacker ? G.curBattle.def : null;
-  return side.field.filter(u=>u.hp>0 && u.rested && u!==cur && !effUntargetable(u)
+  // The rested Unit already battling the attacker may be chosen too (Q545, Q549, Q553, Q555): the target simply stays it.
+  return side.field.filter(u=>u.hp>0 && u.rested && !effUntargetable(u)
     && (!f.traits || f.traits.some(tr=>(u.trait||'').toLowerCase().includes('('+tr+')'))));
 }
 // Point the attack at `u` (the damage step battles it instead of the original target).
@@ -13227,7 +13238,7 @@ function aiHeadOptions(c, h, ctx){
       else if (k==='bounce') mods=[{ u:t, removed:'bounce' }];
       else if (k==='debuff'){ if (aiApLocked(t) || h.perRestedEnemy || h.perTrashName || h.perFriendlyTrait) continue;
         mods=[{ u:t, ap:-((h.kwAlt && targetHasKw(t, h.kwAlt.kw)) ? h.kwAlt.amount : (h.amount||0)) }]; }
-      else if (k==='rest' || k==='stun') mods=[{ u:t, rest:true }];
+      else if (k==='rest' || k==='stun'){ if (k==='rest' && t.rested) continue; mods=[{ u:t, rest:true }]; }
       if (mods) out.push({ t, mods, extra:h.ifDoDraw ? h.ifDoDraw : 0 });
     }
     return out;
@@ -13428,6 +13439,16 @@ function collectPlayerActions(attacker){
             const fc=chooseUnitCands(G.player, c.action).sort((x,y)=>(mineF(y)-mineF(x)) || ((inBattle(y)?1:0)-(inBattle(x)?1:0)));
             if (fc.length>=2){ promptTargetChoice(fc, `<b>${c.name}</b>: choose 1 ${anyS?'Unit (yours are listed first)':'of your Units'}.`, t=>{ applyCommand(c, G.player, t); render(); if (afterCb) afterCb(); }); return; }
             applyCommand(c, G.player, fc[0]||null); if (afterCb) afterCb(); return;
+          }
+          // "Choose 1 of your Units. Deal 1 damage to it. It gets AP+3" (With Iron and Blood): the player chooses any of their
+          // Units (the one in this battle is listed first), through a modal since board taps are off on the opponent's turn.
+          if (['selfPingBuff','selfPingDraw'].includes(c.action.kind)){
+            const a=c.action, inBattle=u=>G.curBattle && (G.curBattle.atk===u || G.curBattle.def===u);
+            const fc=G.player.field.filter(u=>(!u.token || a.kind==='selfPingBuff') && u.hp>0).sort((x,y)=>(inBattle(y)?1:0)-(inBattle(x)?1:0));
+            const go=t=>applySelfPingChosen(c, G.player, a, t, null, ()=>{ render(); if (afterCb) afterCb(); });
+            if (!fc.length && a.kind==='selfPingBuff'){ log(`<b>${c.name}</b> — no Unit of yours to choose; no effect.`, 'me'); if (afterCb) afterCb(); return; }
+            if (fc.length>=2){ promptTargetChoice(fc, `<b>${c.name}</b>: choose 1 of your Units to take ${a.self} damage.`, t=>go(t && fc.includes(t) ? t : fc[0])); return; }
+            go(fc[0]||null); return;
           }
           applyCommand(c, G.player, autoCommandTarget(c, attacker));
           if (afterCb) afterCb();
