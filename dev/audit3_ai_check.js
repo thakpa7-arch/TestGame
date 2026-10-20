@@ -268,9 +268,11 @@ for (const [id, unitId, label] of [['ST06-012','ST06-005','Schoolgirl and Smuggl
 { fresh('player'); const mine=stick('enemy',2,2,{rested:true}); const atk=stick('player',1,1,{lv:4}); hand('enemy',['GD03-110']);
   playerAttacks(atk, mine); ok('Eliminate Target (action): held vs an unpaired attacker', held('GD03-110')); }
 // Unheralded Attack — rest an enemy Blocker (3 or less HP) that hasn't attacked yet
-{ fresh('player'); const atk=stick('player',1,1); const bl=stick('player',2,3,{blocker:true}); stick('enemy',3,3); hand('enemy',['GD03-121']);
+{ fresh('player'); G.enemy.base=A.exBaseToken('enemy'); const atk=stick('player',1,1); const bl=stick('player',2,3,{blocker:true}); stick('enemy',3,3); hand('enemy',['GD03-121']);
   playerAttacks(atk, null); ok('Unheralded Attack: rests the enemy Blocker still to act', played('GD03-121') && bl.rested); }
-{ fresh('player'); const atk=stick('player',1,1); stick('player',2,4,{blocker:true}); stick('enemy',3,3); hand('enemy',['GD03-121']);
+{ fresh('player'); const atk=stick('player',1,1); stick('player',2,3,{blocker:true}); stick('enemy',3,3); hand('enemy',['GD03-121']);
+  playerAttacks(atk, null); ok('Unheralded Attack: held with no friendly Base to rest (Q253: both must be choosable)', held('GD03-121')); }
+{ fresh('player'); G.enemy.base=A.exBaseToken('enemy'); const atk=stick('player',1,1); stick('player',2,4,{blocker:true}); stick('enemy',3,3); hand('enemy',['GD03-121']);
   playerAttacks(atk, null); ok('Unheralded Attack: held with no enemy Unit of 3 or less HP to rest', held('GD03-121')); }
 // Infinite Variations — AP-2 on the attacker (one white Blocker in play)
 { fresh('player'); stick('enemy',1,1,{color:'White',blocker:true}); const mine=stick('enemy',2,3,{rested:true}); const atk=stick('player',3,3); hand('enemy',['GD06-118']);
