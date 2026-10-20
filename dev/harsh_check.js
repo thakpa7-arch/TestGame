@@ -134,14 +134,16 @@ for (const id of ['GD06-039','GD06-044','GD06-045','GD06-046','GD06-035','GD06-0
   ok('Hyaku-Shiki: you choose which (Gundam Team) Unit gets AP+2', !!m && /choose 1 of your Units/.test(m.msg) && m.btns.length===2, m&&m.msg);
   press(/Core Base/); passAll(); ok('Hyaku-Shiki: the chosen Unit gets AP+2', A.effAp(cb)===5 && A.effAp(ct)===3); }
 
-// "【Activate･Main】②, return this Unit to the bottom of its owner's deck：…" (Impulse Gundam): the paired Pilot goes to the trash
-// instead of vanishing with the Unit (found by fuzz_ui with the P/W Impulse preset).
+// "【Activate･Main】②, return this Unit to the bottom of its owner's deck：…" (Impulse Gundam): the paired Pilot doesn't vanish
+// with the Unit (found by fuzz_ui with the P/W Impulse preset). It goes to the bottom of the deck with it (rule 3-3-6, Q339/Q427;
+// this used to send it to the trash).
 for (const who of ['player','enemy']){ fresh(who); const s=who==='player'?G.player:G.enemy;
   const imp=put('ST09-001', who); const kira=pair(imp, 'ST04-010');
   const lv4=A.GUNDAM_CARDS.find(c=>c.type==='unit' && /Impulse Gundam/.test(c.name) && c.lv>=4); s.trash=[card(lv4.id, who)];
   A.applyActivateEffect(imp, null, s); drainTasks(); for (let g=0; g<4 && modal(); g++) if (!press(new RegExp(lv4.name.replace(/[()]/g,'.')))) press(/./);
-  ok(`Impulse Gundam (${who}): returns to the bottom of the deck, its paired Pilot goes to the trash`,
-    s.deck[0]===imp && !s.field.includes(imp) && s.trash.includes(kira) && !imp.pilotCard, `deck0=${s.deck[0]&&s.deck[0].name} trash=${s.trash.map(c=>c.name)}`); }
+  const b2=s.deck.slice(0,2);
+  ok(`Impulse Gundam (${who}): returns to the bottom of the deck with its paired Pilot`,
+    b2.includes(imp) && b2.includes(kira) && !s.field.includes(imp) && !s.trash.includes(kira) && !imp.pilotCard, `bottom=${b2.map(c=>c.name)} trash=${s.trash.map(c=>c.name)}`); }
 
 // An open "choose 1 of your Units" whose listed Units leave play meanwhile (Mikazuki Augus 【When Paired】 while Qubeley's token
 // makes room by trashing one): the gone ones aren't offered, and with none left play carries on (found by pt_games).

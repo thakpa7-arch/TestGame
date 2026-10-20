@@ -4896,11 +4896,9 @@ function applyToTarget(card, side, act, target, label){
   else if (act.kind==='bounce'){ const i=foe.field.indexOf(target); if(i>=0)foe.field.splice(i,1); returnToHand(target,foe); log(`${label}: <b>${name}</b> returns <b>${target.name}</b> to hand.`,cls); }
   else if (act.kind==='bounceDeck'){
     const i=foe.field.indexOf(target); if(i>=0) foe.field.splice(i,1);
-    const pc=target.pilotCard;
-    if (!target.token){ resetUnit(target); foe.deck.unshift(target); }          // bottom of deck
-    if (pc) sendToTrash(pc, foe);                                               // a paired Pilot is left behind
     sound('bounce');
     log(`${label}: <b>${name}</b> returns <b>${target.name}</b> to the bottom of its owner's deck.`,cls);
+    unitToDeckBottom(target, foe, name);                                        // its paired Pilot goes with it (3-3-6)
   }
   else if (act.kind==='destroy' && target===foe.base){
     const b=target; foe.base=null; fx('die', b.uid); sendToTrash(b, foe); log(`${label}: <b>${name}</b> destroys ${who(foe)}'s <b>${b.name}</b> base.`, cls);
@@ -6286,6 +6284,9 @@ function trashToDeck(side, cards, card, label){
   log(`${label}: <b>${card.name}</b> returns ${cards.length} card${cards.length===1?'':'s'} from the trash to the deck and shuffles it.`, side===G.player?'me':'ai');
 }
 // A yes/no choice for an optional cost (waits behind any open choice).
+// Card text shown inside HTML: a keyword in angle brackets ("<First Strike>") would be read as a tag and vanish.
+// Only < and > are escaped, so text that already holds &lt; entities is unchanged.
+function escAngle(s){ return String(s).replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function askYesNo(msg, yesLabel, noLabel, onYes, onNo){
   whenModalFree(()=>{
     el('blockMsg').innerHTML=msg;
@@ -6577,8 +6578,7 @@ function runTrigger(card, side, act, label){
     if (act.noPriorResActive && side.resActiveTurn===G.turnSeq){
       log(`${label}: <b>${name}</b> — you already set a Resource active with an effect this turn.`, cls);
     } else {
-      const bump=(s)=>{ const before=s.resAvail; s.resAvail=Math.min(totalRes(s), s.resAvail+(act.amount||1));
-        if (s.resAvail>before) s.resActiveTurn=G.turnSeq; return s.resAvail-before; };
+      const bump=(s)=>{ const n=readyResources(s, act.amount||1); if (n) s.resActiveTurn=G.turnSeq; return n; };
       const mine=bump(side); if (act.both) bump(foe);
       log(`${label}: <b>${name}</b> sets ${mine} Resource${mine===1?'':'s'} active${act.both?' (both players)':''}.`, cls);
     }
@@ -6920,7 +6920,7 @@ function resolvePlayerTrigger(card, side, act, label, after){
     if (!can){ log(`${label}: <b>${card.name}</b> — ${res?`not enough active Resources to pay ${act.amount}`:'already rested'}.`, cls); then(); return; }
     if (!cmdModeLegal(act.inner, side)){ log(`${label}: <b>${card.name}</b> — no legal target, so nothing to pay for.`, cls); then(); return; }
     const cost = res ? `pay ${'①②③④⑤⑥⑦⑧⑨'[act.amount-1]||act.amount}` : 'rest this Unit';
-    askYesNo(`<b>${card.name}</b> 【${label}】: ${cost}? If you do: ${act.text||'its effect'}`, res ? `Pay ${'①②③④⑤⑥⑦⑧⑨'[act.amount-1]||act.amount}` : 'Rest it', "Don't",
+    askYesNo(`<b>${card.name}</b> 【${label}】: ${cost}? If you do: ${act.text ? escAngle(act.text) : 'its effect'}`, res ? `Pay ${'①②③④⑤⑥⑦⑧⑨'[act.amount-1]||act.amount}` : 'Rest it', "Don't",
       ()=>{ if (res){ payCost(side, act.amount); payHook(side, card, act.amount); log(`${label}: <b>${card.name}</b> — you pay ${act.amount}.`, cls); }
             else { effectRest(card, side, true); log(`${label}: <b>${card.name}</b> — you rest it.`, cls); }
             resolvePlayerTrigger(card, side, act.inner, label, then); },
@@ -7521,6 +7521,26 @@ function resetUnit(u){
   u.ap=u.baseAp; u.hp=u.baseHp; u.maxHp=u.baseHp; u.whileHpOn=0; if (u.baseLv!=null) u.lv=u.baseLv;
   u.blocker=innateKeyword(u.effect,'blocker'); u.firstStrike=innateKeyword(u.effect,'first'); u.highManeuver=innateKeyword(u.effect,'high');
   u.breach=breachAmount(u.effect); u.suppression=innateKeyword(u.effect,'suppression'); u.support=supportAmount(u.effect);
+}
+// "Return it to the bottom of its owner's deck." The Unit has already left the battle area. Its paired Pilot goes
+// with it (3-3-6) and the owner of the cards chooses their order (Q339, Q427). A token is removed from the game,
+// but its Pilot still goes to the deck. A Command paired through its 【Pilot】 mode goes back as that Command card.
+// The AI's cards go Unit first, then Pilot (the Pilot ends up at the very bottom). The player is asked.
+function unitToDeckBottom(u, owner, label){
+  const pc=u.pilotCard;
+  const cards=[];
+  if (!u.token){ resetUnit(u); leaveUnitMode(u); cards.push(u); } else { u.pilotCard=null; u.pilot=null; }
+  if (pc){ const def=pc.cmdPilot && CARD_BY_ID.get(pc.def);
+    cards.push(def ? Object.assign(makeCard(def, pc.owner), { uid: pc.uid }) : pc); }
+  for (const c of cards) owner.deck.unshift(c);                                 // index 0 is the bottom of the deck
+  if (cards.length<2) return;
+  const [unit, pilot]=cards;
+  log(`<b>${pilot.name}</b> goes to the bottom of ${owner===G.player?'your':'its'} deck with <b>${unit.name}</b>.`, owner===G.player?'me':'ai');
+  if (owner!==G.player) return;
+  const put=(bottom)=>{ const d=owner.deck, i=d.indexOf(unit), j=d.indexOf(pilot); if (i<0 || j<0) return;
+    const lo=Math.min(i,j), hi=Math.max(i,j); d[lo]=bottom; d[hi]=bottom===unit?pilot:unit; };
+  askYesNo(`${label||'Effect'}: <b>${unit.name}</b> and its Pilot <b>${pilot.name}</b> go to the bottom of your deck. Which card goes to the very bottom?`,
+    `${pilot.name} at the very bottom`, `${unit.name} at the very bottom`, ()=>put(pilot), ()=>put(unit));
 }
 // Return a deployed unit to its owner's hand, stripped back to a fresh card. A paired Pilot follows
 // the Unit — it returns to the owner's hand too (it goes where the Unit goes).
@@ -8384,7 +8404,7 @@ function chooseTokenCount(specs, side, name, done){
   const room = Math.max(0, FIELD_MAX - side.field.length);
   for (let n=ranged.min; n<=ranged.count; n++){
     const b=document.createElement('button');
-    b.innerHTML = `${n}${n>room?' (only '+room+' will fit)':''}`;
+    b.innerHTML = `${n}${n>room?' (trash '+(n-room)+' of your Units to make room)':''}`;
     b.onclick=()=>{ el('blockModal').classList.remove('show'); fix(n); };
     wrap.appendChild(b);
   }
@@ -8451,7 +8471,7 @@ function tokenMakerQueue(act, side){
 // Player-interactive token deploy. Deploys what fits; for overflow tokens (full battle area) a
 // MODAL chooser lists your Units to trash for each remaining token — a modal survives the
 // post-combat clearSel()/render(), unlike a board-tap mode, so this also works from 【Destroyed】
-// triggers mid-battle. Any of your Units may be chosen (including just-placed tokens); Skip declines.
+// triggers mid-battle. Any of your Units may be chosen (including just-placed tokens); the token can't be skipped.
 // "Choose 1 of your Unit tokens. Deploy 1 rested Unit token of the same kind." (Turn X GD06-021) — the player
 // picks the token to copy and, on a full battle area, the Unit that makes room; the AI copies its best token.
 function cloneToken(card, side, label, after){
@@ -8498,7 +8518,7 @@ function deployTokensInteractive(card, side, act, label, after){
     const mk=queue.shift();
     const cands=side.field.filter(u=>u.hp>0);
     if (!cands.length){ render(); fin(); return; }
-    el('blockMsg').innerHTML=`<b>${card.name}</b>: battle area full — choose one of YOUR Units to place in the trash for the next token (${queue.length+1} to deploy), or skip.`;
+    el('blockMsg').innerHTML=`<b>${card.name}</b>: battle area full — choose one of YOUR Units to place in the trash for the next token (${queue.length+1} to deploy).`;
     const wrap=el('blockBtns'); wrap.innerHTML='';
     cands.forEach(u=>{ const b=document.createElement('button');
       b.innerHTML=`💥 ${u.name} <span style="opacity:.6;font-size:10px">⚔${effAp(u)}/❤${u.hp}</span>`;
@@ -8510,10 +8530,8 @@ function deployTokensInteractive(card, side, act, label, after){
         log(`<b>${card.name}</b> deploys <b>${tk.name}</b> token.`, 'me');
         onUnitDeployed(tk, side, null, true); render(); nextTok(); };
       wrap.appendChild(b); });
-    const skip=document.createElement('button'); skip.className='ghost';
-    skip.textContent = queue.length ? 'Skip remaining tokens' : 'Skip this token';
-    skip.onclick=()=>{ el('blockModal').classList.remove('show'); render(); fin(); };
-    wrap.appendChild(skip);
+    // No skip: the token's deployment isn't optional, choosing the Unit to trash is the only decision (11-4-2, Q117/Q429).
+    // An optional token deploy ("you may", or a "1 to N" count) is decided before this chooser opens.
     el('blockModal').classList.add('show');
   })();
 }
@@ -9373,23 +9391,30 @@ function setupDealHands(){
   G.enemy.deck=shuffle(buildPresetDeck('enemy',ep));
   for (let i=0;i<HAND_START;i++){ draw(G.player,true); draw(G.enemy,true); }
   if (AI_LVL==='hard') draw(G.enemy,true);   // hard AI opens with a 6-card hand
-  aiMulligan(G.enemy);                     // AI decides its own redraw silently
+  // Each player may redraw once, starting with the first player (Q10). The AI decides its own redraw silently:
+  // now when it goes first, or after your choice (setupShieldsStep) when you go first.
+  G.aiMullPending = G.firstPlayer==='player';
+  if (!G.aiMullPending) aiMulligan(G.enemy);
   setupHandMulligan(true);
 }
 function setupHandMulligan(allowRedraw){
   const hand=G.player.hand.map(setupMiniCard).join('');
   const m=setupModal(`${setupBackBtn('Decks', setupBackToDecks)}<h2 style="color:#d8b4ff;margin:14px 0 10px">Your opening hand</h2>
     <div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:14px 0">${hand}</div>
-    <p style="color:#9aa;font-size:13px">${allowRedraw?'You may redraw your whole hand once — shuffle all 5 back and draw 5 new.':'Mulligan used — this is your hand.'}</p>
+    <p style="color:#9aa;font-size:13px">${allowRedraw?'You may redraw your whole hand once — all 5 go to the bottom of your deck, you draw 5 new cards, then your deck is shuffled.':'Mulligan used — this is your hand.'}</p>
     <div>${allowRedraw?'<button id="keepHand" style="background:#2e6b3a;color:#fff;border:none;border-radius:8px;padding:11px 20px;margin:4px;cursor:pointer;font-weight:600">Keep</button> <button id="mullHand" style="background:#7a3a3a;color:#fff;border:none;border-radius:8px;padding:11px 20px;margin:4px;cursor:pointer;font-weight:600">Mulligan</button>':'<button id="keepHand" style="background:#2e6b3a;color:#fff;border:none;border-radius:8px;padding:11px 20px;margin:4px;cursor:pointer;font-weight:600">Continue</button>'}</div>`);
   el('keepHand').onclick=()=>setupShieldsStep();
-  if (allowRedraw) el('mullHand').onclick=()=>{
-    G.player.deck.push(...G.player.hand); G.player.hand.length=0; shuffle(G.player.deck);
-    for (let i=0;i<HAND_START;i++) draw(G.player,true);
-    setupHandMulligan(false);
-  };
+  if (allowRedraw) el('mullHand').onclick=()=>{ redrawHand(G.player); setupHandMulligan(false); };
+}
+// Redraw (Q10): return the whole starting hand to the BOTTOM of the deck (index 0 is the bottom), draw 5 new
+// cards from the top, and only then shuffle the deck, so the returned cards can't be drawn again.
+function redrawHand(side){
+  side.deck.unshift(...side.hand); side.hand.length=0;
+  for (let i=0;i<HAND_START;i++) draw(side,true);
+  shuffle(side.deck);
 }
 function setupShieldsStep(){
+  if (G.aiMullPending){ G.aiMullPending=false; aiMulligan(G.enemy); }   // the AI redraws after you when you go first (Q10)
   // Place the top 6 cards of each deck face-down as Shields (no shield redraw — not a real rule).
   for (const s of [G.player, G.enemy]){ s.shields.length=0; for (let i=0;i<SHIELD_MAX && s.deck.length;i++) s.shields.push(s.deck.pop()); s.base=exBaseToken(s.who); }
   const m=setupModal(`${setupBackBtn('Decks', setupBackToDecks)}<h2 style="color:#d8b4ff;margin:14px 0 10px">Ready to battle</h2>
@@ -9414,8 +9439,7 @@ function aiMulligan(side){
   if (AI_LVL==='easy') return;                               // easy AI keeps whatever it drew
   const cheap = side.hand.filter(c=>(c.lv||0)<=3).length;
   if (cheap >= (AI_LVL==='hard'?3:2)) return;                // hard AI demands a stronger curve
-  side.deck.push(...side.hand); side.hand.length=0; shuffle(side.deck);
-  for (let i=0;i<HAND_START;i++) draw(side,true);
+  redrawHand(side);
 }
 
 function draw(side, silent){
@@ -9454,6 +9478,19 @@ function settleEx(side){
     log(`${who(side)} used up ${used} EX Resource${used===1?'':'s'}.`, side===G.player?'me':'ai');
     exExiledHook(side, used);
   }
+}
+// "Choose N of your Resources. Set them as active." A rested EX Resource can be chosen too (Q521). It becomes an
+// active EX Resource, so it still leaves the game when it is used (5-17-3-2-3). A rested ordinary Resource is
+// readied first, because it stays after it is spent. Returns how many were set active.
+function readyResources(s, n){
+  if (s.hadTurn) settleEx(s);   // a spent EX Resource is already gone and can't be readied
+  let k=0;
+  for (; k<(n||0); k++){
+    if (s.resMax - Math.max(0, s.resAvail - (s.ex||0)) > 0) s.resAvail++;
+    else if ((s.exRested||0) > 0){ s.exRested--; s.ex=(s.ex||0)+1; s.resAvail++; }
+    else break;
+  }
+  return k;
 }
 
 // Official turn structure: Start Phase → Draw Phase → Resource Phase → Main Phase → End Phase.
@@ -9591,7 +9628,7 @@ function eotStatics(s, resume){
   }
   for (const u of [...s.field]){
     const w=u.eotResReady; if (!w || u.hp<=0 || trashCount(s, w.trait)<w.min || !fresh(u,'resReady')) continue;
-    if (s.resAvail - (s.ex||0) < s.resMax){ s.resAvail++; log(`<b>${u.name}</b>: end of turn — 1 of ${s===G.player?'your':'its'} Resources is set as active.`, s===G.player?'me':'ai'); }
+    if (readyResources(s, 1)){ log(`<b>${u.name}</b>: end of turn — 1 of ${s===G.player?'your':'its'} Resources is set as active.`, s===G.player?'me':'ai'); }
   }
   for (const sd of [s, foe]) for (const u of [...sd.field]){
     const w=u.eotReadyPaired; if (!w || u.hp<=0 || (w.link && !u.linked) || !u.pilot || u.pairedTurn!==G.turnSeq || !u.rested || !fresh(u,'readyPaired')) continue;
@@ -10249,10 +10286,8 @@ function applyActivateEffect(u, target, side, costUnit){
   if (cost.resource){ payCost(side, cost.resource); payHook(side, u, cost.resource); log(`<b>${u.name}</b> pays ${cost.resource} resource${cost.resource===1?'':'s'}.`, cls); }
   if (cost.type==='selfToDeck'){
     const i=side.field.indexOf(u); if(i>=0) side.field.splice(i,1);
-    const pc=u.pilotCard;
-    resetUnit(u); side.deck.unshift(u);
-    if (pc) sendToTrash(pc, side);                                              // a paired Pilot is left behind
     log(`<b>${u.name}</b> returns to the bottom of its owner's deck as a cost.`, cls);
+    unitToDeckBottom(u, side, u.name);                                          // its paired Pilot goes with it (3-3-6)
   }
   else if (cost.type==='destroySelf'){
     const i=side.field.indexOf(u); if(i>=0) side.field.splice(i,1);
@@ -14058,7 +14093,7 @@ function inspect(c){
       if (slot===1) swapActivate(c);
       if (!ready) continue;
       const ac=document.createElement('button');
-      const t=act.text||'Use ability'; ac.innerHTML=`⚡ ${t.length>42?t.slice(0,40)+'…':t}`;
+      const t=act.text||'Use ability'; ac.innerHTML=`⚡ ${escAngle(t.length>42?t.slice(0,40)+'…':t)}`;   // "<First Strike>" isn't a tag (Banshee)
       ac.onclick=()=>{ closeInspect(); useActivateSlot(c, act); startActivate(c); };
       btns.appendChild(ac);
     }
