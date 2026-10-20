@@ -4,7 +4,7 @@
 //  - Burst-deployed Bases "Add 1 of your Shields to your hand. Then, choose …" (Valiant ST08-014, Freeden Ⅱ GD04-127, Rewloola
 //    ST03-015): the player chooses the Unit from a modal chooser.
 //  - Reformationist GD04-114 【Burst】 "Choose 1 Unit card with "Trans-Am" in its card name from your trash": the player chooses.
-const H=require('./harness.js'); const {A,drainTasks}=H; const G=A.G;
+const H=require('./harness.js'); const {A}=H; const drainTasks=require('./burst_yes.js')(H); const G=A.G;   // drainTasks answers the 【Burst】 yes/no with yes
 const doc=global.document; const el=id=>doc.getElementById(id);
 let pass=0; const fail=[];
 function ok(name, cond, extra){ if(cond) pass++; else fail.push(name+(extra!==undefined?'  ('+extra+')':'')); }

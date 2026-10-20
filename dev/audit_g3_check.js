@@ -2,7 +2,7 @@
 // ("play this card as if it has N Lv. and cost"), optional "You may pay ①/②" and "You may rest this Unit" costs, and the
 // "If you place(d) … card with this effect" mill riders. Each case is played through the player's real UI path (the hand
 // play, attack declaration, action-step modal, yes/no prompts, card pickers, target choosers) and on the AI side.
-const H=require('./harness.js'); const {A,drainTasks}=H; const G=A.G;
+const H=require('./harness.js'); const {A}=H; const drainTasks=require('./burst_yes.js')(H); const G=A.G;   // drainTasks answers the 【Burst】 yes/no with yes
 const doc=global.document; const el=id=>doc.getElementById(id);
 let pass=0; const fail=[];
 function ok(name, cond, extra){ if(cond) pass++; else fail.push(name+(extra?'  ('+extra+')':'')); }
@@ -221,7 +221,7 @@ for (const [id, spec] of Object.entries(DEV)){
 // ================= Unicorn Gundam 02 Banshee (Destroy Mode) GD01-003 =================
 { const run=(who, n)=>{ fresh(who); const s=sideOf(who); const u=put('GD01-003', who); pair(u,'GD01-093'); u.rested=true;
     for (let i=0;i<n;i++) s.trash.push(card(i%2?'ST01-012':'ST01-013', who)); const d0=s.deck.length;
-    if (who==='player'){ A.resolveAttackTriggers(u, s, ()=>{}); drainTasks(); const ov=!!overlay(); if (ov) pickTiles(s.trash.slice(0,12).map(c=>c.uid)); drainTasks(); return { ov, u, d:s.deck.length-d0, t:s.trash.length }; }
+    if (who==='player'){ A.resolveAttackTriggers(u, s, ()=>{}); drainTasks(); require('./burst_yes.js').resolveFirst(H)(/Banshee/); /* its 【Attack】 and the Pilot's trigger together: Banshee's first */ const ov=!!overlay(); if (ov) pickTiles(s.trash.slice(0,12).map(c=>c.uid)); drainTasks(); return { ov, u, d:s.deck.length-d0, t:s.trash.length }; }
     A.resolveAttackTriggers(u, s, ()=>{}); drainTasks(); return { u, d:s.deck.length-d0, t:s.trash.length }; };
   const a=run('enemy',12); ok('Banshee AI: 12 trash cards back into the deck → set active, <First Strike>', a.u.linked && a.d===12 && a.t===0 && !a.u.rested && A.effFirstStrike(a.u), JSON.stringify({d:a.d,t:a.t,r:a.u.rested}));
   const b=run('enemy',11); ok("Banshee AI: only 11 cards in the trash → stays rested, no <First Strike>", b.d===0 && b.u.rested && !A.effFirstStrike(b.u));

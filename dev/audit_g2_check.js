@@ -1,7 +1,7 @@
 // Audit g2: GD03–GD06 Command parsing, and inferCommand without its "draw 1" fallback. Each case plays the real card —
 // the player's side through the UI (board taps, the Action Step modal, the target choosers), the AI's side through
 // applyCommand / runTrigger / its main step.
-const H=require('./harness.js'); const {A,drainTasks,ERRORS}=H; const G=A.G;
+const H=require('./harness.js'); const {A,ERRORS}=H; const drainTasks=require('./burst_yes.js')(H); const G=A.G;   // drainTasks answers the 【Burst】 yes/no with yes
 const doc=global.document; const el=id=>doc.getElementById(id);
 let pass=0; const fail=[];
 function ok(name, cond, extra){ if(cond) pass++; else fail.push(name+(extra?'  ('+extra+')':'')); }

@@ -4,7 +4,7 @@
 // filters ("/Pilot card", "/Command card", "Lv.N or lower", "that is Lv.3", a named-card alternative).
 // Player choices go through the real UI (playFromHand, the action-step modal, the choosers); the AI side through
 // runTrigger / applyCommand.
-const H=require('./harness.js'); const {A,drainTasks}=H; const G=A.G;
+const H=require('./harness.js'); const {A}=H; const drainTasks=require('./burst_yes.js')(H); const G=A.G;   // drainTasks answers the 【Burst】 yes/no with yes
 const doc=global.document; const el=id=>doc.getElementById(id);
 let pass=0; const fail=[];
 function ok(name, cond, extra){ if(cond) pass++; else fail.push(name+(extra?'  ('+extra+')':'')); }
@@ -297,7 +297,7 @@ const can=(u, t)=>A.canHitActive(u, t);
      can(k, stick('enemy',5,5)) && can(ct, stick('enemy',5,5)) && !can(ct, stick('enemy',6,6)) && !can(ot, stick('enemy',1,1))); }
 // ---- GFreD 【When Linked】 / Athrun Zala 【When Linked】: "this Unit" is the Unit, only after the link ----
 { fresh('player'); const g=put('GD03-035','player'); ok('GFreD: before linking it may not attack active Units', !can(g, stick('enemy',1,1)));
-  A.attachPilot(g, card('GD03-092','player')); drainTasks();
+  A.attachPilot(g, card('GD03-092','player')); drainTasks(); require('./burst_yes.js').resolveFirst(H)(null);   // the trigger-order chooser (10-1-6-5)
   ok('GFreD: linked, it may attack an active Unit with AP ≤ its own only', g.linked && can(g, stick('enemy',1,1)) && !can(g, stick('enemy',99,1)));
   const aeg=findDef(d=>d.type==='unit'&&(d.link||'')==='Athrun Zala'); fresh('player'); const a=put(aeg.id,'player'); const az=card('ST04-011','player'); A.attachPilot(a, az); drainTasks();
   ok('Athrun Zala 【When Linked】: the linked Unit may attack an active Lv.5 Unit, not Lv.6 (the Pilot card itself gets nothing)', can(a, stick('enemy',1,1,{lv:5})) && !can(a, stick('enemy',1,1,{lv:6})) && !az.activeAttackGrants); }

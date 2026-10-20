@@ -1,6 +1,6 @@
 // Regression checks for the adversarial-review findings on the rules / GD06 / full-pool commits: each
 // scenario reproduces a reported failure with the real cards and asserts the fixed behaviour.
-const H=require('./harness.js'); const {A,drainTasks}=H; const G=A.G;
+const H=require('./harness.js'); const {A}=H; const drainTasks=require('./burst_yes.js')(H); const G=A.G;   // drainTasks answers the 【Burst】 yes/no with yes
 const el=id=>global.document.getElementById(id);
 let pass=0; const fail=[];
 function ok(name, cond, extra){ if(cond) pass++; else fail.push(name+(extra?'  ('+extra+')':'')); }
@@ -223,7 +223,7 @@ for (const who of ['player','enemy']){ fresh(who==='player'?'enemy':'player'); c
   ok(`5th Luna destroyed by an attack (${who}) leaves an [Axis] Base token`, s.base && s.base.name==='Axis' && s.base.type==='base', 'base='+(s.base&&s.base.name)); }
 // extra — Sodon as a Burst on a full battle area: the player picks which Unit makes room for its Funnel
 fresh('enemy'); { for(let i=0;i<6;i++) stick('player',1+i,1+i); G.player.shields.push(card('ST13-016','player')); const atk=stick('enemy',3,3);
-  A.strikePlayer(atk, G.player, ()=>{}); const asked=modalUp() && /battle area full/.test(el('blockMsg').innerHTML);
+  A.strikePlayer(atk, G.player, ()=>{}); drainTasks(); const asked=modalUp() && /battle area full/.test(el('blockMsg').innerHTML);   // after "Activate its 【Burst】?" (yes)
   ok('Sodon Burst on a full board asks the player what to trash for the token', asked && G.player.base && G.player.base.name==='Sodon'); }
 
 // ===== second review round =====
@@ -273,7 +273,7 @@ fresh('player'); { const s=G.player; s.resMax=5; s.resourceDeck=5; s.resAvail=4;
 // ===== third review round =====
 // A conditional token Burst (GFreD GD03-048) on a full board also asks the player what to trash
 fresh('enemy'); { for(let i=0;i<6;i++) stick('player',1+i,1+i); G.enemy.shields.length=3; G.player.shields.push(card('GD03-048','player')); const atk=stick('enemy',3,3);
-  A.strikePlayer(atk, G.player, ()=>{}); const asked=modalUp() && /battle area full/.test(el('blockMsg').innerHTML);
+  A.strikePlayer(atk, G.player, ()=>{}); drainTasks(); const asked=modalUp() && /battle area full/.test(el('blockMsg').innerHTML);   // after "Activate its 【Burst】?" (yes)
   ok('round3: GFreD\'s "If … deploy a token" Burst asks which Unit makes room', asked); }
 // "All players draw 1" (Armory One's 【Destroyed】) — both players draw
 fresh('enemy'); { const s=G.player; s.base=card('GD04-128','player'); s.base.hp=1; const atk=stick('enemy',5,5); const h0=[G.player.hand.length, G.enemy.hand.length];
@@ -335,7 +335,9 @@ fresh('enemy'); { inHand('GD04-112','enemy'); for(let i=0;i<4;i++) stick('enemy'
 // Two of the player's 【Destroyed】 choices from one AoE both resolve
 fresh('enemy'); { const g1=put('GD01-056','player'); const g2=put('GD01-056','player'); g1.hp=1; g2.hp=1; const x=stick('enemy',2,3); const y=stick('enemy',2,3);
   const ara=inHand('GD02-107','enemy'); A.damageAll(ara, G.enemy, ara.action, ara.name); drainTasks();
-  const p1=modalUp(); clickBtn(new RegExp(x.name.replace(/[#/]/g,'.'))); drainTasks(); const p2=modalUp(); clickBtn(new RegExp(y.name.replace(/[#/]/g,'.'))); drainTasks();
+  // the two 【Destroyed】 trigger together: the player first picks which resolves first (10-1-6-5)
+  const ord=modalUp() && /trigger together/.test(el('blockMsg').innerHTML); clickBtn(/Geara Doga/); drainTasks();
+  const p1=ord && modalUp(); clickBtn(new RegExp(x.name.replace(/[#/]/g,'.'))); drainTasks(); const p2=modalUp(); clickBtn(new RegExp(y.name.replace(/[#/]/g,'.'))); drainTasks();
   ok('round4: both Geara Doga (Sleeves) 【Destroyed】 choices resolve', p1 && p2 && x.hp===2 && y.hp===2, `p1=${p1} p2=${p2} x=${x.hp} y=${y.hp}`); }
 // <Support> is used before the attack is declared, so the AI's block step / redirect see the boosted AP
 fresh('player'); { const q=put('GD06-018','enemy',{rested:true}); pair(q,'GD06-097'); const nz=stick('enemy',1,8,{trait:'(Neo Zeon)'}); const a=stick('player',2,9); stick('player',1,1,{support:2});

@@ -2,7 +2,7 @@
 // "N or more (other) rested Units", "<A> and <B>" with amounts, "If you deploy this Unit from your trash", 【Burst】 conditions,
 // "destroyed with battle damage", paired battle kills this turn. Each card is replayed with real cards: on the player's side
 // through the real UI paths (attack declaration, playing a Pilot from hand, the target prompts) and on the AI's side.
-const H=require('./harness.js'); const {A,drainTasks}=H; const G=A.G;
+const H=require('./harness.js'); const {A}=H; const drainTasks=require('./burst_yes.js')(H); const G=A.G;   // drainTasks answers the 【Burst】 yes/no with yes
 const doc=global.document; const el=id=>doc.getElementById(id);
 let pass=0; const fail=[];
 function ok(name, cond, extra){ if(cond) pass++; else fail.push(name+(extra?'  ('+extra+')':'')); }

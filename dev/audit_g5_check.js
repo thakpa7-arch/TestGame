@@ -2,7 +2,7 @@
 // Each card is played through the real entry points — playFromHand (【Deploy】), attachPilot (【When Paired】/【When Linked】),
 // an attack declared with fieldClick (【Attack】), a destroyed Unit (【Destroyed】) — on the player side through the choosers
 // the player answers, and on the AI side through runTrigger / the AI's attack.
-const H=require('./harness.js'); const {A,drainTasks,ERRORS}=H; const G=A.G;
+const H=require('./harness.js'); const {A,ERRORS}=H; const drainTasks=require('./burst_yes.js')(H); const G=A.G;   // drainTasks answers the 【Burst】 yes/no with yes
 const doc=global.document; const el=id=>doc.getElementById(id);
 let pass=0; const fail=[];
 function ok(name, cond, extra){ if(cond) pass++; else fail.push(name+(extra?'  ('+extra+')':'')); }
@@ -106,7 +106,7 @@ for (const who of ['player','enemy']){
 
 // ---- GD04-082 Rosamia Badam 【When Linked】Choose 1 rested Unit. Deal 1 damage to it. (either player's) ----
 { fresh('player'); const ps=put('GD04-004','player'); const ea=stick('enemy',2,3,{name:'Foe Active'}), er=stick('enemy',2,3,{rested:true,name:'Foe Rested'}), mr=stick('player',2,3,{rested:true,name:'My Rested'});
-  pairWith(ps, card('GD04-082','player'));
+  pairWith(ps, card('GD04-082','player')); require('./burst_yes.js').resolveFirst(H)(/Rosamia/);   // two effects trigger together: Rosamia's first
   ok('Rosamia Badam (player): rested Units of BOTH players are offered, active ones are not', G.mode==='trigger-target' && G.pending.scope==='any' && cands().length===2 && cands().includes(er.uid) && cands().includes(mr.uid), JSON.stringify(cands()));
   A.fieldClick(mr.uid); drainTasks();
   ok('Rosamia Badam (player): your own chosen rested Unit takes 1', mr.hp===2 && er.hp===3 && ea.hp===3, `${mr.hp},${er.hp},${ea.hp}`); }

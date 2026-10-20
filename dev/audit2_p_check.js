@@ -3,7 +3,7 @@
 // buttons, deck-look overlay, card picker, discard mode, board taps), while the AI keeps resolving the same effects itself.
 // Also: field-tap messages for attack restrictions that used to throw, a discard owed mid-battle surviving the battle's
 // clean-up, and Saint Gabriel Institute's "1 to the top and 1 to the bottom".
-const H=require('./harness.js'); const {A,drainTasks}=H; const G=A.G;
+const H=require('./harness.js'); const {A}=H; const drainTasks=require('./burst_yes.js')(H); const G=A.G;   // drainTasks answers the 【Burst】 yes/no with yes
 const doc=global.document; const el=id=>doc.getElementById(id);
 let pass=0; const fail=[];
 function ok(name, cond, extra){ if(cond) pass++; else fail.push(name+(extra?'  ('+extra+')':'')); }
