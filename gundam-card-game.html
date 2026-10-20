@@ -2259,6 +2259,7 @@ function parseActivate(effect, nth){
   // The label drops reminder text — a parenthetical sentence, or an unclosed one at the end — but keeps trait tags like
   // "(Alphacide)" and the sentences after one ("Choose 1 friendly (ZAFT) Unit with 5 or more AP. It gains …" was cut to
   // "Choose 1 friendly").
+  markAnySide(action, text);   // "Choose 1 Unit. It recovers 1 HP." — either player's Unit (G-Sky Easy, Galluss-K, Daryl Lorenz)
   return { phase, cost, text:(text||'').replace(/\s*\((?:[^()]*\.[^()]*)\)/g,'').replace(/\s*\([^)]*$/, m=>/\./.test(m)?'':m).replace(/\.$/,'').trim(), action, requireLink, requirePair, oncePerTurn };
 }
 
@@ -3065,7 +3066,12 @@ function showPileViewer(pile, title){
 function showTrashViewer(side){ showPileViewer(side.trash, 'Trash'); }
 
 // Interpret a Command card's effect into a simple engine action.
+// A Command's "Choose 1 Unit…" that names no side may choose either player's Unit (SP Conversion Chips, Rasid's Orders) —
+// read on its 【Main】/【Action】 text (the 【Burst】 and 【Pilot】 lines aside).
 function inferCommand(effect){
+  return markAnySide(inferCommandBase(effect), plain(effect).replace(/【\s*(?:Burst|Pilot)\s*】[^【]*/gi,' '));
+}
+function inferCommandBase(effect){
   // The played effect of a Command is its 【Main】/【Action】 clause — the 【Burst】 part is
   // resolved separately, so don't let it leak into the main action (e.g. extra token specs).
   const full = plain(effect);
@@ -3592,7 +3598,8 @@ function resolveModal(card, side, act, label, done){
   const enemyK = (act.kind==='damage' && act.scope!=='all-enemy' && act.scope!=='all-both') || ['rest','destroy','bounce','bounceDeck','stun'].includes(act.kind) || (act.kind==='debuff' && act.scope!=='all-enemy');
   if (enemyK){ pickOne(enemyTargets(foe, act), `<b>${card.name}</b>: choose an enemy Unit.`, t=>{ if (t) applyToTarget(card, side, act, t, label); render(); fin(); }); return; }
   const allyK = ['buff','heal','grantKw','grantReduce'].includes(act.kind) || (act.kind==='grantAttackActive' && act.scope==='friendly' && !act.all);
-  if (allyK){ pickOne(friendlyTargets(side, act), `<b>${card.name}</b>: choose 1 of your Units.`, t=>{ if (t) applyToTarget(card, side, act, t, label); render(); fin(); }); return; }
+  if (allyK){ const anyS=!!(act.filter && act.filter.anySide);   // "Choose 1 Unit" naming no side (SP Conversion Chips): either player's
+    pickOne(chooseUnitCands(side, act), `<b>${card.name}</b>: choose 1 ${anyS?'Unit (yours are listed first)':'of your Units'}.`, t=>{ if (t) applyToTarget(card, side, act, t, label); render(); fin(); }); return; }
   if (['restMulti','damageMulti','destroyMulti','bounceMulti'].includes(act.kind)){
     const max=act.count||2, picked=[];
     const verb = act.kind==='restMulti' ? 'rest' : act.kind==='destroyMulti' ? 'destroy' : act.kind==='bounceMulti' ? 'return to hand' : `deal ${act.amount} damage to`;
@@ -4504,7 +4511,7 @@ function grantCount(act, side){ return (act.exCount && side && side.lastExUsed>0
 // The Units a grant may go to (all of them for "All your (T) Units …").
 function grantCands(card, side, act){
   if (act.scope==='self'){ const h=effectHost(card, side); return h && h.hp>0 && side.field.includes(h) ? [h] : []; }
-  return friendlyTargets(side, Object.assign({}, act, { source: act.filter && act.filter.other ? (effectHost(card, side)||card) : act.source }));
+  return chooseUnitCands(side, Object.assign({}, act, { source: act.filter && act.filter.other ? (effectHost(card, side)||card) : act.source }));   // "Choose 1 Unit" (Rasid's Orders): either side's
 }
 // The AI's (and any automatic) pick: an attacker that can use the grant this turn, a Unit in the current battle for a
 // "this battle" guard, otherwise the strongest legal Unit.
@@ -4517,9 +4524,9 @@ function grantTargetsAuto(card, side, act){
     if (act.kind==='redirectTurn') return (u===host ? -1000 : 0) + effAp(u) + u.hp + (u.pilot?3:0);   // shield another Unit, not the host itself
     if (act.kind==='grantAttackActive'){
       const hits=foe.field.filter(x=>x.hp>0 && !x.rested && activeGrantAllows(act.enemyFilter, u, x)).length;
-      return (!u.sick && !u.rested ? 100 : 0) + (hits?50:0) + effAp(u);
+      return (side.field.includes(u) ? 1000 : 0) + (!u.sick && !u.rested ? 100 : 0) + (hits?50:0) + effAp(u);   // its own Units first
     }
-    return (inBattle(u)?100:0) + effAp(u) + u.hp*0.5 + (u.pilot?3:0);
+    return (side.field.includes(u) ? 1000 : 0) + (inBattle(u)?100:0) + effAp(u) + u.hp*0.5 + (u.pilot?3:0);
   };
   return [...cands].sort((a,b)=>score(b)-score(a)).slice(0, grantCount(act, side));
 }
@@ -4533,11 +4540,13 @@ function chooseGrantTargets(card, side, act, cands, label, done){
              : guardText(act.guard||{ amount:act.amount, prevent:act.amount>=99, battle:act.amount>=99, enemy:true, dur:'turn' });
   const picked=[];
   (function next(){
-    const left=cands.filter(u=>!picked.includes(u) && u.hp>0 && side.field.includes(u));
+    const anyS=!!(act.filter && act.filter.anySide);   // "Choose 1 Unit" naming no side: the opponent's Units may be chosen too
+    const left=cands.filter(u=>!picked.includes(u) && u.hp>0 && (side.field.includes(u) || (anyS && !!unitOwner(u))));
     if (picked.length>=n || !left.length){ done(picked); return; }
     const best=grantTargetsAuto(card, side, Object.assign({}, act, { count:1, exCount:null })).find(u=>left.includes(u)) || left[0];
     const order=[best, ...left.filter(u=>u!==best)];
-    promptTargetChoice(order, `<b>${card.name}</b>${label && label!==card.name ? ' 【'+label+'】' : ''} — choose ${n>1?`up to ${n} of your Units (${picked.length+1} of ${n})`:'1 of your Units'}: ${what}.`,
+    const whose = anyS ? (n>1?`up to ${n} Units (${picked.length+1} of ${n}; yours are listed first)`:'1 Unit (yours are listed first)') : (n>1?`up to ${n} of your Units (${picked.length+1} of ${n})`:'1 of your Units');
+    promptTargetChoice(order, `<b>${card.name}</b>${label && label!==card.name ? ' 【'+label+'】' : ''} — choose ${whose}: ${what}.`,
       (t)=>{ if (t) picked.push(t); if (!t) { done(picked); return; } next(); }, picked.length ? 'Done' : null);
   })();
 }
@@ -4808,6 +4817,33 @@ function friendlyTargets(side, act){
   if (act.kind==='heal' && !act.allowFull) list=list.filter(u=>u.hp<effMaxHp(u));
   return list;
 }
+// "Choose 1 Unit" / "Choose 1 (T) Unit that is Lv.4 or higher" — a choice that names no side (no friendly / enemy / your /
+// belonging to): either player's Unit (G-Sky Easy, Galluss-K, Daryl Lorenz, SP Conversion Chips, Rasid's Orders, Sturm Faust).
+function unqualChooseUnit(t){
+  const s=String(t||'').toLowerCase().replace(/\blv\.\s*(?=\d)/g,'lv§');
+  return /\bchoose \d+(?:\s*to\s*\d+)?\s+(?:(?:other|rested|active|damaged|blue|red|green|white|purple)\s+)*(?:\([^)]+\)\s*\/?\s*)*units?\b(?!\s*(?:cards?|tokens?)\b)(?![^.]*?\b(?:belonging to|of your|you control)\b)/.test(s);
+}
+// Mark the chosen Unit of a friendly-side effect ("It recovers 1 HP", "It gets AP+1", "it may choose an active enemy Unit…")
+// as either side's when its choose sentence names no side. `text` is the effect's own text.
+function markAnySide(a, text){
+  if (!a || !unqualChooseUnit(text)) return a;
+  const e = a.kind==='cond' ? a.inner : a;
+  if (!e || e.kind==='cond') return a;
+  const ok = (['heal','buff','grantKw','grantReduce'].includes(e.kind) && (!e.scope || e.scope==='friendly'))
+          || (e.kind==='grantAttackActive' && e.scope==='friendly' && !e.all);
+  if (ok) e.filter=Object.assign({}, e.filter||{}, { anySide:true });
+  return a;
+}
+// The Units a "choose 1 … Unit" effect of `side` may pick: its own that meet the text — and, when the text names no side
+// (filter.anySide), the other player's too (listed after its own).
+function chooseUnitCands(side, act){
+  const own=friendlyTargets(side, act);
+  if (!(act && act.filter && act.filter.anySide)) return own;
+  const foe=side===G.player?G.enemy:G.player;
+  return [...own, ...friendlyTargets(foe, act).filter(u=>u.type==='unit' && !own.includes(u))];
+}
+// Whose battle area (or Base) `u` is in — null when it is in neither.
+const unitOwner = u => [G.player, G.enemy].find(s=>s && (s.field.includes(u) || s.base===u)) || null;
 // Pick the most sensible auto-target from a candidate list.
 function rankTarget(cands, act){
   if (!cands.length) return null;
@@ -4875,7 +4911,7 @@ function applyToTarget(card, side, act, target, label){
     // "If you increase a Link Unit's AP with this effect, set this Unit as active." (Galluss J)
     if (act.readySrcIfLink && target.linked && card.type==='unit' && side.field.includes(card) && card.rested && effReady(card, side)) log(`${label}: <b>${name}</b> is set active (a Link Unit's AP was increased).`,cls);
     if (act.then) runTrigger(card, side, act.then, label); }
-  else if (act.kind==='heal'){ const _b=target.hp; target.hp=Math.min(effMaxHp(target), target.hp+(act.amount>=99?effMaxHp(target):act.amount)); if(target.hp>_b){ floatNum(target.uid,'+'+(target.hp-_b),'#7ee29a'); unitHealed(target, side); } log(`${label}: <b>${name}</b> repairs <b>${target.name}</b>.`,cls); if (act.then) runTrigger(card, side, act.then, label); }
+  else if (act.kind==='heal'){ const _b=target.hp; target.hp=Math.min(effMaxHp(target), target.hp+(act.amount>=99?effMaxHp(target):act.amount)); if(target.hp>_b){ floatNum(target.uid,'+'+(target.hp-_b),'#7ee29a'); unitHealed(target, unitOwner(target)||side); } log(`${label}: <b>${name}</b> repairs <b>${target.name}</b>.`,cls); if (act.then) runTrigger(card, side, act.then, label); }
   else if (act.kind==='grantKw'){ grantKeyword(target, act.kw, act.amount); target.ap=effAp(target); log(`${label}: <b>${target.name}</b> gains &lt;${kwLabel(act.kw)}${(act.kw==='breach'||act.kw==='repair')?' '+act.amount:''}&gt; this turn.`,cls); }
   else if (act.kind==='grantAttackActive'){ grantActiveAttack(target, act, label, cls); }
   else if (act.kind==='redirectTurn'){ applyRedirectTurn(card, side, act, target, label); }
@@ -6103,7 +6139,7 @@ function cmdModeLegal(a, side){
   const foe = side===G.player ? G.enemy : G.player;
   if (enemyPickKind(a) || ['restMulti','damageMulti','destroyMulti','bounceMulti'].includes(a.kind)) return enemyTargets(foe, a).length>0;
   if (a.kind==='heal') return a.scope==='any' ? [...side.field, ...foe.field].some(u=>u.hp>0) : side.field.some(u=>u.hp>0 && (!a.filter || friendlyTargets(side, Object.assign({}, a, { kind:'buff' })).includes(u)));
-  if (['buff','grantKw','grantReduce','buffMulti'].includes(a.kind) || (a.kind==='grantAttackActive' && a.scope==='friendly' && !a.all)) return friendlyTargets(side, a).length>0;
+  if (['buff','grantKw','grantReduce','buffMulti'].includes(a.kind) || (a.kind==='grantAttackActive' && a.scope==='friendly' && !a.all)) return chooseUnitCands(side, a).length>0;
   if (a.kind==='damageBoth') return (a.filter ? friendlyTargets(side, { filter:a.filter }).length>0 : side.field.some(u=>u.hp>0))
                                   && (a.enemyFilter ? enemyTargets(foe, { kind:'damage', filter:a.enemyFilter }).length>0 : foe.field.some(u=>u.hp>0));
   if (a.kind==='trashRetrieve') return side.trash.some(c=>matchFilter(c, a.filter) && !c.token);
@@ -6204,10 +6240,11 @@ function resolveChosenMode(card, side, act, label, after, attacker){
   }
   if (['buff','grantKw','grantReduce'].includes(act.kind) || (act.kind==='grantAttackActive' && act.scope==='friendly' && !act.all)){
     const inBattle=u=>G.curBattle && (G.curBattle.atk===u || G.curBattle.def===u);
-    const cands=friendlyTargets(G.player, act).sort((x,y)=>(inBattle(y)?1:0)-(inBattle(x)?1:0));
+    const mineF=u=>G.player.field.includes(u)?1:0, anyS=!!(act.filter && act.filter.anySide);   // "Choose 1 Unit" naming no side: either side's, yours first
+    const cands=chooseUnitCands(G.player, act).sort((x,y)=>(mineF(y)-mineF(x)) || ((inBattle(y)?1:0)-(inBattle(x)?1:0)));
     if (!cands.length){ fin(); return; }
     if (cands.length===1){ applyToTarget(card, side, act, cands[0], label); fin(); return; }
-    promptTargetChoice(cands, `<b>${card.name}</b> — choose 1 of your Units.`, t=>{ if (t) applyToTarget(card, side, act, t, label); fin(); });
+    promptTargetChoice(cands, `<b>${card.name}</b> — choose 1 ${anyS?'Unit (yours are listed first)':'of your Units'}.`, t=>{ if (t) applyToTarget(card, side, act, t, label); fin(); });
     return;
   }
   if (act.kind==='damageBoth'){
@@ -7185,14 +7222,16 @@ function resolvePlayerTrigger(card, side, act, label, after){
   if (allyKinds){
     // "Choose 1 of your (other) … Units" is the player's choice (Hyaku-Shiki's 【Attack】): with two or more legal Units a
     // chooser opens (a modal, so a click on the board still starts an attack); with one it simply applies.
-    const cands=friendlyTargets(G.player, act);
+    // "Choose 1 Unit" naming no side: the opponent's Units are offered too, after yours.
+    const anyS=!!(act.filter && act.filter.anySide), cands=chooseUnitCands(G.player, act);
     if (cands.length>=2){
       const inB=u=>!!(G.curBattle && (G.curBattle.atk===u || G.curBattle.def===u));   // a "during this battle" grant: the battling Unit first
-      const best=(act.kind==='grantBattleKill' && cands.find(inB)) || rankTarget(cands, act); const order=[best, ...cands.filter(c=>c!==best)];
+      const ownC=cands.filter(u=>G.player.field.includes(u));
+      const best=(act.kind==='grantBattleKill' && cands.find(inB)) || rankTarget(ownC.length?ownC:cands, act); const order=[best, ...cands.filter(c=>c!==best)];
       const verb = act.kind==='buff' ? `AP+${act.amount}` : act.kind==='heal' ? `recover ${act.amount} HP`
                  : act.kind==='grantNoAttackTarget' ? "enemy Units can't choose it as their attack target this turn" : 'the effect';
-      promptTargetChoice(order, `<b>${card.name}</b> 【${label}】 — choose 1 of your Units (${verb}).`, (t)=>{
-        if (t && !G.player.field.includes(t)) t=rankTarget(friendlyTargets(G.player, act), act);
+      promptTargetChoice(order, `<b>${card.name}</b> 【${label}】 — choose 1 ${anyS?'Unit (yours are listed first)':'of your Units'} (${verb}).`, (t)=>{
+        if (t && !cands.includes(t)) t=rankTarget(ownC.length?ownC:cands, act);
         applyToTarget(card, side, act, t||null, label); render(); fin(); }, null);
       return;
     }
@@ -9808,7 +9847,7 @@ function startCommand(card, handIdx, modeAct){
   // (Dramatic Turnabout's draw) still makes the card worth playing without one.
   // A restricted "1 friendly (T) Unit and 1 enemy Unit" (Towards Destiny) still damages the enemy Unit when none of yours qualifies.
   const noAllyTgt  = needAlly && !a.then && !(a.kind==='damageBoth' && a.filter && G.enemy.field.some(u=>u.hp>0))
-                  && (a.filter || a.withBase ? friendlyTargets(G.player, a).length===0 : G.player.field.length===0);
+                  && (a.filter || a.withBase ? chooseUnitCands(G.player, a).length===0 : G.player.field.length===0);
   // The Command shapes ("… instead" upgrades, Human Karma's rest, Destined Battle's chosen Unit…): what they choose first.
   const noShapeTgt = (a.kind==='cond' || cmdModalKind(a)) && !cmdPlayable(a, s, card);
   if (noEnemyTgt || noAllyTgt || noShapeTgt || cmdNoTarget(a, G.player)){ flashPrompt(`${card.name}: no legal target — can't play it now.`); return; }
@@ -9906,7 +9945,7 @@ function applyCommand(card, side, target, actOverride){
     else if (a.perFriendlyToken) applyToTarget(card, side, a, target||rankTarget(enemyTargets(foe,a),a), card.name);   // the amount is counted now
     else if (target){ const amt=dmgAmount(a, side, card); log(`<b>${card.name}</b> deals ${amt} to <b>${target.name}</b>.`, side===G.player?'me':'ai'); damage(target,amt,foe); }
   }
-  else if (a.kind==='heal'){ if (target){ const _b=target.hp; target.hp=Math.min(effMaxHp(target), target.hp + (a.amount>=99?effMaxHp(target):a.amount)); if(target.hp>_b){ floatNum(target.uid,'+'+(target.hp-_b),'#7ee29a'); unitHealed(target, side); } log(`<b>${card.name}</b> repairs <b>${target.name}</b>.`, side===G.player?'me':'ai'); }
+  else if (a.kind==='heal'){ if (target){ const _b=target.hp; target.hp=Math.min(effMaxHp(target), target.hp + (a.amount>=99?effMaxHp(target):a.amount)); if(target.hp>_b){ floatNum(target.uid,'+'+(target.hp-_b),'#7ee29a'); unitHealed(target, unitOwner(target)||side); } log(`<b>${card.name}</b> repairs <b>${target.name}</b>.`, side===G.player?'me':'ai'); }
     if (a.then) runTrigger(card, side, a.then, card.name); }   // "Then, draw 1." (Dramatic Turnabout)
   else if (a.kind==='buff'){
     if (target){
@@ -10365,7 +10404,7 @@ function applyActivateEffect(u, target, side, costUnit){
     else if (target && !apReduceBlocked(target, foe)){ if (a.dur==='battle') target.battleAp=(target.battleAp||0)-a.amount; else target.tempAp=(target.tempAp||0)-a.amount; target.ap=effAp(target); log(`<b>${u.name}</b>: <b>${target.name}</b> gets AP-${a.amount} ${a.dur==='battle'?'during this battle':'this turn'}.`, cls); if (foe.field.includes(target)) apReducedHook(target, foe); }
   } else if (a.kind==='heal'){
     if (a.scope==='self') target=u;   // "this Unit recovers N HP"
-    if (target){ const _b=target.hp; target.hp=Math.min(effMaxHp(target), target.hp+a.amount); if(target.hp>_b){ floatNum(target.uid,'+'+(target.hp-_b),'#7ee29a'); unitHealed(target, side); } log(`<b>${u.name}</b> repairs <b>${target.name}</b> (+${a.amount} HP).`, cls); }
+    if (target){ const _b=target.hp; target.hp=Math.min(effMaxHp(target), target.hp+a.amount); if(target.hp>_b){ floatNum(target.uid,'+'+(target.hp-_b),'#7ee29a'); unitHealed(target, unitOwner(target)||side); } log(`<b>${u.name}</b> repairs <b>${target.name}</b> (+${a.amount} HP).`, cls); }
   } else if (a.kind==='damage' && (a.scope==='all-enemy' || a.scope==='all-both')){
     damageAll(u, side, a, u.name);
   } else if (a.kind==='damage'){
@@ -10555,7 +10594,7 @@ function fieldClick(uidv){
   if (G.mode==='activate-target'){
     const u=G.pending, scope=u.activate.action.scope;
     if (G.activateCands && !G.activateCands.includes(uidv)){ flashPrompt('Pick a highlighted unit.'); return; }
-    const fa=u.activate.action.filter, anyS=scope!=='enemy' && !!(fa && fa.anySide);   // "Choose 1 other Unit that is being attacked" — either side
+    const fa=(u.activate.action.kind==='cond' && u.activate.action.inner ? u.activate.action.inner : u.activate.action).filter, anyS=scope!=='enemy' && !!(fa && fa.anySide);   // "Choose 1 other Unit that is being attacked" — either side
     const t=(scope==='enemy' ? G.enemy.field : [...G.player.field, G.player.base, ...(anyS ? G.enemy.field : [])].filter(Boolean)).find(c=>c.uid===uidv);
     if(!t){ flashPrompt(scope==='enemy'?'Pick an enemy unit.':'Pick a friendly unit.'); return; }
     const cu=G.activateCostUnit; G.activateCands=null; resolveActivate(u, t, cu); return;
@@ -12790,7 +12829,9 @@ function autoActivateTarget(u, attacker){
   let a=u.activate.action; if(a.kind==='cond')a=a.inner;
   if (a.scope==='enemy'){ const ec=enemyTargets(G.enemy, a); if(attacker&&attacker.hp>0&&ec.includes(attacker)) return attacker; return [...ec].sort((x,y)=>y.ap-x.ap)[0]||null; }
   if (a.scope==='friendly'){
-    const fc=actionStepCands(u, a);   // only Units the text allows ("damaged (Dianna Counter)", "(ZAFT) Unit with 5 or more AP"…)
+    const fc0=actionStepCands(u, a);   // only Units the text allows ("damaged (Dianna Counter)", "(ZAFT) Unit with 5 or more AP"…)
+    // "Choose 1 Unit" naming no side (G-Sky Easy, Galluss-K): the suggestion is one of your own Units while you have one.
+    const fc=fc0.some(x=>G.player.field.includes(x)) ? fc0.filter(x=>G.player.field.includes(x) || x===G.player.base) : fc0;
     if (a.kind==='heal') return [...fc].sort((x,y)=>(effMaxHp(y)-y.hp)-(effMaxHp(x)-x.hp))[0]||null;
     if (a.kind==='redirectBattle') return [...fc].sort((x,y)=>y.hp-x.hp)[0]||null;   // the sturdiest other body soaks the hit
     if (a.kind==='setActive') return [...fc].filter(t=>!t.token).sort((x,y)=>y.ap-x.ap)[0]||fc[0]||null;
@@ -12866,7 +12907,7 @@ function actionCmdUsable(c){
   if (ek.includes(a.kind) && a.scope!=='all-enemy' && a.scope!=='all-both') return enemyTargets(G.enemy, a).length>0;
   if (a.kind==='cond' || cmdModalKind(a)) return cmdPlayable(a, G.player, c);
   // A restricted friendly target must exist ("friendly Unit with <Blocker>" — Naval Bombardment; "(AEUG) Units/Bases").
-  if (['buff','heal','grantKw','grantReduce'].includes(a.kind) && (a.filter || a.withBase) && !a.then && !friendlyTargets(G.player, a).length) return false;
+  if (['buff','heal','grantKw','grantReduce'].includes(a.kind) && (a.filter || a.withBase) && !a.then && !chooseUnitCands(G.player, a).length) return false;
   if (cmdNoTarget(a, G.player)) return false;
   return true;
 }
@@ -13289,8 +13330,9 @@ function collectPlayerActions(attacker){
           // "Choose 1 of your Units" (Familial Love): the player chooses; the Unit in this battle is listed first.
           if (['buff','heal'].includes(c.action.kind) && c.action.scope!=='all-friendly'){
             const inBattle=u=>G.curBattle && (G.curBattle.atk===u || G.curBattle.def===u);
-            const fc=friendlyTargets(G.player, c.action).sort((x,y)=>(inBattle(y)?1:0)-(inBattle(x)?1:0));
-            if (fc.length>=2){ promptTargetChoice(fc, `<b>${c.name}</b>: choose 1 of your Units.`, t=>{ applyCommand(c, G.player, t); render(); if (afterCb) afterCb(); }); return; }
+            const mineF=u=>G.player.field.includes(u)?1:0, anyS=!!(c.action.filter && c.action.filter.anySide);   // "Choose 1 Unit": either side's, yours first
+            const fc=chooseUnitCands(G.player, c.action).sort((x,y)=>(mineF(y)-mineF(x)) || ((inBattle(y)?1:0)-(inBattle(x)?1:0)));
+            if (fc.length>=2){ promptTargetChoice(fc, `<b>${c.name}</b>: choose 1 ${anyS?'Unit (yours are listed first)':'of your Units'}.`, t=>{ applyCommand(c, G.player, t); render(); if (afterCb) afterCb(); }); return; }
             applyCommand(c, G.player, fc[0]||null); if (afterCb) afterCb(); return;
           }
           applyCommand(c, G.player, autoCommandTarget(c, attacker));
