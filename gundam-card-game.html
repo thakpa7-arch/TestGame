@@ -2278,7 +2278,8 @@ function matchTrashTrait(card, trait){
   // Color requirements (e.g. "3 blue cards") match the card's printed color.
   if (['blue','green','red','white','purple','black','colorless'].includes(tl)) return (card.color||'').toLowerCase()===tl;
   const cardTrait = (card.trait||'').toLowerCase();
-  return tl.split('/').some(part => cardTrait.includes(part.replace(/[()]/g,'').trim()));
+  // Whole printed traits only: "(Zeon)" is not satisfied by "(Neo Zeon)" (Zaku Ⅱ F2, Val Walo).
+  return tl.split('/').some(part => { const q=part.replace(/[()]/g,'').trim(); return !!q && cardTrait.includes('('+q+')'); });
 }
 function trashCount(side, trait){ return (side.trash||[]).filter(c=>matchTrashTrait(c,trait)).length; }
 // Count cards in a side's trash whose NAME contains `name` (e.g. "improved technique"), excluding one
@@ -5143,7 +5144,9 @@ function condMet(cond, side, source, other){
     case 'enemyShields':   return foe.shields.length >= cond.min;
     case 'enemyShieldsMax': return foe.shields.length <= cond.max;
     // notSelf: the Command being activated isn't counted (it is committed to the trash before it resolves).
-    case 'trash':          return trashCount(side, cond.trait) - (cond.notSelf && source && side.trash.includes(source) && matchTrashTrait(source, cond.trait) ? 1 : 0) >= cond.min;
+    // A Command card is always the card being activated here (in resolution, not yet in the trash), so it never counts itself
+    // either (Comrades Come First: "7 or more cards in your trash" needs 7 others).
+    case 'trash':          return trashCount(side, cond.trait) - ((cond.notSelf || (source && source.type==='command')) && source && side.trash.includes(source) && matchTrashTrait(source, cond.trait) ? 1 : 0) >= cond.min;
     case 'trashNameMin':   return trashNameCount(side, cond.name, source) >= cond.min;
     case 'friendlyName':   return side.field.some(u=>u.hp>0 && (u.name||'').toLowerCase().includes(cond.name));
     case 'targetPilotMaxLv': return !!(source && source.pilotCard && (source.pilotCard.lv||0) <= cond.max);   // `source` = the chosen Unit
@@ -6483,7 +6486,7 @@ function runTrigger(card, side, act, label){
     if (cands.length){ card.redirectTo=cands[0]; log(`${label}: battle damage <b>${card.name}</b> would receive this battle is dealt to <b>${cands[0].name}</b> instead.`, cls); }
   } else if (act.kind==='pilotAction'){
     const inner = pilotActionAction(card);
-    if (inner) runTrigger(card, side, inner, label);
+    if (inner){ pairedCmdActivated(card, side); runTrigger(card, side, inner, label); }
   } else if (act.kind==='cloneToken'){
     cloneToken(card, side, label, null);
   } else if (act.kind==='selfDuel'){
@@ -6496,7 +6499,7 @@ function runTrigger(card, side, act, label){
     else log(`${label}: <b>${name}</b> — the enemy has no Base.`, cls);
   } else if (act.kind==='pilotMain'){
     const inner = pilotMainAction(card);
-    if (inner) runTrigger(card, side, inner, label);
+    if (inner){ pairedCmdActivated(card, side); runTrigger(card, side, inner, label); }
   } else if (act.kind==='eotGain'){
     // "…gains the following effect during this turn: ■At the end of the turn, …" — held on the card
     // and resolved in the End Step (finishEndPhase).
@@ -6757,7 +6760,7 @@ function resolvePlayerTrigger(card, side, act, label, after){
   if (act.kind==='pilotMain' || act.kind==='pilotAction'){
     const inner = act.kind==='pilotMain' ? pilotMainAction(card) : pilotActionAction(card);
     if (!inner){ fin(); return; }
-    return resolvePlayerTrigger(card, side, inner, label, after);
+    pairedCmdActivated(card, side, ()=>resolvePlayerTrigger(card, side, inner, label, after)); return;
   }
   if (cmdPlayer(card, side, act, label, fin, false)) return;   // Command shapes (chains, delayed grants, shield guards…)
   if (act.kind==='gd05Sac'){ gd05SacInteractive(side, card, fin); return; }
@@ -9690,10 +9693,8 @@ function cmdNoTarget(a, side){
 }
 function startCommand(card, handIdx, modeAct){
   const s=G.player, a=modeAct||card.action;
-  // "If you have no (X) Unit tokens in play" — block when you already control one (only one allowed).
-  if (a.kind==='token' && a.tokenLimit && hasTraitToken(s, a.tokenLimit)){
-    flashPrompt(`${card.name}: you already have a (${a.tokenLimit}) Unit token in play.`); return;
-  }
+  // "If you have no (X) Unit tokens in play, deploy …" is an "If" condition, not a play restriction: the Command can still be
+  // played while you control one — it's paid for and deploys nothing (the token resolver logs why). The AI skips it then.
   if (a.kind==='retarget'){ flashPrompt(`${card.name}: play it in the Action Step while an enemy Unit is attacking.`); return; }
   // An 【Action】-only Command is played in an action step (13-2-4-1), not in the main phase.
   if (!/【\s*Main/.test(plain(card.effect||'')) && /【\s*Action/.test(plain(card.effect||''))){
@@ -9734,6 +9735,8 @@ function startCommand(card, handIdx, modeAct){
   // "Deploy A or B" token command — let the player pick which token to create.
   if (a.kind==='token' && a.choose && a.specs && a.specs.length>1){
     commit(card,handIdx); closeInspect();
+    if (a.tokenLimit && hasTraitToken(s, a.tokenLimit)){   // "If you have no (X) Unit tokens in play" — unmet: no effect
+      log(`<b>${card.name}</b> — you already have a (${a.tokenLimit}) Unit token in play.`, 'me'); clearSel(); render(); checkEnd(); return; }
     promptTokenChoice(a.specs, sp=>{
       makeRoom(s, 1, card.name, ()=>{   // a full battle area makes room instead of refusing (11-4-2)
         const tk=makeToken(sp, 'player'); s.field.push(tk);
@@ -11074,6 +11077,16 @@ function pilotMainAction(atk){
   // A Command paired as its 【Pilot】: its whole Command action ("… Then, …" parts included).
   if (p.srcEffect || p.type==='command'){ const ic=inferCommand(eff); if (ic && ic.kind!=='noEffect') return ic; }
   return parseTrigger(eff, 'Main') || inferCommand(eff);
+}
+// Activating the 【Main】/【Action】 of a Command paired as this Unit's Pilot (Gundam Rose, Maxter, Dragon, Bolt, Shadow) is activating
+// that Command card's 【Main】/【Action】: record its traits for "if you have activated a (Special Move) Command … this turn" (Master
+// Asia) and fire the Command watchers (Shining Gundam (Super Mode)), as Domon Kasshu's discard-and-activate does. A real Pilot card
+// paired there isn't a Command, so nothing is recorded for it. `done` (optional) continues after any choice made here.
+function pairedCmdActivated(atk, side, done){
+  const p = atk && atk.pilotCard;
+  if (!p || !(p.cmdPilot || p.type==='command')){ if (done) done(); return; }
+  const def = CARD_BY_ID.get(p.def) || {};
+  commandPlayed(Object.assign({}, p, { type:'command', name:def.name||p.name, trait:def.trait||p.trait }), side, done);
 }
 function pilotAttackAction(atk){
   return atk.pilotCard ? gatedAttackAction(atk.pilotCard.effect, atk) : null;
