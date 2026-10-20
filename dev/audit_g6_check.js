@@ -318,8 +318,9 @@ for (const id of ['GD06-058','GD05-030','GD05-048','GD05-078']){
 
 // ---- Alpha Azieru GD05-054: 【Once per Turn】When one of your Units is destroyed by an effect, draw 1 ----
 { fresh('enemy'); put('GD05-054','player'); const a=stick('player',1,1), b=stick('player',1,1), c=stick('player',1,5,{rested:true}); const h0=G.player.hand.length;
-  A.applyToTarget(stick('enemy',1,1), G.enemy, {kind:'damage', amount:3}, a, 'T'); const h1=G.player.hand.length;
-  A.applyToTarget(stick('enemy',1,1), G.enemy, {kind:'damage', amount:3}, b, 'T'); const h2=G.player.hand.length;
+  // a "destroy it" effect (effect damage that destroys a Unit isn't "destroyed by an effect", Q368)
+  A.applyToTarget(stick('enemy',1,1), G.enemy, {kind:'destroy'}, a, 'T'); const h1=G.player.hand.length;
+  A.applyToTarget(stick('enemy',1,1), G.enemy, {kind:'destroy'}, b, 'T'); const h2=G.player.hand.length;
   ok('Alpha Azieru: your Unit destroyed by an effect -> draw 1, once per turn', h1===h0+1 && h2===h1, `${h0}->${h1}->${h2}`);
   fresh('enemy'); put('GD05-054','player'); const v=stick('player',1,1,{rested:true}); const atk=stick('enemy',5,5); const h3=G.player.hand.length; A.resolveAiAttack(atk, ()=>{}, v); drainTasks(); passAll();
   ok('Alpha Azieru: a Unit destroyed in battle does not count', !G.player.field.includes(v) && G.player.hand.length===h3); }

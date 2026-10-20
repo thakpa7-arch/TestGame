@@ -2863,6 +2863,9 @@ function reanimate(card, side, act, after){
   // (its trash discount applies), and only then is room made in the battle area (11-4-2) — trashing a
   // Unit for room can't change a cost that's already paid.
   const deploy=(c)=>{ const cost=act.free ? 0 : effectiveCost(side,c); side.trash.splice(side.trash.indexOf(c),1); refreshTrashStats(side); if (cost) payCost(side, cost);
+    // Paying that cost is paying for a Unit's effect (Q286/Q297/Q400): a Unit's own effect (Gundam X Divider, Destiny Gundam) or a
+    // paired Pilot's (Desil Galette). A Command's or Base's (Awakened Power, Downes) isn't a Unit's effect.
+    if (cost) payHook(side, card.type==='unit' ? card : (card.type==='pilot' ? side.field.find(u=>u.pilotCard===card) : null), cost);
     makeRoom(side, 1, card.name, ()=>{
     resetUnit(c); c.rested=!!act.rested; c.sick=!c.blitz; side.field.push(c);
     log(`<b>${card.name}</b>: deploys <b>${c.name}</b> from trash${cost?` (pays ${cost})`:''}${act.rested?' rested':''}.`, side===G.player?'me':'ai');
@@ -3452,12 +3455,12 @@ function destroyPairedPilot(card, side, u, label){
   const foe=side===G.player?G.enemy:G.player, cls=side===G.player?'me':'ai', pc=u && u.pilotCard;
   if (!pc || !foe.field.includes(u)) return;
   syncWhileHp(u); const maxBefore=effMaxHp(u);
-  u.pilot=null; u.pilotCard=null; u.linked=false; if (u.activateFromPilot) dropPilotActivate(u);
+  u.pilot=null; u.pilotCard=null; u.linked=false; if (u.activateFromPilot) dropPilotActivate(u); pilotLeftUnit(u);
   u.pilotPairAp=0; u.pilotPairHp=0; u.pilotLinkAp=0; u.pilotLinkHp=0; if (u.baseLv!=null) u.lv=u.baseLv;
   u.hp -= Math.max(0, maxBefore-effMaxHp(u)); u.ap=effAp(u); u.maxHp=effMaxHp(u); u.whileHpOn=whileHpBonus(u);
   sendToTrash(pc, foe);
   log(`${label}: <b>${card.name}</b> destroys Pilot <b>${pc.name}</b> (paired with <b>${u.name}</b>).`, cls);
-  if (u.hp<=0){ const i=foe.field.indexOf(u); if(i>=0) foe.field.splice(i,1); fx('die',u.uid); log(`<b>${u.name}</b> is destroyed.`, foe===G.player?'me':'ai'); sendToTrash(u, foe); fireDestroyed(u, foe); }
+  if (u.hp<=0){ const i=foe.field.indexOf(u); if(i>=0) foe.field.splice(i,1); fx('die',u.uid); log(`<b>${u.name}</b> is destroyed.`, foe===G.player?'me':'ai'); sendToTrash(u, foe); fireDestroyedBy(u, foe, 'rules'); }
 }
 // "Choose 1 … Unit. It recovers N HP and gets AP+M during this turn." — the Units it may choose (either player's when no side is named).
 function healBuffCands(side, act){
@@ -4945,12 +4948,12 @@ function applyToTarget(card, side, act, target, label){
 function detachPilotToHand(u, owner, who0, cls){
   const pc=u && u.pilotCard; if (!pc || !owner.field.includes(u)) return;
   syncWhileHp(u); const maxBefore=effMaxHp(u);
-  u.pilot=null; u.pilotCard=null; u.linked=false; if (u.activateFromPilot) dropPilotActivate(u);
+  u.pilot=null; u.pilotCard=null; u.linked=false; if (u.activateFromPilot) dropPilotActivate(u); pilotLeftUnit(u);
   u.pilotPairAp=0; u.pilotPairHp=0; u.pilotLinkAp=0; u.pilotLinkHp=0; if (u.baseLv!=null) u.lv=u.baseLv;
   u.hp -= Math.max(0, maxBefore-effMaxHp(u)); u.ap=effAp(u); u.maxHp=effMaxHp(u); u.whileHpOn=whileHpBonus(u);
   owner.hand.push(pc); sound('bounce');
   log(`${who0} returns Pilot <b>${pc.name}</b> (paired with <b>${u.name}</b>) to ${owner===G.player?'your':'its owner\'s'} hand.`, cls);
-  if (u.hp<=0){ const i=owner.field.indexOf(u); if(i>=0) owner.field.splice(i,1); fx('die',u.uid); log(`<b>${u.name}</b> is destroyed.`, owner===G.player?'me':'ai'); sendToTrash(u, owner); fireDestroyed(u, owner); }
+  if (u.hp<=0){ const i=owner.field.indexOf(u); if(i>=0) owner.field.splice(i,1); fx('die',u.uid); log(`<b>${u.name}</b> is destroyed.`, owner===G.player?'me':'ai'); sendToTrash(u, owner); fireDestroyedBy(u, owner, 'rules'); }
 }
 // "Choose 1 of your (Minerva Squad) Units. During this turn, battle damage it would receive is dealt to this Unit instead."
 // (Lunamaria Hawke) — "this Unit" is the Unit carrying the effect (a Pilot's: the Unit it is paired with).
@@ -5039,7 +5042,16 @@ function condHost(source, side){
   if (source.type!=='pilot') return source;
   const sides = side ? [side] : [G.player, G.enemy].filter(Boolean);
   for (const s of sides){ const h=s.field.find(x=>x.pilotCard===source); if (h) return h; }
+  const d=G.destroying && G.destroying.u; if (d && d.pilotCard===source) return d;   // its Unit was just destroyed: the last-known host
   return null;
+}
+// A 【Destroyed】 effect checks the card's last state before it left the field (Q340, Q432): while the destroyed Unit's own (or its
+// Pilot's) 【Destroyed】 resolves, that Unit and its Pilot still count for "If you have an (Orb) Pilot / a friendly (T) Unit in play".
+function lkField(side, source){
+  const d=G.destroying && G.destroying.u;
+  if (!d || d.type!=='unit' || !source || !(source===d || source===d.pilotCard) || side.field.includes(d)) return side.field;
+  if ((d.owner==='player' ? G.player : G.enemy)!==side) return side.field;
+  return [...side.field, d];
 }
 function parseCondition(t){
   t=t.toLowerCase().trim(); let m;
@@ -5210,9 +5222,9 @@ function condMet(cond, side, source, other){
     case 'targetPilotMaxLv': return !!(source && source.pilotCard && (source.pilotCard.lv||0) <= cond.max);   // `source` = the chosen Unit
     case 'linkUnit': {     // "another (friendly) … Link Unit": not the Unit carrying the text (Kikeroga, Miguel's Ginn)
       const me = cond.other ? condHost(source, side) : null;
-      return side.field.some(u=>u.linked && u!==me && traitMatchUnit(u,cond.trait));
+      return lkField(side, source).some(u=>u.linked && u!==me && traitMatchUnit(u,cond.trait));
     }
-    case 'friendlyPilot':  return side.field.some(u=>u.pilotCard && traitMatchUnit({trait:u.pilotCard.trait}, cond.trait)
+    case 'friendlyPilot':  return lkField(side, source).some(u=>u.pilotCard && traitMatchUnit({trait:u.pilotCard.trait}, cond.trait)
                                   && (!cond.color || String(u.pilotCard.color||'').toLowerCase()===cond.color)
                                   && (!cond.notColor || String(u.pilotCard.color||'').toLowerCase()!==cond.notColor));
     case 'friendlyUnit': {
@@ -5222,7 +5234,7 @@ function condMet(cond, side, source, other){
       else if (tr==='friendly'){ tr=null; }
       // "other" excludes the Unit carrying the text — for a Pilot's text, the Unit it is paired with (McGillis Fareed).
       const me = excl ? (condHost(source, side) || source) : null;
-      const n = side.field.filter(u=>traitMatchUnit(u,tr) && (!excl || u!==me) && (!cond.rested || u.rested) && (!cond.active || !u.rested)
+      const n = lkField(side, source).filter(u=>traitMatchUnit(u,tr) && (!excl || u!==me) && (!cond.rested || u.rested) && (!cond.active || !u.rested)
         && (!cond.pilotReq || (u.pilot && pilotMeetsReq(u.pilotCard, cond.pilotReq)))).length;   // "a (T) Unit paired with a Pilot that is Lv.N or lower" (Endra)
       return n >= cond.min;
     }
@@ -6641,7 +6653,7 @@ function runTrigger(card, side, act, label){
     if (pc){
       const ti=side.trash.indexOf(pc); if(ti>=0) side.trash.splice(ti,1);            // rescue from trash (Destroyed)…
       if (card.pilot && side.field.includes(card)){
-        card.hp-=(pc.pHp||0); card.pilot=null; card.pilotCard=null; card.linked=false; if (card.activateFromPilot) dropPilotActivate(card); card.pilotPairAp=0; card.pilotPairHp=0; card.pilotLinkAp=0; card.pilotLinkHp=0; if (card.baseLv!=null) card.lv=card.baseLv; card.ap=effAp(card); card.maxHp=effMaxHp(card);  // …or detach from a living Unit
+        card.hp-=(pc.pHp||0); card.pilot=null; card.pilotCard=null; card.linked=false; if (card.activateFromPilot) dropPilotActivate(card); pilotLeftUnit(card); card.pilotPairAp=0; card.pilotPairHp=0; card.pilotLinkAp=0; card.pilotLinkHp=0; if (card.baseLv!=null) card.lv=card.baseLv; card.ap=effAp(card); card.maxHp=effMaxHp(card);  // …or detach from a living Unit
         // Losing the Pilot's HP can reduce the Unit to 0 — that's a state-based destruction.
         if (card.hp<=0){ const fi=side.field.indexOf(card); if(fi>=0) side.field.splice(fi,1); fx('die',card.uid); log(`<b>${card.name}</b> is destroyed.`, cls); sendToTrash(card, side); runTrigger(card, side, parseTrigger(card.effect,'Destroyed'), 'Destroyed'); }
       }
@@ -7557,7 +7569,7 @@ function syncWhileHp(u, side){
   setTimeout(()=>{
     if (!side.field.includes(u) || u.hp>0 || G.over) return;
     side.field.splice(side.field.indexOf(u),1); fx('die',u.uid); log(`<b>${u.name}</b> is destroyed (its HP fell to 0).`, side===G.player?'me':'ai');
-    sendToTrash(u, side); fireDestroyed(u, side); render(); checkEnd();
+    sendToTrash(u, side); fireDestroyedBy(u, side, 'rules'); render(); checkEnd();
   }, 0);
 }
 // Send a card to the trash zone (tokens are simply removed with no trash entry).
@@ -8982,7 +8994,8 @@ function effBreach(u){
 // Effective <Support N>: printed on the Unit, or carried by the Pilot paired with it (Nena Trinity).
 function effSupport(u){
   let s = u.support||0;
-  if (u.type==='unit' && u.pilotCard) s = Math.max(s, supportAmount(u.pilotCard.srcEffect || u.pilotCard.effect));
+  // A gained copy adds to the one it has (Q58): a <Support 1> Unit given <Support 2> by its Pilot has <Support 3>.
+  if (u.type==='unit' && u.pilotCard) s += supportAmount(u.pilotCard.srcEffect || u.pilotCard.effect);
   return s + (u.tempSupport||0);   // a copy gained this turn (∀ Gundam GD04-067)
 }
 // A Unit is a <Blocker> if printed, or via "While you have a (Trait) Pilot in play" (Virtue).
@@ -9438,8 +9451,19 @@ function settleEx(side){
   if (side.ex>0 && side.resAvail<side.ex){
     const used=side.ex-side.resAvail; side.ex=side.resAvail; side.lastExUsed=used;
     log(`${who(side)} used up ${used} EX Resource${used===1?'':'s'}.`, side===G.player?'me':'ai');
-    exExiledHook(side, used);
+    // "When one of your EX Resources is exiled" (Gundam Calibarn) doesn't resolve mid-payment (Q349): it resolves with the paid-for
+    // Unit's / Pilot's / Base's 【Deploy】 and 【When Paired】, or after the Command / activated effect has resolved. It waits until
+    // the play has settled, and its candidates (the just-deployed Unit, a token the Command made) are read then.
+    if (watchSources(side,'exExileShield').length){ side.exExilePend=(side.exExilePend||0)+used; side.exExileSeq=G.turnSeq; scheduleExExiled(); }
   }
+}
+function scheduleExExiled(){ G.exExiledWait=false; setTimeout(flushExExiled, 0); }
+function flushExExiled(){
+  if (G.over) return;
+  const sides=[G.player, G.enemy].filter(s=>s && s.exExilePend>0); if (!sides.length) return;
+  // Something is still resolving or being chosen (a target, a modal, the Command in flight): wait for the next render.
+  if (modalBusy() || G.mode!=='idle' || G.cmdInFlight || (G.modalQueue && G.modalQueue.length)){ G.exExiledWait=true; return; }
+  for (const s of sides){ const n=s.exExilePend; s.exExilePend=0; if (s.exExileSeq===G.turnSeq) exExiledHook(s, n); }
 }
 
 // Official turn structure: Start Phase → Draw Phase → Resource Phase → Main Phase → End Phase.
@@ -10051,6 +10075,16 @@ function activateReadyAny(u){
   if (activateReady(u)) return true;
   if (u && u.activate2){ swapActivate(u); const r=activateReady(u); swapActivate(u); return r; }
   return false;
+}
+// The Pilot left `u` while `u` stays in play (destroyed, returned to hand): the keywords its pairing / link switched on end
+// (【During Pair･(Orb) Pilot】<Blocker>, 【During Link】<High-Maneuver>, a Pilot's "this Unit gains <Blocker>"), and a Unit deployed
+// this turn that could attack only because it was a Link Unit can't attack any more (Q249).
+function pilotLeftUnit(u){
+  if (!u) return;
+  for (const k of (u.pilotKwOn||[])) u[k]=false;
+  u.pilotKwOn=null;
+  if (u.linkUnsick===G.turnSeq && !u.linked) u.sick=true;
+  u.linkUnsick=0;
 }
 // The Pilot left: drop the ability it gave (whichever slot it's in).
 function dropPilotActivate(u){
@@ -11807,7 +11841,8 @@ function exExiledHook(side, n){
     // "you may choose 1 of your Units" — the player picks one or declines.
     hookPick(side, cands, best, `<b>${card.name}</b>: an EX Resource was exiled — you may choose 1 of your Units. During this turn, enemy damage it receives is reduced by ${w}.`, t=>{
       if (!side.field.includes(t)) return;
-      t.dmgReduce=Math.max(t.dmgReduce||0, w);
+      // Each one is its own "reduce enemy damage by 3": two Calibarns on one Unit reduce it by 6 (Q484).
+      (t.dmgGuards = t.dmgGuards || []).push({ amount:w, enemy:true, turnSeq:G.turnSeq, src:card.name });
       log(`<b>${card.name}</b>: an EX Resource was exiled — <b>${t.name}</b> takes ${w} less enemy damage this turn.`, side===G.player?'me':'ai'); },
       "Don't choose", ()=>log(`<b>${card.name}</b>: you don't choose a Unit.`, 'me'));
   }
@@ -12108,8 +12143,11 @@ function pickAiBlocker(atk, blockers){
 // clearSel(), unlike a G.mode selection. The AI (and player effects with 0–1 legal targets) auto-resolve.
 // 【Destroyed】 resolves with the destroyed card as its source, then hands the source back: a multi-hit
 // effect (an AoE, "1 to 2 enemy Units") that destroys a Unit keeps resolving as itself (Acguy, Archangel).
+// A Unit destroyed with its cause set: 'rules' = its HP reached 0 by rules management (it lost HP, 5-5-2), not "destroyed by an
+// effect" (Q368).
+function fireDestroyedBy(u, side, cause){ const pc=G.destroyCause; G.destroyCause=cause; try { fireDestroyed(u, side); } finally { G.destroyCause=pc; } }
 function fireDestroyed(u, side){
-  const prevSrc = G.effSrc, cause = G.destroyCause;   // 'battle' / 'cost' (set by the caller) — anything else is an effect
+  const prevSrc = G.effSrc, cause = G.destroyCause;   // 'battle' / 'cost' / 'effectDamage' / 'rules' (set by the caller) — anything else is a destroy effect
   const prevD = G.destroying; G.destroying = { u, cause };   // "If this Unit is destroyed with battle damage" (Haro) reads it
   try { G.destroyCause = null; fireDestroyedInner(u, side, cause); } finally { G.effSrc = prevSrc; G.destroyCause = cause; G.destroying = prevD; }
 }
@@ -12132,7 +12170,7 @@ function fireDestroyedInner(u, side, cause){
     hookPick(side, cands, best, `<b>${u.name}</b> 【Destroyed】: choose 1 friendly ${traitLbl(tod.readyTrait)} Unit to set as active.`, t=>{
       if (side.field.includes(t) && t.rested && effReady(t, side)){ log(`<b>${u.name}</b> 【Destroyed】: <b>${t.name}</b> is set active.`, side===G.player?'me':'ai'); } });
   }
-  if (u.type==='unit' && cause!=='battle' && cause!=='cost') unitEffDestroyedHook(u, side);   // Alpha Azieru
+  if (u.type==='unit' && cause!=='battle' && cause!=='cost' && cause!=='effectDamage' && cause!=='rules') unitEffDestroyedHook(u, side);   // Alpha Azieru (not effect damage, Q368)
   const dact = parseTrigger(u.effect,'Destroyed') || gd05Custom(u,'Destroyed');
   resolveDestroyedAct(u, side, dact, null);
   firePilotDestroyed(u, side);                 // and the 【Destroyed】 its Pilot gave it
@@ -12233,7 +12271,8 @@ function damage(u, dmg, side, kind, dealer){
     // "a friendly Unit paired with a Pilot has destroyed an enemy Unit with battle damage this turn" (Libra ST12-016)
     if (kind==='battle' && u.type==='unit' && G.curBattle){ const k = G.curBattle.def===u ? G.curBattle.atk : (G.curBattle.atk===u ? G.curBattle.def : null);
       if (k && k.pilot && k.owner!==u.owner){ const ks = k.owner==='player' ? G.player : G.enemy; if (ks) ks.pairedBattleKillSeq = G.turnSeq; } }
-    { const pc=G.destroyCause; G.destroyCause = kind==='battle' ? 'battle' : 'effect'; try { fireDestroyed(u, side); } finally { G.destroyCause=pc; } }
+    // Destroyed by effect damage isn't "destroyed by an effect" (Q368, 5-5-2): only a "destroy it" effect is.
+    { const pc=G.destroyCause; G.destroyCause = kind==='battle' ? 'battle' : 'effectDamage'; try { fireDestroyed(u, side); } finally { G.destroyCause=pc; } }
     if (kind!=='battle') effDmgHook(u, side, src0, kind);
     return;
   }
@@ -12373,6 +12412,8 @@ function attachPilot(u, p, onDone){
   // Pilot HP plus any 【During Pair】 "this Unit gets HP+N" (Unit's and Pilot's) all raise current HP now.
   const pairOn = duringPairMet(u);   // 【During Pair･X Pilot】: only a qualifying Pilot switches it on
   u.hp += p.pHp + (pairOn?(u.pairHp||0):0) + (u.pilotPairHp||0);
+  // What the pairing / link switches on below ends when the Pilot leaves (pilotLeftUnit).
+  const kw0={ blocker:!!u.blocker, firstStrike:!!u.firstStrike, highManeuver:!!u.highManeuver }, wasSick=!!u.sick;
   // Keywords the Unit only gains while paired now switch on.
   if (pairOn && pairGrantsKeyword(u.effect,'blocker')) u.blocker=true;
   if (pairOn && pairGrantsKeyword(u.effect,'first'))   u.firstStrike=true;
@@ -12392,6 +12433,8 @@ function attachPilot(u, p, onDone){
     if (clauseGrantsKeyword(u.effect,'high','During Link', u, true))    u.highManeuver=true;
     log(`Link established — <b>${u.name}</b> can attack this turn!`, u.owner==='player'?'me':'ai');
   }
+  u.pilotKwOn=Object.keys(kw0).filter(k=>!kw0[k] && u[k]);
+  u.linkUnsick = justLinked && wasSick ? G.turnSeq : 0;   // deployed this turn: it may attack only while it stays a Link Unit (Q249)
   u.maxHp=effMaxHp(u); u.ap=effAp(u);
   sound(justLinked ? 'link' : 'pair');
   // 【When Paired】 (pilot's then unit's) and 【When Linked】 fire now. For the player these are
@@ -12443,7 +12486,9 @@ function refundCommandInFlight(){
   refreshTrashStats(G.player);
   G.player.hand.push(ci.card);
   G.player.resAvail += ci.cost;
-  if (ci.exBefore!=null) G.player.ex = ci.exBefore;   // an EX Resource consumed by the payment comes back too
+  if (ci.exBefore!=null){   // an EX Resource consumed by the payment comes back too — and wasn't exiled after all (Calibarn)
+    if (G.player.exExilePend) G.player.exExilePend=Math.max(0, G.player.exExilePend-Math.max(0, ci.exBefore-G.player.ex));
+    G.player.ex = ci.exBefore; }
   log(`<b>${ci.card.name}</b> — cancelled; returned to your hand.`, 'me');
   return true;
 }
@@ -13748,6 +13793,7 @@ function pruneTriggerCands(){
 function render(){
   pruneTriggerCands();
   if (G.modalQueue && G.modalQueue.length) setTimeout(pumpModalQueue, 0);   // a waiting effect takes the modal once it's free
+  if (G.exExiledWait) scheduleExExiled();                                     // a deferred EX-exiled trigger (Calibarn) waits for the play to settle
   // Refresh cached AP/HP for every Unit so turn-conditional team auras (e.g. Gundam's
   // "During your turn, all your Units get AP+1") and mid-turn pairings update immediately
   // on both sides — combat and the display both read the cached values.

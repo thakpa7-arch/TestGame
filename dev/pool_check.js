@@ -94,7 +94,7 @@ fresh(); { put('GD02-022','player'); const age=stick('player',3,3,{trait:'(AGE S
 fresh(); { put('GD03-023','player'); const age=stick('player',3,3,{trait:'(AGE System)'}); A.runTrigger({name:'EX',effect:'',owner:'player'}, G.player, {kind:'exResource', amount:1}, 'EX');
   ok('G-Bouncer: placing an EX Resource gives an (AGE System) Unit <High-Maneuver>', A.effHighManeuver(age)===true); }
 // GD05-018 Gundam Calibarn — an EX Resource is exiled: one of your Units takes 3 less enemy damage this turn
-fresh(); { const cb=put('GD05-018','player'); G.player.resMax=1; G.player.ex=1; G.player.resAvail=2; A.payCost(G.player, 2);
+fresh(); { const cb=put('GD05-018','player'); G.player.resMax=1; G.player.ex=1; G.player.resAvail=2; A.payCost(G.player, 2); drainTasks();   // it resolves once the payment's play settles (Q349)
   // "you may choose 1 of your Units" — the player is asked (with a decline button); choose Calibarn itself.
   const askedC=el('blockModal').classList.contains('show') && /EX Resource was exiled/.test(el('blockMsg').innerHTML);
   { const b=[...el('blockBtns').children].find(x=>(x.innerHTML||'').includes('Gundam Calibarn')); if (b) b.onclick(); drainTasks(); }
