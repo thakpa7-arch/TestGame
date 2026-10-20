@@ -100,14 +100,15 @@ const logs=()=>(el('log').children||[]).map(n=>(n.innerHTML||'').replace(/<[^>]+
 { fresh('enemy'); const a=stick('enemy',2,3), bare=stick('enemy',2,3); pairPlain(a); const ap=A.effAp(a); A.applyCommand(card('GD03-112','enemy'), G.enemy, null);
   ok('Warped Intent (AI): its paired Unit gets AP+2, its unpaired one does not', A.effAp(a)===ap+2 && A.effAp(bare)===2); }
 // ===== GD03-116 Towards Destiny — Choose 1 friendly (Vagan) Unit and 1 enemy Unit. Deal 2 damage to them. =====
-{ fresh('player'); const z=stick('player',1,5,{trait:'(Zeon)'}); const e=stick('enemy',1,5); play(inHand('GD03-116'));
-  ok('Towards Destiny (player): with no (Vagan) Unit no friendly Unit is damaged; the enemy Unit takes 2', z.hp===5 && e.hp===3, `${z.hp}/${e.hp}`); }
+// Official Q&A (Q293 and others): "Choose 1 friendly … Unit and 1 enemy Unit" is only playable when both can be chosen.
+{ fresh('player'); const z=stick('player',1,5,{trait:'(Zeon)'}); const e=stick('enemy',1,5); const c=inHand('GD03-116'); play(c);
+  ok('Towards Destiny (player): with no (Vagan) Unit it can\'t be played — nothing is damaged', G.player.hand.includes(c) && z.hp===5 && e.hp===5, `${z.hp}/${e.hp}`); }
 { fresh('player'); const v1=stick('player',1,5,{trait:'(Vagan)'}), v2=stick('player',1,5,{trait:'(Vagan)'}), z=stick('player',1,5,{trait:'(Zeon)'}); const e1=stick('enemy',1,5), e2=stick('enemy',1,5);
   play(inHand('GD03-116')); const m=modal(); const onlyV=m && btnHas(v1) && btnHas(v2) && !btnHas(z); pressUnit(v2); pressUnit(e1);
   ok('Towards Destiny (player): the friendly chooser lists only (Vagan) Units; both chosen Units take 2', onlyV && v2.hp===3 && v1.hp===5 && z.hp===5 && e1.hp===3 && e2.hp===5, JSON.stringify(m)); }
 { fresh('enemy'); const z=stick('enemy',1,5,{trait:'(Zeon)'}); const p=stick('player',1,5); A.applyCommand(card('GD03-116','enemy'), G.enemy, null);
   const v=stick('enemy',1,5,{trait:'(Vagan)'}); A.applyCommand(card('GD03-116','enemy'), G.enemy, null);
-  ok('Towards Destiny (AI): only its (Vagan) Unit is damaged', z.hp===5 && v.hp===3 && p.hp===1, `${z.hp}/${v.hp}/${p.hp}`); }
+  ok('Towards Destiny (AI): only its (Vagan) Unit is damaged; with no (Vagan) Unit nothing is', z.hp===5 && v.hp===3 && p.hp===3, `${z.hp}/${v.hp}/${p.hp}`); }
 // ===== GD03-121 Unheralded Attack — 【Action】Choose 1 friendly Base and 1 enemy Unit with 3 or less HP. Rest them. =====
 { fresh('enemy'); G.player.base=card('GD03-132','player'); G.player.base.hp=5; G.player.base.rested=false; const mate=stick('player',1,9,{rested:true});
   const atk=stick('enemy',2,9); const e3=stick('enemy',1,3), e2=stick('enemy',1,2), e4=stick('enemy',1,4); G.player.hand=[card('GD03-121','player')];

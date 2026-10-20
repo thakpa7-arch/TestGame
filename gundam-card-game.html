@@ -3408,6 +3408,7 @@ function cmdAuto(card, side, act, label){
       if (t) applyHealBuff(card, side, act, t, label); else log(`${label}: <b>${name}</b> — no Unit it can choose.`, cls);
       return true; }
     case 'restBaseEnemy': {
+      if (!restBaseEnemyOk(side, act)){ log(`${label}: <b>${name}</b> — can't choose both a friendly Base and an enemy Unit, so nothing is rested.`, cls); return true; }
       const e=rankTarget(enemyTargets(foe, { kind:'rest', filter:act.enemyFilter }), { kind:'rest' });
       applyRestBaseEnemy(card, side, e, label); return true; }
     case 'debuffUpTo': {
@@ -3472,6 +3473,12 @@ function applyHealBuff(card, side, act, t, label){
   log(`${label}: <b>${t.name}</b> recovers ${act.heal} HP and gets AP+${act.amount} this turn.`, cls);
 }
 // "Choose 1 friendly Base and 1 enemy Unit … Rest them." (Unheralded Attack)
+// "Choose 1 friendly Base and 1 enemy Unit … Rest them." (Unheralded Attack): both must be choosable, like "1 of your Units and
+// 1 enemy Unit" (Q293).
+function restBaseEnemyOk(side, act){
+  const foe=side===G.player?G.enemy:G.player;
+  return !!(side.base && side.base.hp>0) && enemyTargets(foe, { kind:'rest', filter:act.enemyFilter }).length>0;
+}
 function applyRestBaseEnemy(card, side, e, label){
   const cls=side===G.player?'me':'ai', foe=side===G.player?G.enemy:G.player, b=side.base;
   if (b && b.hp>0 && !b.rested){ b.rested=true; log(`${label}: <b>${card.name}</b> rests ${side===G.player?'your':who(side)+"'s"} <b>${b.name}</b> base.`, cls); }
@@ -3549,6 +3556,7 @@ function cmdPlayer(card, side, act, label, fin, modal){
         t=>{ if (t) applyHealBuff(card, side, act, t, label); else log(`${label}: <b>${name}</b> — no Unit it can choose.`, 'me'); render(); fin(); });
       return true; }
     case 'restBaseEnemy':
+      if (!restBaseEnemyOk(side, act)){ log(`${label}: <b>${name}</b> — can't choose both a friendly Base and an enemy Unit, so nothing is rested.`, 'me'); fin(); return true; }
       choose(enemyTargets(G.enemy, { kind:'rest', filter:act.enemyFilter }), `<b>${name}</b>: choose 1 enemy Unit to rest (your Base is rested too).`,
         t=>{ applyRestBaseEnemy(card, side, t, label); render(); fin(); });
       return true;
@@ -4982,6 +4990,26 @@ function restBothCands(side, act){
 function restBothFriendly(side, act){
   return restBothCands(side, act).sort((a,b)=>effAp(a)-effAp(b))[0] || null;
 }
+// "Choose 1 of your / friendly … Unit and 1 enemy Unit. Deal N damage to them / Rest them." (damageBoth, restBoth): the effect
+// activates only if BOTH Units can be chosen — with only one of them, nothing happens (Q168, Q230, Q265, Q293, Q327, Q412, Q522).
+function bothFriendlyCands(side, act){
+  if (act.kind==='restBoth') return restBothCands(side, act);
+  return act.filter ? friendlyTargets(side, { filter:act.filter, source:act.source }) : side.field.filter(u=>u.hp>0);
+}
+function bothEnemyCands(side, act){
+  const foe = side===G.player ? G.enemy : G.player;
+  return enemyTargets(foe, { kind: act.kind==='restBoth' ? 'rest' : 'damage', amount:act.amount, filter:act.enemyFilter, source:act.source });
+}
+function bothChoosable(side, act){
+  return !!act && bothFriendlyCands(side, act).length>0 && bothEnemyCands(side, act).length>0;
+}
+// AI: the friendly Unit a damageBoth hits — a qualifying Unit that survives it if any (pingFriendly's pick when unrestricted),
+// else the least valuable one (it must still choose one of its Units).
+function bothFriendlyPick(side, act){
+  const fq = bothFriendlyCands(side, act);
+  if (!act.filter){ const p=pingFriendly(side, act.amount, false); if (p && fq.includes(p)) return p; }
+  return [...fq].sort((a,b)=>((b.hp>act.amount)-(a.hp>act.amount)) || keepVal(a)-keepVal(b))[0] || null;
+}
 // Rest the chosen friendly and the chosen enemy (Gun EZ). Either may be null if none was legal.
 function applyRestBoth(card, side, act, friendly, enemy, label, useBase){
   const cls=side===G.player?'me':'ai';
@@ -6248,6 +6276,7 @@ function resolveChosenMode(card, side, act, label, after, attacker){
     return;
   }
   if (act.kind==='damageBoth'){
+    if (!bothChoosable(side, act)){ log(`${label}: <b>${card.name}</b> — can't choose both a friendly Unit and an enemy Unit, so the effect doesn't activate.`, 'me'); fin(); return; }
     const fq = act.filter ? friendlyTargets(G.player, { filter:act.filter }) : G.player.field.filter(u=>u.hp>0);
     const pickEnemy=(ft)=>{
       const eq = first(act.enemyFilter ? enemyTargets(foe, { kind:'damage', filter:act.enemyFilter }) : foe.field.filter(u=>u.hp>0));
@@ -6327,10 +6356,14 @@ function playerExileChoice(card, side, act, label, after){
   const tr = act.trait ? `(${act.trait.replace(/\b\w/g,ch=>ch.toUpperCase())}) ` : '';
   if (cands.length < act.count){ log(`${label}: <b>${card.name}</b> — fewer than ${act.count} ${tr}card${act.count===1?'':'s'} in your trash, so it can't be paid.`, 'me'); fin(); return; }
   act.inner.source = card;
-  if (!cmdModeLegal(act.inner, side)){ log(`${label}: <b>${card.name}</b> — its effect has no legal target, so nothing is exiled.`, 'me'); fin(); return; }
+  // 【…・Development N】: the optional exile can be paid even when the effect it activates has no target right now — it then does
+  // nothing (Q303, Q304, Q315, Q324). The player is told so; the AI (runTrigger) still declines a pointless exile. Other "you may
+  // exile … If you do, …" texts (Gundam DX) have no such ruling and keep requiring a target.
+  if (!act.development && !cmdModeLegal(act.inner, side)){ log(`${label}: <b>${card.name}</b> — its effect has no legal target, so nothing is exiled.`, 'me'); fin(); return; }
+  const noTgt = !cmdModeLegal(act.inner, side) ? ' <span style="opacity:.7">(its effect has no legal target right now)</span>' : '';
   const kw = ({ Pair:'When Paired', Link:'When Linked' })[label] || label;
   const what = act.development ? `<b>【${kw}・Development ${act.development}】</b>` : `<b>【${kw}】</b>`;
-  askYesNo(`<b>${card.name}</b> ${what}: exile ${act.count} ${tr}card${act.count===1?'':'s'} from your trash to activate its effect?`,
+  askYesNo(`<b>${card.name}</b> ${what}: exile ${act.count} ${tr}card${act.count===1?'':'s'} from your trash to activate its effect?${noTgt}`,
     `Exile ${act.count}`, "Don't exile",
     ()=>pickCardsOverlay(cands, act.count, `${card.name}: choose ${act.count} ${tr}card${act.count===1?'':'s'} in your trash to exile`, picks=>{
       for (const c of picks){ const i=side.trash.indexOf(c); if (i>=0) side.exile.push(side.trash.splice(i,1)[0]); }
@@ -6475,8 +6508,9 @@ function runTrigger(card, side, act, label){
     if (cands.length) log(`${label}: <b>${name}</b> deals ${act.amount} to ${cands.length} enemy Unit${cands.length>1?'s':''}.`, cls);
     for (const t of cands) damage(t, act.amount, foe);
   } else if (act.kind==='restBoth'){
-    // AI auto: rest a low-value friendly of its own and the strongest legal enemy.
-    const f=restBothFriendly(side, act), e=rankTarget(enemyTargets(foe,{kind:'rest',filter:act.enemyFilter}), {kind:'rest'});
+    // AI auto: rest a low-value friendly of its own and the strongest legal enemy — only when both can be chosen (Q265, Q327).
+    if (!bothChoosable(side, act)){ log(`${label}: <b>${name}</b> — can't choose both a friendly Unit and an enemy Unit, so nothing is rested.`, cls); return; }
+    const f=restBothFriendly(side, act), e=rankTarget(bothEnemyCands(side, act), {kind:'rest'});
     restBothSub(card, side, act, f, e, label);   // White Ark: the AI rests the Base instead
   } else if (act.kind==='selfRestDamage'){
     // Tap up to `max` of your OWN matching active Units, then deal that many to all enemy Units in range.
@@ -6665,9 +6699,11 @@ function runTrigger(card, side, act, label){
   } else if (act.kind==='damageBoth'){
     // With a Lv. requirement (Two Unicorns: both Lv.5 or higher) only qualifying Units can be chosen; the AI hits its sturdiest
     // qualifying Unit and the enemy it hurts most.
-    const fq = act.filter ? friendlyTargets(side, { filter:act.filter }) : null;
-    const ft = fq ? [...fq].sort((a,b)=>((b.hp>act.amount)-(a.hp>act.amount)) || keepVal(a)-keepVal(b))[0] : pingFriendly(side, act.amount, false);
-    const et = act.enemyFilter ? rankTarget(enemyTargets(foe, { kind:'damage', amount:act.amount, filter:act.enemyFilter }), { kind:'damage', amount:act.amount }) : [...foe.field].sort((a,b)=>b.ap-a.ap)[0];
+    // Both Units must be choosable, or nothing happens (Q168, Q230, Q522); "You may choose …" (GFreD) only when it's worth it.
+    if (!bothChoosable(side, act)){ log(`${label}: <b>${name}</b> — can't choose both a friendly Unit and an enemy Unit, so no damage is dealt.`, cls); return; }
+    if (act.may && side!==G.player && aiModeScore(card, side, act)<=0){ log(`${label}: <b>${name}</b> — the AI doesn't use it.`, cls); return; }
+    const ft = bothFriendlyPick(side, act);
+    const et = act.enemyFilter ? rankTarget(bothEnemyCands(side, act), { kind:'damage', amount:act.amount }) : [...bothEnemyCands(side, act)].sort((a,b)=>b.ap-a.ap)[0];
     if (ft){ log(`${label}: <b>${name}</b> deals ${act.amount} to your <b>${ft.name}</b>.`, cls); damage(ft, act.amount, side); }
     if (et){ log(`${label}: <b>${name}</b> deals ${act.amount} to <b>${et.name}</b>.`, cls); damage(et, act.amount, foe); }
   } else if (act.kind==='selfPingBuff'){
@@ -6813,6 +6849,9 @@ function resolvePlayerTrigger(card, side, act, label, after){
   if (!act) act = gd05Custom(card, label);
   if (!act){ fin(); return; }
   act.source = card;
+  // "Choose 1 of your Units and 1 enemy Unit. …": only when both can be chosen — otherwise nothing happens, and nothing is asked.
+  if ((act.kind==='damageBoth' || act.kind==='restBoth') && !bothChoosable(side, act)){
+    log(`${label}: <b>${card.name}</b> — can't choose both a friendly Unit and an enemy Unit, so the effect doesn't activate.`, side===G.player?'me':'ai'); fin(); return; }
   // "Activate 【Main】/【Action】 on the card paired with this Unit." (Gundam Rose, Gundam Maxter, Dragon Gundam, Bolt Gundam,
   // Shadow Gundam): the paired card's effect resolves with the player's own choices.
   if (act.kind==='pilotMain' || act.kind==='pilotAction'){
@@ -9007,8 +9046,12 @@ function hasKeywordEffect(t){
 // Rested enemy Units an attacker must choose as its attack target if possible (Gundam AGE-2 Normal, Kayra Su).
 function lureTargets(atk, defSide){
   if (!atk || !defSide) return [];
+  // "During this turn, all enemy Units must choose that Unit as their attack target" (Destined Battle) takes priority over the
+  // "choose this rested Unit … if possible" lures (Q289), and binds an attacker that may choose an active enemy Unit even while
+  // the chosen Unit is active (Q301).
+  const destined = defSide.field.filter(x=>x.hp>0 && x.lureTurn===G.turnSeq && !effUntargetable(x) && (x.rested || canHitActive(atk, x)));
+  if (destined.length) return destined;
   return defSide.field.filter(x=>{ if (x.hp<=0 || !x.rested || effUntargetable(x)) return false;
-    if (x.lureTurn===G.turnSeq) return true;   // "During this turn, all enemy Units must choose that Unit as their attack target" (Destined Battle)
     const own=x.lureRested, viaPilot=x.pilotCard && x.pilotCard.lureRested;
     const on = l => l && (!l.gate || (l.gate==='pair' ? (l===own ? duringPairMet(x) : !!x.pilot) : !!x.linked)) && !(l.exceptLink && atk.linked) && (!l.cond || condMet(l.cond, defSide, x));
     // "Enemy Units choose one of your rested (T) Units / rested Unit tokens as their attack target…" (Sandrock Custom, Turn X)
@@ -9782,6 +9825,7 @@ function cmdNoTarget(a, side){
   if (a.kind==='mutualDuel') return !side.field.some(u=>u.hp>0 && u.type==='unit') || !foe.field.some(u=>u.hp>0 && u.type==='unit');
   if (a.kind==='setActiveFriendly' && (a.filter || a.anySide)) return !readyCands(side, a, null).length && !(a.anySide && readyCands(foe, a, null).length);
   if (a.kind==='buffMulti' || a.kind==='grantNoAttackTarget' || a.kind==='grantBattleKill') return !friendlyTargets(side, a).length;
+  if ((a.kind==='damageBoth' || a.kind==='restBoth') && !a.may) return !bothChoosable(side, a);   // both Units must be choosable (Q293, Q412)
   return false;
 }
 function startCommand(card, handIdx, modeAct){
@@ -9845,8 +9889,8 @@ function startCommand(card, handIdx, modeAct){
   const noEnemyTgt = needEnemy && enemyTargets(G.enemy, a).length===0;
   // A restricted friendly target ("friendly Unit with <Blocker>", "(AEUG) Units/Bases") must exist; a "Then, …" part
   // (Dramatic Turnabout's draw) still makes the card worth playing without one.
-  // A restricted "1 friendly (T) Unit and 1 enemy Unit" (Towards Destiny) still damages the enemy Unit when none of yours qualifies.
-  const noAllyTgt  = needAlly && !a.then && !(a.kind==='damageBoth' && a.filter && G.enemy.field.some(u=>u.hp>0))
+  // "1 friendly (T) Unit and 1 enemy Unit" (Towards Destiny, Reformationist) needs both — cmdNoTarget checks that (Q293, Q412).
+  const noAllyTgt  = needAlly && !a.then && a.kind!=='damageBoth'
                   && (a.filter || a.withBase ? chooseUnitCands(G.player, a).length===0 : G.player.field.length===0);
   // The Command shapes ("… instead" upgrades, Human Karma's rest, Destined Battle's chosen Unit…): what they choose first.
   const noShapeTgt = (a.kind==='cond' || cmdModalKind(a)) && !cmdPlayable(a, s, card);
@@ -12937,6 +12981,8 @@ function cmdPlayable(a, side, card){
   if (h.kind==='bounceMulti') return enemyTargets(foe, h).length>0;
   if (h.kind==='healBuff') return healBuffCands(side, h).length>0;
   if (h.kind==='debuffUpTo') return debuffUpToCount(side, h)>0 && enemyTargets(foe, { kind:'debuff', filter:null }).length>0;
+  if (h.kind==='damageBoth' || h.kind==='restBoth') return bothChoosable(side, h);   // "Choose 1 of your Units and 1 enemy Unit" — both (Q293)
+  if (h.kind==='restBaseEnemy') return restBaseEnemyOk(side, h);
   return true;
 }
 // Command actions the player resolves through resolvePlayerTrigger in an action step (their choices use modal choosers).
@@ -13153,10 +13199,10 @@ function aiHeadOptions(c, h, ctx){
   if (k==='exBase'){ if (G.turn==='player' && !ai.base) out.push({ t:null, mods:[{ newBase:true }], extra:ctx.direct ? 0 : 2.5 }); return out; }
   if (k==='massBuff'){ const us=massCmdUnits(ai, h); if (us.length) out.push({ t:null, mods:us.map(u=>({ u, ap:h.amount })) }); return out; }
   if (k==='damageBoth'){   // runTrigger's own picks: its sturdiest qualifying Unit (or pingFriendly's) and the enemy it hurts most
-    const fq = h.filter ? friendlyTargets(ai, { filter:h.filter }) : null;
-    const ft = fq ? [...fq].sort((a,b)=>((b.hp>h.amount)-(a.hp>h.amount)) || keepVal(a)-keepVal(b))[0] : pingFriendly(ai, h.amount, false);
-    const et = h.enemyFilter ? rankTarget(enemyTargets(pl, { kind:'damage', amount:h.amount, filter:h.enemyFilter }), { kind:'damage', amount:h.amount }) : [...pl.field].sort((a,b)=>b.ap-a.ap)[0];
-    if (et) out.push({ t:null, mods:[...(ft ? [{ u:ft, dmg:h.amount }] : []), { u:et, dmg:aiEffDmg(et, h.amount) }] });
+    if (!bothChoosable(ai, h)) return out;   // both Units must be choosable
+    const ft = bothFriendlyPick(ai, h);
+    const et = h.enemyFilter ? rankTarget(bothEnemyCands(ai, h), { kind:'damage', amount:h.amount }) : [...bothEnemyCands(ai, h)].sort((a,b)=>b.ap-a.ap)[0];
+    if (et && ft) out.push({ t:null, mods:[{ u:ft, dmg:h.amount }, { u:et, dmg:aiEffDmg(et, h.amount) }] });
     return out;
   }
   if (!mine) return out;   // the rest help the AI's Unit in this battle
