@@ -5428,14 +5428,18 @@ function trashReduction(side, c){
 // no attack declaration). Auto-resolved and taken only when it's a favorable exchange (we kill it
 // or survive) so it never throws away trash for a bad trade.
 // Shared resolution once the enemy target is chosen: exile 3 (Londo Bell) cards, damage-step battle.
-function gd05NuBattleResolve(side, card, pick){
+// `chosen` (player): the 3 (Londo Bell) cards picked to exile; otherwise the first 3 in the trash.
+function gd05NuBattleResolve(side, card, pick, chosen){
   if (!card || card.hp<=0 || !pick || pick.hp<=0) return;
   const foe = side===G.player ? G.enemy : G.player;
-  const lb = side.trash.filter(c=>/\(londo bell\)/i.test(c.trait||''));
+  let lb = side.trash.filter(c=>/\(londo bell\)/i.test(c.trait||''));
   if (lb.length < 3) return;
-  for (let i=0;i<3;i++){ const c=lb[i]; const idx=side.trash.indexOf(c); if(idx>=0){ side.trash.splice(idx,1); side.exile.push(c); } }
+  if (Array.isArray(chosen)){ const ok=chosen.filter(c=>lb.includes(c)); lb=[...ok, ...lb.filter(c=>!ok.includes(c))]; }
+  const ex=lb.slice(0,3);
+  for (const c of ex){ const idx=side.trash.indexOf(c); if(idx>=0){ side.trash.splice(idx,1); side.exile.push(c); } }
+  refreshTrashStats(side);
   const ca = effAp(card), ta = effAp(pick), pHp0 = pick.hp, cHp0 = card.hp;
-  log(`<b>${card.name}</b>: exile 3 (Londo Bell) cards, then battle <b>${pick.name}</b> — damage step only.`, side===G.player?'me':'ai');
+  log(`<b>${card.name}</b>: exile ${ex.map(c=>'<b>'+c.name+'</b>').join(', ')} (Londo Bell), then battle <b>${pick.name}</b> — damage step only.`, side===G.player?'me':'ai');
   // A battle (5-22-3), so battle-damage payoffs apply as in gd06SelfDuel: its own <Breach 5> (during your turn) and
   // "when this Unit destroys an enemy Unit with battle damage" (Amuro Ray recovers 2 HP).
   const prevB=G.curBattle, prevA=G.curAttack; G.curBattle={ atk:card, def:pick };
@@ -5473,7 +5477,9 @@ function gd05NuGundamBattlePlayer(side, card, after){
   if (lb.length < 3 || !targets.length){ fin(); return; }     // can't pay the exile cost / no target
   promptTargetChoice(targets,
     `<b>${card.name}</b> 【When Paired】<br>Exile 3 (Londo Bell) cards from your trash, then battle an enemy Unit (damage step only)?`,
-    (pick)=>{ if (pick) gd05NuBattleResolve(side, card, pick); fin(); }, "Don't use");
+    (pick)=>{ if (!pick){ fin(); return; }
+      // With more than 3 (Londo Bell) cards in the trash, you choose which 3 to exile.
+      pickCardsOverlay(lb, 3, `${card.name}: choose 3 (Londo Bell) cards from your trash to exile`, picks=>{ gd05NuBattleResolve(side, card, pick, picks); fin(); }); }, "Don't use");
 }
 function gd05ReturnsOnSelfKill(u){
   const e=(plain(u.effect||'')).toLowerCase();
@@ -6851,6 +6857,15 @@ function resolvePlayerTrigger(card, side, act, label, after){
     return;
   }
   if (act.kind==='discard'){ playerDiscard(side, act.amount, card.name, fin); return; }
+  // "Discard N. If you do, draw M." (Dearka Elthman 【When Linked】) — the player chooses the discard, then draws;
+  // with an empty hand nothing is discarded, so there is no draw.
+  if (act.kind==='discardDraw'){
+    if (!side.hand.length){ log(`${label}: <b>${card.name}</b> — no card to discard, no draw.`, 'me'); fin(); return; }
+    playerDiscard(side, act.discard, card.name, ()=>{
+      for (let i=0;i<act.draw;i++) draw(side);
+      log(`${label}: <b>${card.name}</b> — discard ${act.discard}, draw ${act.draw}.`, 'me'); render(); fin(); });
+    return;
+  }
   // "Draw N. Then, discard M." — the player chooses what to discard.
   if (act.kind==='drawDiscard' && !act.discardActivate){
     for (let i=0;i<act.draw;i++) draw(side);
@@ -10016,10 +10031,20 @@ function destroyCostCands(u, side, c){
   }
   return out;
 }
-function startActivate(u){
+function startActivate(u, discardPicked){
+  if (!discardPicked) G.activateDiscardPicks=null;   // a fresh activation: no cost cards chosen yet
   if (G.turn==='player' && G.phase==='end') return;
   if (!activateReady(u)){ flashPrompt(`${u.name}'s ability isn't available.`); return; }
   const cost=u.activate.cost;
+  // "Discard 1 (Zeon)/(Neo Zeon) Unit card：" (Char's Gelgoog): the player chooses which hand card pays the cost.
+  if (cost.type==='discard' && G.activateDiscardPicks==null){
+    const need=cost.count||1, cands=G.player.hand.filter(x=>matchTrashTrait(x, cost.trait));
+    if (cands.length>need && !cands.every(c=>c.def===cands[0].def)){
+      closeInspect();
+      pickCardsOverlay(cands, need, `${u.name}: choose ${need} card${need>1?'s':''} from your hand to discard as the cost`, picks=>{ G.activateDiscardPicks=picks; startActivate(u, true); });
+      return;
+    }
+  }
   // "Choose 1 of your Unit tokens and 1 enemy Unit" — BOTH halves belong to the controller, so pick the
   // token first (Qubeley ST13-001). It rides along in the costUnit slot, which a resource cost leaves free.
   if (u.activate.action && u.activate.action.kind==='tokenDuel'){
@@ -10127,7 +10152,9 @@ function applyActivateEffect(u, target, side, costUnit){
   }
   else if (cost.type==='discard'){
     const need=cost.count||1;
-    const pool=side.hand.filter(x=>matchTrashTrait(x, cost.trait)).sort((a,b)=>cardValue(a)-cardValue(b));
+    let pool=side.hand.filter(x=>matchTrashTrait(x, cost.trait)).sort((a,b)=>cardValue(a)-cardValue(b));
+    // The player's own picks (startActivate / the action step) come first.
+    if (side===G.player && Array.isArray(G.activateDiscardPicks)){ const pk=G.activateDiscardPicks.filter(x=>pool.includes(x)); pool=[...pk, ...pool.filter(x=>!pk.includes(x))]; }
     for (const p of pool.slice(0,need)){ side.hand.splice(side.hand.indexOf(p),1); sendToTrash(p, side);
       log(`<b>${u.name}</b> discards <b>${p.name}</b> as a cost.`, cls); }
   }
@@ -10178,6 +10205,7 @@ function applyActivateEffect(u, target, side, costUnit){
     if (G.activatePrepaid){ /* the player already chose & exiled the cards interactively */ }
     else { const n=exileFromTrash(side, cost.count, cost.trait); log(`<b>${u.name}</b> exiles ${n} ${cost.trait?cost.trait+' ':''}card${n===1?'':'s'} from trash.`, cls); }
   }
+  if (side===G.player) G.activateDiscardPicks=null;
   u.activatedThisTurn=true; sound('deploy');
   // Conditional ability: cost is paid, but the effect only happens if the condition holds.
   if (a.kind==='cond'){ if (!condMet(a.cond, side, u, a.other)){ log(`<b>${u.name}</b>: condition not met.`, cls); return; } a=a.inner; }
@@ -12274,7 +12302,7 @@ function runTriggerSeq(list, side, done){
 function clearSel(){
   // A discard the player still owes (a 【Destroyed】 "draw 1, then discard 1" in the middle of a battle) outlives the battle's clean-up.
   const owed = G.mode==='discard' && G.pending && G.pending.discardLeft>0 ? G.pending : null;
-  G.curAttack=null; G.curBattle=null; G.selected=null; G.mode='idle'; G.pending=null; G.pendingHandIdx=-1; G.activateCands=null; G.activateCostUnit=null; G.activatePrepaid=false; G.activateRestSub=null; G.cmdInFlight=null; defaultPrompt();
+  G.curAttack=null; G.curBattle=null; G.selected=null; G.mode='idle'; G.pending=null; G.pendingHandIdx=-1; G.activateCands=null; G.activateCostUnit=null; G.activatePrepaid=false; G.activateDiscardPicks=null; G.activateRestSub=null; G.cmdInFlight=null; defaultPrompt();
   if (owed){ G.mode='discard'; G.pending=owed; setPrompt(`Choose ${owed.discardLeft} card${owed.discardLeft>1?'s':''} from your hand to discard.`); }
 }
 // A Command commits to the trash (and pays its cost) before the player picks a target, so cancelling
@@ -12688,15 +12716,45 @@ function actionStepCands(u, a){
 }
 // Player, action step: use `u`'s 【Activate･Action】 — with two or more Units it may choose, the player picks (the suggested one
 // first); with one it simply applies. `done` runs once it has resolved.
-function actionStepActivate(u, attacker, done){
+function actionStepActivate(u, attacker, done, costPicked){
   bindActSource(u);
+  // The cost is paid first, with the player's own choices (as startActivate does in the main phase): which trash cards to exile
+  // (Gundam Schwarzette, Banshee), which hand cards to discard, which Unit to rest (Gundam Aerial).
+  const cost=u.activate.cost||{};
+  if (!costPicked){
+    G.activatePrepaid=false; G.activateDiscardPicks=null;
+    const again=(costUnit)=>actionStepActivate(u, attacker, done, { costUnit });
+    if (cost.type==='exile' && cost.count>0 && !cost.parts){
+      const ec=G.player.trash.filter(c=>matchTrashTrait(c, cost.trait));
+      if (ec.length>cost.count && !ec.every(c=>c.def===ec[0].def)){
+        pickCardsOverlay(ec, cost.count, `${u.name}: choose ${cost.count} card${cost.count>1?'s':''} from your trash to exile`, picks=>{
+          for (const c of picks){ const i=G.player.trash.indexOf(c); if (i>=0) G.player.exile.push(G.player.trash.splice(i,1)[0]); }
+          refreshTrashStats(G.player); log(`<b>${u.name}</b> exiles ${picks.map(c=>'<b>'+c.name+'</b>').join(', ')} from trash.`, 'me');
+          G.activatePrepaid=true; again(null); });
+        return;
+      }
+    }
+    if (cost.type==='discard'){
+      const need=cost.count||1, dc=G.player.hand.filter(x=>matchTrashTrait(x, cost.trait));
+      if (dc.length>need && !dc.every(c=>c.def===dc[0].def)){
+        pickCardsOverlay(dc, need, `${u.name}: choose ${need} card${need>1?'s':''} from your hand to discard as the cost`, picks=>{ G.activateDiscardPicks=picks; again(null); });
+        return;
+      }
+    }
+    if (cost.type==='restUnit' && (cost.count||1)===1 && !restSubstituteOk(u, G.player)){
+      const rc=restCostCands(u, G.player);
+      if (rc.length>1){ promptTargetChoice(rc, `<b>${u.name}</b>: choose 1 of your Units to rest as the cost.`, t=>again(rc.includes(t)?t:rc[0]), null); return; }
+    }
+  }
+  const costUnit=costPicked ? costPicked.costUnit : null;
+  const fin=()=>{ G.activatePrepaid=false; G.activateDiscardPicks=null; done(); };
   let a=u.activate.action; if (a.kind==='cond') a=a.inner;
   const cands=actionStepCands(u, a);
-  if (cands.length<2){ applyActivateEffect(u, autoActivateTarget(u, attacker), G.player); done(); return; }
+  if (cands.length<2){ applyActivateEffect(u, autoActivateTarget(u, attacker), G.player, costUnit); fin(); return; }
   const best=autoActivateTarget(u, attacker), order=best ? [best, ...cands.filter(c=>c!==best)] : cands;
   promptTargetChoice(order, `<b>${u.name}</b>: choose the Unit for its effect — ${String(u.activate.text||'').replace(/</g,'&lt;').replace(/>/g,'&gt;')}`, (t)=>{
     if (!t || !cands.includes(t)) t=best||cands[0];
-    applyActivateEffect(u, t, G.player); done(); }, null);
+    applyActivateEffect(u, t, G.player, costUnit); fin(); }, null);
 }
 function autoCommandTarget(c, attacker){
   const a=c.action;
