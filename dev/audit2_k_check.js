@@ -182,7 +182,7 @@ const linkPilot=(id)=>{ const u=A.makeCard(A.CARD_BY_ID.get(id),'player'); const
 { const run=(mine, theirs)=>{ fresh('player'); for(let i=0;i<mine;i++) stick('player',1,1,{rested:true}); for(let i=0;i<theirs;i++) stick('enemy',1,1,{rested:true});
     const h0=G.player.hand.length; playMain('EB01-073'); return G.player.hand.length-h0; };
   ok('Character Requests: 3 friendly + 3 enemy rested Units — draw 2', run(3,3)===2);
-  ok('Character Requests: 5 rested Units — no draw', run(3,2)===0);
+  ok("Character Requests: 5 rested Units — its \"If\" is unmet, so it can't be played (stays in hand, no draw — Q245)", run(3,2)===1 && G.player.hand.some(c=>c.def==='EB01-073') && G.player.resAvail===10);
   fresh('enemy'); for(let i=0;i<4;i++) stick('enemy',1,1,{rested:true}); for(let i=0;i<2;i++) stick('player',1,1,{rested:true});
   const c=card('EB01-073','enemy'); const h0=G.enemy.hand.length; A.runTrigger(c, G.enemy, c.action || A.parseTrigger(c.effect,'Main'), 'Main'); drainTasks();
   ok('Character Requests (AI): 4 + 2 rested Units — draw 2', G.enemy.hand.length-h0===2); }

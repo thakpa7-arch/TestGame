@@ -85,6 +85,7 @@ src += '\nglobal.__G = { ' + [
   'afterCommandMain','resolveAttackTriggers','clearBattleScoped','readyDenied','effReady','pilotActionAction','cancelAction','damageAll','modalBusy','whenModalFree','offerSupportFirst','aiBattleRedirect','trashLv','trashDeployAct','supportHelper','retargetCands','attackDefender','aiRetarget','swapActivate','activateReadyAny','dropPilotActivate','cloneToken','placeBaseToken','nameAliases','pairDiscountOk','digRest','endPhaseTail','bindActSource','autoActivateTarget','commit','startCommand','aiTurn','aiPostMain','offerPlayerActionStep','chooseTokenCount','pairDeployHook','tokenMakerQueue','deployTokensInteractive','burstResolvePlayer','finishMultiDamage','enemyTargets','friendlyTargets','reanimate','cardNum','printingsOf','dbNumCount','onUnitDeployed','effHighManeuver','totalRes','payCost','gd06SelfDuel','gd06DigPair','fireAttacked','afterBlockDeclared','commandPlayed','resolveBaseDamagedTrigger','enemyCardDestroyed','trashReduction','parseShieldBreak','activateReady','activateCostPayable','collectPlayerActions','genericToken','clearBattleScoped',
   'healUnit','shieldAreaDamage','hookResolve',
   'readyResources','unitToDeckBottom','redrawHand','setupHandMulligan','aiMulligan','setupDealHands','setupShieldsStep','escAngle','pilotFromMode',
+  'cmdPlayable','actionCmdUsable',
 ].map(n=>n+':typeof '+n+'!=="undefined"?'+n+':undefined').join(',') + ' };\n';
 
 try { eval.call(null, src); } catch(e){ console.error('LOAD FAILED:', e.message, '\n', e.stack); process.exit(1); }

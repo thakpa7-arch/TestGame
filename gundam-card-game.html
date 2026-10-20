@@ -3708,7 +3708,7 @@ function parseBurst(effect){
     if (bc) return { kind: /add this card/.test(bc[2]) ? 'tohand' : 'deploy', cond: parseCondition(bc[1]) || { type:'never' } }; }
   if (/add this card to your hand/.test(t)) return { kind:'tohand' };
   if (/deploy this card/.test(t)) return { kind:'deploy' };
-  if (/activate this card/.test(t)) return { kind:'main', action: inferCommand(effect) };
+  if (/activate this card/.test(t)) return { kind:'main', action: inferCommand(effect), activates:true };   // the card's own 【Main】/【Action】
   let d;
   if ((d=t.match(/^draw (\d+)\b/))) return { kind:'draw', amount:+d[1] };
   // Otherwise parse the Burst clause itself as an action (deal damage / rest / debuff / etc.)
@@ -3976,7 +3976,7 @@ function parseClause(raw){
   if (xs){ const inner=parseClause(xs[1]); return inner ? { kind:'exileSelfThen', inner } : null; }
   // "You may discard 1 green (Earth Federation) Unit card. If you do, place 1 EX Resource. Then, if you are Lv.7 or higher, draw
   // 1." (Gundam AGE-1 Normal), "…you may discard 1 red card. If you do, draw 1." (Gwadan) — only a card that matches can pay
-  // (`filter`); the "Then" part resolves whether or not you discarded (5-20-2).
+  // (`filter`); the "Then" part resolves only if you discarded (Q175).
   const pd = raw.match(/^\s*you may discard (\d+)(?:\s+(unit|pilot|command|base) cards?)?\.\s*if you do,\s*(.+)$/i)
           || raw.match(/^\s*you may discard (\d+)\s+((?:[a-z]+\s+)*?(?:\([^)]+\)\s*\/?\s*)*(?:unit|pilot|command|base)?)\s*cards?\.\s*if you do,\s*(.+)$/i);
   if (pd){
@@ -3985,7 +3985,7 @@ function parseClause(raw){
     const inner=parseClause(then ? ifPart : pd[3]);
     return inner ? Object.assign({ kind:'payDiscard', count:+pd[1], inner }, simple ? { cardType:ft } : ft ? { filter:ft } : {}, then ? { then } : {}) : null; }
   // "You may pay ①. If you do, <effect>. (Then, <effect>.)" — an optional resource cost on a triggered effect; the "Then"
-  // part resolves whether or not it was paid (5-20-2). (Kapool GD04-074, Xamel GD06-056)
+  // part resolves only if it was paid (Q175). (Kapool GD04-074, Xamel GD06-056)
   const pr = raw.match(/^\s*you may pay\s*([①-⑨])\s*\.\s*if you do,\s*(.+)$/i);
   if (pr){ const [ifPart, thenPart]=splitThen(pr[2]); const inner=parseClause(ifPart); const then=thenPart ? parseClause(thenPart) : null;
     return inner && (!thenPart || then) ? { kind:'payRes', amount:pr[1].charCodeAt(0)-0x245F, inner, then, text:ifPart } : null; }
@@ -6449,14 +6449,15 @@ function runTrigger(card, side, act, label){
   // A modal effect resolved automatically: the most useful legal mode (aiPickMode).
   if (act.kind==='modal'){ const m=aiPickMode(card, side, act); if (m){ log(`${label}: <b>${name}</b> — ■${m.modeText||''}`, cls); runTrigger(card, side, m, label); } else log(`${label}: <b>${name}</b> — no mode can be chosen (no effect).`, cls); return; }
   if (act.kind==='seq'){ for (const a of act.acts) runTrigger(card, side, a, label); return; }
-  // "You may pay ①. If you do, …. Then, …." — pay when it can and the effect does something; the "Then" part regardless.
+  // "You may pay ①. If you do, …. Then, …." — pay when it can and the effect does something; the "Then" part only once it
+  // was paid (Q175: after an optional "You may …. If you do", the "Then" part needs it done too).
   if (act.kind==='payRes'){
     act.inner.source=card;
     if (side.resAvail>=act.amount && aiEffectUseful(card, side, act.inner)){
       payCost(side, act.amount); payHook(side, card, act.amount); log(`${label}: <b>${name}</b> — pays ${act.amount}.`, cls);
       runTrigger(card, side, act.inner, label);
+      if (act.then) runTrigger(card, side, act.then, label);
     } else log(`${label}: <b>${name}</b> — doesn't pay ${act.amount}.`, cls);
-    if (act.then) runTrigger(card, side, act.then, label);
     return;
   }
   // "You may rest this Unit. If you do, …"
@@ -6580,9 +6581,9 @@ function runTrigger(card, side, act, label){
     if (payable.length>=act.count && foeHas && (side!==G.enemy || side.hand.length>act.count)){   // the AI keeps at least one card
       if (act.cardType || act.filter){ for (const c of [...payable].sort((a,b)=>cardValue(a)-cardValue(b)).slice(0,act.count)){ side.hand.splice(side.hand.indexOf(c),1); sendToTrash(c, side); log(`${name}: discards <b>${c.name}</b>.`, cls); } }
       else autoDiscard(side, act.count, name);
-      runTrigger(card, side, act.inner, label); }
+      runTrigger(card, side, act.inner, label);
+      if (act.then) runTrigger(card, side, act.then, label); }   // "If you do, A. Then, B" — B only once it was paid too (Q175)
     else log(`${label}: <b>${name}</b> — doesn't discard.`, cls);
-    if (act.then) runTrigger(card, side, act.then, label);   // "Then, …" — either way
   } else if (act.kind==='deployToken'){
     deployTokens({ kind:'token', specs:act.specs }, side, name, label, cls);
   } else if (act.kind==='allLookTop'){
@@ -6605,7 +6606,8 @@ function runTrigger(card, side, act, label){
     if (cands.length){ card.redirectTo=cands[0]; log(`${label}: battle damage <b>${card.name}</b> would receive this battle is dealt to <b>${cands[0].name}</b> instead.`, cls); }
   } else if (act.kind==='pilotAction'){
     const inner = pilotActionAction(card);
-    if (inner){ pairedCmdActivated(card, side); runTrigger(card, side, inner, label); }
+    if (inner && !pairedCmdPlayable(card, side, inner)) log(`${label}: <b>${name}</b> — the paired Command can't be activated now (no legal target).`, cls);
+    else if (inner){ pairedCmdActivated(card, side); runTrigger(card, side, inner, label); }
   } else if (act.kind==='cloneToken'){
     cloneToken(card, side, label, null);
   } else if (act.kind==='selfDuel'){
@@ -6618,7 +6620,8 @@ function runTrigger(card, side, act, label){
     else log(`${label}: <b>${name}</b> — the enemy has no Base.`, cls);
   } else if (act.kind==='pilotMain'){
     const inner = pilotMainAction(card);
-    if (inner){ pairedCmdActivated(card, side); runTrigger(card, side, inner, label); }
+    if (inner && !pairedCmdPlayable(card, side, inner)) log(`${label}: <b>${name}</b> — the paired Command can't be activated now (no legal target).`, cls);
+    else if (inner){ pairedCmdActivated(card, side); runTrigger(card, side, inner, label); }
   } else if (act.kind==='eotGain'){
     // "…gains the following effect during this turn: ■At the end of the turn, …" — held on the card
     // and resolved in the End Step (finishEndPhase).
@@ -6666,7 +6669,8 @@ function runTrigger(card, side, act, label){
   } else if (act.kind==='drawDiscard'){
     for(let i=0;i<act.draw;i++) draw(side);
     log(`${label}: <b>${name}</b> — draw ${act.draw}, discard ${act.discard}.`, cls);
-    const sm = act.discardActivate ? side.hand.find(c=>c.type==='command' && matchTrashTrait(c, '('+act.discardActivate+')') && /【\s*Main\s*】/.test(plain(c.effect||'')) && (c.action || parseTrigger(c.effect,'Main'))) : null;   // it must have a 【Main】 to activate
+    const sm = act.discardActivate ? side.hand.find(c=>c.type==='command' && matchTrashTrait(c, '('+act.discardActivate+')') && /【\s*Main\s*】/.test(plain(c.effect||'')) && (c.action || parseTrigger(c.effect,'Main'))
+      && cmdPlayable((c.action && c.action.kind!=='noEffect' ? c.action : null) || parseTrigger(c.effect,'Main') || c.action, side, c)) : null;   // it must have a 【Main】 it can activate now
     if (sm){   // discard the (Special Move) Command and activate its 【Main】 for free (Domon Kasshu)
       side.hand.splice(side.hand.indexOf(sm),1); sendToTrash(sm, side); log(`${label}: discards <b>${sm.name}</b> — and activates its 【Main】.`, cls);
       commandPlayed(sm, side); runTrigger(sm, side, (sm.action && sm.action.kind!=='noEffect' ? sm.action : null) || parseTrigger(sm.effect,'Main') || sm.action, 'Main');   // the Command's full 【Main】 (a "Then," part included)
@@ -6831,6 +6835,9 @@ function runTrigger(card, side, act, label){
       for (const c of gone){ const i=foe.trash.indexOf(c); if(i>=0) foe.exile.push(foe.trash.splice(i,1)[0]); }
       if (gone.length){ refreshTrashStats(foe); log(`${label}: <b>${name}</b> — ${who(foe)} exiles ${gone.map(c=>'<b>'+c.name+'</b>').join(', ')} from ${foe===G.player?'your':'their'} trash.`, cls); }
       else log(`${label}: <b>${name}</b> — ${who(foe)} has no ${act.filter||'card'} in their trash to exile.`, cls); };
+    // "That player chooses 2 Unit cards from their trash. Exile them." needs all N chosen: with fewer, nothing is exiled
+    // (Q556 Gundam Pharact, Q557 Palace Athene).
+    if (pool.length < act.count){ log(`${label}: <b>${name}</b> — ${who(foe)} ${foe===G.player?'have':'has'} fewer than ${act.count} ${act.filter==='unit'?'Unit ':''}card${act.count===1?'':'s'} in ${foe===G.player?'your':'their'} trash, so nothing is exiled.`, cls); return; }
     // "That player chooses N Unit cards from their trash" — when the AI's card names you, you choose which leave.
     if (foe===G.player && pool.length>act.count) pickCardsOverlay(pool, act.count, `${name}: choose ${act.count} ${act.filter==='unit'?'Unit ':''}card${act.count===1?'':'s'} in your trash to exile`, picks=>exileThem(picks.filter(c=>foe.trash.includes(c))));
     else exileThem(pool.slice(0, act.count));
@@ -6854,7 +6861,8 @@ function runTrigger(card, side, act, label){
     const count=trashCount(side,act.trait);
     if(count>=act.minCount) runTrigger(card,side,act.inner,label);
   } else if (act.kind==='trashExile'){
-    // Pay the cost only when it's worth it: enough cards to exile AND the inner effect has a target.
+    // Pay the cost only when it's worth it: enough cards to exile AND the inner effect has a target. With fewer than N cards
+    // nothing is exiled (Q556/Q557: all N have to be chosen).
     if (trashCount(side, act.trait) >= act.count){
       const needsEnemy = ['destroy','rest','damage','debuff','bounce'].includes(act.inner.kind);
       act.inner.source = card;
@@ -6883,6 +6891,7 @@ function resolvePlayerTrigger(card, side, act, label, after){
   if (act.kind==='pilotMain' || act.kind==='pilotAction'){
     const inner = act.kind==='pilotMain' ? pilotMainAction(card) : pilotActionAction(card);
     if (!inner){ fin(); return; }
+    if (!pairedCmdPlayable(card, side, inner)){ log(`${label}: <b>${card.name}</b> — the paired Command can't be activated now (no legal target).`, 'me'); fin(); return; }
     pairedCmdActivated(card, side, ()=>resolvePlayerTrigger(card, side, inner, label, after)); return;
   }
   if (cmdPlayer(card, side, act, label, fin, false)) return;   // Command shapes (chains, delayed grants, shield guards…)
@@ -6929,10 +6938,9 @@ function resolvePlayerTrigger(card, side, act, label, after){
       ()=>{ runTrigger(card, side, plainAct, label); render(); fin(); }, ()=>{ log(`${label}: <b>${card.name}</b> — you keep <b>${pc.name}</b> where it is.`, 'me'); render(); fin(); });
     return;
   }
-  if (act.kind==='payDiscard' && act.then){     // "…If you do, …. Then, …." — the "Then" part after the choice, either way
-    const then=act.then;
-    return resolvePlayerTrigger(card, side, Object.assign({}, act, { then:null }), label, ()=>resolvePlayerTrigger(card, side, then, label, after));
-  }
+  // "You may discard …. If you do, A. Then, B." — B resolves only after the discard was made (Q175 Gundam AGE-1 Normal: no
+  // draw at Lv.7+ without discarding).
+  const paidThen = act.kind==='payDiscard' && act.then ? ()=>resolvePlayerTrigger(card, side, act.then, label, after) : after;
   if (act.kind==='payDiscard' && act.filter){   // "You may discard 1 red card. If you do, …" — choose one that matches, or decline
     const cands=payDiscardCands(side, act);
     if (cands.length < act.count){ log(`${label}: <b>${card.name}</b> — no ${act.filter} card in your hand to discard.`, 'me'); fin(); return; }
@@ -6940,7 +6948,7 @@ function resolvePlayerTrigger(card, side, act, label, after){
     chooseFromList(cands, `<b>${card.name}</b> 【${label}】 — you may discard 1 ${what} card. If you do: ${act.inner.kind==='exResource'?'place '+act.inner.amount+' EX Resource':act.inner.kind==='draw'?'draw '+act.inner.amount:'its effect'}.`, (c)=>{
       if (!c || !side.hand.includes(c)){ log(`${label}: <b>${card.name}</b> — you don't discard.`, 'me'); fin(); return; }
       side.hand.splice(side.hand.indexOf(c),1); sendToTrash(c, side); log(`${card.name}: you discard <b>${c.name}</b>.`, 'me');
-      resolvePlayerTrigger(card, side, act.inner, label, after); }, "Don't discard");
+      resolvePlayerTrigger(card, side, act.inner, label, paidThen); }, "Don't discard");
     return;
   }
   if (act.kind==='payDiscard'){                 // "You may discard N. If you do, …" — the player decides and picks the cards
@@ -6949,7 +6957,7 @@ function resolvePlayerTrigger(card, side, act, label, after){
     el('blockMsg').innerHTML=`<b>${card.name}</b>: discard ${act.count}${kind} card${act.count>1?'s':''} to use its effect?`;
     const wrap=el('blockBtns'); wrap.innerHTML='';
     const yes=document.createElement('button'); yes.textContent=`Discard ${act.count}${kind}`;
-    yes.onclick=()=>{ el('blockModal').classList.remove('show'); playerDiscard(side, act.count, card.name, ()=>resolvePlayerTrigger(card, side, act.inner, label, after), fin, act.cardType); };
+    yes.onclick=()=>{ el('blockModal').classList.remove('show'); playerDiscard(side, act.count, card.name, ()=>resolvePlayerTrigger(card, side, act.inner, label, paidThen), fin, act.cardType); };
     const no=document.createElement('button'); no.className='ghost'; no.textContent="Don't"; no.onclick=()=>{ el('blockModal').classList.remove('show'); fin(); };
     wrap.appendChild(yes); wrap.appendChild(no); el('blockModal').classList.add('show'); return;
   }
@@ -6966,20 +6974,20 @@ function resolvePlayerTrigger(card, side, act, label, after){
   if (act.kind==='modal'){ chooseCommandMode(card, side, m=>{ if (!m){ fin(); return; } resolveChosenMode(card, side, m, label, after); }, true, act); return; }
   if (act.kind==='seq'){ const acts=act.acts.slice(); const step=()=>{ const a=acts.shift(); if (!a){ fin(); return; } resolvePlayerTrigger(card, side, a, label, step); }; step(); return; }
   // "You may pay ①. If you do, …. Then, …." / "You may rest this Unit. If you do, …": the player decides; the "Then" part
-  // resolves either way (5-20-2). With no legal target for the effect, there is nothing to pay for.
+  // resolves only once it was paid (Q175). With no legal target for the effect, there is nothing to pay for.
   if (act.kind==='payRes' || act.kind==='payRestSelf'){
     const res = act.kind==='payRes', cls=side===G.player?'me':'ai';
     const then=()=>{ if (act.then) return resolvePlayerTrigger(card, side, act.then, label, after); fin(); };
     act.inner.source=card;
     const can = res ? side.resAvail>=act.amount : (!card.rested && side.field.includes(card));
-    if (!can){ log(`${label}: <b>${card.name}</b> — ${res?`not enough active Resources to pay ${act.amount}`:'already rested'}.`, cls); then(); return; }
-    if (!cmdModeLegal(act.inner, side)){ log(`${label}: <b>${card.name}</b> — no legal target, so nothing to pay for.`, cls); then(); return; }
+    if (!can){ log(`${label}: <b>${card.name}</b> — ${res?`not enough active Resources to pay ${act.amount}`:'already rested'}.`, cls); fin(); return; }
+    if (!cmdModeLegal(act.inner, side)){ log(`${label}: <b>${card.name}</b> — no legal target, so nothing to pay for.`, cls); fin(); return; }
     const cost = res ? `pay ${'①②③④⑤⑥⑦⑧⑨'[act.amount-1]||act.amount}` : 'rest this Unit';
     askYesNo(`<b>${card.name}</b> 【${label}】: ${cost}? If you do: ${act.text ? escAngle(act.text) : 'its effect'}`, res ? `Pay ${'①②③④⑤⑥⑦⑧⑨'[act.amount-1]||act.amount}` : 'Rest it', "Don't",
       ()=>{ if (res){ payCost(side, act.amount); payHook(side, card, act.amount); log(`${label}: <b>${card.name}</b> — you pay ${act.amount}.`, cls); }
             else { effectRest(card, side, true); log(`${label}: <b>${card.name}</b> — you rest it.`, cls); }
             resolvePlayerTrigger(card, side, act.inner, label, then); },
-      ()=>{ log(`${label}: <b>${card.name}</b> — you don't ${res?'pay':'rest it'}.`, cls); then(); });
+      ()=>{ log(`${label}: <b>${card.name}</b> — you don't ${res?'pay':'rest it'}.`, cls); fin(); });
     return;
   }
   if (act.kind==='discard'){ playerDiscard(side, act.amount, card.name, fin); return; }
@@ -7008,6 +7016,7 @@ function resolvePlayerTrigger(card, side, act, label, after){
       const sm=side.trash.slice(before).find(c=>c.type==='command' && matchTrashTrait(c, '('+act.discardActivate+')') && /【\s*Main\s*】/.test(plain(c.effect||'')) && (c.action || parseTrigger(c.effect,'Main')));
       if (!sm){ render(); fin(); return; }
       const main=(sm.action && sm.action.kind!=='noEffect' ? sm.action : null) || parseTrigger(sm.effect,'Main') || sm.action;
+      if (!cmdPlayable(main, side, sm)){ log(`${label}: <b>${card.name}</b> — the 【Main】 of <b>${sm.name}</b> can't be activated now (no legal target).`, 'me'); render(); fin(); return; }
       askOptional(`<b>${card.name}</b>: you discarded <b>${sm.name}</b> — activate its 【Main】?`, 'Activate it', "Don't",
         ()=>{ log(`${label}: <b>${card.name}</b> — you activate the 【Main】 of <b>${sm.name}</b>.`, 'me'); commandPlayed(sm, side);
               resolvePlayerTrigger(sm, side, main, 'Main', ()=>afterCommandMain(sm, side, ()=>{ render(); fin(); })); },
@@ -9917,15 +9926,16 @@ function cmdNoTarget(a, side){
 }
 function startCommand(card, handIdx, modeAct){
   const s=G.player, a=modeAct||card.action;
-  // "If you have no (X) Unit tokens in play, deploy …" is an "If" condition, not a play restriction: the Command can still be
-  // played while you control one — it's paid for and deploys nothing (the token resolver logs why). The AI skips it then.
   if (a.kind==='retarget'){ flashPrompt(`${card.name}: play it in the Action Step while an enemy Unit is attacking.`); return; }
   // An 【Action】-only Command is played in an action step (13-2-4-1), not in the main phase.
   if (!/【\s*Main/.test(plain(card.effect||'')) && /【\s*Action/.test(plain(card.effect||''))){
     flashPrompt(`${card.name} is an 【Action】 Command — play it in an Action Step (during a battle or the End Phase).`); return; }
+  // A Command can't be played unless its opening "If …" condition is met and what it chooses before any "Then" / "If you do"
+  // can be chosen (cmdPlayable, 10-1-8-1). It stays in hand.
+  if (a.kind!=='modal' && !cmdPlayable(a, s, card)){ flashPrompt(`${card.name}: no legal target${a.kind==='cond'||a.kind==='token'?' or its condition isn\'t met':''} — can't play it now.`); return; }
   // "Choose 1 of the following effects": pick the mode first (only legal ones; Cancel keeps the card), then play it.
   if (a.kind==='modal'){
-    if (!a.modes.some(m=>cmdModeLegal(m, s))){ flashPrompt(`${card.name}: no legal target for any of its effects — can't play it now.`); return; }
+    if (!cmdPlayable(a, s, card)){ flashPrompt(`${card.name}: no legal target for any of its effects — can't play it now.`); return; }
     closeInspect();
     chooseCommandMode(card, s, m=>{ if (!m){ render(); return; } const h=s.hand.indexOf(card); if (h<0) return; startCommand(card, h, m); }, false, a);
     return;
@@ -9970,18 +9980,6 @@ function startCommand(card, handIdx, modeAct){
     });
     return;
   }
-  // A Command with no legal target can't be played at all — keep it in hand rather than wasting it.
-  const needEnemy = (a.kind==='damage'&&a.scope!=='all-enemy'&&a.scope!=='all-both') || ['rest','destroy','bounce','debuff','stun','restMulti','damageMulti','destroyMulti','bounceMulti'].includes(a.kind);   // "Choose 1 to 2 enemy Units" needs one (Natural Talent)
-  const needAlly  = ['heal','buff','grantKw','grantReduce'].includes(a.kind) || (a.kind==='grantAttackActive'&&a.scope==='friendly'&&!a.all) || a.kind==='damageBoth' || a.kind==='selfPingBuff' || a.kind==='selfPingDraw';
-  const noEnemyTgt = needEnemy && enemyTargets(G.enemy, a).length===0;
-  // A restricted friendly target ("friendly Unit with <Blocker>", "(AEUG) Units/Bases") must exist; a "Then, …" part
-  // (Dramatic Turnabout's draw) still makes the card worth playing without one.
-  // "1 friendly (T) Unit and 1 enemy Unit" (Towards Destiny, Reformationist) needs both — cmdNoTarget checks that (Q293, Q412).
-  const noAllyTgt  = needAlly && !a.then && a.kind!=='damageBoth'
-                  && (a.filter || a.withBase ? chooseUnitCands(G.player, a).length===0 : G.player.field.length===0);
-  // The Command shapes ("… instead" upgrades, Human Karma's rest, Destined Battle's chosen Unit…): what they choose first.
-  const noShapeTgt = (a.kind==='cond' || cmdModalKind(a)) && !cmdPlayable(a, s, card);
-  if (noEnemyTgt || noAllyTgt || noShapeTgt || cmdNoTarget(a, G.player)){ flashPrompt(`${card.name}: no legal target — can't play it now.`); return; }
   // Everything else resolves through the same interactive resolver as triggered effects. Track it as
   // in-flight so a Cancel while picking a target returns the Command to hand instead of losing it.
   G.cmdInFlight = { card, cost: effectiveCost(s, card), exBefore: s.ex };
@@ -11097,7 +11095,8 @@ function shieldBreakOne(atk, atkSide, defSide, src, sb, done, byEffect){
 function triggerBurst(card, side, done, allowChoice){
   done = done || function(){};
   const bz = card && card.burst;
-  if (!bz || (bz.cond && !condMet(bz.cond, side, card))){ resolveBurst(card, side, done, allowChoice); return; }
+  // Nothing to decide when it can't do anything: its "If …" isn't met, or "Activate this card's 【Main】" has no legal target (Q408).
+  if (!bz || (bz.cond && !condMet(bz.cond, side, card)) || (bz.activates && !cmdPlayable(bz.action, side, card))){ resolveBurst(card, side, done, allowChoice); return; }
   const decline=()=>{
     log(`${side===G.player?"You don't":who(side)+" doesn't"} activate the 【Burst】 of <b>${card.name}</b> — it is placed into the trash.`, side===G.player?'me':'ai');
     if (!side.trash.includes(card)) sendToTrash(card, side);
@@ -11230,6 +11229,9 @@ function resolveBurst(card, side, done, allowChoice){
     return;
   }
   if (bz.kind==='main' && bz.action){
+    // "Activate this card's 【Main】/【Action】" activates the Command: it can't while its "If …" is unmet or a target it must
+    // choose can't be chosen (cmdPlayable) — then the Burst does nothing (a later "Then, draw 1" included).
+    if (bz.activates && !cmdPlayable(bz.action, side, card)){ log(`Burst: <b>${card.name}</b> — its effect can't be activated now (no legal target), so nothing happens.`, sideCls); finish(); return; }
     log(`Burst! <b>${card.name}</b> activates.`, sideCls);
     if (allowChoice && side===G.player) burstResolvePlayer(card, side, bz.action, finish);
     else { applyCommand({name:card.name, action:bz.action}, side, autoTarget(bz.action, side)); finish(); }
@@ -11408,6 +11410,11 @@ function pilotMainAction(atk){
 // that Command card's 【Main】/【Action】: record its traits for "if you have activated a (Special Move) Command … this turn" (Master
 // Asia) and fire the Command watchers (Shining Gundam (Super Mode)), as Domon Kasshu's discard-and-activate does. A real Pilot card
 // paired there isn't a Command, so nothing is recorded for it. `done` (optional) continues after any choice made here.
+// A Command paired as this Unit's Pilot can be activated only while it could be played (cmdPlayable); a Pilot card's own 【Main】 isn't gated.
+function pairedCmdPlayable(atk, side, inner){
+  const p = atk && atk.pilotCard;
+  return !(p && (p.cmdPilot || p.type==='command')) || cmdPlayable(inner, side, atk);
+}
 function pairedCmdActivated(atk, side, done){
   const p = atk && atk.pilotCard;
   if (!p || !(p.cmdPilot || p.type==='command')){ if (done) done(); return; }
@@ -12914,7 +12921,8 @@ function aiMainStep(){
   G.effSrc = null;   // nothing is resolving between main-phase actions (a stale source mis-credits kills)
   const aoe = a=>a.scope==='all-enemy' || a.scope==='all-both';
   // Only a Command with a 【Main】 can be played in the main phase (an 【Action】-only one waits for an action step).
-  const mainCmd = c=>c.type==='command' && /【\s*Main/.test(plain(c.effect||''));
+  // …and only while it can be played (its "If …" met, its required targets choosable — cmdPlayable).
+  const mainCmd = c=>c.type==='command' && /【\s*Main/.test(plain(c.effect||'')) && (!c.action || cmdPlayable(c.action, ai, c));
   // An AoE's net value: what it destroys of the enemy minus what it destroys of the AI's own board.
   const aoeNet = a=>{ const f=a.filter||{}; const hit=u=>(f.maxLv==null||(u.lv||0)<=f.maxLv)&&(f.maxAp==null||effAp(u)<=f.maxAp)&&(f.maxHp==null||u.hp<=f.maxHp)&&(!f.blocker||effBlocker(u))&&(!f.notLinked||!u.linked);
     const kills=s=>s.field.filter(u=>hit(u) && u.hp<=a.amount).reduce((n,u)=>n+keepVal(u),0);
@@ -13231,17 +13239,11 @@ function autoCommandTarget(c, attacker){
   if (a.kind==='grantDestroyedReady') return friendlyTargets(G.player, a).sort((x,y)=>(x.hp-y.hp))[0]||null;   // the Unit most likely to die
   return null;
 }
-// An enemy-targeting Action command needs at least one legal target to be usable.
+// An Action command is offered only while it can be played (its condition met, its required targets choosable — cmdPlayable).
 function actionCmdUsable(c){
   const a=c.action; if(!a) return false;
-  if (a.kind==='modal') return a.modes.some(m=>cmdModeLegal(m, G.player));   // some mode has a legal target
-  const ek=['damage','rest','destroy','bounce','debuff'];
-  if (ek.includes(a.kind) && a.scope!=='all-enemy' && a.scope!=='all-both') return enemyTargets(G.enemy, a).length>0;
-  if (a.kind==='cond' || cmdModalKind(a)) return cmdPlayable(a, G.player, c);
-  // A restricted friendly target must exist ("friendly Unit with <Blocker>" — Naval Bombardment; "(AEUG) Units/Bases").
-  if (['buff','heal','grantKw','grantReduce'].includes(a.kind) && (a.filter || a.withBase) && !a.then && !chooseUnitCands(G.player, a).length) return false;
-  if (cmdNoTarget(a, G.player)) return false;
-  return true;
+  a.source=c;   // the Command being activated (not counted among the cards in your trash)
+  return cmdPlayable(a, G.player, c);
 }
 // Command shapes resolved through resolveModal in an Action Step.
 function cmdModalKind(a){
@@ -13250,23 +13252,51 @@ function cmdModalKind(a){
     'massBuff','massHeal','noEnemyEffDestroy','destroyPilot','bounceMulti','healBuff','restBaseEnemy','debuffUpTo'].includes(a.kind) || (a.kind==='setActiveFriendly' && !!a.filter)
     || (a.kind==='grantKw' && !!a.may) || (a.kind==='reanimate' && !!a.free) || (a.kind==='damageBoth' && !!(a.filter || a.enemyFilter)));
 }
-// Can this Command be played right now — does what it chooses first have a legal choice? A chain is always playable
-// (its "Then," part happens regardless).
+// Can this Command be played (or activated — by its 【Burst】, as the card paired with a Unit, by Domon Kasshu) right now?
+// Both players, 10-1-8-1-1/-2: (a) its opening "If …" condition is met (Q245 Field Directive, A Miracle, AGE Device…), and
+// (b) every target the part before "Then" / "If you do" chooses can be chosen — both halves of "Choose 1 X and 1 Y" (Q153 The
+// Stubborn Cog, Q253 Unheralded Attack, Towards Destiny), and a chain's first part (Q408 Darkness Finger, Q413 Shining Finger,
+// Q538 The Gundam Says, Dramatic Turnabout): a later "Then, …" that could still resolve doesn't make it playable. An optional
+// "you may choose" doesn't gate it. A modal Command is playable when at least one of its modes is (Q402 Wings of Light).
 function cmdPlayable(a, side, card){
-  if (!a || a.kind==='chain') return true;
-  // "If <condition>, …" with nothing else to do: while the condition is false the Command would do nothing (A Miracle once an
-  // enemy Unit has attacked, Sisterly Care with no (Teiwaz) Link Unit). Playing it for no effect is still legal, so only the AI
-  // skips it; the player may still play it.
-  if (side!==G.player && a.kind==='cond' && !a.elseInner && !condOnTarget(a.cond) && !condMet(a.cond, side, card, a.other)) return false;
-  const foe=side===G.player?G.enemy:G.player, h=cmdHead(a, side, card);
+  if (!a) return true;
+  if (a.kind==='modal') return a.modes.some(m=>cmdModeLegal(m, side) && cmdPlayable(m, side, card));
+  const foe=side===G.player?G.enemy:G.player;
+  // The part it resolves first: through a chain's first step and "If …, (… instead)"; an unmet opening "If" with no
+  // alternative means it can't be played.
+  let h=a;
+  for (let k=0; k<4 && h; k++){
+    if (h.kind==='chain') h=h.steps[0];
+    else if (h.kind==='cond' && !condOnTarget(h.cond)){ if (condMet(h.cond, side, card, h.other)) h=h.inner; else if (h.elseInner) h=h.elseInner; else return false; }
+    else break;
+  }
+  if (!h) return false;
+  if (h.may) return true;                                                     // "you may choose …" — optional
+  if (cmdNoTarget(h, side)) return false;
+  // "If you have no (X) Unit tokens in play, deploy …" (Striker Pack) / "If 1 to 4 enemy Units are in play, deploy …" (Orga's Order)
+  if (h.kind==='token' && ((h.tokenLimit && hasTraitToken(side, h.tokenLimit)) || (h.specConds && !h.specConds.some(c=>condMet(c, side, card||h.source||null))))) return false;
   if (h.kind==='debuff' && h.scope==='all-enemy') return true;
-  if ((h.kind==='damage' && h.scope!=='all-enemy' && h.scope!=='all-both') || ['rest','destroy','bounce','debuff','stun'].includes(h.kind)) return enemyTargets(foe, h).length>0;
+  if (enemyPickKind(h)) return enemyTargets(foe, h).length>0;
   if (['restMulti','damageMulti','destroyMulti','bounceMulti'].includes(h.kind)) return enemyTargets(foe, h).some(u=>h.kind!=='restMulti' || !u.rested);
-  if (['grantLure','grantNoUnitEffDmg','grantBattleDestroy','restFriendlyThen'].includes(h.kind) || (h.kind==='setActiveFriendly' && h.filter)) return friendlyTargets(side, h).length>0;
+  // Friendly-side choices ("Choose 1 friendly (T) Unit", "Choose 1 Unit" naming no side, "1 of your Units/Bases").
+  if (h.kind==='heal') return h.scope==='any' ? [...side.field, ...foe.field].some(u=>u.hp>0 && u.type==='unit') : chooseUnitCands(side, Object.assign({}, h, { kind:'buff' })).length>0;
+  if (['buff','grantKw','grantReduce','grantDestroyedReady'].includes(h.kind) || (h.kind==='grantAttackActive' && h.scope==='friendly' && !h.all)) return chooseUnitCands(side, h).length>0;
+  if (h.kind==='buffMulti') return chooseUnitCands(side, h).length >= (h.exact ? h.count : 1);   // "Choose 2 friendly Units" needs two
+  if (['selfPingBuff','selfPingDraw','selfSacThen'].includes(h.kind)) return side.field.some(u=>u.hp>0 && u.type==='unit');
+  if (h.kind==='damageBoth') return cmdModeLegal(h, side);                    // both Units
+  if (h.kind==='restBoth') return restBothCands(side, h).length>0 && enemyTargets(foe, { kind:'rest', filter:h.enemyFilter }).length>0;
+  if (h.kind==='restBaseEnemy') return !!(side.base && side.base.hp>0) && enemyTargets(foe, { kind:'rest', filter:h.enemyFilter }).length>0;
+  if (h.kind==='destroyThen') return enemyTargets(foe, h.destroy || h).length>0;
+  // Cards chosen from your trash (a public area, 10-2-2-1): "Choose 1 … card from your trash", "Choose N … cards …" (all N).
+  if (h.kind==='trashRetrieve') return side.trash.some(c=>matchFilter(c, h.filter) && !c.token);
+  if (h.kind==='trashExile') return trashCount(side, h.trait) >= h.count;
+  if (h.kind==='reanimate'){ const ftr=(parseFilter(h.filter).traits)||null;
+    return side.trash.some(c=>c.type==='unit' && !c.token && matchFilter(c, h.filter) && (!ftr || ftr.some(tr=>hasTraitT(c, tr))) && (h.maxLv==null || trashLv(side,c)<=h.maxLv)); }
+  if (h.kind==='setActiveFriendly' && (h.filter || h.anySide)) return readyCands(side, h, null).length>0 || (!!h.anySide && readyCands(foe, h, null).length>0);
+  if (['grantLure','grantNoUnitEffDmg','grantBattleDestroy','restFriendlyThen'].includes(h.kind)) return friendlyTargets(side, h).length>0;
   if (h.kind==='shieldGuard') return !!(G.curAttack && foe.field.includes(G.curAttack));   // only worth it while an enemy Unit attacks you
   if (h.kind==='readyBaseThen') return !!(side.base && side.base.rested);
   if (h.kind==='destroyPilot') return destroyPilotCands(foe, h).length>0;
-  if (h.kind==='bounceMulti') return enemyTargets(foe, h).length>0;
   if (h.kind==='healBuff') return healBuffCands(side, h).length>0;
   if (h.kind==='debuffUpTo') return debuffUpToCount(side, h)>0 && enemyTargets(foe, { kind:'debuff', filter:null }).length>0;
   if (h.kind==='damageBoth' || h.kind==='restBoth') return bothChoosable(side, h);   // "Choose 1 of your Units and 1 enemy Unit" — both (Q293)

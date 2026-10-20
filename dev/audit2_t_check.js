@@ -82,7 +82,7 @@ const setTrash=(who, ids)=>{ side(who).trash=ids.map(i=>card(i, who)); A.refresh
   ok('AGE-1 Normal: discarding places 1 EX Resource, then Lv.8 draws 1', G.player.ex===1 && G.player.trash.some(c=>c.def==='GD02-029') && G.player.hand.length===2, `ex ${G.player.ex} hand ${G.player.hand.map(c=>c.def)}`); }
 { fresh('player'); G.player.resMax=8; G.player.hand=[card('GD02-021','player'), card('GD02-029','player')];
   A.playFromHand(G.player.hand[0].uid); drainTasks(); press(/Don't/);
-  ok('AGE-1 Normal: declining places no EX Resource — the Lv.7 draw still happens', G.player.ex===0 && G.player.hand.length===2, `ex ${G.player.ex} hand ${G.player.hand.length}`); }
+  ok('AGE-1 Normal: declining places no EX Resource — and no Lv.7 draw either (the "Then" needs the discard — Q175)', G.player.ex===0 && G.player.hand.length===1, `ex ${G.player.ex} hand ${G.player.hand.length}`); }
 { fresh('player'); G.player.resMax=4; G.player.hand=[card('GD02-021','player'), card('ST01-001','player')];
   A.playFromHand(G.player.hand[0].uid); drainTasks();
   ok('AGE-1 Normal: no green (EF) Unit card — no prompt, no EX Resource, no draw below Lv.7', !modal() && G.player.ex===0 && G.player.hand.length===1, `ex ${G.player.ex} hand ${G.player.hand.length}`); }
