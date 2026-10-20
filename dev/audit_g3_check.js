@@ -185,17 +185,17 @@ for (const [id, spec] of Object.entries(DEV)){
   ok('Zeheart Galette: a (Vagan) card placed → AP-2 (unchanged)', A.effAp(e)===2, 'ap '+A.effAp(e)); }
 
 // ================= optional costs =================
-// Kapool GD04-074 — 【Attack】You may pay ①. If you do, draw 1. Then, discard 1. (the discard happens either way — 5-20-2)
+// Kapool GD04-074 — 【Attack】You may pay ①. If you do, draw 1. Then, discard 1. (the discard needs the payment too — Q175)
 { const atkWith=(answer)=>{ fresh('player'); const k=put('GD04-074','player'); const e=stick('enemy',1,9,{rested:true}); G.player.hand=[card('ST01-012','player'), card('ST01-013','player')]; G.player.resAvail=3;
     A.fieldClick(k.uid); drainTasks(); A.fieldClick(e.uid); drainTasks(); const asked=!!modal() && /pay ①/i.test(modal().msg);
     press(answer==='yes' ? /^Pay/ : /Don't/); const disc=G.mode==='discard'; if (disc) discardPick(G.player.hand[0]); drainTasks();
     return { asked, disc, hand:G.player.hand.length, res:G.player.resAvail }; };
   const y=atkWith('yes'); ok('Kapool player: pay ① → draw 1, then you choose 1 to discard', y.asked && y.disc && y.hand===2 && y.res===2, JSON.stringify(y));
-  const n=atkWith('no'); ok("Kapool player: don't pay → no draw, but still discard 1", n.asked && n.disc && n.hand===1 && n.res===3, JSON.stringify(n));
+  const n=atkWith('no'); ok("Kapool player: don't pay → no draw and no discard (Q175)", n.asked && !n.disc && n.hand===2 && n.res===3, JSON.stringify(n));
   for (const res of [3,0]){ fresh('enemy'); const k=put('GD04-074','enemy'); G.enemy.hand=[card('ST01-012','enemy'), card('ST01-013','enemy')]; G.enemy.resAvail=res; const d0=G.enemy.deck.length;
     A.resolveAttackTriggers(k, G.enemy, ()=>{}); drainTasks();
     if (res) ok('Kapool AI: pays ①, draws 1, discards 1', G.enemy.resAvail===2 && G.enemy.deck.length===d0-1 && G.enemy.hand.length===2);
-    else ok("Kapool AI: can't pay → no draw, discards 1", G.enemy.resAvail===0 && G.enemy.deck.length===d0 && G.enemy.hand.length===1); } }
+    else ok("Kapool AI: can't pay → no draw, no discard (Q175)", G.enemy.resAvail===0 && G.enemy.deck.length===d0 && G.enemy.hand.length===2); } }
 // Xamel GD06-056 — 【Attack】You may pay ②. If you do, destroy an enemy Unit that is Lv.2 or lower.
 { const run=(answer)=>{ fresh('player'); const x=put('GD06-056','player'); const e=stick('enemy',1,9,{rested:true, lv:5}); const small=stick('enemy',1,1,{lv:2}); G.player.resAvail=5;
     A.fieldClick(x.uid); drainTasks(); A.fieldClick(e.uid); drainTasks(); const asked=!!modal() && /pay ②/i.test(modal().msg);

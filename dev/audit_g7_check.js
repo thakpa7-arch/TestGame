@@ -122,8 +122,9 @@ function fight(atk, def){ const as=atk.owner==='player'?G.player:G.enemy, ds=def
      tokens(G.player).map(t=>t.name).join()==='Sazabi' && tokens(G.enemy).length===1 && tokens(G.enemy)[0].name==='Nu Gundam' && tokens(G.enemy)[0].firstStrike, `you ${tokens(G.player).map(t=>t.name)} | foe ${tokens(G.enemy).map(t=>t.name)}`);
   fresh('enemy'); const p3=stick('player',3,3,{lv:3,name:'Player Lv3'}); A.applyCommand(card('GD06-115','enemy'), G.enemy, null); drainTasks();
   ok('Teaching New Techniques (AI): destroys your Lv.3 Unit; AI Sazabi, your Nu Gundam', !G.player.field.includes(p3) && tokens(G.enemy).map(t=>t.name).join()==='Sazabi' && tokens(G.player).map(t=>t.name).join()==='Nu Gundam');
-  fresh('player'); stick('enemy',5,5,{lv:5}); G.player.hand=[card('GD06-115','player')]; playCmd(G.player.hand[0]);
-  ok('Teaching New Techniques: with no Lv.4-or-lower enemy, "Then" still gives you the Sazabi — and no Nu Gundam', tokens(G.player).map(t=>t.name).join()==='Sazabi' && tokens(G.enemy).length===0, `${tokens(G.player).map(t=>t.name)} / ${tokens(G.enemy).length}`); }
+  // Its "Then" token doesn't make it playable without a Lv.4-or-lower enemy Unit to choose (10-1-8-1-2, Q408/Q413).
+  fresh('player'); stick('enemy',5,5,{lv:5}); G.player.hand=[card('GD06-115','player')]; const tnt=G.player.hand[0]; playCmd(tnt);
+  ok("Teaching New Techniques: with no Lv.4-or-lower enemy it can't be played (stays in hand, no tokens)", G.player.hand.includes(tnt) && G.player.resAvail===10 && tokens(G.player).length===0 && tokens(G.enemy).length===0, `hand ${G.player.hand.length} res ${G.player.resAvail} ${tokens(G.player).map(t=>t.name)} / ${tokens(G.enemy).length}`); }
 
 // =========================================================================================== damage guards
 // AI attacks the player's `target`; the player answers in the action step with `cmdRe`, then (optionally) picks `pickRe`.

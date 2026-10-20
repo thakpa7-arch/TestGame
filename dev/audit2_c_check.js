@@ -74,7 +74,7 @@ const logs=()=>(el('log').children||[]).map(n=>(n.innerHTML||'').replace(/<[^>]+
 // ===== GD02-113 Sisterly Care — If a friendly (Teiwaz) Link Unit is in play, choose 1 enemy Unit with 2 or less AP. Destroy it. =====
 { fresh('player'); const e=stick('enemy',2,5); const c=inHand('GD02-113'); play(c);
   drainTasks(); passAll();
-  ok('Sisterly Care (player): with no friendly (Teiwaz) Link Unit it can still be played, for no effect', G.enemy.field.includes(e) && !G.player.hand.includes(c) && G.player.trash.includes(c) && G.mode==='idle'); }
+  ok("Sisterly Care (player): with no friendly (Teiwaz) Link Unit it can't be played (its \"If\" is unmet — Q245); it stays in hand", G.enemy.field.includes(e) && G.player.hand.includes(c) && !G.player.trash.includes(c) && G.mode==='idle'); }
 { fresh('player'); stick('player',3,3,{trait:'(Teiwaz)', linked:true}); const e=stick('enemy',2,5), big=stick('enemy',3,5); play(inHand('GD02-113'));
   if (G.mode==='trigger-target'){ A.fieldClick(e.uid); drainTasks(); }
   ok('Sisterly Care (player): with a (Teiwaz) Link Unit it destroys the 2-AP enemy Unit', !G.enemy.field.includes(e) && G.enemy.field.includes(big)); }
@@ -101,7 +101,7 @@ const logs=()=>(el('log').children||[]).map(n=>(n.innerHTML||'').replace(/<[^>]+
   ok('Warped Intent (AI): its paired Unit gets AP+2, its unpaired one does not', A.effAp(a)===ap+2 && A.effAp(bare)===2); }
 // ===== GD03-116 Towards Destiny — Choose 1 friendly (Vagan) Unit and 1 enemy Unit. Deal 2 damage to them. =====
 { fresh('player'); const z=stick('player',1,5,{trait:'(Zeon)'}); const e=stick('enemy',1,5); play(inHand('GD03-116'));
-  ok('Towards Destiny (player): with no (Vagan) Unit no friendly Unit is damaged; the enemy Unit takes 2', z.hp===5 && e.hp===3, `${z.hp}/${e.hp}`); }
+  ok("Towards Destiny (player): with no (Vagan) Unit it can't be played (both Units must be choosable); nothing is damaged", z.hp===5 && e.hp===5 && G.player.hand.some(x=>x.def==='GD03-116'), `${z.hp}/${e.hp}`); }
 { fresh('player'); const v1=stick('player',1,5,{trait:'(Vagan)'}), v2=stick('player',1,5,{trait:'(Vagan)'}), z=stick('player',1,5,{trait:'(Zeon)'}); const e1=stick('enemy',1,5), e2=stick('enemy',1,5);
   play(inHand('GD03-116')); const m=modal(); const onlyV=m && btnHas(v1) && btnHas(v2) && !btnHas(z); pressUnit(v2); pressUnit(e1);
   ok('Towards Destiny (player): the friendly chooser lists only (Vagan) Units; both chosen Units take 2', onlyV && v2.hp===3 && v1.hp===5 && z.hp===5 && e1.hp===3 && e2.hp===5, JSON.stringify(m)); }
@@ -137,7 +137,7 @@ const logs=()=>(el('log').children||[]).map(n=>(n.innerHTML||'').replace(/<[^>]+
 // ===== GD04-118 World Distortion — If 2 or more friendly (UN) Units are in play, choose 1 enemy Unit with 5 or less HP. Return it. =====
 { fresh('player'); stick('player',1,1,{trait:'(UN)'}); const e=stick('enemy',3,5); const c=inHand('GD04-118'); play(c);
   drainTasks(); passAll();
-  ok('World Distortion (player): with only 1 (UN) Unit it does nothing (still playable)', G.enemy.field.includes(e) && G.player.trash.includes(c) && G.mode==='idle'); }
+  ok("World Distortion (player): with only 1 (UN) Unit it can't be played (Q245); it stays in hand", G.enemy.field.includes(e) && G.player.hand.includes(c) && !G.player.trash.includes(c) && G.mode==='idle'); }
 { fresh('player'); stick('player',1,1,{trait:'(UN)'}); stick('player',1,1,{trait:'(UN)'}); const e=stick('enemy',3,5); play(inHand('GD04-118'));
   if (G.mode==='trigger-target'){ A.fieldClick(e.uid); drainTasks(); }
   ok('World Distortion (player): with 2 (UN) Units the enemy Unit is returned', !G.enemy.field.includes(e)); }
@@ -213,7 +213,7 @@ const logs=()=>(el('log').children||[]).map(n=>(n.innerHTML||'').replace(/<[^>]+
 // ===== GD06-102 A Miracle — 【Action】If it is your opponent's turn and no enemy Units have attacked this turn, draw 2. =====
 { fresh('enemy'); const atk=stick('enemy',2,9); const mine=stick('player',1,9,{rested:true}); G.player.hand=[card('GD06-102','player')];
   A.resolveAiAttack(atk, ()=>{}, mine); drainTasks(); const offered=!!(modal() && modal().btns.some(b=>/Miracle/.test(b))); if (offered) press(/Miracle/); passAll();
-  ok('A Miracle (player): once an enemy Unit has attacked this turn it draws nothing', G.player.hand.length<=1 && G.player.hand.filter(x=>x.id!=='GD06-102').length===0); }
+  ok("A Miracle (player): once an enemy Unit has attacked this turn it isn't offered and draws nothing", !offered && G.player.hand.length===1 && G.player.hand[0].def==='GD06-102'); }
 { fresh('enemy'); G.player.hand=[card('GD06-102','player')]; A.offerPlayerActionStep(null, ()=>{}); drainTasks(); const offered=!!(modal() && modal().btns.some(b=>/Miracle/.test(b)));
   press(/Miracle/); drainTasks();
   ok("A Miracle (player): in the opponent's turn before any attack (End Phase action step) it draws 2", offered && G.player.hand.length===2); }

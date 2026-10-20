@@ -1,6 +1,6 @@
 // Audit 3, group k: Command / condition gaps.
-//  • Striker Pack ST04-012: "If you have no (Earth Alliance) Unit tokens in play, deploy …" is an "If" condition — the player can still
-//    play it while one is in play (paid, trashed, no token); the AI resolver deploys nothing then.
+//  • Striker Pack ST04-012: "If you have no (Earth Alliance) Unit tokens in play, deploy …" is its opening "If" condition — while one is
+//    in play it can't be played (Q245 ruling: it stays in hand, nothing is paid); the AI resolver deploys nothing then.
 //  • Comrades Come First GD02-116 (and Steely Loyalty GD06-111): a Command doesn't count itself toward "N or more cards in your trash".
 //  • Gundam Rose GD05-044 activating the 【Main】 of its paired (Special Move) Command (Rose Screamer GD05-113) counts as activating that
 //    Command's 【Main】: Master Asia GD05-089's 【Attack】 condition and Shining Gundam (Super Mode) GD05-068's <Suppression>.
@@ -53,10 +53,9 @@ const eaTokens=who=>sideOf(who).field.filter(u=>u.token && /\(earth alliance\)/i
 // ---- Striker Pack ST04-012 ----
 { fresh('player'); stick('player',3,3,EA_TOKEN);
   const sp=handPlay('ST04-012');
-  ok('Striker Pack (player): playable while an (Earth Alliance) token is in play — leaves the hand, goes to the trash', !G.player.hand.includes(sp) && G.player.trash.includes(sp), G.mode);
-  ok('Striker Pack (player): its cost is paid (10 -> 8)', G.player.resAvail===8, G.player.resAvail);
-  ok('Striker Pack (player): no second (Earth Alliance) token, no chooser', eaTokens('player')===1 && !modal(), JSON.stringify(modal()));
-  ok('Striker Pack (player): the log says why nothing is deployed', logs().some(l=>/already have a \(Earth Alliance\) Unit token/i.test(l))); }
+  ok("Striker Pack (player): can't be played while an (Earth Alliance) token is in play — it stays in hand", G.player.hand.includes(sp) && !G.player.trash.includes(sp), G.mode);
+  ok('Striker Pack (player): nothing is paid (10 -> 10)', G.player.resAvail===10, G.player.resAvail);
+  ok('Striker Pack (player): no second (Earth Alliance) token, no chooser', eaTokens('player')===1 && !modal(), JSON.stringify(modal())); }
 { fresh('player'); handPlay('ST04-012'); const m=modal();
   ok('Striker Pack (player): with no token the Sword / Launcher chooser opens', !!m && m.btns.length>=2, JSON.stringify(m));
   press(/Launcher/);
