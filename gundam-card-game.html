@@ -361,6 +361,11 @@
   .fan-slot:active .card { transform: scale(1.34); box-shadow: 0 14px 40px rgba(0,0,0,.7), 0 0 22px rgba(34,211,238,.35); }
   /* Held card blows up in a CENTERED overlay (a body child, so no transformed/backdrop-filtered
      ancestor throws off the centering). It pops in via the card's own transform transition. */
+  /* Look at the board: any dialog can be put aside for a moment to see the table under it (the choice waits unchanged). */
+  #peekBtn { position: fixed; left: 12px; bottom: 12px; z-index: 1500; display: none; background: rgba(20,18,46,.96); border: 1px solid #8b6ee0; color: #e8e4ff; border-radius: 999px; padding: 8px 14px; font-size: 13px; font-weight: 700; cursor: pointer; box-shadow: 0 6px 24px rgba(0,0,0,.6); }
+  #peekBtn.show { display: block; }
+  body.peek-board #peekBtn { background: #8b6ee0; color: #fff; }
+  body.peek-board #blockModal, body.peek-board .modal-overlay, body.peek-board #inspect, body.peek-board #overlay.peekable, body.peek-board #dbIo { opacity: 0 !important; pointer-events: none !important; transition: opacity .15s; }
   #peekOverlay { position: fixed; inset: 0; z-index: 190; display: none; align-items: center; justify-content: center; pointer-events: none; }
   #peekOverlay.show { display: flex; }
   #peekOverlay .card { transform: scale(3); opacity: 1 !important; box-shadow: 0 26px 70px rgba(0,0,0,.9), 0 0 42px rgba(34,211,238,.55); }
@@ -891,6 +896,7 @@
   <div class="controls">
     <button id="endTurnBtn" class="gold">End Turn</button>
     <button id="cancelBtn" class="ghost" style="display:none">Cancel</button>
+    <button id="handShuffleBtn" class="ghost" title="Shuffle your hand — reorders the cards you hold (your deck is untouched)">🔀</button>
     <button id="rulesBtn" class="ghost">Rules</button>
     <button id="soundBtn" class="ghost" title="Toggle sound">🔊</button>
     <button id="bgBtn" class="ghost" title="Playmats &amp; card sleeves — use your own photos">🖼</button>
@@ -898,6 +904,7 @@
 </div>
 
 <div class="prompt" id="prompt" style="display:none"></div>
+<button id="peekBtn" title="Put the dialog aside for a moment to see the table (B); tap again to bring it back">👁 Look at the board</button>
 <div id="logPanel">
   <div id="logHeader"><span>📜<span class="lh-txt"> BATTLE LOG</span></span><span class="tgl" id="logToggle">▾</span></div>
   <div id="log"></div>
@@ -7575,7 +7582,7 @@ function resolvePlayerTrigger(card, side, act, label, after){
     if (!cands.length){ fin(); return; }
     G.mode='trigger-multi';
     G.pending={ card, side, act, label, after, picked:[], cands: cands.map(c=>c.uid), max: Math.min(act.count, cands.length) };
-    setPrompt(`${card.name}: tap up to ${G.pending.max} enemy Unit${G.pending.max>1?'s':''} to ${act.kind==='destroyMulti'?'destroy':act.kind==='bounceMulti'?'return to hand':act.kind==='restMulti'?'rest':'deal '+act.amount+' each'} (Cancel to finish).`);
+    setPrompt(`${card.name}: tap ${G.pending.max>1?'1 to '+G.pending.max+' enemy Units':'an enemy Unit'} to ${act.kind==='destroyMulti'?'destroy':act.kind==='bounceMulti'?'return to hand':act.kind==='restMulti'?'rest':'deal '+act.amount+' each'}${G.pending.max>1?' (Cancel once you have chosen)':''}.`);
     render(); return;
   }
   // "Choose 1 to N friendly [trait] Units. They get AP+X." — let the player tap up to N of their own.
@@ -7584,7 +7591,7 @@ function resolvePlayerTrigger(card, side, act, label, after){
     if (!cands.length){ fin(); return; }
     G.mode='trigger-multi';
     G.pending={ card, side, act, label, after, picked:[], cands: cands.map(c=>c.uid), max: Math.min(act.count, cands.length) };
-    setPrompt(`${card.name}: tap up to ${G.pending.max} of your Unit${G.pending.max>1?'s':''} to give AP+${act.amount} (Cancel to finish).`);
+    setPrompt(`${card.name}: tap ${G.pending.max>1?'1 to '+G.pending.max+' of your Units':'one of your Units'} to give AP+${act.amount}${G.pending.max>1?' (Cancel once you have chosen)':''}.`);
     render(); return;
   }
   if (act.kind==='destroyAll'){ destroyAll(card, side, act, label); fin(); return; }
@@ -7609,7 +7616,7 @@ function resolvePlayerTrigger(card, side, act, label, after){
       G.mode='trigger-target';
       G.pending={ card, side, act, label, after, scope:anySide?'any':'enemy', cands: cands.map(c=>c.uid) };
       setPrompt(anySide ? `${card.name}: tap a rested Unit (an enemy one or one of yours) to target.`
-              : act.kind==='bouncePilot' ? `${card.name}: tap an enemy Unit to return its paired Pilot to hand (Cancel to decline).`
+              : act.kind==='bouncePilot' ? `${card.name}: tap an enemy Unit to return its paired Pilot to hand${act.may?' (Cancel to decline)':''}.`
               : `${card.name}: tap an enemy unit to target.`);
       render(); return;
     }
@@ -8966,6 +8973,11 @@ function shuffle(a){
 function deckShuffled(side, quiet){
   if (!quiet) log(side===G.player ? 'Your deck is shuffled.' : `${who(side)} shuffles ${NET.on ? 'their' : 'its'} deck.`, side===G.player ? 'me' : 'ai');
   sound('shuffle');
+  mpFxRecord({ k:'shuf', who: side===G.player ? 'player' : 'enemy' });
+  shuffleRiffle(side);
+}
+// The riffle over a deck zone (card backs fan apart and square up) — the visual half of deckShuffled.
+function shuffleRiffle(side){
   try{
     const zone=document.getElementById(side===G.player ? 'playerDeckZone' : 'enemyDeckZone'); if (!zone) return;
     const dk=zone.querySelector('.deck-card'); const r=(dk||zone).getBoundingClientRect(); if (!r || !r.width) return;
@@ -9383,6 +9395,7 @@ function beamFx(fromSpot, toSpot, color){
   const e={ kind:'beam', from:fromSpot, to:toSpot, color };
   try{ const f=battleNode(fromSpot), t=battleNode(toSpot); if (f && t && f!==t){ e.a=nodeCenter(f); e.b=nodeCenter(t); } }catch(x){}
   fxQueue.push(e);
+  mpFxRecord({ k:'beam', from:mpFxSpot(fromSpot), to:mpFxSpot(toSpot), color });
 }
 function fxBeam(fromSpot, toSpot, color, a, b){
   try{
@@ -9438,6 +9451,7 @@ function blockOutcome(atk, b){
 
 // Full-width "YOUR TURN / ENEMY TURN" sweep at the start of each turn.
 function showTurnBanner(turn){
+  mpFxRecord({ k:'banner', turn });
   try{
     let b=document.getElementById('turnBanner');
     if(!b){ b=document.createElement('div'); b.id='turnBanner'; document.body.appendChild(b); }
@@ -9452,6 +9466,7 @@ function flashCard(card, tag){
   // The same card flashed twice in one moment (an Action Step tile flashes it, then the ability's resolution does) shows once.
   if (_flashCardUid===card.uid && Date.now()-_flashCardAt<400) return;
   _flashCardUid=card.uid; _flashCardAt=Date.now();
+  mpFxRecord({ k:'flash', uid:card.uid, tag:tag||'PLAYED' });
   histAdd(card, /ENEMY/i.test(tag||'')?'ai':'me');
   let host=document.getElementById('cardFlash');
   if (!host){ host=document.createElement('div'); host.id='cardFlash'; document.body.appendChild(host); }
@@ -9857,11 +9872,13 @@ function setupChooseDeck(){
     <button id="dbImportTile" title="Paste or open a decklist (copies and card numbers) and build from it" style="${tileStyle('','#34d399')};border-style:dashed;color:#9be29a;font-size:15px;font-weight:700">⬆<br>IMPORT<br>DECK</button>`;
   const aiBtn=(lvl,label)=>`<button class="db-filter dbAi ${AI_LVL===lvl?'on':''}" data-lvl="${lvl}">${label}</button>`;
   const m=setupModal(`${setupBackBtn('Title', setupBackToTitle)}<h2 style="color:#d8b4ff;margin:14px 0 6px">Choose your deck</h2>
-    <p style="color:#9aa;margin:0 0 10px;font-size:13px">Pick a preset, one of your custom decks, or build your own. The AI plays the other preset.</p>
+    <p style="color:#9aa;margin:0 0 10px;font-size:13px">Build a deck or import a decklist, play one of your custom decks, or pick a preset below. The AI plays a preset.</p>
     <div style="margin:0 0 14px;display:flex;gap:8px;justify-content:center;align-items:center">
       <span style="color:#9aa;font-size:12px" title="Easy: misses half your blocks, forgets half its own. Normal: plays around your Blockers, blocks by value, spends its resources well. Hard: also foresees your counter-attacks, keeps a Blocker home against lethal, deploys after combat, 6-card opening hand.">AI difficulty:</span>${aiBtn('easy','Easy')}${aiBtn('normal','Normal')}${aiBtn('hard','Hard')}
     </div>
-    <div style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center">${cards}${customs}${newTile}</div>`);
+    <div style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center">${newTile}${customs}</div>
+    <p style="color:#9aa;margin:14px 0 8px;font-size:13px">Preset decks</p>
+    <div style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center">${cards}</div>`);
   m.querySelectorAll('.setup-deck').forEach(b=>b.onclick=()=>setupDeckChosen(PRESET_DECKS[+b.dataset.i]));
   m.querySelectorAll('.setup-custom').forEach(t=>t.onclick=()=>setupDeckChosen(customDecks()[+t.dataset.c]));
   m.querySelectorAll('.db-copy').forEach(b=>b.onclick=(e)=>{ e.stopPropagation();
@@ -11465,6 +11482,8 @@ function fieldClick(uidv){
   if (G.turn!=='player' && G.mode!=='action-step-target') return;
   if (G.turn==='player' && G.actionLock && G.mode==='idle') return;
   if (G.turn==='player' && G.phase==='end' && G.mode==='idle') return;   // no attacks once the End Phase has begun
+  // Tapping the card the action started from again backs out of it (as Cancel does) — unless it is itself a legal pick.
+  if (G.mode!=='idle' && actionSourceUid()===uidv && !pendingCandidate(uidv)){ cancelAction(); return; }
 
   if (G.mode==='field-replace'){
     const card=G.pending && G.pending.card; if(!card){ clearSel(); return; }
@@ -15545,7 +15564,7 @@ function mpBroadcast(msg, except){ if (NET.role!=='host') return; if (NET.guest 
 function mpReset(){
   try{ if (NET.peer) NET.peer.destroy(); }catch(e){}
   clearTimeout(NET.viewT);
-  Object.assign(NET, { on:false, role:null, active:false, inHop:false, hop:null, peer:null, host:null, guest:null, specs:[], code:'', names:{ host:'', guest:'' }, specNames:[], decks:{ host:null, guest:null }, started:false, gameId:'', seq:0, logBuf:[], viewT:null, lastView:null, lastViewStr:'', overRec:null, warn:'', open:false, inGame:false, setup:false, overShown:false });
+  Object.assign(NET, { on:false, role:null, active:false, inHop:false, hop:null, peer:null, host:null, guest:null, specs:[], code:'', names:{ host:'', guest:'' }, specNames:[], decks:{ host:null, guest:null }, started:false, gameId:'', seq:0, logBuf:[], fxBuf:[], viewT:null, lastView:null, lastViewStr:'', overRec:null, warn:'', open:false, inGame:false, setup:false, overShown:false });
   const w=el('mpWait'); if (w){ w.classList.remove('warn'); w.classList.remove('show'); }
 }
 function mpCreateRoom(){
@@ -15619,8 +15638,8 @@ function mpOnData(c, d){
         mpSend(c, { t:'welcome', role:c._mpRole, name, code:NET.code, names:NET.names, specNames:NET.specNames, build:mpBuild(), results:mpResults(), started:NET.started, view:NET.started ? NET.lastView : null, over:NET.overRec });
         mpLobbySync(); mpRenderLobby(); return; }
       case 'deck': if (c===NET.guest){ NET.decks.guest=d.deck; mpLobbySync(); mpRenderLobby(); mpMaybeStart(); } return;
-      case 'hop': if (c===NET.guest){ for (const s of NET.specs) mpSend(s, { t:'view', from:'guest', pack:d.pack, log:d.log||[], seq:d.seq }); mpOnHop(d); } return;   // spectators see what the guest handed over
-      case 'hopDone': if (c===NET.guest){ if (NET.specs.length && (d.pack || (d.log && d.log.length))) for (const s of NET.specs) mpSend(s, { t:'view', from:'guest', pack:d.pack||null, log:d.log||[], seq:d.seq }); mpOnHopDone(d); } return;
+      case 'hop': if (c===NET.guest){ for (const s of NET.specs) mpSend(s, { t:'view', from:'guest', pack:d.pack, log:d.log||[], fx:d.fx||[], seq:d.seq }); mpOnHop(d); } return;   // spectators see what the guest handed over
+      case 'hopDone': if (c===NET.guest){ if (NET.specs.length && (d.pack || (d.log && d.log.length) || (d.fx && d.fx.length))) for (const s of NET.specs) mpSend(s, { t:'view', from:'guest', pack:d.pack||null, log:d.log||[], fx:d.fx||[], seq:d.seq }); mpOnHopDone(d); } return;
       case 'view': if (c===NET.guest){ NET.lastView=d; mpApplyView(d); for (const s of NET.specs) mpSend(s, d); } return;
       case 'over': if (c===NET.guest){ mpOnOver(d.rec); for (const s of NET.specs) mpSend(s, d); } return;
       case 'results': if (Array.isArray(d.list)) mpMergeResults(d.list); return;
@@ -15633,7 +15652,7 @@ function mpOnData(c, d){
       NET.role=d.role; if (d.name) NET.me=d.name; NET.names=d.names||NET.names; NET.specNames=d.specNames||[]; NET.started=!!d.started;
       if (d.build!==mpBuild()) NET.warn='The host is on a different game version — if things look wrong, everyone should reload.';
       if (Array.isArray(d.results)) mpMergeResults(d.results);
-      if (d.started && d.view){ mpEnterGame(); mpApplyView(d.view); }
+      if (d.started && d.view){ mpEnterGame(); mpApplyView(Object.assign({}, d.view, { fx:[] })); }
       if (d.over) mpOnOver(d.over);
       mpRenderLobby(); return;
     case 'lobby': NET.names=d.names||NET.names; NET.specNames=d.specNames||[]; NET.decks.host=d.hostDeck||null; if (d.guestDeck!==undefined) NET.decks.guest=d.guestDeck; if (d.started===false && NET.started){ NET.started=false; G.over=true; mpHideWait(); } mpRenderLobby(); return;
@@ -15657,8 +15676,9 @@ function mpHop(step, args, cont, opts){
   NET.hop={ step, cont, opts, ui:mpSaveUi(), loose:args };
   NET.active=false;
   const lines=NET.logBuf.splice(0);
-  mpSend(conn, { t:'hop', step, pack:mpPack(G, args), log:lines, seq:++NET.seq });
-  if (NET.role==='host' && NET.specs.length){ const v={ t:'view', from:'host', pack:mpPack(G), log:lines, seq:NET.seq }; NET.lastView=v; for (const s of NET.specs) mpSend(s, v); }   // spectators see the state and lines up to here
+  const fxs=mpFxTake();
+  mpSend(conn, { t:'hop', step, pack:mpPack(G, args), log:lines, fx:fxs, seq:++NET.seq });
+  if (NET.role==='host' && NET.specs.length){ const v={ t:'view', from:'host', pack:mpPack(G), log:lines, fx:fxs, seq:NET.seq }; NET.lastView=v; for (const s of NET.specs) mpSend(s, v); }   // spectators see the state and lines up to here
   mpShowWait(`⏳ ${mpOppName()||'Opponent'} is ${MP_STEP_LABEL[step]||step}…`);
 }
 // The opponent is gone: resolve the step the way the AI would, so the game never wedges (a revealed Shield still
@@ -15680,6 +15700,7 @@ function mpOnHopDone(msg){
   else result=msg.result;
   if (msg.log) mpAppendLog(msg.log, 'opp');
   NET.active=true; mpHideWait(); render();
+  mpPlayFx(msg.fx, true);
   try{ h.cont(result); }catch(e){ console.error(e); }
   mpAfterLoad();
 }
@@ -15692,6 +15713,7 @@ function mpOnHop(msg){
   if (msg.log) mpAppendLog(msg.log, 'opp');   // appended while inactive: their lines must not echo back to them
   NET.active=true;
   mpSetNameLabels(); render();
+  mpPlayFx(msg.fx, true);
   switch (msg.step){
     case 'turn': NET.inHop=false; NET.hop=null; beginTurn('player'); break;   // the turn — and authority — is ours until it ends
     case 'block': { const blockers=(args.blockers||[]).filter(b=>b && G.player.field.includes(b) && !b.rested && b.hp>0);
@@ -15712,7 +15734,7 @@ function mpHopReturn(step, result, withState){
     if (modalBusy() || (G.mode!=='idle' && G.mode!=='attack-target') || (G.modalQueue && G.modalQueue.length)){ setTimeout(go, 60); return; }
     clearTimeout(NET.viewT); NET.viewT=null;
     NET.inHop=false; NET.active=false;
-    const msg={ t:'hopDone', step, log:NET.logBuf.splice(0), seq:++NET.seq };
+    const msg={ t:'hopDone', step, log:NET.logBuf.splice(0), fx:mpFxTake(), seq:++NET.seq };
     if (withState) msg.pack=mpPack(G, result); else msg.result=result;
     mpSendOpp(msg);
     if (G.over) mpAfterLoad();
@@ -15725,21 +15747,50 @@ function mpQueueView(){ if (!NET.on || !NET.active || NET.viewT) return; NET.vie
 function mpSendView(){
   if (!NET.on || !NET.active || NET.role==='spec') return;
   const pack=mpPack(G); const s=JSON.stringify(pack);
-  const lines=NET.logBuf.splice(0);
-  if (s===NET.lastViewStr && !lines.length) return;
+  const lines=NET.logBuf.splice(0), fxs=mpFxTake();
+  if (s===NET.lastViewStr && !lines.length && !fxs.length) return;
   NET.lastViewStr=s;
-  const msg={ t:'view', from:NET.role, pack, log:lines, seq:++NET.seq };
+  const msg={ t:'view', from:NET.role, pack, log:lines, fx:fxs, seq:++NET.seq };
   if (NET.role==='host'){ NET.lastView=msg; mpBroadcast(msg); } else mpSendHost(msg);
 }
 function mpApplyView(msg){
   if (!NET.on || NET.active || !msg) return;
-  if (!msg.pack){ if (msg.log) mpAppendLog(msg.log, msg.from); return; }   // lines only
   const flip = NET.role==='spec' ? msg.from==='guest' : true;
+  if (!msg.pack){ if (msg.log) mpAppendLog(msg.log, msg.from); mpPlayFx(msg.fx, flip); return; }   // lines and effects only
   mpLoadState(msg.pack, flip, NET.hop ? NET.hop.loose : null);
   if (NET.hop) mpRestoreUi(NET.hop.ui); else mpSanitizeUi();
   if (msg.log) mpAppendLog(msg.log, msg.from);
   mpEnterGame(); mpSetNameLabels(); if (!NET.hop) mpHideWait(); render();
+  mpPlayFx(msg.fx, flip);
   mpAfterLoad();
+}
+// ---- effects: what the running engine shows (sounds, hits and destructions, card flashes, effect beams, the shuffle
+// riffle, the turn sweep) travels with the next state, so the opponent and the spectators see the play, not just its
+// result. Recorded only on the engine that is running the game; played on every screen that only watches. ----
+function mpFxRecord(ev){ if (!NET.on || !NET.active || NET.role==='spec') return; if (!NET.fxBuf) NET.fxBuf=[]; if (NET.fxBuf.length<120) NET.fxBuf.push(ev); mpQueueView(); }
+function mpFxSpot(sp){ if (!sp) return null; if (sp.shields) return { shields:sp.shields }; if (sp.uid!=null) return { uid:sp.uid }; return null; }
+function mpFxTake(){ return NET.fxBuf && NET.fxBuf.length ? NET.fxBuf.splice(0) : []; }
+function mpFindCard(uidv){ try{ return mpCardMap().get(uidv) || null; }catch(e){ return null; } }
+function mpPlayFx(list, flip){
+  if (!Array.isArray(list) || !list.length || !NET.on || NET.active) return;
+  NET.fxPlayed=(NET.fxPlayed||0)+list.length;
+  const sw=v=>flip ? (v==='player' ? 'enemy' : v==='enemy' ? 'player' : v) : v;
+  const swTag=t=>flip ? String(t||'').replace(/^(YOUR|ENEMY)\b/, m=>m==='YOUR' ? 'ENEMY' : 'YOUR') : t;
+  // A beam's end: the card on the table, or — a Command already in the trash — its picture in the card flash just shown.
+  const spot=sp=>{ if (!sp) return null; if (sp.shields) return { shields:sw(sp.shields) }; if (sp.uid==null) return null;
+    if (battleNode({ uid:sp.uid })) return { uid:sp.uid }; const c=mpFindCard(sp.uid); return c ? effectSpot(c) : null; };
+  let vis=false, shake=false;
+  for (const ev of list){ try{
+    if (!ev) continue;
+    if (ev.k==='snd') sound(ev.kind);
+    else if (ev.k==='fx'){ if (ev.uid!=null){ fxQueue.push({ kind:ev.kind, uid:ev.uid }); vis=true; } if (ev.kind==='direct'||ev.kind==='shield'||ev.kind==='die') shake=true; }
+    else if (ev.k==='beam'){ const f=spot(ev.from), t=spot(ev.to); if (f && t){ fxQueue.push({ kind:'beam', from:f, to:t, color:ev.color }); vis=true; } }
+    else if (ev.k==='flash'){ const c=mpFindCard(ev.uid); if (c) flashCard(c, swTag(ev.tag)); }
+    else if (ev.k==='shuf') shuffleRiffle(sw(ev.who)==='player' ? G.player : G.enemy);
+    else if (ev.k==='banner'){ if (NET.role==='spec') showTurnBanner(sw(ev.turn)); }
+  }catch(e){} }
+  if (vis) applyVisualFx();
+  if (shake) screenShake();
 }
 function mpAfterLoad(){
   if (G.over && NET.overRec && !NET.overShown) mpShowOver(NET.overRec);
@@ -15886,7 +15937,7 @@ function mpHandOffTurn(){
   showTurnBanner('enemy'); setPrompt(''); render();
   const conn = NET.role==='host' ? NET.guest : NET.host;
   if (!conn || !conn.open){ mpShowWait('⚠ Your opponent is not connected — <button onclick="mpLeave()" class="ghost" style="padding:4px 10px;font-size:12px">Leave room</button>', true); return; }
-  mpSend(conn, { t:'hop', step:'turn', pack:mpPack(G), log:NET.logBuf.splice(0), seq:++NET.seq });
+  mpSend(conn, { t:'hop', step:'turn', pack:mpPack(G), log:NET.logBuf.splice(0), fx:mpFxTake(), seq:++NET.seq });
   mpSendViewTo(NET.role==='host' ? NET.specs : null);   // spectators see the hand-over at once
 }
 function mpSendViewTo(list){ if (!list || !list.length) return; const msg={ t:'view', from:NET.role, pack:mpPack(G), log:[], seq:NET.seq }; NET.lastView=msg; for (const c of list) mpSend(c, msg); }
@@ -16175,6 +16226,7 @@ function unlockAudio(){
 // envelopes, lowpass-tamed timbres, airy filter-swept whooshes and shimmer pings — deliberately
 // kept soft so nothing is harsh or fatiguing.
 function sound(kind){
+  if (kind!=='ui') mpFxRecord({ k:'snd', kind });   // online: the opponent and the spectators hear it too
   if(!SOUND.on) return; const ac=audioCtx(); if(!ac) return;
   // Browsers (autoplay policy) start the context suspended. resume() is async, so if we schedule
   // immediately the very first sounds land while still suspended and are lost. Defer rendering until
@@ -16264,7 +16316,7 @@ function renderSound(ac, kind){
   }
 }
 let fxQueue = [];
-function fx(kind, uid){ sound(kind); if(uid!=null) fxQueue.push({kind,uid}); if(kind==='direct'||kind==='shield'||kind==='die') screenShake(); }
+function fx(kind, uid){ sound(kind); if(uid!=null) fxQueue.push({kind,uid}); mpFxRecord({ k:'fx', kind, uid:uid!=null?uid:null }); if(kind==='direct'||kind==='shield'||kind==='die') screenShake(); }
 function screenShake(){ const r=el('app'); if(!r) return; r.classList.remove('shake'); void r.offsetWidth; r.classList.add('shake'); setTimeout(()=>r.classList.remove('shake'),420); }
 function applyVisualFx(){
   const CLS={ die:'fx-die', lungeUp:'fx-lunge-up', lungeDown:'fx-lunge-down', enter:'fx-enter' };
@@ -16274,7 +16326,7 @@ function applyVisualFx(){
   G.player.breakingShield=false; G.enemy.breakingShield=false;   // one-shot
 }
 // Queue the attacker's lunge toward the opposing row (visual only, no sound).
-function fxLunge(atk){ fxQueue.push({ kind: atk.owner==='player'?'lungeUp':'lungeDown', uid: atk.uid }); }
+function fxLunge(atk){ const kind=atk.owner==='player'?'lungeUp':'lungeDown'; fxQueue.push({ kind, uid: atk.uid }); mpFxRecord({ k:'fx', kind, uid:atk.uid }); }
 
 // Scale each battlefield's cards so ALL units fit its real width — no horizontal scrolling.
 // Overriding --card-h on the container rescales every card-internal size proportionally.
@@ -16403,7 +16455,8 @@ function render(){
     && ![...G.player.field, G.player.base].filter(Boolean).some(u=>activateReadyAny(u));
   if (_nothingLeft) el('endTurnBtn').classList.add('urge'); else el('endTurnBtn').classList.remove('urge');
   hideTargetArrow();
-  el('cancelBtn').style.display = (G.mode!=='idle' && G.turn==='player' && !(G.mode==='discard' && !(G.pending&&G.pending.onCancel))) ? 'inline-block' : 'none';
+  el('cancelBtn').style.display = (G.mode!=='idle' && G.turn==='player' && !(G.mode==='discard' && !(G.pending&&G.pending.onCancel)) && !mandatoryChoiceMsg()) ? 'inline-block' : 'none';
+  try{ el('handShuffleBtn').disabled = G.over || G.player.hand.length<2 || (NET.on && NET.role==='spec'); }catch(e){}
   if (NET.on && NET.role==='spec'){   // a spectator sees neither hand: card backs only
     el('hand').innerHTML = _hn ? Array.from({length:Math.min(_hn,10)},(_,i)=>`<div class="fan-slot" style="margin-left:${i?-30:0}px"><div class="card" style="background:url('${handBackImg('player')}') center/cover"></div></div>`).join('') : '';
     el('peekOverlay').classList.remove('show');
@@ -16494,6 +16547,8 @@ function bind(){
         return;
       }
       if(G.peekUid!=null){ G.peekUid=null; render(); }   // a deliberate tap dismisses the blown-up preview
+      // Tapping the hand card being played (a Pilot or Command aiming at a Unit, a Unit waiting for room) again backs out.
+      if(G.mode!=='idle' && c && actionSourceUid()===c.uid){ cancelAction(); return; }
       // A quick tap goes straight to the action: inspect (which has the Play button) when idle,
       // or play/target while resolving a mode. Holding the card blows it up (attachHandPeek).
       if(G.mode==='idle') inspect(c); else playFromHand(+n.dataset.uid);
@@ -16592,6 +16647,32 @@ function inspect(c){
   el('inspect').classList.add('show');
 }
 function closeInspect(){ el('inspect').classList.remove('show'); }
+// ---- look at the board: a dialog that covers the table (a block / Burst / action choice, a picker, the card inspector, the
+// rules or the result screen) can be put aside for a moment to see what is under it, then brought back; the choice
+// itself waits unchanged. The button shows only while such a dialog is up, and the peek ends with the dialog. ----
+function peekDialogOpen(){
+  try{
+    if (el('blockModal').classList.contains('show') || el('inspect').classList.contains('show') || el('dbIo').classList.contains('show')) return true;
+    if (document.querySelector('.modal-overlay')) return true;
+    const ov=el('overlay'), inGame = !!(G && G.player && (G.turnNumber>=1 || G.player.shields.length));
+    const show = ov && !ov.classList.contains('hidden') && inGame && (G.over || el('backToBattleBtn').style.display!=='none');
+    if (show){ if (!ov.classList.contains('peekable')) ov.classList.add('peekable'); return true; }
+    if (ov && ov.classList.contains('peekable')) ov.classList.remove('peekable');
+  }catch(e){}
+  return false;
+}
+function peekSync(){
+  try{
+    const b=el('peekBtn'), open=peekDialogOpen(), body=document.body;
+    if (!open){ if (body.classList.contains('peek-board')) body.classList.remove('peek-board'); if (b.classList.contains('show')) b.classList.remove('show'); return; }
+    if (!b.classList.contains('show')) b.classList.add('show');
+    const txt = body.classList.contains('peek-board') ? '↩ Back to the dialog' : '👁 Look at the board';
+    if (b.textContent!==txt) b.textContent=txt;   // only on a change: this runs from a mutation observer
+  }catch(e){}
+}
+function peekToggle(){ if (!peekDialogOpen()) return; document.body.classList.toggle('peek-board'); peekSync(); }
+el('peekBtn').addEventListener('click', peekToggle);
+try{ new MutationObserver(()=>peekSync()).observe(document.body, { subtree:true, childList:true, attributes:true, attributeFilter:['class','style'] }); }catch(e){}
 
 // ---- buttons / keys ----
 // A forced selection is in progress — a field-tap choice (anything but idle / the player's own
@@ -16622,6 +16703,47 @@ el('logHeader').addEventListener('click', ()=>{
 // Phones start with the log minimized — open, it would cover the hand and the End Turn row.
 if (typeof matchMedia==='function' && matchMedia('(max-width: 820px), (max-height: 560px)').matches){ el('logPanel').classList.add('collapsed'); el('logToggle').textContent='▸'; }
 el('cancelBtn').addEventListener('click', ()=>cancelAction());
+// Shuffle your hand: the cards you hold change order (the deck is untouched). Not while a hand card is being aimed — the
+// play in progress remembers the card by its place in the hand.
+el('handShuffleBtn').addEventListener('click', ()=>{
+  if (G.over || !G.player) return;
+  if (NET.on && NET.role==='spec') return;
+  if (G.player.hand.length<2){ flashPrompt('Nothing to shuffle — you hold fewer than 2 cards.'); return; }
+  if (G.mode!=='idle' && G.mode!=='discard'){ flashPrompt('Finish your current action first.'); return; }
+  shuffle(G.player.hand); G.peekUid=null;
+  sound('shuffle'); log('You shuffle your hand.', 'me'); render();
+});
+// The choice on the table can't be backed out of: a triggered effect that isn't "you may" must choose its target, and a
+// "Choose 1 to N" must take at least one. Returns the message to show instead of cancelling, or null when Cancel is allowed.
+// A Command mid-aim always goes back to hand, and a choice whose every candidate has since left play is simply skipped.
+function mandatoryChoiceMsg(){
+  const p=G.pending; if (!p || G.turn!=='player' || G.cmdInFlight) return null;
+  const name=p.card&&p.card.name ? p.card.name : 'This effect';
+  if (G.mode==='trigger-target' && p.after && p.act && !p.act.may && p.cands && p.cands.length) return `${name}: this effect isn't optional — choose a target.`;
+  if (G.mode==='trigger-multi' && p.act && !p.act.may && !(p.picked&&p.picked.length) && p.cands && p.cands.length) return `${name}: choose at least 1 Unit.`;
+  return null;
+}
+// Something is being aimed or chosen (an attack, an effect's target, a Pilot's Unit…) on this engine's watch.
+function midAction(){ return !G.over && !!G.player && G.mode!=='idle' && (G.turn==='player' || G.mode==='action-step-target') && !(NET.on && !NET.active); }
+// The card the current action started from — tapping it again backs out (the attacker picked, the Unit using its
+// 【Activate】, the Pilot/Command/Unit being played from hand, the card whose effect is choosing).
+function actionSourceUid(){
+  const p=G.pending;
+  if (G.mode==='attack-target') return G.selected;
+  if (!p) return null;
+  if (G.mode==='activate-cost' || G.mode==='activate-target' || G.mode==='pilot-target' || G.mode==='command-target') return p.uid!=null ? p.uid : null;
+  if (G.mode==='support-target') return p.src ? p.src.uid : null;
+  if (G.mode==='field-replace') return p.card ? p.card.uid : null;
+  if (p.card && p.card.uid!=null) return p.card.uid;   // trigger-target / trigger-multi / self-rest-pick / gd05-sac-own / token-replace
+  if (p.cmd && p.cmd.uid!=null) return p.cmd.uid;      // action-step-target
+  return null;
+}
+// The card is one of the choice's own candidates ("choose 1 of your Units" can pick the source itself): a tap picks it.
+function pendingCandidate(uid){
+  const p=G.pending; if (!p) return false;
+  if (G.activateCands && G.activateCands.includes(uid)) return true;
+  return !!(p.cands && p.cands.includes(uid));
+}
 // Cancel button and Escape key: back out of the current choice without losing what's already under way.
 function cancelAction(){
   // A discard the rules or a cost demand can't be backed out of (the hand-limit step, "draw 1, then discard
@@ -16641,6 +16763,8 @@ function cancelAction(){
   }
   // Cancelling a Command mid-targeting returns it to hand (refunding cost) rather than losing it.
   if (G.cmdInFlight && G.mode==='trigger-target'){ refundCommandInFlight(); clearSel(); render(); return; }
+  // An effect that isn't "you may" can't be skipped: the choice stays open.
+  { const mm=mandatoryChoiceMsg(); if (mm){ flashPrompt(mm); return; } }
   // A triggered effect (【Attack】, 【Deploy】, 【When Paired】…) is part of something already under way:
   // Cancel skips this effect's choice but the attack / deploy carries on (8-2: a declared attack
   // proceeds through its steps) — clearSel() would drop the battle in progress.
@@ -17016,19 +17140,23 @@ document.addEventListener('keydown', e=>{
   if (el('dbIo').classList.contains('show')){ if (e.key==='Escape') deckIoClose(); return; }   // the deck import / export dialog
   if (e.target && /^(INPUT|TEXTAREA)$/.test(e.target.tagName||'')) return;   // typing in the deck builder's fields
   if (el('cropModal').classList.contains('show')){ if(e.key==='Escape') cropClose(); else if(e.key==='Enter') el('cropOk').click(); return; }   // framing a mat picture
+  if((e.key==='b'||e.key==='B') && !e.ctrlKey && !e.metaKey && !e.altKey){ peekToggle(); return; }   // look at the board under a dialog (the result screen too)
   if(G.over) return;
   if(e.key==='Escape'){ closeInspect(); cancelAction(); }   // the same rules as the Cancel button
   if(e.key==='Enter'&&G.turn==='player'&&!midSelection()){ clearSel(); endTurn(); }
   if((e.key==='l'||e.key==='L') && !e.ctrlKey && !e.metaKey && !e.altKey) el('logHeader').click();
 });
-// Desktop: right-click any card on the table or in the hand to read it (the same inspector a tap opens).
+// Desktop: mid-action (aiming an attack, an effect, a Pilot…) a right-click anywhere backs out, as Cancel / Escape do.
+// Otherwise right-click any card on the table or in the hand to read it (the same inspector a tap opens).
+// Capture phase, so a cancel runs before the card's own right-click (long-press) handler can open the inspector.
 document.addEventListener('contextmenu', e=>{
+  if (midAction()){ e.preventDefault(); e.stopPropagation(); closeInspect(); cancelAction(); return; }
   const node=e.target && e.target.closest ? e.target.closest('.card[data-uid]') : null; if(!node) return;
   const uid=+node.dataset.uid;
   const c=[...G.player.field, ...G.enemy.field, ...G.player.hand, G.player.base, G.enemy.base].filter(Boolean).find(x=>x.uid===uid);
   if(!c) return;
   e.preventDefault(); inspect(c);
-});
+}, true);
 </script>
 <script>
 // Register the offline service worker (no-op on browsers without support, e.g. a local file:// open).
