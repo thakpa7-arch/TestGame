@@ -510,6 +510,28 @@
   #bgModal .bg-dim { font-size: 12px; color: var(--muted); }
   #bgModal .bg-dim input { flex: 1; accent-color: var(--gold); }
   #bgModal .ins-btns { display: flex; justify-content: flex-end; margin-top: 10px; }
+  #bgModal .bg-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+  #bgModal .bg-adjust { padding: 6px 12px; font-size: 12px; }
+  /* Crop / framing dialog: the frame is the shape of the mat; drag the picture under it, pinch/scroll/slider to zoom */
+  #cropModal { position: fixed; inset: 0; background: rgba(4,7,14,.9); z-index: 1400; display: none; align-items: center; justify-content: center; padding: 12px; }
+  #cropModal.show { display: flex; }
+  #cropModal .crop-box { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; max-width: 760px; width: 100%; max-height: 96vh; overflow-y: auto; padding: 14px 16px; }
+  #cropModal h3 { font-size: 17px; margin-bottom: 4px; }
+  #cropModal .bg-sub { font-size: 12px; color: var(--muted); margin-bottom: 10px; line-height: 1.4; }
+  #cropStage { position: relative; width: 100%; height: 52vh; min-height: 220px; max-height: 560px; background: #05070d; border-radius: 10px; overflow: hidden;
+    touch-action: none; user-select: none; -webkit-user-select: none; cursor: grab; }
+  #cropStage.drag { cursor: grabbing; }
+  #cropCanvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; }
+  #cropFrame { position: absolute; border: 2px solid var(--gold); border-radius: 8px; box-shadow: 0 0 0 4000px rgba(2,4,10,.66); pointer-events: none; }
+  #cropFrame::after { content: ''; position: absolute; inset: 0; background:
+      linear-gradient(to right, transparent 33.3%, rgba(255,255,255,.18) 33.3%, rgba(255,255,255,.18) calc(33.3% + 1px), transparent calc(33.3% + 1px), transparent 66.6%, rgba(255,255,255,.18) 66.6%, rgba(255,255,255,.18) calc(66.6% + 1px), transparent calc(66.6% + 1px)),
+      linear-gradient(to bottom, transparent 33.3%, rgba(255,255,255,.18) 33.3%, rgba(255,255,255,.18) calc(33.3% + 1px), transparent calc(33.3% + 1px), transparent 66.6%, rgba(255,255,255,.18) 66.6%, rgba(255,255,255,.18) calc(66.6% + 1px), transparent calc(66.6% + 1px)); }
+  #cropFrame .crop-tag { position: absolute; left: 8px; top: 6px; font-size: 11px; font-weight: 700; color: var(--gold); text-shadow: 0 1px 2px #000; letter-spacing: .4px; }
+  #cropModal .crop-zoom { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: 12px; color: var(--muted); }
+  #cropModal .crop-zoom input { flex: 1; accent-color: var(--gold); }
+  #cropModal .ins-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  #cropModal .crop-zoom .ghost { padding: 6px 10px; font-size: 12px; }
+  @media (max-height: 560px){ #cropStage { height: 44vh; min-height: 150px; } #cropModal .crop-box { padding: 8px 12px; } #cropModal .bg-sub { display: none; } }
   #blockModal { position: fixed; inset: 0; background: rgba(4,7,14,.84); z-index: 95; display: none; align-items: center; justify-content: center; padding: 18px; }
   #blockModal.show { display: flex; }
   #blockModal .block-box { background: var(--panel); border: 1px solid var(--red); border-radius: 14px; max-width: 460px; width: 100%; padding: 18px; box-shadow: 0 0 24px rgba(239,68,68,.35); }
@@ -736,15 +758,22 @@
 
 <div id="bgModal"><div class="bg-box">
   <h3>Playmat backgrounds</h3>
-  <p class="bg-sub">Use any picture from your phone or computer for each mat. Pictures are saved on this device only.</p>
+  <p class="bg-sub">Use any picture from your phone or computer for each mat. After choosing one you pick the part that goes on the mat. Pictures are saved on this device only.</p>
   <div class="bg-row" data-side="player"><div class="bg-prev"></div><div class="bg-ctl"><b>Your mat</b>
     <label class="bg-pick">📷 Choose picture<input type="file" accept="image/*"></label>
-    <button class="ghost bg-reset">Reset</button></div></div>
+    <div class="bg-btns"><button class="ghost bg-adjust" title="Move, zoom or crop the picture">✂ Adjust</button><button class="ghost bg-reset">Reset</button></div></div></div>
   <div class="bg-row" data-side="enemy"><div class="bg-prev"></div><div class="bg-ctl"><b>Enemy mat</b>
     <label class="bg-pick">📷 Choose picture<input type="file" accept="image/*"></label>
-    <button class="ghost bg-reset">Reset</button></div></div>
+    <div class="bg-btns"><button class="ghost bg-adjust" title="Move, zoom or crop the picture">✂ Adjust</button><button class="ghost bg-reset">Reset</button></div></div></div>
   <div class="bg-row bg-dim"><span>Picture brightness</span><input type="range" id="bgDim" min="0" max="100" step="5"></div>
   <div class="ins-btns"><button id="bgClose">Close</button></div>
+</div></div>
+<div id="cropModal"><div class="crop-box">
+  <h3 id="cropTitle">Frame the picture</h3>
+  <p class="bg-sub">The frame is the shape of the mat on this screen. Drag the picture to move it, pinch, scroll or use the slider to zoom. What is inside the frame goes on the mat.</p>
+  <div id="cropStage"><canvas id="cropCanvas"></canvas><div id="cropFrame"><span class="crop-tag" id="cropTag"></span></div></div>
+  <div class="crop-zoom"><span>Zoom</span><input type="range" id="cropZoom" min="0" max="100" step="1"><button class="ghost" id="cropFit" title="Zoom out as far as the mat allows">Fit</button></div>
+  <div class="ins-btns"><button class="ghost" id="cropCancel">Cancel</button><button id="cropOk">✔ Use this part</button></div>
 </div></div>
 <div id="inspect"><div class="ins-box">
   <img id="insImg" alt="">
@@ -15267,36 +15296,127 @@ function applyMatBg(side){
   m.style.boxShadow='0 10px 36px rgba(0,0,0,.7)';   // no desktop inset tint on top of the player's own picture
 }
 function applyMatBgs(){ applyMatBg('player'); applyMatBg('enemy'); }
-// Downscale the chosen picture (phones hand over 12-megapixel photos) to what a mat can show, as a JPEG the storage can hold.
-function matBgEncode(file, maxSide, quality){
+// Open a picture (a File from the phone/computer, or a stored data URL) as an Image the canvas can draw.
+function matBgLoad(src){
   return new Promise((res, rej)=>{
-    const url=URL.createObjectURL(file), im=new Image();
-    im.onload=()=>{ try{
-      const sc=Math.min(1, maxSide/Math.max(im.naturalWidth, im.naturalHeight));
-      const c=document.createElement('canvas'); c.width=Math.max(1, Math.round(im.naturalWidth*sc)); c.height=Math.max(1, Math.round(im.naturalHeight*sc));
-      c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
-      URL.revokeObjectURL(url); res(c.toDataURL('image/jpeg', quality));
-    }catch(e){ rej(e); } };
-    im.onerror=()=>{ URL.revokeObjectURL(url); rej(new Error('not an image the browser can open')); };
+    const isFile = typeof src!=='string', url=isFile ? URL.createObjectURL(src) : src, im=new Image();
+    im.onload=()=>{ res(im); };
+    im.onerror=()=>{ if (isFile) URL.revokeObjectURL(url); rej(new Error('not an image the browser can open')); };
     im.src=url;
   });
 }
+// Cut the chosen part out of the picture (phones hand over 12-megapixel photos) at what a mat can show, as a JPEG the storage can hold.
+function matBgEncode(im, rect, maxSide, quality){
+  const sw=Math.max(1, rect.w), sh=Math.max(1, rect.h), sc=Math.min(1, maxSide/Math.max(sw, sh));
+  const c=document.createElement('canvas'); c.width=Math.max(1, Math.round(sw*sc)); c.height=Math.max(1, Math.round(sh*sc));
+  const g=c.getContext('2d'); g.imageSmoothingQuality='high'; g.drawImage(im, rect.x, rect.y, sw, sh, 0, 0, c.width, c.height);
+  return c.toDataURL('image/jpeg', quality);
+}
+function matBgStore(side, im, rect){
+  let data=matBgEncode(im, rect, 1600, 0.82);
+  try{ localStorage.setItem(MATBG.key(side), JSON.stringify(data)); }
+  catch(e){ data=matBgEncode(im, rect, 1000, 0.7); localStorage.setItem(MATBG.key(side), JSON.stringify(data)); }   // storage full: a smaller copy
+  applyMatBg(side); matBgRender();
+}
+// Picking a picture opens the framing dialog; the whole original stays in memory for this session so "Adjust" can reframe it.
+MATBG.src={};
 async function matBgChoose(side, file){
   if (!file) return;
-  try{
-    let data=await matBgEncode(file, 1600, 0.82);
-    try{ localStorage.setItem(MATBG.key(side), JSON.stringify(data)); }
-    catch(e){ data=await matBgEncode(file, 1000, 0.7); localStorage.setItem(MATBG.key(side), JSON.stringify(data)); }   // storage full: a smaller copy
-    applyMatBg(side); matBgRender();
-  }catch(e){ alert('That picture could not be used: '+(e && e.message ? e.message : e)); }
+  try{ const im=await matBgLoad(file); MATBG.src[side]=im; matBgCrop(side, im); }
+  catch(e){ alert('That picture could not be used: '+(e && e.message ? e.message : e)); }
 }
+async function matBgAdjust(side){
+  try{
+    let im=MATBG.src[side];
+    if (!im){ const data=lsGet(MATBG.key(side), null); if (!data) return; im=await matBgLoad(data); }
+    matBgCrop(side, im);
+  }catch(e){ alert('That picture could not be opened: '+(e && e.message ? e.message : e)); }
+}
+// ---- Framing dialog: the picture is drawn on a canvas under a frame shaped like the mat on this screen; the player drags it
+// around and zooms (pinch / mouse wheel / slider). The picture always covers the frame, so there are never empty mat corners. ----
+const CROP={ side:null, im:null, x:0, y:0, s:1, min:1, max:1, frame:null, ptrs:new Map(), pinch:null, raf:0 };
+function matAspect(side){
+  const m=document.querySelector('.mat.'+side), r=m && m.getBoundingClientRect ? m.getBoundingClientRect() : null;
+  return r && r.width>40 && r.height>40 ? r.width/r.height : (innerWidth>innerHeight ? 2.6 : 1.3);
+}
+function matBgCrop(side, im, keep){
+  const modal=el('cropModal'), stage=el('cropStage'), cv=el('cropCanvas'), fr=el('cropFrame');
+  if (!modal || !stage || !cv || !cv.getContext) return;
+  CROP.side=side; CROP.im=im; CROP.ptrs.clear(); CROP.pinch=null;
+  el('cropTag').textContent = side==='enemy' ? 'ENEMY MAT' : 'YOUR MAT';
+  el('cropTitle').textContent = side==='enemy' ? 'Frame the enemy mat picture' : 'Frame your mat picture';
+  modal.classList.add('show');
+  // the stage is laid out now that the modal shows; frame = mat shape at ~86% of the stage
+  const W=stage.clientWidth||600, H=stage.clientHeight||300, asp=matAspect(side);
+  let fw=W*0.86, fh=fw/asp; if (fh>H*0.86){ fh=H*0.86; fw=fh*asp; }
+  CROP.frame={ x:(W-fw)/2, y:(H-fh)/2, w:fw, h:fh, W, H };
+  fr.style.left=CROP.frame.x+'px'; fr.style.top=CROP.frame.y+'px'; fr.style.width=fw+'px'; fr.style.height=fh+'px';
+  const dpr=Math.min(2, window.devicePixelRatio||1); cv.width=Math.round(W*dpr); cv.height=Math.round(H*dpr);
+  CROP.min=Math.max(fw/im.naturalWidth, fh/im.naturalHeight);           // zoomed out as far as still covering the frame
+  CROP.max=Math.max(CROP.min*8, 1);                                       // up to 8x, or 1 screen px per picture px
+  cropSetScale(CROP.min, null);
+  CROP.x=CROP.frame.x+(fw-im.naturalWidth*CROP.s)/2; CROP.y=CROP.frame.y+(fh-im.naturalHeight*CROP.s)/2;   // centred, like `cover`
+  if (keep){ cropSetScale(fw/keep.w, null); CROP.x=CROP.frame.x-keep.x*CROP.s; CROP.y=CROP.frame.y-keep.y*CROP.s; }   // same part after a resize / rotation
+  cropClamp(); cropDraw(); cropSlider();
+}
+function cropClamp(){
+  const f=CROP.frame, iw=CROP.im.naturalWidth*CROP.s, ih=CROP.im.naturalHeight*CROP.s;
+  CROP.x=Math.min(f.x, Math.max(f.x+f.w-iw, CROP.x)); CROP.y=Math.min(f.y, Math.max(f.y+f.h-ih, CROP.y));
+}
+// Zoom to scale `s` keeping the stage point (px,py) over the same spot of the picture (null = centre of the frame).
+function cropSetScale(s, px, py){
+  s=Math.max(CROP.min, Math.min(CROP.max, s)); const f=CROP.frame;
+  if (px==null){ px=f.x+f.w/2; py=f.y+f.h/2; }
+  const k=s/CROP.s; CROP.x=px-(px-CROP.x)*k; CROP.y=py-(py-CROP.y)*k; CROP.s=s; cropClamp();
+}
+function cropSlider(){ const z=el('cropZoom'); if (!z) return; const r=Math.log(CROP.s/CROP.min)/Math.log(CROP.max/CROP.min); z.value=Math.round(Math.max(0, Math.min(1, r||0))*100); }
+function cropDraw(){
+  if (CROP.raf) return; CROP.raf=requestAnimationFrame(()=>{ CROP.raf=0;
+    const cv=el('cropCanvas'), g=cv.getContext('2d'), f=CROP.frame, dpr=cv.width/f.W;
+    g.setTransform(dpr,0,0,dpr,0,0); g.clearRect(0,0,f.W,f.H); g.imageSmoothingQuality='high';
+    g.drawImage(CROP.im, CROP.x, CROP.y, CROP.im.naturalWidth*CROP.s, CROP.im.naturalHeight*CROP.s); });
+}
+function cropRect(){ const f=CROP.frame; return { x:(f.x-CROP.x)/CROP.s, y:(f.y-CROP.y)/CROP.s, w:f.w/CROP.s, h:f.h/CROP.s }; }
+function cropClose(){ el('cropModal').classList.remove('show'); CROP.im=null; CROP.ptrs.clear(); CROP.pinch=null; }
+(function wireCrop(){
+  const stage=el('cropStage'); if (!stage || !stage.addEventListener) return;
+  stage.addEventListener('pointerdown', e=>{ if (!CROP.im) return; e.preventDefault(); try{ stage.setPointerCapture(e.pointerId); }catch(x){}
+    CROP.ptrs.set(e.pointerId, { x:e.clientX, y:e.clientY }); stage.classList.add('drag');
+    if (CROP.ptrs.size===2){ const [a,b]=[...CROP.ptrs.values()]; CROP.pinch={ d:Math.hypot(a.x-b.x, a.y-b.y), s:CROP.s }; } });
+  stage.addEventListener('pointermove', e=>{ const p=CROP.ptrs.get(e.pointerId); if (!p || !CROP.im) return; e.preventDefault();
+    const r=stage.getBoundingClientRect();
+    if (CROP.ptrs.size>=2 && CROP.pinch){
+      p.x=e.clientX; p.y=e.clientY; const [a,b]=[...CROP.ptrs.values()], d=Math.hypot(a.x-b.x, a.y-b.y);
+      const mx=(a.x+b.x)/2-r.left, my=(a.y+b.y)/2-r.top;
+      // the midpoint is where the fingers are, so move with it as well as zooming about it
+      if (CROP.pinch.mx!=null){ CROP.x+=mx-CROP.pinch.mx; CROP.y+=my-CROP.pinch.my; }
+      CROP.pinch.mx=mx; CROP.pinch.my=my;
+      cropSetScale(CROP.pinch.s*d/Math.max(1, CROP.pinch.d), mx, my); cropSlider();
+    } else { CROP.x+=e.clientX-p.x; CROP.y+=e.clientY-p.y; p.x=e.clientX; p.y=e.clientY; cropClamp(); }
+    cropDraw(); });
+  const up=e=>{ CROP.ptrs.delete(e.pointerId); if (CROP.ptrs.size<2) CROP.pinch=null; if (!CROP.ptrs.size) stage.classList.remove('drag'); };
+  stage.addEventListener('pointerup', up); stage.addEventListener('pointercancel', up); stage.addEventListener('lostpointercapture', up);
+  stage.addEventListener('wheel', e=>{ if (!CROP.im) return; e.preventDefault(); const r=stage.getBoundingClientRect();
+    cropSetScale(CROP.s*Math.exp(-e.deltaY*0.0015), e.clientX-r.left, e.clientY-r.top); cropSlider(); cropDraw(); }, { passive:false });
+  stage.addEventListener('dblclick', e=>{ if (!CROP.im) return; const r=stage.getBoundingClientRect();
+    cropSetScale(CROP.s>CROP.min*1.05 ? CROP.min : CROP.min*2, e.clientX-r.left, e.clientY-r.top); cropSlider(); cropDraw(); });
+  el('cropZoom').addEventListener('input', e=>{ if (!CROP.im) return; const t=(+e.target.value||0)/100;
+    cropSetScale(CROP.min*Math.pow(CROP.max/CROP.min, t), null); cropDraw(); });
+  el('cropFit').addEventListener('click', ()=>{ if (!CROP.im) return; cropSetScale(CROP.min, null); cropSlider(); cropDraw(); });
+  el('cropCancel').addEventListener('click', cropClose);
+  el('cropModal').addEventListener('click', e=>{ if (e.target===el('cropModal')) cropClose(); });
+  el('cropOk').addEventListener('click', ()=>{ if (!CROP.im) return;
+    try{ matBgStore(CROP.side, CROP.im, cropRect()); cropClose(); }
+    catch(e){ alert('That picture could not be saved: '+(e && e.message ? e.message : e)); } });
+  window.addEventListener('resize', ()=>{ if (CROP.im && el('cropModal').classList.contains('show')) matBgCrop(CROP.side, CROP.im, cropRect()); });
+})();
 function matBgRender(){
   const m=el('bgModal'); if (!m || !m.querySelectorAll) return;
   m.querySelectorAll('.bg-row[data-side]').forEach(r=>{
     const side=r.dataset.side, img=lsGet(MATBG.key(side), null), p=r.querySelector('.bg-prev');
     const mat=document.querySelector('.mat.'+side);
     p.style.backgroundImage = img ? `url("${img}")` : (mat ? getComputedStyle(mat).backgroundImage.split('url(').slice(-1).map(s=>'url('+s)[0] : '');
-    r.querySelector('.bg-reset').disabled=!img;
+    r.querySelector('.bg-reset').disabled=!img; r.querySelector('.bg-adjust').disabled=!img;
   });
   const d=el('bgDim'); if (d) d.value=matBgDim();
 }
@@ -15306,7 +15426,8 @@ el('bgModal').addEventListener('click', e=>{ if (e.target===el('bgModal')) el('b
 el('bgModal').querySelectorAll('.bg-row[data-side]').forEach(r=>{
   const side=r.dataset.side;
   r.querySelector('input[type=file]').addEventListener('change', e=>{ matBgChoose(side, e.target.files && e.target.files[0]); e.target.value=''; });
-  r.querySelector('.bg-reset').addEventListener('click', ()=>{ try{ localStorage.removeItem(MATBG.key(side)); }catch(e){} applyMatBg(side); matBgRender(); });
+  r.querySelector('.bg-adjust').addEventListener('click', ()=>matBgAdjust(side));
+  r.querySelector('.bg-reset').addEventListener('click', ()=>{ try{ localStorage.removeItem(MATBG.key(side)); }catch(e){} delete MATBG.src[side]; applyMatBg(side); matBgRender(); });
 });
 el('bgDim').addEventListener('input', e=>{ lsSet(MATBG.dimKey, +e.target.value); applyMatBgs(); });
 applyMatBgs();
@@ -15320,6 +15441,7 @@ el('enemyBaseZone').addEventListener('click', ()=>{ if(G.mode==='attack-target')
 el('enemyField').addEventListener('click', e=>{ if(G.mode==='attack-target' && e.target.classList.contains('battlefield')) attackDirect(); });
 document.addEventListener('keydown', e=>{
   if (e.target && /^(INPUT|TEXTAREA)$/.test(e.target.tagName||'')) return;   // typing in the deck builder's fields
+  if (el('cropModal').classList.contains('show')){ if(e.key==='Escape') cropClose(); else if(e.key==='Enter') el('cropOk').click(); return; }   // framing a mat picture
   if(G.over) return;
   if(e.key==='Escape'){ closeInspect(); cancelAction(); }   // the same rules as the Cancel button
   if(e.key==='Enter'&&G.turn==='player'&&!midSelection()){ clearSel(); endTurn(); }
