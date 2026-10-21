@@ -14,7 +14,7 @@ const FILE = process.argv[2] || require('path').resolve(__dirname,'../gundam-car
   for (let i=0;i<30;i++){
     const done=await p.evaluate(()=>G.player.shields.length===6 && G.enemy.shields.length===6 && !document.querySelector('#blockModal.show'));
     const vis=await p.evaluate(()=>[...document.querySelectorAll('button')].filter(x=>x.offsetParent!==null).map(x=>(x.textContent||'').trim().slice(0,40)));
-    const cand=vis.filter(t=>t && !/^(End Turn|Rules|🔊|← .*|⧉|Easy|Normal|Hard|＋DECKBUILDER)$/.test(t));
+    const cand=vis.filter(t=>t && !/^(End Turn|Rules|🔊|🖼.*|← .*|⧉|Easy|Normal|Hard|＋DECKBUILDER)$/.test(t));
     if (done && !cand.length) break;
     if (cand.length){ const pick=cand.find(t=>/keep|start|go first|first|ok|continue|confirm|done|begin/i.test(t))||cand[0]; await p.click(`button:has-text("${pick.replace(/"/g,'\\"')}")`,{timeout:3000}).catch(()=>{}); }
     await p.waitForTimeout(500);

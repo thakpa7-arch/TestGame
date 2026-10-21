@@ -492,6 +492,22 @@
   #inspect .ins-eff { font-size: 12.5px; line-height: 1.5; color: var(--txt); }
   #inspect .ins-btns { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
 
+  /* Playmat background picker */
+  #bgModal { position: fixed; inset: 0; background: rgba(4,7,14,.84); z-index: 1300; display: none; align-items: center; justify-content: center; padding: 16px; }
+  #bgModal.show { display: flex; }
+  #bgModal .bg-box { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; max-width: 440px; width: 100%; max-height: 92vh; overflow-y: auto; padding: 16px; }
+  #bgModal h3 { font-size: 17px; margin-bottom: 4px; }
+  #bgModal .bg-sub { font-size: 12px; color: var(--muted); margin-bottom: 12px; line-height: 1.4; }
+  #bgModal .bg-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); }
+  #bgModal .bg-prev { width: 120px; height: 68px; flex-shrink: 0; border-radius: 8px; border: 1px solid rgba(200,50,43,.45); background: #0d1628 center/cover no-repeat; }
+  #bgModal .bg-ctl { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; min-width: 0; }
+  #bgModal .bg-ctl b { font-size: 13px; }
+  #bgModal .bg-pick { display: inline-block; background: var(--blue); color: #fff; padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; }
+  #bgModal .bg-pick input { display: none; }
+  #bgModal .bg-reset { padding: 6px 12px; font-size: 12px; }
+  #bgModal .bg-dim { font-size: 12px; color: var(--muted); }
+  #bgModal .bg-dim input { flex: 1; accent-color: var(--gold); }
+  #bgModal .ins-btns { display: flex; justify-content: flex-end; margin-top: 10px; }
   #blockModal { position: fixed; inset: 0; background: rgba(4,7,14,.84); z-index: 95; display: none; align-items: center; justify-content: center; padding: 18px; }
   #blockModal.show { display: flex; }
   #blockModal .block-box { background: var(--panel); border: 1px solid var(--red); border-radius: 14px; max-width: 460px; width: 100%; padding: 18px; box-shadow: 0 0 24px rgba(239,68,68,.35); }
@@ -543,8 +559,8 @@
     #logPanel.collapsed { left: auto; width: auto; }
     #log { max-height: 36vh; font-size: 10px; }
     #logHeader { font-size: 10px; padding: 6px 10px; }
-    .controls { padding-right: 60px; padding-left: 60px; gap: 8px; }
-    .controls button { padding: 10px 14px; }
+    .controls { padding-right: 58px; padding-left: 8px; gap: 6px; }
+    .controls button { padding: 10px 12px; }
     /* Setup screens: two deck tiles per row, the Back button on its own line above the heading. */
     #setupModal { padding: 10px; }
     #setupModal > div { padding: 16px 12px; }
@@ -680,6 +696,7 @@
     <button id="cancelBtn" class="ghost" style="display:none">Cancel</button>
     <button id="rulesBtn" class="ghost">Rules</button>
     <button id="soundBtn" class="ghost" title="Toggle sound">🔊</button>
+    <button id="bgBtn" class="ghost" title="Playmat backgrounds — use your own photos">🖼</button>
   </div>
 </div>
 
@@ -691,6 +708,18 @@
 
 <div id="peekOverlay"></div>
 
+<div id="bgModal"><div class="bg-box">
+  <h3>Playmat backgrounds</h3>
+  <p class="bg-sub">Use any picture from your phone or computer for each mat. Pictures are saved on this device only.</p>
+  <div class="bg-row" data-side="player"><div class="bg-prev"></div><div class="bg-ctl"><b>Your mat</b>
+    <label class="bg-pick">📷 Choose picture<input type="file" accept="image/*"></label>
+    <button class="ghost bg-reset">Reset</button></div></div>
+  <div class="bg-row" data-side="enemy"><div class="bg-prev"></div><div class="bg-ctl"><b>Enemy mat</b>
+    <label class="bg-pick">📷 Choose picture<input type="file" accept="image/*"></label>
+    <button class="ghost bg-reset">Reset</button></div></div>
+  <div class="bg-row bg-dim"><span>Picture brightness</span><input type="range" id="bgDim" min="0" max="100" step="5"></div>
+  <div class="ins-btns"><button id="bgClose">Close</button></div>
+</div></div>
 <div id="inspect"><div class="ins-box">
   <img id="insImg" alt="">
   <div class="ins-info">
@@ -713,6 +742,7 @@
      You then <b>roll for turn order</b> and may <b>mulligan</b> your opening hand once.
      Every card is genuine — real names, art, costs, AP/HP and effect text.</p>
   <button id="startBtn">START BATTLE</button>
+  <button id="bgBtn2" class="ghost" style="font-size:12px;padding:7px 14px" title="Use your own pictures on the playmats">🖼 Playmat backgrounds</button>
   <button id="backToBattleBtn" class="gold" style="display:none">◀ Back to Battle</button>
   <div class="rules">
     <b>How to win (official):</b> you defeat your opponent the moment a Unit deals them battle damage
@@ -15195,6 +15225,63 @@ document.addEventListener('click', (e)=>{
 }, true);
 el('soundBtn').addEventListener('click', ()=>{ SOUND.on=!SOUND.on; el('soundBtn').textContent=SOUND.on?'🔊':'🔇'; if(SOUND.on){ unlockAudio(); const ac=audioCtx(); sound('deploy'); try{ log(`Audio: ${ac?ac.state:'unavailable'}${ac&&ac.state!=='running'?' — tap again to enable':''}.`, 'sys'); }catch(e){} } });
 el('startBtn').addEventListener('click', ()=>{ unlockAudio(); startGame(); });
+// ---- Playmat backgrounds: a picture of the player's own for each mat (phone gallery / camera / file), kept in
+// localStorage as a downscaled JPEG so it survives reloads and installs; "Reset" returns the mat to its stock art. ----
+const MATBG = { key: s=>'gtcg_matbg_'+s, dimKey: 'gtcg_matbg_dim' };
+function matBgDim(){ const d=lsGet(MATBG.dimKey, 55); return Math.max(0, Math.min(100, +d||0)); }
+function applyMatBg(side){
+  const m=document.querySelector('.mat.'+side); if (!m || !m.style) return;
+  const img=lsGet(MATBG.key(side), null);
+  if (!img){ m.style.backgroundImage=''; m.style.boxShadow=''; return; }
+  // The tint over the picture follows the brightness slider (0 = as dark as the stock art, 100 = untouched).
+  const a=(1-matBgDim()/100)*0.62;
+  m.style.backgroundImage=`linear-gradient(${side==='enemy'?340:160}deg, rgba(6,10,26,${(a*0.8).toFixed(2)}) 0%, rgba(6,10,26,${a.toFixed(2)}) 100%), url("${img}")`;
+  m.style.boxShadow='0 10px 36px rgba(0,0,0,.7)';   // no desktop inset tint on top of the player's own picture
+}
+function applyMatBgs(){ applyMatBg('player'); applyMatBg('enemy'); }
+// Downscale the chosen picture (phones hand over 12-megapixel photos) to what a mat can show, as a JPEG the storage can hold.
+function matBgEncode(file, maxSide, quality){
+  return new Promise((res, rej)=>{
+    const url=URL.createObjectURL(file), im=new Image();
+    im.onload=()=>{ try{
+      const sc=Math.min(1, maxSide/Math.max(im.naturalWidth, im.naturalHeight));
+      const c=document.createElement('canvas'); c.width=Math.max(1, Math.round(im.naturalWidth*sc)); c.height=Math.max(1, Math.round(im.naturalHeight*sc));
+      c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url); res(c.toDataURL('image/jpeg', quality));
+    }catch(e){ rej(e); } };
+    im.onerror=()=>{ URL.revokeObjectURL(url); rej(new Error('not an image the browser can open')); };
+    im.src=url;
+  });
+}
+async function matBgChoose(side, file){
+  if (!file) return;
+  try{
+    let data=await matBgEncode(file, 1600, 0.82);
+    try{ localStorage.setItem(MATBG.key(side), JSON.stringify(data)); }
+    catch(e){ data=await matBgEncode(file, 1000, 0.7); localStorage.setItem(MATBG.key(side), JSON.stringify(data)); }   // storage full: a smaller copy
+    applyMatBg(side); matBgRender();
+  }catch(e){ alert('That picture could not be used: '+(e && e.message ? e.message : e)); }
+}
+function matBgRender(){
+  const m=el('bgModal'); if (!m || !m.querySelectorAll) return;
+  m.querySelectorAll('.bg-row[data-side]').forEach(r=>{
+    const side=r.dataset.side, img=lsGet(MATBG.key(side), null), p=r.querySelector('.bg-prev');
+    const mat=document.querySelector('.mat.'+side);
+    p.style.backgroundImage = img ? `url("${img}")` : (mat ? getComputedStyle(mat).backgroundImage.split('url(').slice(-1).map(s=>'url('+s)[0] : '');
+    r.querySelector('.bg-reset').disabled=!img;
+  });
+  const d=el('bgDim'); if (d) d.value=matBgDim();
+}
+for (const id of ['bgBtn','bgBtn2']) el(id).addEventListener('click', ()=>{ matBgRender(); el('bgModal').classList.add('show'); });
+el('bgClose').addEventListener('click', ()=>el('bgModal').classList.remove('show'));
+el('bgModal').addEventListener('click', e=>{ if (e.target===el('bgModal')) el('bgModal').classList.remove('show'); });
+el('bgModal').querySelectorAll('.bg-row[data-side]').forEach(r=>{
+  const side=r.dataset.side;
+  r.querySelector('input[type=file]').addEventListener('change', e=>{ matBgChoose(side, e.target.files && e.target.files[0]); e.target.value=''; });
+  r.querySelector('.bg-reset').addEventListener('click', ()=>{ try{ localStorage.removeItem(MATBG.key(side)); }catch(e){} applyMatBg(side); matBgRender(); });
+});
+el('bgDim').addEventListener('input', e=>{ lsSet(MATBG.dimKey, +e.target.value); applyMatBgs(); });
+applyMatBgs();
 el('inspect').addEventListener('click', e=>{ if(e.target.id==='inspect') closeInspect(); });
 el('playerTrashRow').addEventListener('click', ()=>{ showPileViewer((G.player&&G.player.trash)||[], 'Your Trash (Graveyard)'); });
 el('playerExileRow').addEventListener('click', ()=>{ showPileViewer((G.player&&G.player.exile)||[], 'Your Exile'); });
