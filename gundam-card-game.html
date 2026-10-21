@@ -86,6 +86,26 @@
   .shuf-stage { display: flex; justify-content: center; margin: 22px 0 18px; }
   .shuf-deck { position: relative; width: 120px; height: 168px; }
   .shuf-deck .shuf-card { border-radius: 9px; border-color: #4a4a6a; animation-iteration-count: infinite; animation-duration: 1.05s; }
+  /* turn-order dice: two pip dice drop in, tumble (faces flicker in JS), land with a bounce; the winner's die glows */
+  @keyframes dieTumble { 0% { transform: translateY(-54px) rotate(-220deg) scale(.7); opacity: .5; } 18% { transform: translateY(12px) rotate(-80deg) scale(1.06); opacity: 1; }
+    36% { transform: translateY(-20px) rotate(20deg); } 54% { transform: translateY(7px) rotate(120deg); } 70% { transform: translateY(-8px) rotate(200deg); }
+    84% { transform: translateY(3px) rotate(300deg); } 100% { transform: translateY(0) rotate(360deg); } }
+  @keyframes dieLand { 0% { transform: scale(1.2); } 55% { transform: scale(.93); } 100% { transform: scale(1); } }
+  .dice-stage { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 22px 28px; margin: 18px 0 12px; }
+  .dice-side { display: flex; flex-direction: column; align-items: center; gap: 9px; font-size: 13px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; max-width: 150px; }
+  .dice-side span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
+  .dice-vs { color: #8a8aa8; font-size: 15px; font-weight: 800; align-self: flex-end; padding-bottom: 26px; }
+  .die { width: 74px; height: 74px; border-radius: 15px; box-sizing: border-box; padding: 10px; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr);
+    background: linear-gradient(145deg, #ffffff, #cdd2e2); box-shadow: 0 9px 22px rgba(0,0,0,.55), inset 0 -4px 7px rgba(20,20,50,.22), inset 0 2px 3px #fff; }
+  .die.rolling { animation: dieTumble 1.15s cubic-bezier(.3,.2,.25,1) both; }
+  .die.landed { animation: dieLand .32s ease-out both; }
+  .die i { display: block; width: 12px; height: 12px; margin: auto; border-radius: 50%; }
+  .die i.on { background: radial-gradient(circle at 35% 35%, #4a4a60, #0b0b16); box-shadow: inset 0 1px 2px rgba(0,0,0,.6); }
+  .die.win { box-shadow: 0 0 0 3px #86efac, 0 0 28px rgba(134,239,172,.65), 0 9px 22px rgba(0,0,0,.55); }
+  .die.lose { opacity: .7; filter: saturate(.5); }
+  .dice-result { opacity: 0; transform: translateY(8px); transition: opacity .35s, transform .35s; }
+  .dice-result.show { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) { .die.rolling, .die.landed { animation: none; } }
   /* Triangular tech mesh evoking a HUD wireframe */
   #gundam-bg .grid { position: absolute; inset: -20%; opacity: .085;
     background-image:
@@ -8871,6 +8891,38 @@ function shuffleInterlude(title, then){
   setTimeout(()=>{ if ((G.setupSeq||0)!==seq) return; then(); }, 1150);
 }
 
+// ---- turn-order dice you can watch: two pip dice drop in and tumble, then land on the real roll ----
+const DIE_PIPS={ 1:[4], 2:[2,6], 3:[2,4,6], 4:[0,2,6,8], 5:[0,2,4,6,8], 6:[0,2,3,5,6,8] };
+function dieFaceHTML(v){ const on=DIE_PIPS[v]||[]; let h=''; for (let i=0;i<9;i++) h+=`<i${on.includes(i)?' class="on"':''}></i>`; return h; }
+function diceStageHTML(nameA, nameB){
+  const rnd=()=>1+Math.floor(Math.random()*6);
+  return `<div class="dice-stage"><div class="dice-side" style="color:#86efac"><span>${nameA}</span><div class="die rolling" id="dieA">${dieFaceHTML(rnd())}</div></div>
+    <div class="dice-vs">VS</div><div class="dice-side" style="color:#fca5a5"><span>${nameB}</span><div class="die rolling" id="dieB" style="animation-delay:.08s">${dieFaceHTML(rnd())}</div></div></div>`;
+}
+// Tumble #dieA / #dieB (the faces flicker fast, then slow as the dice lose energy) and land them on `a` / `b`,
+// then run `then`. Stops quietly if the setup screen moved on (G.setupSeq) or the dice left the page.
+function rollDice(a, b, then){
+  const seq=G.setupSeq||0, A=el('dieA'), B=el('dieB');
+  if (!A || !B || !A.isConnected){ then(); return; }
+  sound('dice');
+  const start=Date.now(), DUR=1150, last={ a:0, b:0 };
+  const flip=(d,k)=>{ let v; do v=1+Math.floor(Math.random()*6); while (v===last[k]); last[k]=v; d.innerHTML=dieFaceHTML(v); };
+  const tick=()=>{
+    if ((G.setupSeq||0)!==seq || !A.isConnected) return;
+    const t=Date.now()-start;
+    if (t>=DUR){
+      A.innerHTML=dieFaceHTML(a); B.innerHTML=dieFaceHTML(b);
+      for (const [d,v,o] of [[A,a,b],[B,b,a]]){ d.classList.remove('rolling'); d.classList.add('landed', v>o ? 'win' : 'lose'); }
+      sound('diceLand');
+      setTimeout(()=>{ if ((G.setupSeq||0)===seq) then(); }, 260);
+      return;
+    }
+    flip(A,'a'); flip(B,'b');
+    const p=t/DUR; setTimeout(tick, 55+Math.round(170*p*p));
+  };
+  tick();
+}
+
 // ---- competitive deck building (Link-synergy + curve-tuned, max 4 copies per name) ----
 function unitScore(c){
   let s=(c.ap+c.hp)/Math.max(1,c.cost);
@@ -9691,23 +9743,27 @@ function dbRemove(id){
 function setupDiceRoll(){
   let pr,er; do{ pr=1+Math.floor(Math.random()*6); er=1+Math.floor(Math.random()*6); } while(pr===er);
   const playerWon = pr>er;
-  const m=setupModal(`${setupBackBtn('Decks', setupBackToDecks)}<h2 style="color:#d8b4ff;margin:14px 0 10px">Roll for turn order</h2>
-    <div style="font-size:34px;margin:14px 0">🎲 You <b style="color:#86efac">${pr}</b> &nbsp;vs&nbsp; AI <b style="color:#fca5a5">${er}</b> 🎲</div>
-    <p style="color:${playerWon?'#86efac':'#fca5a5'};font-size:14px">${playerWon?'You won the roll — choose who takes the first turn.':'The AI won the roll.'}</p>
-    <div id="orderBtns" style="margin-top:8px"></div>`);
-  if (playerWon){
-    el('orderBtns').innerHTML=`
-      <button id="goFirst" style="background:#2e6b3a;color:#fff;border:none;border-radius:8px;padding:11px 20px;margin:4px;cursor:pointer;font-weight:600">Go First</button>
-      <button id="goSecond" style="background:#3a3a6b;color:#fff;border:none;border-radius:8px;padding:11px 20px;margin:4px;cursor:pointer;font-weight:600">Go Second (+1 EX Resource)</button>`;
-    el('goFirst').onclick=()=>setupOrderChosen('player');
-    el('goSecond').onclick=()=>setupOrderChosen('enemy');
-  } else {
-    // AI randomly chooses to go first (tempo) or second (+1 EX Resource).
-    const aiFirst = Math.random()<0.5;
-    el('orderBtns').innerHTML=`<p style="color:#aab;font-size:13px">The AI chooses to take the <b>${aiFirst?'first':'second'}</b> turn${aiFirst?'':' (+1 EX Resource)'}.</p>`;
-    const seq = G.setupSeq||0;
-    setTimeout(()=>{ if ((G.setupSeq||0)!==seq) return; setupOrderChosen(aiFirst?'enemy':'player'); }, 1300);
-  }
+  setupModal(`${setupBackBtn('Decks', setupBackToDecks)}<h2 style="color:#d8b4ff;margin:14px 0 10px">Roll for turn order</h2>
+    ${diceStageHTML('You','AI')}
+    <div id="diceResult" class="dice-result"><p id="diceMsg" style="color:${playerWon?'#86efac':'#fca5a5'};font-size:14px;margin:6px 0"></p>
+    <div id="orderBtns" style="margin-top:8px"></div></div>`);
+  rollDice(pr, er, ()=>{
+    el('diceMsg').innerHTML=`You rolled <b>${pr}</b>, the AI rolled <b>${er}</b>. ${playerWon?'You won the roll — choose who takes the first turn.':'The AI won the roll.'}`;
+    if (playerWon){
+      el('orderBtns').innerHTML=`
+        <button id="goFirst" style="background:#2e6b3a;color:#fff;border:none;border-radius:8px;padding:11px 20px;margin:4px;cursor:pointer;font-weight:600">Go First</button>
+        <button id="goSecond" style="background:#3a3a6b;color:#fff;border:none;border-radius:8px;padding:11px 20px;margin:4px;cursor:pointer;font-weight:600">Go Second (+1 EX Resource)</button>`;
+      el('goFirst').onclick=()=>setupOrderChosen('player');
+      el('goSecond').onclick=()=>setupOrderChosen('enemy');
+    } else {
+      // AI randomly chooses to go first (tempo) or second (+1 EX Resource).
+      const aiFirst = Math.random()<0.5;
+      el('orderBtns').innerHTML=`<p style="color:#aab;font-size:13px">The AI chooses to take the <b>${aiFirst?'first':'second'}</b> turn${aiFirst?'':' (+1 EX Resource)'}.</p>`;
+      const seq = G.setupSeq||0;
+      setTimeout(()=>{ if ((G.setupSeq||0)!==seq) return; setupOrderChosen(aiFirst?'enemy':'player'); }, 1300);
+    }
+    el('diceResult').classList.add('show');
+  });
 }
 function setupOrderChosen(first){
   G.firstPlayer = first;
@@ -9885,7 +9941,7 @@ function beginTurn(turn){
 
 function endTurn(){
   if (G.over) return;
-  if (NET.on && (!NET.active || NET.inHop || G.turn!=='player')) return;
+  if (NET.on && (!NET.active || NET.inHop || NET.setup || G.turn!=='player')) return;   // NET.setup: dice / hands / Shields still being dealt
   // Already in the End Phase: never run the End Step twice. If the hand-limit discard is still open, wait
   // for it; if it was somehow dropped (mode back to idle), pick the End Phase up where it stopped.
   if (G.turn==='player' && G.phase==='end'){
@@ -14816,7 +14872,7 @@ function promptPlayerBlock(atk, blockers, target, cb){
 // engine's best choice, as they do for the AI.
 // Transport: WebRTC data channels brokered by the public PeerJS server; the room code is the host's peer
 // id, so nothing is stored anywhere — a room lives while the host's tab is open.
-const NET = { on:false, role:null /* 'host' | 'guest' | 'spec' */, active:false, inHop:false, hop:null,
+const NET = { on:false, role:null /* 'host' | 'guest' | 'spec' */, active:false, inHop:false, hop:null, setup:false,
   peer:null, host:null /* guest/spec: the connection to the host */, guest:null /* host: the guest's connection */, specs:[] /* host: spectator connections */,
   code:'', me:'', names:{ host:'', guest:'' }, specNames:[], decks:{ host:null, guest:null }, started:false, gameId:'', seq:0,
   logBuf:[], viewT:null, lastView:null, lastViewStr:'', overRec:null, warn:'' };
@@ -14971,7 +15027,7 @@ function mpBroadcast(msg, except){ if (NET.role!=='host') return; if (NET.guest 
 function mpReset(){
   try{ if (NET.peer) NET.peer.destroy(); }catch(e){}
   clearTimeout(NET.viewT);
-  Object.assign(NET, { on:false, role:null, active:false, inHop:false, hop:null, peer:null, host:null, guest:null, specs:[], code:'', names:{ host:'', guest:'' }, specNames:[], decks:{ host:null, guest:null }, started:false, gameId:'', seq:0, logBuf:[], viewT:null, lastView:null, lastViewStr:'', overRec:null, warn:'', open:false, inGame:false, overShown:false });
+  Object.assign(NET, { on:false, role:null, active:false, inHop:false, hop:null, peer:null, host:null, guest:null, specs:[], code:'', names:{ host:'', guest:'' }, specNames:[], decks:{ host:null, guest:null }, started:false, gameId:'', seq:0, logBuf:[], viewT:null, lastView:null, lastViewStr:'', overRec:null, warn:'', open:false, inGame:false, setup:false, overShown:false });
   const w=el('mpWait'); if (w){ w.classList.remove('warn'); w.classList.remove('show'); }
 }
 function mpCreateRoom(){
@@ -15214,7 +15270,7 @@ function mpHideWait(){ const w=el('mpWait'); if (w && !w.classList.contains('war
 // Both decks are in: the host's engine sets the game up — dice, hands, mulligans (each on its owner's screen), Shields.
 function mpMaybeStart(){
   if (NET.role!=='host' || NET.started || !NET.decks.host || !NET.decks.guest || !NET.guest) return;
-  NET.started=true; NET.gameId=mpNewCode()+mpNewCode(); NET.overRec=null; NET.overShown=false; NET.inGame=false;
+  NET.started=true; NET.gameId=mpNewCode()+mpNewCode(); NET.overRec=null; NET.overShown=false; NET.inGame=false; NET.setup=true;
   mpBroadcast({ t:'start', gameId:NET.gameId, names:NET.names });
   uid=1; HIST.length=0; try{ const h=document.getElementById('histRibbon'); if(h) h.innerHTML=''; }catch(e){}
   Object.assign(G, { turn:'player', turnNumber:1, phase:'main', selected:null, mode:'idle', pending:null, pendingHandIdx:-1, over:false, modalQueue:[], retarget:null, curBattle:null, curAttack:null,
@@ -15227,28 +15283,39 @@ function mpMaybeStart(){
 function mpDiceRoll(){
   let pr,er; do{ pr=1+Math.floor(Math.random()*6); er=1+Math.floor(Math.random()*6); } while(pr===er);
   const won = pr>er, me=NET.names.host, opp=NET.names.guest;
-  const m=setupModal(`<h2 style="color:#d8b4ff;margin:14px 0 10px">Roll for turn order</h2>
-    <div style="font-size:30px;margin:14px 0">🎲 ${me} <b style="color:#86efac">${pr}</b> &nbsp;vs&nbsp; ${opp} <b style="color:#fca5a5">${er}</b> 🎲</div>
-    <p style="color:${won?'#86efac':'#fca5a5'};font-size:14px">${won ? 'You won the roll — choose who takes the first turn.' : opp+' won the roll and is choosing…'}</p>
-    <div id="orderBtns" style="margin-top:8px"></div>`);
+  setupModal(`<h2 style="color:#d8b4ff;margin:14px 0 10px">Roll for turn order</h2>
+    ${diceStageHTML(mpEsc(me), mpEsc(opp))}
+    <div id="diceResult" class="dice-result"><p id="diceMsg" style="color:${won?'#86efac':'#fca5a5'};font-size:14px;margin:6px 0"></p>
+    <div id="orderBtns" style="margin-top:8px"></div></div>`);
   const go=(first)=>{ G.firstPlayer=first; G.skipDrawSide=null; mpSetupDeal(); };
-  if (won){
+  rollDice(pr, er, ()=>{
+    if (!NET.on || !NET.started) return;   // the room was closed while the dice were in the air
+    el('diceMsg').innerHTML=`You rolled <b>${pr}</b>, ${mpEsc(opp)} rolled <b>${er}</b>. ${won ? 'You won the roll — choose who takes the first turn.' : mpEsc(opp)+' won the roll and is choosing…'}`;
+    el('diceResult').classList.add('show');
+    if (won){
+      el('orderBtns').innerHTML=`<button id="goFirst" style="background:#2e6b3a;color:#fff;border:none;border-radius:8px;padding:11px 20px;margin:4px;cursor:pointer;font-weight:600">Go First</button>
+        <button id="goSecond" style="background:#3a3a6b;color:#fff;border:none;border-radius:8px;padding:11px 20px;margin:4px;cursor:pointer;font-weight:600">Go Second (+1 EX Resource)</button>`;
+      el('goFirst').onclick=()=>go('player'); el('goSecond').onclick=()=>go('enemy');
+      return;
+    }
+    mpHop('order', { pr:er, er:pr, winnerName:opp }, res=>{ go(res && res.first==='player' ? 'enemy' : 'player'); }, { noState:true });   // the guest's "me first" is our enemy first
+  });
+}
+// The roll winner's choice, on their own screen (they watch the same dice land first).
+function mpOrderPrompt(args, cb){
+  setupModal(`<h2 style="color:#d8b4ff;margin:14px 0 10px">Roll for turn order</h2>
+    ${diceStageHTML('You', mpEsc(mpOppName()))}
+    <div id="diceResult" class="dice-result"><p id="diceMsg" style="color:#86efac;font-size:14px;margin:6px 0"></p>
+    <div id="orderBtns" style="margin-top:8px"></div></div>`);
+  rollDice(args.pr, args.er, ()=>{
+    if (!NET.on) return;
+    el('diceMsg').innerHTML=`You rolled <b>${args.pr}</b>, ${mpEsc(mpOppName())} rolled <b>${args.er}</b>. You won the roll — choose who takes the first turn.`;
     el('orderBtns').innerHTML=`<button id="goFirst" style="background:#2e6b3a;color:#fff;border:none;border-radius:8px;padding:11px 20px;margin:4px;cursor:pointer;font-weight:600">Go First</button>
       <button id="goSecond" style="background:#3a3a6b;color:#fff;border:none;border-radius:8px;padding:11px 20px;margin:4px;cursor:pointer;font-weight:600">Go Second (+1 EX Resource)</button>`;
-    el('goFirst').onclick=()=>go('player'); el('goSecond').onclick=()=>go('enemy');
-    return;
-  }
-  mpHop('order', { pr:er, er:pr, winnerName:opp }, res=>{ go(res && res.first==='player' ? 'enemy' : 'player'); }, { noState:true });   // the guest's "me first" is our enemy first
-}
-// The roll winner's choice, on their own screen.
-function mpOrderPrompt(args, cb){
-  const m=setupModal(`<h2 style="color:#d8b4ff;margin:14px 0 10px">Roll for turn order</h2>
-    <div style="font-size:30px;margin:14px 0">🎲 You <b style="color:#86efac">${args.pr}</b> &nbsp;vs&nbsp; ${mpOppName()} <b style="color:#fca5a5">${args.er}</b> 🎲</div>
-    <p style="color:#86efac;font-size:14px">You won the roll — choose who takes the first turn.</p>
-    <div style="margin-top:8px"><button id="goFirst" style="background:#2e6b3a;color:#fff;border:none;border-radius:8px;padding:11px 20px;margin:4px;cursor:pointer;font-weight:600">Go First</button>
-      <button id="goSecond" style="background:#3a3a6b;color:#fff;border:none;border-radius:8px;padding:11px 20px;margin:4px;cursor:pointer;font-weight:600">Go Second (+1 EX Resource)</button></div>`);
-  el('goFirst').onclick=()=>{ closeSetupModal(); mpShowWait(`⏳ ${mpOppName()} is setting up the game…`); cb('player'); };
-  el('goSecond').onclick=()=>{ closeSetupModal(); mpShowWait(`⏳ ${mpOppName()} is setting up the game…`); cb('enemy'); };
+    el('diceResult').classList.add('show');
+    el('goFirst').onclick=()=>{ closeSetupModal(); mpShowWait(`⏳ ${mpOppName()} is setting up the game…`); cb('player'); };
+    el('goSecond').onclick=()=>{ closeSetupModal(); mpShowWait(`⏳ ${mpOppName()} is setting up the game…`); cb('enemy'); };
+  });
 }
 function mpSetupDeal(){
   const pp=G.setup.playerPreset, ep=G.setup.enemyPreset;
@@ -15283,7 +15350,7 @@ function mpSetupShields(){
   el('beginBtl').onclick=()=>mpSetupFinalize();
 }
 function mpSetupFinalize(){
-  closeSetupModal();
+  closeSetupModal(); NET.setup=false;
   const second = G.firstPlayer==='player' ? G.enemy : G.player;
   second.ex=1; second.resAvail=1;
   el('overlay').classList.add('hidden'); el('log').innerHTML='';
@@ -15375,7 +15442,7 @@ function mpShowOver(rec){
   try{ render(); }catch(e){}
 }
 function mpBackToLobby(){
-  NET.started=false; NET.inGame=false; NET.overShown=false; NET.active=false; NET.hop=null; NET.inHop=false;
+  NET.started=false; NET.inGame=false; NET.setup=false; NET.overShown=false; NET.active=false; NET.hop=null; NET.inHop=false;
   NET.decks.host=null; NET.decks.guest=null;
   if (NET.role==='host'){ NET.overRec=null; mpLobbySync(); }
   el('overlay').classList.remove('hidden'); el('overlay').innerHTML='';
@@ -15654,6 +15721,11 @@ function renderSound(ac, kind){
   } else if(kind==='shuffle'){    // riffle shuffle — a run of quick card-edge flicks, then the squared-up tap
     for(let i=0;i<11;i++) whoosh(.045,.05+.02*(i%2),2600+((i*37)%5)*180,1500,i*.052);
     tone(180,.07,{type:'triangle',gain:.07,to:120,lp:900,atk:.004,delay:.64}); whoosh(.08,.05,1800,700,.66);
+  } else if(kind==='dice'){       // dice rattle — a tumble of hard little knocks, quick at first, spacing out as they slow
+    for(let i=0;i<10;i++){ const d=i*.065+i*i*.009; tone(820+((i*53)%4)*240,.035,{type:'square',gain:.04,lp:2600,atk:.002,delay:d}); whoosh(.03,.035,3200,1600,d); }
+  } else if(kind==='diceLand'){   // the dice settle — two short knocks on the table
+    tone(300,.07,{type:'triangle',gain:.09,to:170,lp:1400,atk:.003}); whoosh(.05,.05,2200,900,0);
+    tone(260,.06,{type:'triangle',gain:.07,to:150,lp:1200,atk:.003,delay:.09}); whoosh(.04,.04,2000,800,.09);
   } else if(kind==='mill'){       // cards to trash — darker slide with a static tail
     tone(520,.14,{type:'sine',gain:.10,to:280,lp:1800,lpTo:700,atk:.005}); whoosh(.2,.06,900,260); whoosh(.12,.03,2600,1400,.08);
   } else if(kind==='burst'){      // shield Burst — alert klaxon into an energy release

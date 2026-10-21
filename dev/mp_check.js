@@ -58,6 +58,7 @@ const path=require('path'), fs=require('fs');
         if (G.over) return 'over';
         if (!NET.active) return 'watch';
         if (NET.inHop) return 'hop-wait';
+        const sm=document.getElementById('setupModal'); if (sm && getComputedStyle(sm).display!=='none') return 'setup-wait';   // dice tumbling / hands being dealt
         if (G.turn!=='player') return 'wait';
         if (G.mode!=='idle'){
           const sel=[...document.querySelectorAll('.selectable, .targetable')].filter(vis);
@@ -81,6 +82,7 @@ const path=require('path'), fs=require('fs');
       for (const [name,p] of Object.entries(pages)){
         const did=await p.evaluate(()=>{
           if (!NET.active || NET.inHop || G.turn!=='player' || G.mode!=='idle' || G.phase==='end' || G.over || document.getElementById('blockModal').classList.contains('show')) return null;
+          const sm=document.getElementById('setupModal'); if (sm && getComputedStyle(sm).display!=='none') return null;   // still setting up
           const blkDef=GUNDAM_CARDS.filter(d=>d.type==='unit' && /Blocker/i.test(d.effect||'') && !/Maneuver/i.test(d.effect||'') && d.img).sort((a,b)=>(a.effect||'').length-(b.effect||'').length)[0];
           const b=makeCard(blkDef,'enemy'); b.sick=false; b.rested=false; if (G.enemy.field.length<6) G.enemy.field.push(b);
           const bDef=GUNDAM_CARDS.find(d=>/【Burst】Add this card to your hand/.test(d.effect||'') && d.img);
