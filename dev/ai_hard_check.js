@@ -1,4 +1,4 @@
-// Hard AI: the plays that separate it from normal — attacks judged against the player's blocks and counter-attacks
+// AI levels: the plays that separate hard from normal and easy — attacks judged against the player's blocks and counter-attacks
 // (aiPlanHard), blocks judged by what they save and cost (aiBlockValue), and the turn's resources spent on the best
 // combination of bodies (aiBestSpend). Each check sets a board where the right play is clear-cut.
 const H=require('./harness.js'); const {A,drainTasks}=H; const G=A.G;
@@ -42,12 +42,15 @@ function main(){ G._aiPostDeploy=true; let n=0; while (n<10 && A.aiMainStep()){ 
 // ---- 1. Attacks ----
 for (const lvl of ['hard','normal']){
   A.setAiLevel(lvl);
-  // A 2/3 facing an active 4/4 <Blocker>: the player blocks and kills it for nothing. Hard holds it; normal swings.
+  // A 2/3 facing an active 4/4 <Blocker>: the player blocks and kills it for nothing. Hard and normal hold it.
   fresh('enemy'); const w=stick('enemy',2,3); stick('player',4,4,{blocker:true});
   aiCombat();
-  if (lvl==='hard') ok('hard: a 2/3 is held back from an active 4/4 Blocker', !w.rested && w.hp===3 && logs().some(l=>/holds .*Dummy 2\/3.* back/.test(l)), logs().slice(0,3).join(' / '));
-  else ok('normal: the 2/3 still attacks', w.rested || w.hp<3, logs().slice(0,3).join(' / '));
+  ok(lvl+': a 2/3 is held back from an active 4/4 Blocker', !w.rested && w.hp===3 && logs().some(l=>/holds .*Dummy 2\/3.* back/.test(l)), logs().slice(0,3).join(' / '));
 }
+// Easy sees the block only half the time: over 12 tries it both swings into the Blocker and holds.
+{ A.setAiLevel('easy'); let swung=0, held=0;
+  for (let i=0;i<12;i++){ fresh('enemy'); const w=stick('enemy',2,3); stick('player',4,4,{blocker:true}); aiCombat(); if (w.rested || w.hp<3) swung++; else held++; }
+  ok('easy: sometimes swings into the Blocker, sometimes holds', swung>0 && held>0, `swung ${swung} held ${held}`); }
 A.setAiLevel('hard');
 // The same 2/3 with no player Blocker: a shield is there for the taking.
 { fresh('enemy'); const w=stick('enemy',2,3); stick('player',1,1,{rested:true});
@@ -64,6 +67,9 @@ A.setAiLevel('hard');
 // Under lethal threat an active <Blocker> stays home: the player has 3 attackers, the AI 2 shields and no Base.
 { fresh('enemy'); const bl=stick('enemy',3,3,{blocker:true}); const big=stick('enemy',4,4); for (let i=0;i<3;i++) stick('player',3,3,{rested:true}); G.enemy.shields.length=2;
   aiCombat(); ok('hard: the Blocker stays home against a lethal board; the other body still attacks', !bl.rested && big.rested, `blocker rested ${bl.rested} big rested ${big.rested}`); }
+// Normal does not read the player's next turn: on the same lethal board its Blocker attacks.
+{ A.setAiLevel('normal'); fresh('enemy'); const bl=stick('enemy',3,3,{blocker:true}); for (let i=0;i<3;i++) stick('player',3,3,{rested:true}); G.enemy.shields.length=2;
+  aiCombat(); ok('normal: the Blocker attacks regardless of the lethal board', bl.rested, `blocker rested ${bl.rested}`); A.setAiLevel('hard'); }
 // Safe board (no player attackers): the Blocker attacks too.
 { fresh('enemy'); const bl=stick('enemy',3,3,{blocker:true}); aiCombat(); ok('hard: with nothing to fear the Blocker attacks', bl.rested, `rested ${bl.rested}`); }
 // The player's Base: a hit that destroys it is worth taking (5 AP into a 4-HP Base).
@@ -102,9 +108,11 @@ A.setAiLevel('hard');
 // 4 resources: the 4/4 alone (8) beats 3/3 alone (6) or 2/2 alone.
 { fresh('enemy'); G.enemy.resMax=4; G.enemy.resAvail=4; handUnit(4,4,4); handUnit(3,3,3); handUnit(2,2,2);
   main(); const names=G.enemy.field.map(u=>u.name).join(','); ok('hard: 4 resources buy the 4/4', names==='Body 4/4', names); }
-// Normal still takes the single biggest body.
+// Normal spends the same way; easy takes the single biggest body.
 { A.setAiLevel('normal'); fresh('enemy'); G.enemy.resMax=5; G.enemy.resAvail=5; handUnit(4,4,4); handUnit(3,3,3); handUnit(2,2,2);
-  main(); ok('normal: the biggest body first', G.enemy.field[0] && G.enemy.field[0].name==='Body 4/4', G.enemy.field.map(u=>u.name).join(',')); A.setAiLevel('hard'); }
+  main(); const names=G.enemy.field.map(u=>u.name).sort().join(','); ok('normal: 5 resources buy the 3/3 and the 2/2', names==='Body 2/2,Body 3/3', names); }
+{ A.setAiLevel('easy'); fresh('enemy'); G.enemy.resMax=5; G.enemy.resAvail=5; handUnit(4,4,4); handUnit(3,3,3); handUnit(2,2,2);
+  main(); ok('easy: the biggest body first', G.enemy.field[0] && G.enemy.field[0].name==='Body 4/4', G.enemy.field.map(u=>u.name).join(',')); A.setAiLevel('hard'); }
 // A Link Pilot in hand is budgeted for: 5 resources, a 3-cost Unit it links with and a 2-cost Pilot — the AI deploys the Unit and pairs.
 { fresh('enemy'); G.enemy.resMax=5; G.enemy.resAvail=5;
   const u=A.makeCard(A.CARD_BY_ID.get('ST01-001'), 'enemy'); const p=A.makeCard(A.CARD_BY_ID.get('ST01-010'), 'enemy');   // Gundam + Amuro Ray (Link)

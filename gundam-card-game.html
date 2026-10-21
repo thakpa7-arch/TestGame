@@ -8804,7 +8804,12 @@ function lsSet(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e)
 function deckStats(name){ const s=lsGet('gtcg_stats',{}); return s[name]||{w:0,l:0}; }
 function recordResult(name, win){ const s=lsGet('gtcg_stats',{}); const e=s[name]||(s[name]={w:0,l:0}); if(win)e.w++; else e.l++; lsSet('gtcg_stats',s); }
 // AI difficulty (easy / normal / hard) — chosen on the deck screen, persisted across sessions.
+// Easy: sees the player's blocks only half the time, forgets half its blocks, deploys the biggest body. Normal: plays around
+// the player's blocks, blocks by value, spends its resources on the best combination. Hard: also foresees the player's
+// counter-attacks on its rested Units, keeps a Blocker home against a lethal board, deploys after combat, 6-card opening hand.
 let AI_LVL = lsGet('gtcg_ai','normal');
+// Does the AI see the player's answer to one of its attacks? Easy misses half of them.
+function aiSees(){ return AI_LVL!=='easy' || Math.random()<0.5; }
 
 // Floating combat number over a card on the field (damage red, heal green). Positions are read from
 // the live DOM, and the float lives in its own fixed layer so re-renders don't kill the animation.
@@ -9278,7 +9283,7 @@ function setupChooseDeck(){
   const m=setupModal(`${setupBackBtn('Title', setupBackToTitle)}<h2 style="color:#d8b4ff;margin:14px 0 6px">Choose your deck</h2>
     <p style="color:#9aa;margin:0 0 10px;font-size:13px">Pick a preset, one of your custom decks, or build your own. The AI plays the other preset.</p>
     <div style="margin:0 0 14px;display:flex;gap:8px;justify-content:center;align-items:center">
-      <span style="color:#9aa;font-size:12px">AI difficulty:</span>${aiBtn('easy','Easy')}${aiBtn('normal','Normal')}${aiBtn('hard','Hard')}
+      <span style="color:#9aa;font-size:12px" title="Easy: misses half your blocks, forgets half its own. Normal: plays around your Blockers, blocks by value, spends its resources well. Hard: also foresees your counter-attacks, keeps a Blocker home against lethal, deploys after combat, 6-card opening hand.">AI difficulty:</span>${aiBtn('easy','Easy')}${aiBtn('normal','Normal')}${aiBtn('hard','Hard')}
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center">${cards}${customs}${newTile}</div>`);
   m.querySelectorAll('.setup-deck').forEach(b=>b.onclick=()=>setupDeckChosen(PRESET_DECKS[+b.dataset.i]));
@@ -12414,27 +12419,11 @@ function aiWantsBlock(atk, target){
   // so it protects dwindling shields aggressively; otherwise it blocks for a favourable trade.
   const blockers = G.enemy.field.filter(b=>effBlocker(b) && !b.rested && b.hp>0 && b!==target && blockerAllowed(b, atk));
   if (!blockers.length) return false;
-  if (AI_LVL==='hard') return blockers.some(b=>aiBlockValue(b, atk, target)>0);   // the value of the best block decides
-  const best = pickAiBlocker(atk, blockers);
-  const ap = effAp(atk);
-  const kills = effAp(best) >= atk.hp;                   // the blocker destroys the attacker
-  if (G.enemy.shields.length<=2) return true;            // low on life — protect the shield
-  if (kills) return true;                                // favourable trade
-  if (best.hp > ap && effAp(best) > 0) return true;      // survives the counter and bites back
-  return false;
+  return blockers.some(b=>aiBlockValue(b, atk, target)>0);   // the value of the best block decides
 }
 function pickAiBlocker(atk, blockers, target){
-  // Hard: the blocker whose block is worth the most (aiBlockValue).
-  if (AI_LVL==='hard') return [...blockers].sort((x,y)=>aiBlockValue(y, atk, target)-aiBlockValue(x, atk, target))[0];
-  // Most adequate blocker first (kills and/or survives); among equally-good ones, spend the LEAST
-  // valuable body so the AI's best <Blocker> stays available for the next threat.
-  const ap = effAp(atk);
-  return [...blockers].sort((x,y)=>{
-    const xs=(x.hp>ap?1:0)+(effAp(x)>=atk.hp?1:0);
-    const ys=(y.hp>ap?1:0)+(effAp(y)>=atk.hp?1:0);
-    if (ys!==xs) return ys-xs;
-    return aiThreatScore(x)-aiThreatScore(y);
-  })[0];
+  // The blocker whose block is worth the most (aiBlockValue).
+  return [...blockers].sort((x,y)=>aiBlockValue(y, atk, target)-aiBlockValue(x, atk, target))[0];
 }
 
 // Fire a Unit's 【Destroyed】 as it leaves play. For the player, deck-look effects use their own modal,
@@ -13041,10 +13030,10 @@ function aiMainStep(){
     // shield-break Burst like Close Combat can't pick it off mid-combat. It loses nothing by waiting.
     const holdForPostCombat = c => AI_LVL==='hard' && !G._aiPostDeploy && !c.blitz && !linkPilotInHand(c);
     const deps = ai.hand.filter(c=>c.type==='unit' && canAfford(ai,c) && !holdForPostCombat(c)).sort((a,b)=>depScore(b)-depScore(a));
-    // Hard: spend the turn's resources on the combination of bodies (and the Link Pilots that pair with them) worth the most,
-    // not just the biggest one — a 3 and a 2 beat a 4 that leaves 1 idle (aiBestSpend). The first of that set goes down now;
-    // the next tick re-plans with what is left.
-    const dep = AI_LVL==='hard' ? aiBestSpend(deps) : deps[0];
+    // Normal and hard spend the turn's resources on the combination of bodies (and the Link Pilots that pair with them) worth
+    // the most, not just the biggest one — a 3 and a 2 beat a 4 that leaves 1 idle (aiBestSpend). The first of that set goes
+    // down now; the next tick re-plans with what is left. Easy takes the biggest body.
+    const dep = AI_LVL==='easy' ? deps[0] : aiBestSpend(deps);
     if (dep){ aiPayAltIfNeeded(ai, dep); const i=ai.hand.indexOf(dep); ai.hand.splice(i,1); payCost(ai, effectiveCost(ai,dep)); dep.rested=false; dep.sick=!dep.blitz; ai.field.push(dep); flashCard(dep,'ENEMY DEPLOY'); log(`${who(G.enemy)} deploys <b>${dep.name}</b>.`, 'ai'); runTrigger(dep, ai, parseTrigger(dep.effect,'Deploy'), 'Deploy'); onUnitDeployed(dep, ai); return true; }
   }
   // pair a pilot — evaluate EVERY (pilot, unit) combination and take the best one. Forming a Link is
@@ -13550,14 +13539,14 @@ function aiBlockerHoldValue(){
 // with the Base and shields wearing down attack by attack, and the attack with the worst value is dropped until every
 // remaining one is worth making (a trade of the attacker needs a clear gain).
 function aiPlanHard(attackers){
-  const pl=G.player, holdV=aiBlockerHoldValue();
+  const pl=G.player, holdV=aiBlockerHoldValue(), deep=AI_LVL==='hard';   // only hard reads the player's next turn
   const st0={ baseHp: pl.base&&pl.base.hp>0 ? pl.base.hp : 0, shields: pl.shields.length };
   const taken=new Set();   // Units a planned attack already destroys
   const cands=[];
   for (const a of [...attackers].sort((x,y)=>effAp(y)-effAp(x))){
     const lures=lureTargets(a, pl);
     const units=pl.field.filter(u=>u.hp>0 && !effUntargetable(u) && (u.rested || canHitActive(a,u)) && !taken.has(u));
-    const exp=aiExposure(a), hold=effBlocker(a) ? holdV : 0;
+    const exp=deep ? aiExposure(a) : 0, hold=deep && effBlocker(a) ? holdV : 0;
     let best=null;
     for (const t of (lures.length ? lures.filter(u=>units.includes(u)) : units)){
       const kills=aiKillsInBattle(a,t), dies=effAp(t)>=a.hp && !(effFirstStrike(a)&&kills);
@@ -13570,6 +13559,7 @@ function aiPlanHard(attackers){
     if (!lures.length && !cantHitPlayer(a)){ const raw=aiFaceValueAt(a, st0)-exp-hold; if (!best || raw>best.raw) best={ a, t:null, raw, kills:false }; }
     if (!best) continue;
     if (best.t && best.kills) taken.add(best.t);
+    best.seen=aiSees();   // easy misses half the player's blocks
     cands.push(best);
   }
   // Attack order: planned kills first (smallest killer first), then the player's shields strongest-first (aiPostMain's order).
@@ -13579,8 +13569,8 @@ function aiPlanHard(attackers){
     let blockers=pl.field.filter(b=>effBlocker(b) && !b.rested && b.hp>0), sum=0;
     const st=Object.assign({}, st0);
     for (const c of list){
-      const a=c.a, exp=aiExposure(a), hold=effBlocker(a) ? holdV : 0;
-      const b=aiPlayerBlock(a, c.t, blockers, st);
+      const a=c.a, exp=deep ? aiExposure(a) : 0, hold=deep && effBlocker(a) ? holdV : 0;
+      const b=c.seen ? aiPlayerBlock(a, c.t, blockers, st) : null;
       let v;
       if (b){ blockers=blockers.filter(x=>x!==b);
         const bk=effAp(b)>=a.hp && !(effFirstStrike(a) && effAp(a)>=b.hp), bd=effAp(a)>=b.hp;
@@ -13626,15 +13616,16 @@ function aiPostMain(){
   // If swinging everything at the player wins this turn, commit to going face (take lethal).
   G.aiForceFace = aiHasLethal(attackers);
   if (G.aiForceFace) log(`${who(G.enemy)} goes for the win!`, 'ai');
-  const plan = (AI_LVL==='hard' && !G.aiForceFace) ? new Map() : planAiAttacks(attackers);
+  const plan = G.aiForceFace ? new Map() : planAiAttacks(attackers);
   // The attacks a Command was played for this turn (Rasid's Orders' trade into a bigger active Unit, the AP-2 that lets an
   // attacker survive its kill) join the plan.
   { const tp=G._aiAttackPlan;
     if (!G.aiForceFace && tp && tp.turnSeq===G.turnSeq) for (const [uid, t] of tp.map){ const a=attackers.find(x=>x.uid===uid);
       if (a && !plan.has(uid) && ![...plan.values()].includes(t) && G.player.field.includes(t) && t.hp>0 && !effUntargetable(t) && (t.rested || canHitActive(a, t))) plan.set(uid, t); } }
-  if (AI_LVL==='hard' && !G.aiForceFace){
-    // Hard: only the attacks worth making against a player who blocks and punishes (aiPlanHard); the rest stay home. 'face'
-    // marks an attack on the player so resolveAiAttack doesn't swap in a trade of its own.
+  if (!G.aiForceFace){
+    // Only the attacks worth making against a player who blocks (and, for hard, punishes) — aiPlanHard; the rest stay home.
+    // 'face' marks an attack on the player so resolveAiAttack doesn't swap in a trade of its own. The threat-based plan's
+    // kills (planAiAttacks) are kept in front.
     const forced=[...plan.keys()];
     const hp=aiPlanHard(attackers.filter(a=>!plan.has(a.uid)));
     const seq=[...forced.map(uid=>attackers.find(a=>a.uid===uid)), ...hp.map(c=>c.a)];
@@ -13643,7 +13634,7 @@ function aiPostMain(){
     if (held.length) log(`${who(G.enemy)} holds ${held.map(u=>'<b>'+u.name+'</b>').join(', ')} back.`, 'ai');
     attackers=seq;
   }
-  // Sequence: take the planned kills first (with their small assigned attackers, clearing threats),
+  // Lethal: take the planned kills first (with their small assigned attackers, clearing threats),
   // then push the remaining bodies at the player's shields strongest-first.
   else attackers.sort((a,b)=>{
     const pa=plan.has(a.uid), pb=plan.has(b.uid);
