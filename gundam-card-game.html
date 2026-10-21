@@ -15301,10 +15301,18 @@ function applyMatBg(side){
   // How the picture fills the mat: a framed crop covers it; "tile" repeats the whole picture, each tile a share of the mat's width;
   // "blur" shows the whole picture at its own shape over a blurred copy of itself, composed for the mat's shape on this screen.
   const fit=matBgFit(side), src = fit==='blur' ? (matBgComposed(side, img) || img) : img;
-  m.style.backgroundImage=`linear-gradient(${side==='enemy'?340:160}deg, rgba(6,10,26,${(a*0.8).toFixed(2)}) 0%, rgba(6,10,26,${a.toFixed(2)}) 100%), url("${src}")`;
+  const tint=`linear-gradient(${side==='enemy'?340:160}deg, rgba(6,10,26,${(a*0.8).toFixed(2)}) 0%, rgba(6,10,26,${a.toFixed(2)}) 100%)`;
   m.style.boxShadow='0 10px 36px rgba(0,0,0,.7)';   // no desktop inset tint on top of the player's own picture
-  m.style.backgroundSize = fit==='tile' ? `100% 100%, ${(matBgTile(side)*100).toFixed(1)}% auto` : '';
-  m.style.backgroundRepeat = fit==='tile' ? 'no-repeat, repeat' : '';
+  if (fit==='tile'){
+    // Tiles sized as a share of the mat's width; dark grout lines between them are two gradient layers sized to one tile
+    // (the tile's height as a share of the mat's height follows from the mat's and the picture's shapes).
+    const tw=matBgTile(side)*100, th=matBgTile(side)*matAspect(side)/matBgTileAsp(side)*100, line='rgba(5,7,13,.92)';
+    m.style.backgroundImage=`${tint}, linear-gradient(to right, ${line} ${TILE_LINE}px, transparent ${TILE_LINE}px), linear-gradient(to bottom, ${line} ${TILE_LINE}px, transparent ${TILE_LINE}px), url("${src}")`;
+    m.style.backgroundSize=`100% 100%, ${tw.toFixed(2)}% ${th.toFixed(2)}%, ${tw.toFixed(2)}% ${th.toFixed(2)}%, ${tw.toFixed(2)}% auto`;
+    m.style.backgroundRepeat='no-repeat, repeat, repeat, repeat';
+  } else {
+    m.style.backgroundImage=`${tint}, url("${src}")`; m.style.backgroundSize=''; m.style.backgroundRepeat='';
+  }
 }
 function matBgFit(side){ const f=lsGet(MATBG.fitKey(side), 'crop'); return f==='tile'||f==='blur' ? f : 'crop'; }
 // Whole-picture mode: the picture at its own shape, centred, over a blurred and darkened copy that fills the mat.
@@ -15313,9 +15321,10 @@ function matBgCompose(im, w, h){
   w=Math.max(8, Math.round(w)); h=Math.max(8, Math.round(h));
   const c=document.createElement('canvas'); c.width=w; c.height=h; const g=c.getContext('2d');
   const k=Math.max(w/im.naturalWidth, h/im.naturalHeight), cw=im.naturalWidth*k, ch=im.naturalHeight*k;
-  const t1=document.createElement('canvas'); t1.width=Math.max(2, Math.round(w/28)); t1.height=Math.max(2, Math.round(h/28));
-  const g1=t1.getContext('2d'); g1.drawImage(im, (t1.width-cw/28)/2, (t1.height-ch/28)/2, cw/28, ch/28);
-  const t2=document.createElement('canvas'); t2.width=t1.width*4; t2.height=t1.height*4; const g2=t2.getContext('2d'); g2.imageSmoothingEnabled=true; g2.drawImage(t1, 0, 0, t2.width, t2.height);
+  const B=12;   // shrink factor: bigger = blurrier
+  const t1=document.createElement('canvas'); t1.width=Math.max(2, Math.round(w/B)); t1.height=Math.max(2, Math.round(h/B));
+  const g1=t1.getContext('2d'); g1.imageSmoothingEnabled=true; g1.drawImage(im, (t1.width-cw/B)/2, (t1.height-ch/B)/2, cw/B, ch/B);
+  const t2=document.createElement('canvas'); t2.width=t1.width*3; t2.height=t1.height*3; const g2=t2.getContext('2d'); g2.imageSmoothingEnabled=true; g2.drawImage(t1, 0, 0, t2.width, t2.height);
   g.imageSmoothingEnabled=true; g.imageSmoothingQuality='high'; g.drawImage(t2, 0, 0, w, h);
   g.fillStyle='rgba(5,7,13,.45)'; g.fillRect(0, 0, w, h);
   const f=Math.min(w/im.naturalWidth, h/im.naturalHeight), fw=im.naturalWidth*f, fh=im.naturalHeight*f;
@@ -15338,9 +15347,13 @@ function matBgComposed(side, data){
   return c.url;
 }
 // Whole-picture mats follow the mat's shape, so they are recomposed when the board is re-laid out (resize, rotation, game start).
-function matBgRefresh(){ for (const s of ['player','enemy']) if (matBgFit(s)==='blur' && MATBG.comp[s] && MATBG.comp[s].im && Math.abs(MATBG.comp[s].asp-matAspect(s))>=0.02) applyMatBg(s); }
+function matBgRefresh(){ for (const s of ['player','enemy']){ const f=matBgFit(s);
+  if (f==='tile') applyMatBg(s);   // the grout grid's height depends on the mat's shape
+  else if (f==='blur' && MATBG.comp[s] && MATBG.comp[s].im && Math.abs(MATBG.comp[s].asp-matAspect(s))>=0.02) applyMatBg(s); } }
 try{ const _fitBF=fitBattlefields; fitBattlefields=function(){ _fitBF.apply(this, arguments); matBgRefresh(); }; }catch(e){}
-function matBgTile(side){ const t=+lsGet(MATBG.tileKey(side), 0.2); return Math.max(0.05, Math.min(0.6, t||0.2)); }
+function matBgTile(side){ const v=lsGet(MATBG.tileKey(side), 0.2), t=+(v && typeof v==='object' ? v.w : v); return Math.max(0.05, Math.min(0.6, t||0.2)); }
+function matBgTileAsp(side){ const v=lsGet(MATBG.tileKey(side), null); const a=v && typeof v==='object' ? +v.a : 0; return a>0 ? a : 1; }
+const TILE_LINE=3;   // px of dark grout between tiles
 function applyMatBgs(){ applyMatBg('player'); applyMatBg('enemy'); }
 // Open a picture (a File from the phone/computer, or a stored data URL) as an Image the canvas can draw.
 function matBgLoad(src){
@@ -15363,7 +15376,7 @@ function matBgStore(side, im, rect, fit, tile){
   try{ localStorage.setItem(MATBG.key(side), JSON.stringify(data)); }
   catch(e){ data=matBgEncode(im, rect, fit==='tile' ? 600 : 1000, 0.7); localStorage.setItem(MATBG.key(side), JSON.stringify(data)); }   // storage full: a smaller copy
   try{ if (fit==='tile'||fit==='blur') localStorage.setItem(MATBG.fitKey(side), JSON.stringify(fit)); else localStorage.removeItem(MATBG.fitKey(side));
-       if (fit==='tile') localStorage.setItem(MATBG.tileKey(side), JSON.stringify(+tile||0.2)); else localStorage.removeItem(MATBG.tileKey(side)); }catch(e){}
+       if (fit==='tile') localStorage.setItem(MATBG.tileKey(side), JSON.stringify({ w:+tile||0.2, a:im.naturalWidth/im.naturalHeight })); else localStorage.removeItem(MATBG.tileKey(side)); }catch(e){}
   applyMatBg(side); matBgRender();
 }
 // Picking a picture opens the framing dialog; the whole original stays in memory for this session so "Adjust" can reframe it.
@@ -15431,6 +15444,9 @@ function cropDraw(){
       const tw=Math.max(4, f.w*CROP.tile), th=tw*im.naturalHeight/im.naturalWidth;
       g.save(); g.beginPath(); g.rect(f.x, f.y, f.w, f.h); g.clip();
       for (let y=f.y; y<f.y+f.h; y+=th) for (let x=f.x; x<f.x+f.w; x+=tw) g.drawImage(im, x, y, tw, th);
+      g.fillStyle='rgba(5,7,13,.92)';   // the grout lines, as the mat will draw them
+      for (let x=f.x; x<f.x+f.w; x+=tw) g.fillRect(x, f.y, TILE_LINE, f.h);
+      for (let y=f.y; y<f.y+f.h; y+=th) g.fillRect(f.x, y, f.w, TILE_LINE);
       g.restore(); return; }
     g.drawImage(im, CROP.x, CROP.y, im.naturalWidth*CROP.s, im.naturalHeight*CROP.s); });
 }
