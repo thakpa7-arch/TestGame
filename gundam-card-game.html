@@ -535,6 +535,7 @@
   #cropMode button { padding: 6px 10px; font-size: 12px; }
   #cropMode button.on { background: var(--gold); color: #1a1200; border-color: var(--gold); }
   #cropModal.whole #cropStage { cursor: default; }
+  #cropModal.nozoom .crop-zoom { visibility: hidden; }
   @media (max-height: 560px){ #cropStage { height: 44vh; min-height: 150px; } #cropModal .crop-box { padding: 8px 12px; } #cropModal .bg-sub { display: none; } }
   #blockModal { position: fixed; inset: 0; background: rgba(4,7,14,.84); z-index: 95; display: none; align-items: center; justify-content: center; padding: 18px; }
   #blockModal.show { display: flex; }
@@ -774,7 +775,7 @@
 </div></div>
 <div id="cropModal"><div class="crop-box">
   <h3 id="cropTitle">Frame the picture</h3>
-  <div id="cropMode"><button class="ghost on" data-mode="crop" title="Pick a part of the picture">✂ Pick a part</button><button class="ghost" data-mode="tile" title="The whole picture repeated across the mat">▦ Tiled</button></div>
+  <div id="cropMode"><button class="ghost on" data-mode="crop" title="Pick a part of the picture">✂ Pick a part</button><button class="ghost" data-mode="blur" title="The whole picture, with a blurred copy filling the rest of the mat">▣ Whole picture</button><button class="ghost" data-mode="tile" title="The whole picture repeated across the mat">▦ Tiled</button></div>
   <p class="bg-sub">The frame is the shape of the mat on this screen. <span id="cropHint">Drag the picture to move it, pinch, scroll or use the slider to zoom. What is inside the frame goes on the mat.</span></p>
   <div id="cropStage"><canvas id="cropCanvas"></canvas><div id="cropFrame"><span class="crop-tag" id="cropTag"></span></div></div>
   <div class="crop-zoom"><span id="cropZoomLabel">Zoom</span><input type="range" id="cropZoom" min="0" max="100" step="1"><button class="ghost" id="cropFit" title="Back to the starting zoom / tile size">Fit</button></div>
@@ -15297,14 +15298,48 @@ function applyMatBg(side){
   if (!img){ m.style.backgroundImage=''; m.style.boxShadow=''; m.style.backgroundSize=''; m.style.backgroundRepeat=''; return; }
   // The tint over the picture follows the brightness slider (0 = as dark as the stock art, 100 = untouched).
   const a=(1-matBgDim()/100)*0.62;
-  m.style.backgroundImage=`linear-gradient(${side==='enemy'?340:160}deg, rgba(6,10,26,${(a*0.8).toFixed(2)}) 0%, rgba(6,10,26,${a.toFixed(2)}) 100%), url("${img}")`;
+  // How the picture fills the mat: a framed crop covers it; "tile" repeats the whole picture, each tile a share of the mat's width;
+  // "blur" shows the whole picture at its own shape over a blurred copy of itself, composed for the mat's shape on this screen.
+  const fit=matBgFit(side), src = fit==='blur' ? (matBgComposed(side, img) || img) : img;
+  m.style.backgroundImage=`linear-gradient(${side==='enemy'?340:160}deg, rgba(6,10,26,${(a*0.8).toFixed(2)}) 0%, rgba(6,10,26,${a.toFixed(2)}) 100%), url("${src}")`;
   m.style.boxShadow='0 10px 36px rgba(0,0,0,.7)';   // no desktop inset tint on top of the player's own picture
-  // How the picture fills the mat: a framed crop covers it; "tile" repeats the whole picture, each tile a share of the mat's width.
-  const fit=matBgFit(side);
   m.style.backgroundSize = fit==='tile' ? `100% 100%, ${(matBgTile(side)*100).toFixed(1)}% auto` : '';
   m.style.backgroundRepeat = fit==='tile' ? 'no-repeat, repeat' : '';
 }
-function matBgFit(side){ return lsGet(MATBG.fitKey(side), 'crop')==='tile' ? 'tile' : 'crop'; }
+function matBgFit(side){ const f=lsGet(MATBG.fitKey(side), 'crop'); return f==='tile'||f==='blur' ? f : 'crop'; }
+// Whole-picture mode: the picture at its own shape, centred, over a blurred and darkened copy that fills the mat.
+// The blur is made by shrinking the picture far down and scaling it back up (no canvas filters, so it works in every browser).
+function matBgCompose(im, w, h){
+  w=Math.max(8, Math.round(w)); h=Math.max(8, Math.round(h));
+  const c=document.createElement('canvas'); c.width=w; c.height=h; const g=c.getContext('2d');
+  const k=Math.max(w/im.naturalWidth, h/im.naturalHeight), cw=im.naturalWidth*k, ch=im.naturalHeight*k;
+  const t1=document.createElement('canvas'); t1.width=Math.max(2, Math.round(w/28)); t1.height=Math.max(2, Math.round(h/28));
+  const g1=t1.getContext('2d'); g1.drawImage(im, (t1.width-cw/28)/2, (t1.height-ch/28)/2, cw/28, ch/28);
+  const t2=document.createElement('canvas'); t2.width=t1.width*4; t2.height=t1.height*4; const g2=t2.getContext('2d'); g2.imageSmoothingEnabled=true; g2.drawImage(t1, 0, 0, t2.width, t2.height);
+  g.imageSmoothingEnabled=true; g.imageSmoothingQuality='high'; g.drawImage(t2, 0, 0, w, h);
+  g.fillStyle='rgba(5,7,13,.45)'; g.fillRect(0, 0, w, h);
+  const f=Math.min(w/im.naturalWidth, h/im.naturalHeight), fw=im.naturalWidth*f, fh=im.naturalHeight*f;
+  g.shadowColor='rgba(0,0,0,.7)'; g.shadowBlur=Math.max(4, Math.round(w/50)); g.drawImage(im, (w-fw)/2, (h-fh)/2, fw, fh);
+  return c;
+}
+// The composed picture for a mat, cached per picture and mat shape; null while the picture is still loading (the mat shows the plain picture meanwhile).
+MATBG.comp={};
+function matBgComposed(side, data){
+  const asp=matAspect(side), c=MATBG.comp[side];
+  if (c && c.data===data && c.im && Math.abs(c.asp-asp)<0.02) return c.url;
+  if (!c || c.data!==data){
+    MATBG.comp[side]={ data, im:null, asp:0, url:null };
+    matBgLoad(data).then(im=>{ const e=MATBG.comp[side]; if (e && e.data===data){ e.im=im; applyMatBg(side); } }).catch(()=>{});
+    return null;
+  }
+  if (!c.im) return null;
+  const w=Math.min(1400, Math.max(600, Math.round((document.querySelector('.mat.'+side)||{}).clientWidth*(window.devicePixelRatio||1)||1200)));
+  try{ c.url=matBgCompose(c.im, w, w/asp).toDataURL('image/jpeg', 0.85); c.asp=asp; }catch(e){ return null; }
+  return c.url;
+}
+// Whole-picture mats follow the mat's shape, so they are recomposed when the board is re-laid out (resize, rotation, game start).
+function matBgRefresh(){ for (const s of ['player','enemy']) if (matBgFit(s)==='blur' && MATBG.comp[s] && MATBG.comp[s].im && Math.abs(MATBG.comp[s].asp-matAspect(s))>=0.02) applyMatBg(s); }
+try{ const _fitBF=fitBattlefields; fitBattlefields=function(){ _fitBF.apply(this, arguments); matBgRefresh(); }; }catch(e){}
 function matBgTile(side){ const t=+lsGet(MATBG.tileKey(side), 0.2); return Math.max(0.05, Math.min(0.6, t||0.2)); }
 function applyMatBgs(){ applyMatBg('player'); applyMatBg('enemy'); }
 // Open a picture (a File from the phone/computer, or a stored data URL) as an Image the canvas can draw.
@@ -15327,8 +15362,8 @@ function matBgStore(side, im, rect, fit, tile){
   let data=matBgEncode(im, rect, fit==='tile' ? 1000 : 1600, 0.82);   // a tile is shown small, so it needs fewer pixels
   try{ localStorage.setItem(MATBG.key(side), JSON.stringify(data)); }
   catch(e){ data=matBgEncode(im, rect, fit==='tile' ? 600 : 1000, 0.7); localStorage.setItem(MATBG.key(side), JSON.stringify(data)); }   // storage full: a smaller copy
-  try{ if (fit==='tile'){ localStorage.setItem(MATBG.fitKey(side), JSON.stringify('tile')); localStorage.setItem(MATBG.tileKey(side), JSON.stringify(+tile||0.2)); }
-       else { localStorage.removeItem(MATBG.fitKey(side)); localStorage.removeItem(MATBG.tileKey(side)); } }catch(e){}
+  try{ if (fit==='tile'||fit==='blur') localStorage.setItem(MATBG.fitKey(side), JSON.stringify(fit)); else localStorage.removeItem(MATBG.fitKey(side));
+       if (fit==='tile') localStorage.setItem(MATBG.tileKey(side), JSON.stringify(+tile||0.2)); else localStorage.removeItem(MATBG.tileKey(side)); }catch(e){}
   applyMatBg(side); matBgRender();
 }
 // Picking a picture opens the framing dialog; the whole original stays in memory for this session so "Adjust" can reframe it.
@@ -15391,6 +15426,7 @@ function cropDraw(){
   if (CROP.raf) return; CROP.raf=requestAnimationFrame(()=>{ CROP.raf=0;
     const cv=el('cropCanvas'), g=cv.getContext('2d'), f=CROP.frame, dpr=cv.width/f.W, im=CROP.im; if (!im) return;
     g.setTransform(dpr,0,0,dpr,0,0); g.clearRect(0,0,f.W,f.H); g.imageSmoothingQuality='high';
+    if (CROP.mode==='blur'){ g.drawImage(matBgCompose(im, f.w, f.h), f.x, f.y, f.w, f.h); return; }   // whole picture over its blurred copy
     if (CROP.mode==='tile'){   // the whole picture repeated from the frame's top-left corner, as the mat's CSS will tile it
       const tw=Math.max(4, f.w*CROP.tile), th=tw*im.naturalHeight/im.naturalWidth;
       g.save(); g.beginPath(); g.rect(f.x, f.y, f.w, f.h); g.clip();
@@ -15402,8 +15438,9 @@ function cropDraw(){
 function cropSetMode(mode, quiet){
   CROP.mode=mode; const m=el('cropModal'); if (!m || !m.querySelectorAll) return;
   m.querySelectorAll('#cropMode button').forEach(b=>b.classList.toggle('on', b.dataset.mode===mode));
-  m.classList.toggle('whole', mode!=='crop');
+  m.classList.toggle('whole', mode!=='crop'); m.classList.toggle('nozoom', mode==='blur');
   const hint=el('cropHint'); if (hint) hint.textContent = mode==='tile' ? 'The whole picture repeats across the mat like a pattern. The slider sets the tile size.'
+    : mode==='blur' ? 'The whole picture is shown at its own shape, and a blurred copy of it fills the rest of the mat — nothing is cut off on any screen.'
     : 'Drag the picture to move it, pinch, scroll or use the slider to zoom. What is inside the frame goes on the mat.';
   const lab=el('cropZoomLabel'); if (lab) lab.textContent = mode==='tile' ? 'Tile size' : 'Zoom';
   if (CROP.frame) cropSlider();
@@ -15452,7 +15489,7 @@ function matBgRender(){
     const mat=document.querySelector('.mat.'+side);
     p.style.backgroundImage = img ? `url("${img}")` : (mat ? getComputedStyle(mat).backgroundImage.split('url(').slice(-1).map(s=>'url('+s)[0] : '');
     const fit=img ? matBgFit(side) : 'crop';
-    p.style.backgroundSize = fit==='tile' ? `${(matBgTile(side)*100).toFixed(1)}% auto` : ''; p.style.backgroundRepeat = fit==='tile' ? 'repeat' : '';
+    p.style.backgroundSize = fit==='tile' ? `${(matBgTile(side)*100).toFixed(1)}% auto` : fit==='blur' ? 'contain' : ''; p.style.backgroundRepeat = fit==='tile' ? 'repeat' : '';
     r.querySelector('.bg-reset').disabled=!img; r.querySelector('.bg-adjust').disabled=!img;
   });
   const d=el('bgDim'); if (d) d.value=matBgDim();
