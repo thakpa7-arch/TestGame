@@ -535,7 +535,6 @@
   #cropMode button { padding: 6px 10px; font-size: 12px; }
   #cropMode button.on { background: var(--gold); color: #1a1200; border-color: var(--gold); }
   #cropModal.whole #cropStage { cursor: default; }
-  #cropModal.nozoom .crop-zoom { visibility: hidden; }
   @media (max-height: 560px){ #cropStage { height: 44vh; min-height: 150px; } #cropModal .crop-box { padding: 8px 12px; } #cropModal .bg-sub { display: none; } }
   #blockModal { position: fixed; inset: 0; background: rgba(4,7,14,.84); z-index: 95; display: none; align-items: center; justify-content: center; padding: 18px; }
   #blockModal.show { display: flex; }
@@ -15290,7 +15289,7 @@ el('soundBtn').addEventListener('click', ()=>{ SOUND.on=!SOUND.on; el('soundBtn'
 el('startBtn').addEventListener('click', ()=>{ unlockAudio(); startGame(); });
 // ---- Playmat backgrounds: a picture of the player's own for each mat (phone gallery / camera / file), kept in
 // localStorage as a downscaled JPEG so it survives reloads and installs; "Reset" returns the mat to its stock art. ----
-const MATBG = { key: s=>'gtcg_matbg_'+s, fitKey: s=>'gtcg_matbg_fit_'+s, tileKey: s=>'gtcg_matbg_tile_'+s, dimKey: 'gtcg_matbg_dim' };
+const MATBG = { key: s=>'gtcg_matbg_'+s, fitKey: s=>'gtcg_matbg_fit_'+s, tileKey: s=>'gtcg_matbg_tile_'+s, blurKey: s=>'gtcg_matbg_blur_'+s, dimKey: 'gtcg_matbg_dim' };
 function matBgDim(){ const d=lsGet(MATBG.dimKey, 55); return Math.max(0, Math.min(100, +d||0)); }
 function applyMatBg(side){
   const m=document.querySelector('.mat.'+side); if (!m || !m.style) return;
@@ -15317,15 +15316,23 @@ function applyMatBg(side){
 function matBgFit(side){ const f=lsGet(MATBG.fitKey(side), 'crop'); return f==='tile'||f==='blur' ? f : 'crop'; }
 // Whole-picture mode: the picture at its own shape, centred, over a blurred and darkened copy that fills the mat.
 // The blur is made by shrinking the picture far down and scaling it back up (no canvas filters, so it works in every browser).
-function matBgCompose(im, w, h){
+// `blur` is the player's 0–100 setting: 0 = the covering copy stays sharp, 100 = a wash of colour.
+const BLUR_DEF=40;
+function matBgBlur(side){ const v=+lsGet(MATBG.blurKey(side), BLUR_DEF); return isFinite(v) ? Math.max(0, Math.min(100, v)) : BLUR_DEF; }
+function matBgCompose(im, w, h, blur){
   w=Math.max(8, Math.round(w)); h=Math.max(8, Math.round(h));
   const c=document.createElement('canvas'); c.width=w; c.height=h; const g=c.getContext('2d');
   const k=Math.max(w/im.naturalWidth, h/im.naturalHeight), cw=im.naturalWidth*k, ch=im.naturalHeight*k;
-  const B=12;   // shrink factor: bigger = blurrier
-  const t1=document.createElement('canvas'); t1.width=Math.max(2, Math.round(w/B)); t1.height=Math.max(2, Math.round(h/B));
-  const g1=t1.getContext('2d'); g1.imageSmoothingEnabled=true; g1.drawImage(im, (t1.width-cw/B)/2, (t1.height-ch/B)/2, cw/B, ch/B);
-  const t2=document.createElement('canvas'); t2.width=t1.width*3; t2.height=t1.height*3; const g2=t2.getContext('2d'); g2.imageSmoothingEnabled=true; g2.drawImage(t1, 0, 0, t2.width, t2.height);
-  g.imageSmoothingEnabled=true; g.imageSmoothingQuality='high'; g.drawImage(t2, 0, 0, w, h);
+  const L=Math.max(0, Math.min(100, blur==null ? BLUR_DEF : +blur||0)), B=1+Math.pow(L/100, 1.4)*29;   // shrink factor: bigger = blurrier
+  g.imageSmoothingEnabled=true; g.imageSmoothingQuality='high';
+  if (B<1.3) g.drawImage(im, (w-cw)/2, (h-ch)/2, cw, ch);   // no blur: the picture simply covers the mat behind itself
+  else {
+    const t1=document.createElement('canvas'); t1.width=Math.max(2, Math.round(w/B)); t1.height=Math.max(2, Math.round(h/B));
+    const g1=t1.getContext('2d'); g1.imageSmoothingEnabled=true; g1.drawImage(im, (t1.width-cw/B)/2, (t1.height-ch/B)/2, cw/B, ch/B);
+    const up=Math.min(3, Math.max(1, B/2));   // a middle step so the blow-up is smooth rather than blocky
+    const t2=document.createElement('canvas'); t2.width=Math.round(t1.width*up); t2.height=Math.round(t1.height*up); const g2=t2.getContext('2d'); g2.imageSmoothingEnabled=true; g2.drawImage(t1, 0, 0, t2.width, t2.height);
+    g.drawImage(t2, 0, 0, w, h);
+  }
   g.fillStyle='rgba(5,7,13,.45)'; g.fillRect(0, 0, w, h);
   const f=Math.min(w/im.naturalWidth, h/im.naturalHeight), fw=im.naturalWidth*f, fh=im.naturalHeight*f;
   g.shadowColor='rgba(0,0,0,.7)'; g.shadowBlur=Math.max(4, Math.round(w/50)); g.drawImage(im, (w-fw)/2, (h-fh)/2, fw, fh);
@@ -15334,16 +15341,16 @@ function matBgCompose(im, w, h){
 // The composed picture for a mat, cached per picture and mat shape; null while the picture is still loading (the mat shows the plain picture meanwhile).
 MATBG.comp={};
 function matBgComposed(side, data){
-  const asp=matAspect(side), c=MATBG.comp[side];
-  if (c && c.data===data && c.im && Math.abs(c.asp-asp)<0.02) return c.url;
+  const asp=matAspect(side), blur=matBgBlur(side), c=MATBG.comp[side];
+  if (c && c.data===data && c.im && c.blur===blur && Math.abs(c.asp-asp)<0.02) return c.url;
   if (!c || c.data!==data){
-    MATBG.comp[side]={ data, im:null, asp:0, url:null };
+    MATBG.comp[side]={ data, im:null, asp:0, blur:-1, url:null };
     matBgLoad(data).then(im=>{ const e=MATBG.comp[side]; if (e && e.data===data){ e.im=im; applyMatBg(side); } }).catch(()=>{});
     return null;
   }
   if (!c.im) return null;
   const w=Math.min(1400, Math.max(600, Math.round((document.querySelector('.mat.'+side)||{}).clientWidth*(window.devicePixelRatio||1)||1200)));
-  try{ c.url=matBgCompose(c.im, w, w/asp).toDataURL('image/jpeg', 0.85); c.asp=asp; }catch(e){ return null; }
+  try{ c.url=matBgCompose(c.im, w, w/asp, blur).toDataURL('image/jpeg', 0.85); c.asp=asp; c.blur=blur; }catch(e){ return null; }
   return c.url;
 }
 // Whole-picture mats follow the mat's shape, so they are recomposed when the board is re-laid out (resize, rotation, game start).
@@ -15371,12 +15378,13 @@ function matBgEncode(im, rect, maxSide, quality){
   const g=c.getContext('2d'); g.imageSmoothingQuality='high'; g.drawImage(im, rect.x, rect.y, sw, sh, 0, 0, c.width, c.height);
   return c.toDataURL('image/jpeg', quality);
 }
-function matBgStore(side, im, rect, fit, tile){
+function matBgStore(side, im, rect, fit, tile, blur){
   let data=matBgEncode(im, rect, fit==='tile' ? 1000 : 1600, 0.82);   // a tile is shown small, so it needs fewer pixels
   try{ localStorage.setItem(MATBG.key(side), JSON.stringify(data)); }
   catch(e){ data=matBgEncode(im, rect, fit==='tile' ? 600 : 1000, 0.7); localStorage.setItem(MATBG.key(side), JSON.stringify(data)); }   // storage full: a smaller copy
   try{ if (fit==='tile'||fit==='blur') localStorage.setItem(MATBG.fitKey(side), JSON.stringify(fit)); else localStorage.removeItem(MATBG.fitKey(side));
-       if (fit==='tile') localStorage.setItem(MATBG.tileKey(side), JSON.stringify({ w:+tile||0.2, a:im.naturalWidth/im.naturalHeight })); else localStorage.removeItem(MATBG.tileKey(side)); }catch(e){}
+       if (fit==='tile') localStorage.setItem(MATBG.tileKey(side), JSON.stringify({ w:+tile||0.2, a:im.naturalWidth/im.naturalHeight })); else localStorage.removeItem(MATBG.tileKey(side));
+       if (fit==='blur') localStorage.setItem(MATBG.blurKey(side), JSON.stringify(Math.round(blur==null ? BLUR_DEF : +blur||0))); else localStorage.removeItem(MATBG.blurKey(side)); }catch(e){}
   applyMatBg(side); matBgRender();
 }
 // Picking a picture opens the framing dialog; the whole original stays in memory for this session so "Adjust" can reframe it.
@@ -15390,22 +15398,23 @@ async function matBgAdjust(side){
   try{
     let im=MATBG.src[side];
     if (!im){ const data=lsGet(MATBG.key(side), null); if (!data) return; im=await matBgLoad(data); }
-    matBgCrop(side, im, null, matBgFit(side), matBgTile(side));
+    matBgCrop(side, im, null, matBgFit(side), matBgTile(side), matBgBlur(side));
   }catch(e){ alert('That picture could not be opened: '+(e && e.message ? e.message : e)); }
 }
 // ---- Framing dialog: the picture is drawn on a canvas under a frame shaped like the mat on this screen; the player drags it
 // around and zooms (pinch / mouse wheel / slider). The picture always covers the frame, so there are never empty mat corners. ----
-// CROP.mode: 'crop' (frame a part) or 'tile' (the whole picture repeated; CROP.tile = one tile's width as a share of the mat's width).
-const CROP={ side:null, im:null, mode:'crop', tile:0.2, x:0, y:0, s:1, min:1, max:1, frame:null, ptrs:new Map(), pinch:null, raf:0 };
+// CROP.mode: 'crop' (frame a part), 'tile' (the whole picture repeated; CROP.tile = one tile's width as a share of the mat's width)
+// or 'blur' (the whole picture over a softened copy; CROP.blur = how soft, 0–100). The one slider serves zoom / tile size / blur by mode.
+const CROP={ side:null, im:null, mode:'crop', tile:0.2, blur:BLUR_DEF, x:0, y:0, s:1, min:1, max:1, frame:null, ptrs:new Map(), pinch:null, raf:0 };
 const TILE_MIN=0.05, TILE_MAX=0.6;
 function matAspect(side){
   const m=document.querySelector('.mat.'+side), r=m && m.getBoundingClientRect ? m.getBoundingClientRect() : null;
   return r && r.width>40 && r.height>40 ? r.width/r.height : (innerWidth>innerHeight ? 2.6 : 1.3);
 }
-function matBgCrop(side, im, keep, mode, tile){
+function matBgCrop(side, im, keep, mode, tile, blur){
   const modal=el('cropModal'), stage=el('cropStage'), cv=el('cropCanvas'), fr=el('cropFrame');
   if (!modal || !stage || !cv || !cv.getContext) return;
-  CROP.side=side; CROP.im=im; CROP.ptrs.clear(); CROP.pinch=null; if (tile) CROP.tile=tile; cropSetMode(mode||CROP.mode||'crop', true);
+  CROP.side=side; CROP.im=im; CROP.ptrs.clear(); CROP.pinch=null; if (tile) CROP.tile=tile; if (blur!=null) CROP.blur=blur; cropSetMode(mode||CROP.mode||'crop', true);
   el('cropTag').textContent = side==='enemy' ? 'ENEMY MAT' : 'YOUR MAT';
   el('cropTitle').textContent = side==='enemy' ? 'Frame the enemy mat picture' : 'Frame your mat picture';
   modal.classList.add('show');
@@ -15433,13 +15442,13 @@ function cropSetScale(s, px, py){
   const k=s/CROP.s; CROP.x=px-(px-CROP.x)*k; CROP.y=py-(py-CROP.y)*k; CROP.s=s; cropClamp();
 }
 function cropSlider(){ const z=el('cropZoom'); if (!z) return;
-  const r = CROP.mode==='tile' ? (CROP.tile-TILE_MIN)/(TILE_MAX-TILE_MIN) : Math.log(CROP.s/CROP.min)/Math.log(CROP.max/CROP.min);
+  const r = CROP.mode==='tile' ? (CROP.tile-TILE_MIN)/(TILE_MAX-TILE_MIN) : CROP.mode==='blur' ? CROP.blur/100 : Math.log(CROP.s/CROP.min)/Math.log(CROP.max/CROP.min);
   z.value=Math.round(Math.max(0, Math.min(1, r||0))*100); }
 function cropDraw(){
   if (CROP.raf) return; CROP.raf=requestAnimationFrame(()=>{ CROP.raf=0;
     const cv=el('cropCanvas'), g=cv.getContext('2d'), f=CROP.frame, dpr=cv.width/f.W, im=CROP.im; if (!im) return;
     g.setTransform(dpr,0,0,dpr,0,0); g.clearRect(0,0,f.W,f.H); g.imageSmoothingQuality='high';
-    if (CROP.mode==='blur'){ g.drawImage(matBgCompose(im, f.w, f.h), f.x, f.y, f.w, f.h); return; }   // whole picture over its blurred copy
+    if (CROP.mode==='blur'){ g.drawImage(matBgCompose(im, f.w*dpr, f.h*dpr, CROP.blur), f.x, f.y, f.w, f.h); return; }   // whole picture over its softened copy
     if (CROP.mode==='tile'){   // the whole picture repeated from the frame's top-left corner, as the mat's CSS will tile it
       const tw=Math.max(4, f.w*CROP.tile), th=tw*im.naturalHeight/im.naturalWidth;
       g.save(); g.beginPath(); g.rect(f.x, f.y, f.w, f.h); g.clip();
@@ -15454,11 +15463,12 @@ function cropDraw(){
 function cropSetMode(mode, quiet){
   CROP.mode=mode; const m=el('cropModal'); if (!m || !m.querySelectorAll) return;
   m.querySelectorAll('#cropMode button').forEach(b=>b.classList.toggle('on', b.dataset.mode===mode));
-  m.classList.toggle('whole', mode!=='crop'); m.classList.toggle('nozoom', mode==='blur');
+  m.classList.toggle('whole', mode!=='crop');
   const hint=el('cropHint'); if (hint) hint.textContent = mode==='tile' ? 'The whole picture repeats across the mat like a pattern. The slider sets the tile size.'
-    : mode==='blur' ? 'The whole picture is shown at its own shape, and a blurred copy of it fills the rest of the mat — nothing is cut off on any screen.'
+    : mode==='blur' ? 'The whole picture is shown at its own shape, and a copy of it fills the rest of the mat — nothing is cut off on any screen. The slider sets how blurred that copy is.'
     : 'Drag the picture to move it, pinch, scroll or use the slider to zoom. What is inside the frame goes on the mat.';
-  const lab=el('cropZoomLabel'); if (lab) lab.textContent = mode==='tile' ? 'Tile size' : 'Zoom';
+  const lab=el('cropZoomLabel'); if (lab) lab.textContent = mode==='tile' ? 'Tile size' : mode==='blur' ? 'Blur' : 'Zoom';
+  const fit=el('cropFit'); if (fit) fit.textContent = mode==='crop' ? 'Fit' : 'Default';
   if (CROP.frame) cropSlider();
   if (!quiet) cropDraw();
 }
@@ -15488,13 +15498,13 @@ function cropClose(){ el('cropModal').classList.remove('show'); CROP.im=null; CR
   stage.addEventListener('dblclick', e=>{ if (!CROP.im || CROP.mode!=='crop') return; const r=stage.getBoundingClientRect();
     cropSetScale(CROP.s>CROP.min*1.05 ? CROP.min : CROP.min*2, e.clientX-r.left, e.clientY-r.top); cropSlider(); cropDraw(); });
   el('cropZoom').addEventListener('input', e=>{ if (!CROP.im) return; const t=(+e.target.value||0)/100;
-    if (CROP.mode==='tile') CROP.tile=TILE_MIN+t*(TILE_MAX-TILE_MIN); else cropSetScale(CROP.min*Math.pow(CROP.max/CROP.min, t), null); cropDraw(); });
-  el('cropFit').addEventListener('click', ()=>{ if (!CROP.im) return; if (CROP.mode==='tile') CROP.tile=0.2; else cropSetScale(CROP.min, null); cropSlider(); cropDraw(); });
+    if (CROP.mode==='tile') CROP.tile=TILE_MIN+t*(TILE_MAX-TILE_MIN); else if (CROP.mode==='blur') CROP.blur=Math.round(t*100); else cropSetScale(CROP.min*Math.pow(CROP.max/CROP.min, t), null); cropDraw(); });
+  el('cropFit').addEventListener('click', ()=>{ if (!CROP.im) return; if (CROP.mode==='tile') CROP.tile=0.2; else if (CROP.mode==='blur') CROP.blur=BLUR_DEF; else cropSetScale(CROP.min, null); cropSlider(); cropDraw(); });
   el('cropCancel').addEventListener('click', cropClose);
   el('cropModal').addEventListener('click', e=>{ if (e.target===el('cropModal')) cropClose(); });
   el('cropOk').addEventListener('click', ()=>{ if (!CROP.im) return;
     try{ const im=CROP.im, whole={ x:0, y:0, w:im.naturalWidth, h:im.naturalHeight };
-      matBgStore(CROP.side, im, CROP.mode==='crop' ? cropRect() : whole, CROP.mode, CROP.tile); cropClose(); }
+      matBgStore(CROP.side, im, CROP.mode==='crop' ? cropRect() : whole, CROP.mode, CROP.tile, CROP.blur); cropClose(); }
     catch(e){ alert('That picture could not be saved: '+(e && e.message ? e.message : e)); } });
   window.addEventListener('resize', ()=>{ if (CROP.im && el('cropModal').classList.contains('show')) matBgCrop(CROP.side, CROP.im, cropRect()); });
 })();
@@ -15517,7 +15527,7 @@ el('bgModal').querySelectorAll('.bg-row[data-side]').forEach(r=>{
   const side=r.dataset.side;
   r.querySelector('input[type=file]').addEventListener('change', e=>{ matBgChoose(side, e.target.files && e.target.files[0]); e.target.value=''; });
   r.querySelector('.bg-adjust').addEventListener('click', ()=>matBgAdjust(side));
-  r.querySelector('.bg-reset').addEventListener('click', ()=>{ try{ localStorage.removeItem(MATBG.key(side)); localStorage.removeItem(MATBG.fitKey(side)); localStorage.removeItem(MATBG.tileKey(side)); }catch(e){} delete MATBG.src[side]; applyMatBg(side); matBgRender(); });
+  r.querySelector('.bg-reset').addEventListener('click', ()=>{ try{ localStorage.removeItem(MATBG.key(side)); localStorage.removeItem(MATBG.fitKey(side)); localStorage.removeItem(MATBG.tileKey(side)); localStorage.removeItem(MATBG.blurKey(side)); }catch(e){} delete MATBG.src[side]; applyMatBg(side); matBgRender(); });
 });
 el('bgDim').addEventListener('input', e=>{ lsSet(MATBG.dimKey, +e.target.value); applyMatBgs(); });
 applyMatBgs();
