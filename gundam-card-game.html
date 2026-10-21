@@ -9905,7 +9905,12 @@ function deckIoOpen(mode, opts){
     btns.innerHTML=`<button class="ghost" id="ioCopy">📋 Copy</button><button class="ghost" id="ioSave">💾 Save file</button>${nav.share?'<button class="ghost" id="ioShare">📤 Share</button>':''}<span class="io-sp"></span><button id="ioClose">Close</button>`;
     const fname=String(opts.name||'deck').replace(/[\\/:*?"<>|]+/g,'').trim()||'deck';
     el('ioCopy').onclick=async()=>{ const ok=await copyText(text, ta); ioNote(ok ? 'Copied to the clipboard.' : 'Could not copy automatically — select the text and copy it yourself.', ok?'ok':'bad'); };
-    el('ioSave').onclick=()=>{ try{
+    el('ioSave').onclick=async()=>{
+      // Inside the claude.ai viewer a page cannot download on its own: the viewer's save prompt hands the file over.
+      let dl=null; try{ if (typeof claude!=='undefined' && claude && typeof claude.use==='function') dl=await claude.use('downloads'); }catch(e){ dl=null; }
+      if (dl){ ioNote('Confirm the save…'); try{ await dl.save({ filename:fname+'.txt', data:text }); ioNote(`Saved as ${fname}.txt`, 'ok'); }
+        catch(e){ ioNote(e && e.code==='declined' ? 'Not saved.' : 'Could not save a file here — use Copy instead.', 'bad'); } return; }
+      try{
         const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([text],{type:'text/plain'})); a.download=fname+'.txt';
         document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href), 3000);
         ioNote(`Saved as ${fname}.txt`, 'ok');
