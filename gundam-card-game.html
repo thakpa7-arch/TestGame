@@ -121,7 +121,9 @@
   header .turn-info { font-size: 12px; color: var(--muted); text-align: right; }
   header .turn-info b { color: var(--gold); }
 
-  .row { flex: 1; display: flex; align-items: center; gap: 10px; min-height: 0; }
+  /* The mats fill their rows top to bottom (no dead band between the two tables); the side panels stay compact. */
+  .row { flex: 1; display: flex; align-items: stretch; gap: 10px; min-height: 0; }
+  .row .side-stats { align-self: center; }
   .side-stats { width: var(--col); flex-shrink: 0; background: rgba(22,17,9,.72); backdrop-filter: blur(2px); border: 1px solid var(--line); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
   .side-stats.enemy { border-color: #5a2a3a; }
   .side-stats.player { border-color: #2a4a5a; }
@@ -628,6 +630,30 @@
     .zone.resarea .resources { gap: 2px; padding-right: 70px; }
     .zone.resarea .res { width: 11px; height: 15px; }
   }
+  /* ---- Desktop (last, so these win over the base rules above) ---- */
+  /* 1080p-class screens: the dialogs are small for the space. */
+  @media (min-width: 1100px) and (min-height: 700px) {
+    #inspect .ins-box { max-width: 600px; }
+    #inspect img { width: 240px; }
+    #inspect .ins-eff { font-size: 13.5px; }
+    #blockModal .block-box { max-width: 520px; }
+  }
+  /* Large monitors: the table grows with the screen instead of sitting at 1280px with empty margins, and the
+     cards grow with it; the dialogs and the log get room to breathe. */
+  @media (min-width: 1600px) and (min-height: 860px) {
+    :root { --app-w: min(1640px, 94vw); --card-h: clamp(112px, 17.5vh, 244px); }
+    #logPanel { width: 340px; }
+    #log { max-height: 30vh; font-size: 12px; }
+    #inspect .ins-box { max-width: 720px; padding: 20px; gap: 18px; }
+    #inspect img { width: 300px; }
+    #inspect h3 { font-size: 21px; }
+    #inspect .ins-meta { font-size: 13px; }
+    #inspect .ins-eff { font-size: 14.5px; }
+    #blockModal .block-box { max-width: 560px; }
+    #blockModal #blockMsg { font-size: 15.5px; }
+    #setupModal > div:has(#dbLayout) { max-width: min(1440px, 92vw) !important; }
+    #dbGrid, #dbSide { max-height: 62vh !important; }
+  }
 </style>
 </head>
 <body>
@@ -781,7 +807,9 @@
     <span class="badge">&lt;Support N&gt;</span> rest to boost an ally's AP ·
     <span class="badge">【Burst】</span> shield triggers.<br><br>
     <b>Controls:</b> tap a hand card to inspect &amp; play it; tap your active Unit then a rested enemy Unit or the
-    enemy Shields to attack. When the AI attacks and you have a Blocker, you'll be asked whether to intercept.<br><br>
+    enemy Shields to attack. When the AI attacks and you have a Blocker, you'll be asked whether to intercept.
+    On a computer: hover a hand card to enlarge it, <b>right-click</b> any card to read it, <b>Enter</b> ends your turn,
+    <b>Esc</b> cancels a choice, <b>L</b> shows or hides the battle log.<br><br>
     <span style="color:#fda4af">Note:</span> Resource Deck, EX Resource/Base, Shields, Burst, Bases, Blocking,
     First Strike, High-Maneuver, 【Deploy】/【When Paired】 effects and Link are all modeled, and both decks are
     built around Link pairs with an aggressive curve. Keywords are read as innate only (a card that merely
@@ -14837,9 +14865,9 @@ function fitBattlefields(){
       const f=document.getElementById(fid); if(!f || !f.clientWidth || !f.style || !f.style.setProperty) continue;
       const n=(s.field||[]).length;
       if (!n){ f.style.removeProperty('--card-h'); continue; }
-      const mob=window.innerWidth<=820;                                      // mirrors the :root clamps
+      const mob=window.innerWidth<=820, big=window.innerWidth>=1600 && window.innerHeight>=860;   // mirrors the :root clamps
       const baseH=mob ? Math.max(96, Math.min(132, window.innerHeight*0.15))
-                      : Math.max(112, Math.min(200, window.innerHeight*0.175));
+                      : Math.max(112, Math.min(big?244:200, window.innerHeight*0.175));
       const availPer=(f.clientWidth - 12 - 6*(n-1)) / n;                    // padding + gaps
       const scale=Math.max(.36, Math.min(1, availPer/(baseH*0.718)));
       f.style.setProperty('--card-h', (baseH*scale).toFixed(1)+'px');
@@ -15291,9 +15319,19 @@ el('enemyShieldZone').addEventListener('click', attackDirect);
 el('enemyBaseZone').addEventListener('click', ()=>{ if(G.mode==='attack-target') attackDirect(); });
 el('enemyField').addEventListener('click', e=>{ if(G.mode==='attack-target' && e.target.classList.contains('battlefield')) attackDirect(); });
 document.addEventListener('keydown', e=>{
+  if (e.target && /^(INPUT|TEXTAREA)$/.test(e.target.tagName||'')) return;   // typing in the deck builder's fields
   if(G.over) return;
   if(e.key==='Escape'){ closeInspect(); cancelAction(); }   // the same rules as the Cancel button
   if(e.key==='Enter'&&G.turn==='player'&&!midSelection()){ clearSel(); endTurn(); }
+  if((e.key==='l'||e.key==='L') && !e.ctrlKey && !e.metaKey && !e.altKey) el('logHeader').click();
+});
+// Desktop: right-click any card on the table or in the hand to read it (the same inspector a tap opens).
+document.addEventListener('contextmenu', e=>{
+  const node=e.target && e.target.closest ? e.target.closest('.card[data-uid]') : null; if(!node) return;
+  const uid=+node.dataset.uid;
+  const c=[...G.player.field, ...G.enemy.field, ...G.player.hand, G.player.base, G.enemy.base].filter(Boolean).find(x=>x.uid===uid);
+  if(!c) return;
+  e.preventDefault(); inspect(c);
 });
 </script>
 <script>
