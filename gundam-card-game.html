@@ -647,7 +647,16 @@
   .ba-label { position: fixed; z-index: 94; transform: translate(-50%,-50%); pointer-events: none; background: rgba(8,10,20,.9); border: 1px solid currentColor; color: #f87171; font-size: 11px; font-weight: 900; letter-spacing: .06em; padding: 3px 8px; border-radius: 999px; white-space: nowrap; box-shadow: 0 2px 10px rgba(0,0,0,.6); display: none; }
   .ba-label.show { display: block; }
   .ba-label.blk { color: #34d399; }
-  @media (prefers-reduced-motion: reduce){ #battleArrow .ba-line, .card.bt-def, .shield-zone.zone-hit { animation: none; } }
+  /* A card whose effect (or play) is being aimed: the source on the table, and the picture of it in the prompt bar. */
+  .card.fx-src { outline: 3px solid #c084fc; outline-offset: -3px; box-shadow: 0 0 22px 4px rgba(192,132,252,.85); }
+  .card.fx-ping { animation: fxPing .7s ease-out; }
+  @keyframes fxPing { 0% { box-shadow: 0 0 0 0 rgba(192,132,252,.95); } 100% { box-shadow: 0 0 0 16px rgba(192,132,252,0); } }
+  .prompt.with-card { display: flex; align-items: center; gap: 10px; text-align: left; padding: 5px 16px 5px 6px; border-color: #c084fc; box-shadow: 0 4px 14px rgba(0,0,0,.5), 0 0 14px rgba(192,132,252,.35); }
+  .prompt .pr-card { flex: 0 0 auto; width: 38px; height: 53px; border-radius: 4px; background: #111 center/cover no-repeat; border: 1px solid rgba(192,132,252,.8); box-shadow: 0 0 10px rgba(192,132,252,.5); cursor: pointer; font-size: 8px; line-height: 1.1; overflow: hidden; display: flex; align-items: center; justify-content: center; text-align: center; color: #ddd; }
+  .prompt .pr-txt { min-width: 0; }
+  .prompt .pr-txt b { color: #e9d5ff; }
+  .prompt .pr-txt small { display: block; opacity: .7; font-size: 10px; line-height: 1.2; max-height: 2.4em; overflow: hidden; }
+  @media (prefers-reduced-motion: reduce){ #battleArrow .ba-line, .card.bt-def, .shield-zone.zone-hit, .card.fx-ping { animation: none; } }
 
   /* ---- online multiplayer: lobby, waiting banner, leaderboard ---- */
   #mpWait { position: fixed; top: 8px; left: 50%; transform: translateX(-50%); z-index: 1300; background: rgba(20,18,46,.96); border: 1px solid #8b6ee0; color: #e8e4ff; border-radius: 10px; padding: 8px 14px; font-size: 13px; font-weight: 700; box-shadow: 0 6px 24px rgba(0,0,0,.6); display: none; max-width: calc(100vw - 24px); text-align: center; }
@@ -5194,6 +5203,7 @@ function applyToTarget(card, side, act, target, label){
   if (!target){ if (act.then && (act.kind==='heal' || act.kind==='buff')) runTrigger(card, side, act.then, label); return; }
   if (act.perAp || act.perTrash){ act = g4Concretize(card, side, act, label); if (!act) return; }   // an amount read now (Providence, Z Gundam (Biosensor))
   if (act.onPick) act.onPick(target);   // a later "Then, if it …" part reads the Unit chosen here
+  try{ if (target!==card && target.uid!=null) beamFx(effectSpot(card), { uid:target.uid }, '#c084fc'); }catch(e){}   // the effect, drawn from its card to the Unit it chose
   const cls=side===G.player?'me':'ai', foe=side===G.player?G.enemy:G.player, name=card.name;
   const wasThere = foe.field.includes(target), wasRested = !!target.rested;
   if (act.kind==='damage' && act.perFriendlyToken){ const n=cmdDamageAmount(act, side); log(`${label}: <b>${name}</b> deals ${n} to <b>${target.name}</b> (friendly Unit tokens in play).`,cls); if (n>0) damage(target,n,foe); }
@@ -9172,7 +9182,23 @@ function log(msg, cls='sys'){
   el('log').prepend(d); while (el('log').children.length>40) el('log').lastChild.remove();
 }
 let promptTimer=null;
-function setPrompt(t){ const p=el('prompt'); if(!t){p.style.display='none';return;} p.style.display='block'; p.textContent=t; }
+// The prompt bar. While a card's effect (or play) is being aimed — an 【Activate】 waiting for its target, a Command or a
+// triggered effect choosing a Unit, a Pilot looking for its Unit — the picture of that card sits beside the text (tap it to
+// read the card), so the choice is never only words.
+let _promptTxt='';
+function setPrompt(t){ const p=el('prompt'); _promptTxt=t||''; if(!t){p.style.display='none';return;}
+  let src=null; try{ src=effectSource(); }catch(e){}
+  if (!src){ p.style.display='block'; try{ p.classList.remove('with-card'); }catch(e){} p.textContent=t; return; }
+  try{
+    const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    p.style.display='flex'; p.classList.add('with-card');
+    p.innerHTML=`<span class="pr-card" data-uid="${esc(src.uid)}" title="${esc(src.name)} — tap to read"${src.img?` style="background-image:url('${esc(src.img)}')"`:''}>${src.img?'':esc(src.name)}</span>`
+      +`<span class="pr-txt">${esc(t)}</span>`;
+    const art=p.querySelector('.pr-card'); if (art) art.onclick=()=>inspect(src);
+  }catch(e){ p.style.display='block'; p.textContent=t; }
+}
+// Re-draw the prompt bar after a render, so the card beside it follows the board state (gone once the effect resolved).
+function promptSync(){ try{ const p=el('prompt'); if (p.style.display==='none' || !_promptTxt) return; const src=effectSource(); const had=p.classList.contains('with-card'); if (!!src!==had) setPrompt(_promptTxt); }catch(e){} }
 function flashPrompt(t){ setPrompt(t); clearTimeout(promptTimer); promptTimer=setTimeout(()=>{ if(!G.over) defaultPrompt(); },1700); }
 // Briefly reveal a played Command / Burst card center-screen so the player doesn't miss it.
 // FLASH_MS is shared by the reveal duration, the player's input lock, and the AI's pacing so a
@@ -9222,15 +9248,23 @@ function histAdd(card, cls){
 }
 // ---- targeting arrow: a red bezier arrow from your attacker to the cursor while picking a target ----
 let _arrowSvg=null;
+// The arrow runs from the attacker while an attack target is picked (red), and from the card whose effect is being aimed —
+// the Unit/Base using its 【Activate】, the Unit whose 【Deploy】/【Attack】 chooses, the Command or Pilot shown in the prompt
+// bar — while its target is picked (purple).
 function targetArrowSource(){
-  if (G.turn!=='player' || G.over) return null;
-  if (G.mode!=='attack-target' || G.selected==null) return null;
-  try{ return document.querySelector(`.card[data-uid="${G.selected}"]`); }catch(e){ return null; }
+  if (G.over) return null;
+  if (G.mode==='attack-target'){
+    if (G.turn!=='player' || G.selected==null) return null;
+    try{ return document.querySelector(`.card[data-uid="${G.selected}"]`); }catch(e){ return null; }
+  }
+  try{ const src=effectSource(); return src ? (battleNode(effectSpot(src)) || null) : null; }catch(e){ return null; }
 }
+function targetArrowColor(){ return G.mode==='attack-target' ? '#ef4444' : '#c084fc'; }
 function drawTargetArrow(x,y){
   try{
     const srcNode=targetArrowSource();
     if(!srcNode){ hideTargetArrow(); return; }
+    const col=targetArrowColor();
     if(!_arrowSvg){
       _arrowSvg=document.createElementNS('http://www.w3.org/2000/svg','svg');
       _arrowSvg.id='targetArrow';
@@ -9241,9 +9275,10 @@ function drawTargetArrow(x,y){
     _arrowSvg.style.display='block';
     const r=srcNode.getBoundingClientRect(), x0=r.left+r.width/2, y0=r.top+r.height/2;
     const mx=(x0+x)/2, my=Math.min(y0,y)-70;
-    _arrowSvg.querySelector('#taPath').setAttribute('d',`M${x0},${y0} Q${mx},${my} ${x},${y}`);
+    const path=_arrowSvg.querySelector('#taPath'), headN=_arrowSvg.querySelector('#taHead');
+    path.setAttribute('d',`M${x0},${y0} Q${mx},${my} ${x},${y}`); path.setAttribute('stroke', col);
     const ang=Math.atan2(y-my, x-mx)*180/Math.PI;
-    _arrowSvg.querySelector('#taHead').setAttribute('transform',`translate(${x},${y}) rotate(${ang})`);
+    headN.setAttribute('transform',`translate(${x},${y}) rotate(${ang})`); headN.setAttribute('fill', col);
   }catch(e){}
 }
 function hideTargetArrow(){ if(_arrowSvg) _arrowSvg.style.display='none'; }
@@ -9269,11 +9304,39 @@ let _bvCache=null;   // the battle view of the render in progress (cardFace read
 // The on-table node of a spot: a Unit or Base card, or a Shield zone.
 function battleNode(t){
   if (!t) return null;
+  if (t.el) return t.el;                                   // a spot resolved to an element already (a picture in the prompt bar / the card flash)
   if (t.shields) return document.getElementById(t.shields+'ShieldZone');
   if (t.uid==null) return null;
   return document.querySelector(`#enemyField .card[data-uid="${t.uid}"], #playerField .card[data-uid="${t.uid}"], #enemyBase .card[data-uid="${t.uid}"], #playerBase .card[data-uid="${t.uid}"]`);
 }
 function nodeCenter(n){ const r=n.getBoundingClientRect(); if (!r || (!r.width && !r.height)) return null; return { x:r.left+r.width/2, y:r.top+r.height/2, r:Math.min(r.width, r.height)/2 }; }
+// ---- the card whose effect (or play) is being aimed at a target right now ----
+// The Unit/Base using its 【Activate】 (cost pick or target pick), the Unit whose triggered effect chooses, the Command played
+// from hand (in the main phase or an Action Step), the Pilot looking for its Unit, the Unit to deploy into a full battle area.
+function effectSource(){
+  try{
+    if (G.over || !G.player) return null;
+    const m=G.mode, p=G.pending;
+    if (!m || m==='idle' || m==='attack-target' || m==='discard' || !p) return null;
+    if (m==='activate-cost' || m==='activate-target') return p && p.name ? p : null;
+    if (m==='support-target') return p.src && p.src.name ? p.src : null;
+    if (m==='action-step-target') return p.cmd && p.cmd.name ? p.cmd : null;
+    if (m==='pilot-target') return p.name ? p : null;
+    if (p.card && p.card.name) return p.card;
+    return null;
+  }catch(e){ return null; }
+}
+// Where a card's effect is drawn from: the card on the table when it is there; otherwise its picture in the prompt bar
+// (a Command / Pilot being aimed) or in the card flash (a Command just played, by the AI or you).
+function effectSpot(card){
+  if (!card) return null;
+  const sp={ uid:card.uid };
+  try{ if (card.uid!=null && battleNode(sp)) return sp; }catch(e){}
+  try{ const pc=document.querySelector('#prompt .pr-card'); if (pc && pc.getAttribute('data-uid')===String(card.uid) && pc.getBoundingClientRect().width) return { uid:card.uid, el:pc }; }catch(e){}
+  try{ const cf=document.querySelector('#cardFlash.show .cf-img'); if (cf && _flashCardUid===card.uid && cf.getBoundingClientRect().width) return { uid:card.uid, el:cf }; }catch(e){}
+  return sp;
+}
+let _fxSrc=null;   // the effect source of the render in progress (cardFace outlines it)
 let _baSvg=null, _baLabel=null;
 function battleArrowLayer(){
   if (_baSvg) return _baSvg;
@@ -9314,6 +9377,9 @@ function drawBattleArrow(){
 // back), or an effect "ping" (purple) from the card dealing it to the Unit it chose. Drawn by applyVisualFx after a render.
 // Queue one. The spots are measured NOW — a Unit destroyed by the hit is gone from the table by the time the render draws it.
 function beamFx(fromSpot, toSpot, color){
+  if (!fromSpot || !toSpot) return;
+  // One beam per pair per render: an effect's beam is queued when it resolves, and again by the damage it deals.
+  try{ if (fromSpot.uid!=null && toSpot.uid!=null && fxQueue.some(q=>q.kind==='beam' && q.from.uid===fromSpot.uid && q.to.uid===toSpot.uid)) return; }catch(x){}
   const e={ kind:'beam', from:fromSpot, to:toSpot, color };
   try{ const f=battleNode(fromSpot), t=battleNode(toSpot); if (f && t && f!==t){ e.a=nodeCenter(f); e.b=nodeCenter(t); } }catch(x){}
   fxQueue.push(e);
@@ -9329,6 +9395,8 @@ function fxBeam(fromSpot, toSpot, color, a, b){
     svg.querySelector('#baBeams').appendChild(p);
     requestAnimationFrame(()=>requestAnimationFrame(()=>{ p.style.strokeDashoffset='0'; p.style.opacity='0'; }));
     setTimeout(()=>{ try{ p.remove(); }catch(e){} }, 1000);
+    // The card the beam lands on pulses once (a rest, a buff or a heal leaves no other mark on it).
+    try{ const t=battleNode(toSpot); if (t && t.classList && !t.id){ t.classList.remove('fx-ping'); void t.offsetWidth; t.classList.add('fx-ping'); setTimeout(()=>{ try{ t.classList.remove('fx-ping'); }catch(e){} }, 750); } }catch(e){}
   }catch(e){}
 }
 try{ window.addEventListener('resize', ()=>drawBattleArrow()); window.addEventListener('scroll', ()=>drawBattleArrow(), true); }catch(e){}
@@ -9378,8 +9446,12 @@ function showTurnBanner(turn){
   }catch(e){}
 }
 let flashCardTimer=null;
+let _flashCardUid=null, _flashCardAt=0;
 function flashCard(card, tag){
   if (!card) return;
+  // The same card flashed twice in one moment (an Action Step tile flashes it, then the ability's resolution does) shows once.
+  if (_flashCardUid===card.uid && Date.now()-_flashCardAt<400) return;
+  _flashCardUid=card.uid; _flashCardAt=Date.now();
   histAdd(card, /ENEMY/i.test(tag||'')?'ai':'me');
   let host=document.getElementById('cardFlash');
   if (!host){ host=document.createElement('div'); host.id='cardFlash'; document.body.appendChild(host); }
@@ -10734,6 +10806,7 @@ function playerDiscard(side, n, label, after, onCancel, cardType){
 }
 function applyCommand(card, side, target, actOverride){
   G.effSrc = card;   // the card whose effect is resolving — effect damage reads it (damage-prevention statics)
+  try{ if (target && target!==card && target.uid!=null) beamFx(effectSpot(card), { uid:target.uid }, '#c084fc'); }catch(e){}   // the Command's effect, drawn to the Unit it chose
   const a=actOverride||card.action, foe = side===G.player?G.enemy:G.player;
   // A modal Command resolved automatically (AI / Burst): take the most useful legal mode.
   if (a.kind==='modal'){
@@ -11082,6 +11155,9 @@ function resolveActivate(u, target, costUnit){      // player path
 function applyActivateEffect(u, target, side, costUnit){
   G.effSrc = u;   // the card whose effect is resolving — effect damage reads it (damage-prevention statics)
   bindActSource(u);
+  // Show the card using its ability (as a Command played is shown), and the effect going from it to the Unit it chose.
+  try{ flashCard(u, (side===G.player?'YOUR':'ENEMY')+(G.curAttack ? ' ACTION' : ' ABILITY')); }catch(e){}
+  try{ if (target && target!==u && target.uid!=null) beamFx(effectSpot(u), { uid:target.uid }, '#c084fc'); }catch(e){}
   let a=u.activate.action; const cost=u.activate.cost, foe = side===G.player?G.enemy:G.player, cls = side===G.player?'me':'ai';
   // Pay the ability's cost.
   if (cost.resource){ payCost(side, cost.resource); payHook(side, u, cost.resource); log(`<b>${u.name}</b> pays ${cost.resource} resource${cost.resource===1?'':'s'}.`, cls); }
@@ -13010,6 +13086,7 @@ function supportHelper(atk, atkSide, def){
 }
 function useSupport(h, atk, atkSide){
   const amt = effSupport(h);
+  try{ beamFx({ uid:h.uid }, { uid:atk.uid }, '#c084fc'); }catch(e){}   // the <Support>, drawn from the Unit resting to the Unit it boosts
   h.rested = true; atk.tempAp = (atk.tempAp||0) + amt; atk.ap = effAp(atk);
   log(`<b>${h.name}</b> &lt;Support&gt; rests to give <b>${atk.name}</b> +${amt} AP.`, atkSide===G.player?'me':'ai');
   // Buster Gundam: "When you use this Unit's <Support> to increase a (ZAFT) Unit's AP, set this Unit as active."
@@ -15981,6 +16058,8 @@ function cardFace(c, ctx){
     if (G.mode==='support-target' && G.pending && c!==G.pending.src && G.player.field.includes(c)) cls.push('selectable');
     if (G.mode==='action-step-target' && G.pending?.cands.includes(c.uid)) cls.push('selectable');
   }
+  // The card whose effect is being aimed right now (its 【Activate】 or triggered effect waiting for a target).
+  if ((ctx==='field-player' || ctx==='field-enemy') && _fxSrc && c.uid===_fxSrc.uid) cls.push('fx-src');
   // The battle in progress: the attacker, what it is hitting (a Unit or the Base), the Blocker that stepped in, the first target it left.
   if ((ctx==='field-player' || ctx==='field-enemy') && _bvCache){ const bv=_bvCache;
     if (c.uid===bv.atkUid) cls.push('bt-atk');
@@ -16214,7 +16293,7 @@ function render(){
     if (!s) continue;
     for (const u of s.field){ if (u.hp>0){ syncWhileHp(u, s); u.ap = effAp(u); u.maxHp = effMaxHp(u); } }
   }
-  _bvCache=battleView();
+  _bvCache=battleView(); _fxSrc=effectSource();
   el('poolCount').textContent = `${POOL_STATS.cards} CARDS · ${POOL_STATS.printings}`;
   el('turnInfo').innerHTML = `Turn <b>${G.turnNumber}</b> · ${G.turn==='player' ? (NET.on && NET.role==='spec' ? '<b>'+who(G.player)+'</b> acting' : '<b>Your</b> move') : '<b>'+who(G.enemy)+'</b> acting'}`;
   el('enemyShieldZone').innerHTML = shieldZoneHTML(G.enemy) + '<div class="z-label">SHIELDS</div>';
@@ -16302,6 +16381,8 @@ function render(){
   bind();
   applyVisualFx();
   drawBattleArrow();   // the attack in progress, drawn over the fresh table
+  promptSync();        // the card beside the prompt follows the board (there while its effect is aimed, gone once it resolved)
+  try{ if (!targetArrowSource()) hideTargetArrow(); }catch(e){}
   if (NET.on && NET.active) mpQueueView();   // online: everyone watching gets this state
 }
 function fieldHTML(side, ctx){
