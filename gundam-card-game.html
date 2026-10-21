@@ -2684,7 +2684,7 @@ function pingFriendly(side, self, preferAttacker, exclude){
   return cands[0];
 }
 // Modal: reveal some deck cards face-up and let the player pick one (or none).
-function showLookAtTop(cards, title, canPick, allowSkip, onChoose){
+function showLookAtTop(cards, title, canPick, allowSkip, onChoose, skipLabel){
   const modal=document.createElement('div'); modal.className='modal-overlay';
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.86);z-index:1000;display:flex;align-items:center;justify-content:center;padding:14px;';
   const box=document.createElement('div');
@@ -2700,7 +2700,7 @@ function showLookAtTop(cards, title, canPick, allowSkip, onChoose){
     row.appendChild(card);
   });
   box.appendChild(row);
-  if(allowSkip){ const sk=document.createElement('button'); sk.textContent='Take none'; sk.style.cssText='margin-top:16px;padding:11px 24px;background:#333;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600'; sk.onclick=()=>{ modal.remove(); onChoose(null); pumpModalQueue(); }; box.appendChild(sk); }
+  if(allowSkip){ const sk=document.createElement('button'); sk.textContent=skipLabel||'Take none'; sk.style.cssText='margin-top:16px;padding:11px 24px;background:#333;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600'; sk.onclick=()=>{ modal.remove(); onChoose(null); pumpModalQueue(); }; box.appendChild(sk); }
   modal.appendChild(box); document.body.appendChild(modal);
 }
 // Look at the top card and choose to leave it on top or send it to the bottom (Shuji Itō). Shows the
@@ -2771,6 +2771,8 @@ function pickExileCards(u, cands, n){
   };
   box.innerHTML=`<h3 style="margin:0 0 14px;color:#d8b4ff;font-size:17px">${u.name}: choose ${n} card${n>1?'s':''} from your trash to exile</h3>`;
   box.appendChild(row); box.appendChild(confirm); upd();
+  // Nothing is exiled until Exile is pressed: the player may still back out of the ability.
+  box.appendChild(costCancelBtn(()=>{ modal.remove(); clearSel(); render(); pumpModalQueue(); }));
   modal.appendChild(box); document.body.appendChild(modal);
 }
 // Player "look at top N, add a matching card to hand, return the rest".
@@ -6345,7 +6347,8 @@ function askYesNo(msg, yesLabel, noLabel, onYes, onNo){
 }
 // Choose exactly `n` of `cands` (card tiles; Confirm when n are picked). Identical cards make no real choice, so when every
 // candidate has the same card number, or there are no more than n, they're taken without asking.
-function pickCardsOverlay(cands, n, title, onDone){
+// `onCancel` (a cost the player may still back out of — an 【Activate】 ability's) adds a Cancel button.
+function pickCardsOverlay(cands, n, title, onDone, onCancel){
   if (cands.length<=n || cands.every(c=>c.def===cands[0].def)){ onDone(cands.slice(0, n)); return; }
   whenModalFree(()=>{
     const chosen=[];
@@ -6373,8 +6376,15 @@ function pickCardsOverlay(cands, n, title, onDone){
     // A big pick (Banshee's 12 cards) starts with the first N selected — tap a selected card off, then another on, to swap.
     if (n>3) Array.from(row.children).slice(0, n).forEach(t=>t.onclick());
     box.appendChild(row); box.appendChild(confirm); upd();
+    if (onCancel) box.appendChild(costCancelBtn(()=>{ modal.remove(); onCancel(); render(); pumpModalQueue(); }));
     modal.appendChild(box); document.body.appendChild(modal);
   });
+}
+// The Cancel button of an 【Activate】 cost picker: backing out before anything is paid.
+function costCancelBtn(fn){
+  const b=document.createElement('button'); b.dataset.role='cancel'; b.textContent='Cancel';
+  b.style.cssText='margin:16px 0 0 10px;padding:11px 24px;background:#333;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:600';
+  b.onclick=fn; return b;
 }
 // Player: "You may exile N (T) cards from your trash. If you do, …" (and 【…・Development N】): ask, pick the cards, pay, resolve.
 function playerExileChoice(card, side, act, label, after){
@@ -10141,7 +10151,8 @@ function pickExileParts(u, parts){
     const rest=need.slice(k+1).map(t=>({ count:1, trait:t }));
     const cands=tr.filter(c=>!chosen.includes(c) && hasTraitT(c, need[k]) && exilePartsPick(tr.filter(x=>x!==c && !chosen.includes(x)), rest));
     if (cands.length===1){ chosen.push(cands[0]); step(k+1); return; }
-    showLookAtTop(cands, `${u.name}: choose 1 (${need[k]}) card from your trash to exile`, ()=>true, false, c=>{ chosen.push(c); step(k+1); });
+    // Nothing is exiled until every part is chosen: Cancel backs out of the ability.
+    showLookAtTop(cands, `${u.name}: choose 1 (${need[k]}) card from your trash to exile`, ()=>true, true, c=>{ if (!c){ clearSel(); render(); return; } chosen.push(c); step(k+1); }, 'Cancel');
   };
   step(0);
 }
@@ -10261,9 +10272,31 @@ function destroyCostCands(u, side, c){
   }
   return out;
 }
+// The Units the board's 'activate-cost' picker still offers: those still in play that can pay ("send into the duel" — a Unit
+// token; "rest" — an active Unit the cost names), minus those already chosen. Prunes G.activateCands to them; when they can no
+// longer cover what is still owed (or the ability's own card left), the activation is dropped — nothing has been paid yet.
+// Returns false when it was dropped.
+function activateCostPickLive(){
+  const u=G.pending;
+  if (G.mode!=='activate-cost' || !u || !u.activate) return true;
+  const here = u.hp>0 && (G.player.field.includes(u) || G.player.base===u);
+  const picked=G.activateCostPicked||[];
+  const ok = !here ? [] : u.activate.action && u.activate.action.kind==='tokenDuel'
+    ? G.player.field.filter(x=>x.token && x.hp>0)
+    : restCostCands(u, G.player).filter(x=>x.hp>0);
+  const live=ok.filter(x=>!picked.includes(x)).map(x=>x.uid);
+  G.activateCands = G.activateCands ? G.activateCands.filter(id=>live.includes(id)) : live;
+  const left=(G.activateCostNeed||1)-picked.length;
+  if (here && G.activateCands.length>=left && picked.every(x=>ok.includes(x))) return true;
+  clearSel(); flashPrompt(here ? `${u.name}: its cost can no longer be paid.` : `${u.name} is no longer in play.`); render();
+  return false;
+}
 function startActivate(u, discardPicked){
   if (!discardPicked) G.activateDiscardPicks=null;   // a fresh activation: no cost cards chosen yet
   if (G.turn==='player' && G.phase==='end') return;
+  // Another choice is still open (a "battle area full — place a Unit in the trash" prompt, a look-at-the-top pick): it is
+  // answered first. Starting a cost pick under it would list Units that choice is about to move.
+  if (modalBusy()){ flashPrompt('Finish the open choice first.'); return; }
   if (!activateReady(u)){ flashPrompt(`${u.name}'s ability isn't available.`); return; }
   const cost=u.activate.cost;
   // "Discard 1 (Zeon)/(Neo Zeon) Unit card：" (Char's Gelgoog): the player chooses which hand card pays the cost.
@@ -10271,7 +10304,7 @@ function startActivate(u, discardPicked){
     const need=cost.count||1, cands=G.player.hand.filter(x=>matchTrashTrait(x, cost.trait));
     if (cands.length>need && !cands.every(c=>c.def===cands[0].def)){
       closeInspect();
-      pickCardsOverlay(cands, need, `${u.name}: choose ${need} card${need>1?'s':''} from your hand to discard as the cost`, picks=>{ G.activateDiscardPicks=picks; startActivate(u, true); });
+      pickCardsOverlay(cands, need, `${u.name}: choose ${need} card${need>1?'s':''} from your hand to discard as the cost`, picks=>{ G.activateDiscardPicks=picks; startActivate(u, true); }, ()=>{ clearSel(); });
       return;
     }
   }
@@ -10322,6 +10355,7 @@ function startActivate(u, discardPicked){
       const go=(x)=>{ el('blockModal').classList.remove('show'); G.activateBaseSub=x; activatePickTarget(u, null); };
       const bb=document.createElement('button'); bb.textContent=`Rest ${G.player.base.name}`; bb.onclick=()=>go(null); wrap.appendChild(bb);
       for (const x of subs){ const b2=document.createElement('button'); b2.textContent=`Rest ${x.name} instead`; b2.onclick=()=>go(x); wrap.appendChild(b2); }
+      const cb=document.createElement('button'); cb.className='ghost'; cb.textContent='Cancel'; cb.onclick=()=>{ el('blockModal').classList.remove('show'); clearSel(); render(); pumpModalQueue(); }; wrap.appendChild(cb);
       el('blockModal').classList.add('show'); return;
     }
   }
@@ -10725,6 +10759,9 @@ function fieldClick(uidv){
 
   if (G.mode==='activate-cost'){
     const u=G.pending;
+    // The candidates were listed when the picker opened; one may have left since (a token placed in the trash to make room).
+    // Keep only those that can still pay, and drop the activation if the cost no longer can be paid (nothing is paid yet).
+    if (!activateCostPickLive()) return;
     if (G.activateCands && !G.activateCands.includes(uidv)){ flashPrompt(`Tap a highlighted Unit of yours to ${G.activatePickVerb||'rest'}.`); return; }
     const costUnit=G.player.field.find(c=>c.uid===uidv); if(!costUnit) return;
     const need=G.activateCostNeed||1;
@@ -13500,34 +13537,36 @@ function actionStepCands(u, a){
 }
 // Player, action step: use `u`'s 【Activate･Action】 — with two or more Units it may choose, the player picks (the suggested one
 // first); with one it simply applies. `done` runs once it has resolved.
-function actionStepActivate(u, attacker, done, costPicked){
+function actionStepActivate(u, attacker, done, costPicked, onCancel){
   bindActSource(u);
   // The cost is paid first, with the player's own choices (as startActivate does in the main phase): which trash cards to exile
   // (Gundam Schwarzette, Banshee), which hand cards to discard, which Unit to rest (Gundam Aerial).
   const cost=u.activate.cost||{};
   if (!costPicked){
     G.activatePrepaid=false; G.activateDiscardPicks=null;
-    const again=(costUnit)=>actionStepActivate(u, attacker, done, { costUnit });
+    const again=(costUnit)=>actionStepActivate(u, attacker, done, { costUnit }, onCancel);
+    // Backing out of a cost picker: nothing has been paid, the 【Once per Turn】 use isn't spent, and the action step goes on.
+    const back=onCancel ? ()=>{ G.activatePrepaid=false; G.activateDiscardPicks=null; log(`<b>${u.name}</b>: ability cancelled.`, 'me'); onCancel(); } : null;
     if (cost.type==='exile' && cost.count>0 && !cost.parts){
       const ec=G.player.trash.filter(c=>matchTrashTrait(c, cost.trait));
       if (ec.length>cost.count && !ec.every(c=>c.def===ec[0].def)){
         pickCardsOverlay(ec, cost.count, `${u.name}: choose ${cost.count} card${cost.count>1?'s':''} from your trash to exile`, picks=>{
           for (const c of picks){ const i=G.player.trash.indexOf(c); if (i>=0) G.player.exile.push(G.player.trash.splice(i,1)[0]); }
           refreshTrashStats(G.player); log(`<b>${u.name}</b> exiles ${picks.map(c=>'<b>'+c.name+'</b>').join(', ')} from trash.`, 'me');
-          G.activatePrepaid=true; again(null); });
+          G.activatePrepaid=true; again(null); }, back);
         return;
       }
     }
     if (cost.type==='discard'){
       const need=cost.count||1, dc=G.player.hand.filter(x=>matchTrashTrait(x, cost.trait));
       if (dc.length>need && !dc.every(c=>c.def===dc[0].def)){
-        pickCardsOverlay(dc, need, `${u.name}: choose ${need} card${need>1?'s':''} from your hand to discard as the cost`, picks=>{ G.activateDiscardPicks=picks; again(null); });
+        pickCardsOverlay(dc, need, `${u.name}: choose ${need} card${need>1?'s':''} from your hand to discard as the cost`, picks=>{ G.activateDiscardPicks=picks; again(null); }, back);
         return;
       }
     }
     if (cost.type==='restUnit' && (cost.count||1)===1 && !restSubstituteOk(u, G.player)){
       const rc=restCostCands(u, G.player);
-      if (rc.length>1){ promptTargetChoice(rc, `<b>${u.name}</b>: choose 1 of your Units to rest as the cost.`, t=>again(rc.includes(t)?t:rc[0]), null); return; }
+      if (rc.length>1){ promptTargetChoice(rc, `<b>${u.name}</b>: choose 1 of your Units to rest as the cost.`, t=>{ if (!t && back){ back(); return; } again(rc.includes(t)?t:rc[0]); }, back ? 'Cancel' : null); return; }
     }
   }
   const costUnit=costPicked ? costPicked.costUnit : null;
@@ -14046,7 +14085,7 @@ function collectPlayerActions(attacker){
     if (slot===1) swapActivate(u);
     if (ok){
       opts.push({ label:`⚡ ${u.name}`, sub:String(act.text||'').replace(/</g,'&lt;').replace(/>/g,'&gt;'), run:(afterCb)=>{ useActivateSlot(u, act); flashCard(u,'YOUR ACTION');   // "<Breach 3>" isn't a tag
-        actionStepActivate(u, attacker, ()=>{ if (u.activate && u.activate.oncePerTurn) u.activatedThisTurn=true; if (afterCb) afterCb(); }); } });
+        actionStepActivate(u, attacker, ()=>{ if (u.activate && u.activate.oncePerTurn) u.activatedThisTurn=true; if (afterCb) afterCb(); }, null, ()=>{ render(); if (afterCb) afterCb(); }); } });
     }
   }
   for (const c of G.player.hand){

@@ -86,6 +86,7 @@ src += '\nglobal.__G = { ' + [
   'healUnit','shieldAreaDamage','hookResolve',
   'readyResources','unitToDeckBottom','redrawHand','setupHandMulligan','aiMulligan','setupDealHands','setupShieldsStep','escAngle','pilotFromMode',
   'cmdPlayable','actionCmdUsable',
+  'promptTargetChoice','actionStepActivate','askOptional','pickCardsOverlay','activateCostPickLive',
 ].map(n=>n+':typeof '+n+'!=="undefined"?'+n+':undefined').join(',') + ' };\n';
 
 try { eval.call(null, src); } catch(e){ console.error('LOAD FAILED:', e.message, '\n', e.stack); process.exit(1); }
