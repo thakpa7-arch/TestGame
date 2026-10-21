@@ -86,7 +86,7 @@ src += '\nglobal.__G = { ' + [
   'healUnit','shieldAreaDamage','hookResolve',
   'readyResources','unitToDeckBottom','redrawHand','setupHandMulligan','aiMulligan','setupDealHands','setupShieldsStep','escAngle','pilotFromMode',
   'cmdPlayable','actionCmdUsable','keepVal','blockerAllowed','aiKillsInBattle','effectiveCost','lvNeed',
-  'promptTargetChoice','actionStepActivate','askOptional','pickCardsOverlay','activateCostPickLive',
+  'promptTargetChoice','actionStepActivate','askOptional','pickCardsOverlay','activateCostPickLive','mpPack','mpUnpack','mpLoadState','mpCardMap','NET','mpFlipText',
 ].map(n=>n+':typeof '+n+'!=="undefined"?'+n+':undefined').join(',') + ', setAiLevel:(l)=>{ AI_LVL=l; }, getAiLevel:()=>AI_LVL };\n';
 
 try { eval.call(null, src); } catch(e){ console.error('LOAD FAILED:', e.message, '\n', e.stack); process.exit(1); }

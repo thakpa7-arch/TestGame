@@ -548,6 +548,35 @@
   #blockModal .ask-eff { display: block; opacity: .8; font-size: 11px; margin-top: 4px; }
   #blockModal .ins-btns { display: flex; gap: 8px; flex-wrap: wrap; }
 
+  /* ---- online multiplayer: lobby, waiting banner, leaderboard ---- */
+  #mpWait { position: fixed; top: 8px; left: 50%; transform: translateX(-50%); z-index: 1300; background: rgba(20,18,46,.96); border: 1px solid #8b6ee0; color: #e8e4ff; border-radius: 10px; padding: 8px 14px; font-size: 13px; font-weight: 700; box-shadow: 0 6px 24px rgba(0,0,0,.6); display: none; max-width: calc(100vw - 24px); text-align: center; }
+  #mpWait.show { display: block; }
+  #mpWait.warn { border-color: #ef4444; background: rgba(60,14,18,.96); }
+  .mp-warn { background: rgba(120,30,30,.5); border: 1px solid #ef4444; color: #fecaca; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; margin: 0 0 10px; }
+  .mp-row { display: flex; gap: 8px; align-items: center; justify-content: center; margin: 8px 0; flex-wrap: wrap; }
+  .mp-row label { color: #9aa; font-size: 12px; }
+  .mp-row input, #setupModal input.mp-in { background: #1a1930; border: 1px solid #3d3d55; border-radius: 7px; color: #fff; padding: 8px 10px; font-size: 14px; font-weight: 700; width: 180px; }
+  .mp-cols { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 8px; }
+  .mp-col { flex: 1 1 240px; max-width: 320px; background: #1a1930; border: 1px solid #3d3d55; border-radius: 12px; padding: 12px; }
+  .mp-col h3 { margin: 0 0 4px; color: #d8b4ff; font-size: 15px; }
+  .mp-col p { color: #9aa; font-size: 12px; margin: 0 0 10px; }
+  .mp-codebox { background: #1a1930; border: 1px solid #6a4fb0; border-radius: 12px; padding: 10px; margin: 0 auto 10px; max-width: 320px; }
+  .mp-code { font-size: 34px; letter-spacing: 8px; font-weight: 900; color: #fde68a; margin: 2px 0; user-select: all; }
+  .mp-players { display: flex; gap: 10px; align-items: stretch; justify-content: center; flex-wrap: wrap; }
+  .mp-player { flex: 1 1 200px; max-width: 260px; background: #1a1930; border: 1px solid #3d3d55; border-radius: 12px; padding: 10px; font-size: 14px; }
+  .mp-tag { font-size: 10px; letter-spacing: 2px; color: #9aa; margin-bottom: 2px; }
+  .mp-you { font-size: 10px; background: #2e6b3a; color: #fff; border-radius: 6px; padding: 1px 6px; margin-left: 4px; vertical-align: middle; }
+  .mp-deck { font-size: 12px; margin-top: 4px; }
+  .mp-vs { align-self: center; font-weight: 900; color: #fca5a5; letter-spacing: 2px; }
+  .mp-board { background: #1a1930; border: 1px solid #3d3d55; border-radius: 12px; padding: 10px; margin-top: 12px; text-align: left; }
+  .mp-board-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+  .mp-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .mp-table th { color: #9aa; font-weight: 600; font-size: 11px; letter-spacing: 1px; padding: 4px 6px; border-bottom: 1px solid #3d3d55; }
+  .mp-table td { padding: 5px 6px; text-align: center; border-bottom: 1px solid #26253a; }
+  .mp-table tr.me td { color: #fde68a; }
+  .mp-recent-wrap { margin-top: 8px; border-top: 1px solid #3d3d55; padding-top: 6px; max-height: 160px; overflow-y: auto; }
+  .mp-recent { font-size: 11.5px; color: #cfd0e8; padding: 2px 0; }
+  .mp-recent span:first-child { color: #778; margin-right: 4px; }
   #overlay { position: fixed; inset: 0; background: rgba(5,8,16,.8); backdrop-filter: blur(1.5px); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; text-align: center; gap: 14px; padding: 24px 18px; overflow-y: auto; }
   #overlay h2 { font-size: 32px; letter-spacing: 3px; background: linear-gradient(90deg, var(--cyan), var(--blue)); -webkit-background-clip: text; background-clip: text; color: transparent; }
   #overlay p { color: var(--muted); max-width: 600px; line-height: 1.6; font-size: 14px; }
@@ -807,6 +836,7 @@
      the AI takes a different one. You then <b>roll for turn order</b> and may <b>mulligan</b> your opening hand once.
      Every card is genuine — real names, art, costs, AP/HP and effect text.</p>
   <button id="startBtn">START BATTLE</button>
+  <button id="mpBtn" class="gold" title="Play a friend in a private room with a code; spectators welcome">⚔ PLAY ONLINE</button>
   <button id="bgBtn2" class="ghost" style="font-size:12px;padding:7px 14px" title="Use your own pictures on the playmats">🖼 Playmat backgrounds</button>
   <button id="backToBattleBtn" class="gold" style="display:none">◀ Back to Battle</button>
   <div class="rules">
@@ -8945,11 +8975,12 @@ function lockActions(ms=500){
 }
 function makeSide(who){ return { who, deck:[], hand:[], field:[], shields:[], trash:[], exile:[], base:null, resourceDeck:RES_MAX, resMax:0, resAvail:0, ex:0 }; }
 function me(){ return G.turn==='player' ? G.player : G.enemy; }
-function who(side){ return side===G.player ? 'You' : (G.enemyDeckName || 'The AI'); }
+function who(side){ if (NET.on) return side===G.player ? (NET.role==='spec' ? NET.names.host : 'You') : (mpOppName() || 'Opponent'); return side===G.player ? 'You' : (G.enemyDeckName || 'The AI'); }
 
 const el = id => document.getElementById(id);
 
 function log(msg, cls='sys'){
+  if (NET.on && NET.active) NET.logBuf.push([msg, cls]);   // online: the line travels with the next state view
   const d=document.createElement('div'); d.className='entry '+cls; d.innerHTML=msg;
   el('log').prepend(d); while (el('log').children.length>40) el('log').lastChild.remove();
 }
@@ -9365,6 +9396,7 @@ function setupBackToTitle(){
   closeSetupModal();
   el('overlay').classList.remove('hidden');
   el('startBtn').style.display='inline-block';
+  if (el('mpBtn')) el('mpBtn').style.display='inline-block';
   el('introText').style.display='block';
   el('backToBattleBtn').style.display='none';
 }
@@ -9762,6 +9794,7 @@ function flushExExiled(){
 
 // Official turn structure: Start Phase → Draw Phase → Resource Phase → Main Phase → End Phase.
 function beginTurn(turn){
+  if (NET.on && turn==='enemy'){ mpHandOffTurn(); return; }   // online: the opponent's engine runs their turn
   G.turn=turn; G.mode='idle'; G.phase='start'; G.selected=null; G.pending=null; G.pendingHandIdx=-1;
   G.turnSeq=(G.turnSeq||0)+1;   // unique per turn (turnNumber counts rounds) — 【Once per Turn】 keys off this
   const s=me();
@@ -9807,6 +9840,7 @@ function beginTurn(turn){
 
 function endTurn(){
   if (G.over) return;
+  if (NET.on && (!NET.active || NET.inHop || G.turn!=='player')) return;
   // Already in the End Phase: never run the End Step twice. If the hand-limit discard is still open, wait
   // for it; if it was somehow dropped (mode back to idle), pick the End Phase up where it stopped.
   if (G.turn==='player' && G.phase==='end'){
@@ -9983,6 +10017,7 @@ function confirmExSpend(card, n, onYes){
 }
 function playFromHand(uidv, exConfirmed){
   if (G.turn!=='player' || G.over || G.mode!=='idle' || G.actionLock) return;
+  if (NET.on && !NET.active) return;
   if (G.phase==='end') return;   // the End Phase has begun: no more main-phase plays this turn
   const s=G.player; const idx=s.hand.findIndex(c=>c.uid===uidv); if(idx<0) return;
   const card=s.hand[idx];
@@ -10864,6 +10899,7 @@ function aiActivate(u){
 // ---- field interaction (player) ----
 function fieldClick(uidv){
   if (G.over) return;
+  if (NET.on && !NET.active) return;   // online: only the engine that is running the game takes input
   // During opponent's turn, only allow clicks needed for action-step target selection.
   if (G.turn!=='player' && G.mode!=='action-step-target') return;
   if (G.turn==='player' && G.actionLock && G.mode==='idle') return;
@@ -11068,10 +11104,11 @@ function fieldClick(uidv){
         // 8-2-4: the attacked Unit left play during the attack step → straight to the battle end step.
         if (!G.enemy.field.includes(tgt) || tgt.hp<=0){ clearBattleScoped(); clearSel(); render(); checkEnd(); return; }
         // Block step (8-3), then the action step (8-4), then the damage step (8-5).
-        const blk = aiBlockStep(atk, tgt);
+        mpBlockStep(atk, tgt, blk=>{
         offerPlayerActionStep(atk, ()=>{
           if (!attackerStillOut(atk, G.player)){ clearBattleScoped(); clearSel(); render(); checkEnd(); return; }
           battle(atk, blk||tgt, G.player, G.enemy);   // battle() ends the battle itself if the target is gone
+        });
         });
       });
       return;
@@ -11081,6 +11118,7 @@ function fieldClick(uidv){
 
 function attackDirect(){
   if (G.turn!=='player' || G.mode!=='attack-target' || G.over) return;
+  if (NET.on && !NET.active) return;
   const atk=G.player.field.find(c=>c.uid===G.selected); if(!atk) return;
   if (atk.rested || trashBlocksAttack(atk, G.player)){ flashPrompt(`${atk.name} can't attack right now.`); clearSel(); render(); return; }
   if (cantHitPlayer(atk)){ flashPrompt(`${atk.name} can't attack the enemy player directly — pick a rested enemy unit.`); return; }
@@ -11090,12 +11128,13 @@ function attackDirect(){
   resolveAttackTriggers(atk, G.player, ()=>{
     if (!attackerStillOut(atk, G.player)){ clearBattleScoped(); clearSel(); render(); checkEnd(); return; }
     // Block step (8-3) — the defender may intercept — then the action step (8-4), then the damage step (8-5).
-    const blk = aiBlockStep(atk, null);
+    mpBlockStep(atk, null, blk=>{
     offerPlayerActionStep(atk, ()=>{
       if (!attackerStillOut(atk, G.player)){ clearBattleScoped(); clearSel(); render(); checkEnd(); return; }
       if (blk){ battle(atk, blk, G.player, G.enemy); return; }   // battle() ends the battle itself if the blocker is gone
       if (cantHitPlayer(atk)){ clearBattleScoped(); clearSel(); render(); checkEnd(); return; }   // an effect removed its direct-attack
       strikePlayer(atk, G.enemy, ()=>{ clearSel(); render(); });
+    });
     });
   });
 }
@@ -11300,6 +11339,7 @@ function shieldBreakOne(atk, atkSide, defSide, src, sb, done, byEffect){
 // the trash. A Burst whose "If …" condition isn't met does nothing either way, so it isn't asked about.
 function triggerBurst(card, side, done, allowChoice){
   done = done || function(){};
+  if (NET.on && NET.active && !NET.inHop && side===G.enemy){ mpHop('burst', { card, allowChoice:!!allowChoice }, done); return; }   // online: the Shield's owner decides and resolves it on their screen
   const bz = card && card.burst;
   // Nothing to decide when it can't do anything: its "If …" isn't met, or "Activate this card's 【Main】" has no legal target (Q408).
   if (!bz || (bz.cond && !condMet(bz.cond, side, card)) || (bz.activates && !cmdPlayable(bz.action, side, card))){ resolveBurst(card, side, done, allowChoice); return; }
@@ -11324,6 +11364,7 @@ function aiWantsBurst(card, side){ return true; }
 // their 【Burst】 effects resolve one at a time, in an order the Shields' owner chooses (Q406/Q407). Revealed cards without a
 // 【Burst】 go straight to the trash. The player picks from a list when two or more Bursts are waiting; the AI takes them top first.
 function resolveBurstsTogether(cards, side, done){
+  if (NET.on && NET.active && !NET.inHop && side===G.enemy){ mpHop('bursts', { cards }, done); return; }   // online: revealed on the owner's screen, resolved in their order
   const pend=[];
   for (const c of cards){ if (c && c.burst) pend.push(c); else if (c) sendToTrash(c, side); }
   if (cards.length>1) log(`${side===G.player?'Your':who(side)+"'s"} destroyed Shields are revealed: ${cards.map(c=>'<b>'+c.name+'</b>').join(', ')}.`, side===G.player?'me':'ai');
@@ -11485,7 +11526,7 @@ function whenModalFree(fn){
   fn();
 }
 function pumpModalQueue(){
-  if (!G.modalQueue || !G.modalQueue.length || G.over) return;
+  if (!G.modalQueue || !G.modalQueue.length || G.over || NET.hop) return;   // online: nothing moves here while the opponent holds the state
   if (el('blockModal').classList.contains('show') || document.querySelector('.modal-overlay')) return;
   const fn=G.modalQueue.shift(); fn(); render();
 }
@@ -13057,6 +13098,7 @@ function endGame(winnerSide){
   if (G.over) return;
   G.over=true; G.winner = winnerSide===G.player ? 'player' : 'enemy'; setPrompt(''); render();
   const win = winnerSide===G.player;
+  if (NET.on){ mpGameOver(win); return; }   // online: the result goes to the room and its leaderboard
   recordResult(G.playerDeckName, win);   // lifetime W/L per deck, shown on the deck picker
   fx('direct'); setTimeout(()=>sound(win?'win':'lose'), 250);
   const ov=el('overlay'); ov.classList.remove('hidden');
@@ -14587,10 +14629,14 @@ function aiActionAbilities(attacker){
 function offerPlayerActionStep(attacker, cb){
   if (G.over){ cb(); return; }
   if (modalBusy()){ whenModalFree(()=>offerPlayerActionStep(attacker, cb)); return; }   // after the open choice
-  // The AI's 【Activate･Action】 abilities, then (once any choice they opened for the player is closed) the step goes on.
-  if (aiActionAbilities(attacker) && (G.over || modalBusy())){ if (G.over){ cb(); return; } whenModalFree(()=>offerPlayerActionStep(attacker, cb)); return; }
-  // The AI may play an 【Action】 Command first, and again after each of the player's plays (the step ends when both pass).
-  if (aiActionStep(attacker, ()=>aiActionResume(attacker, cb))) return;
+  // Online: the opponent's Action window comes first, on their own screen (mpActionStep); no AI acts for them.
+  if (NET.on && NET.active && !NET.inHop && !G._mpActLocal){ mpActionStep(attacker, cb); return; }
+  if (!NET.on){
+    // The AI's 【Activate･Action】 abilities, then (once any choice they opened for the player is closed) the step goes on.
+    if (aiActionAbilities(attacker) && (G.over || modalBusy())){ if (G.over){ cb(); return; } whenModalFree(()=>offerPlayerActionStep(attacker, cb)); return; }
+    // The AI may play an 【Action】 Command first, and again after each of the player's plays (the step ends when both pass).
+    if (aiActionStep(attacker, ()=>aiActionResume(attacker, cb))) return;
+  }
   const opts=collectPlayerActions(attacker);
   if (!opts.length){ cb(); return; }
   const atkSide = attacker ? (G.player.field.includes(attacker) ? G.player : G.enemy) : null;
@@ -14599,7 +14645,7 @@ function offerPlayerActionStep(attacker, cb){
     : `<b>End Phase — Action Step.</b> Use an Action ability/command before the Repair Step, or Pass.`;
   const wrap=el('blockBtns'); wrap.innerHTML='';
   opts.forEach(o=>{ const b=document.createElement('button'); b.innerHTML=`${o.label}${o.sub?` <span style="opacity:.6;font-size:10px">${o.sub}</span>`:''}`;
-    b.onclick=()=>{ el('blockModal').classList.remove('show'); o.run(()=>{ render(); setTimeout(()=>offerPlayerActionStep(attacker, cb), 80); }); render(); };
+    b.onclick=()=>{ el('blockModal').classList.remove('show'); G.mpActUses=(G.mpActUses||0)+1; o.run(()=>{ render(); setTimeout(()=>offerPlayerActionStep(attacker, cb), 80); }); render(); };
     wrap.appendChild(b); });
   const pass=document.createElement('button'); pass.className='ghost'; pass.textContent = attacker ? 'Pass (continue battle)' : 'Pass (continue to Repair)';
   pass.onclick=()=>{ el('blockModal').classList.remove('show'); cb(); };
@@ -14711,6 +14757,675 @@ function promptPlayerBlock(atk, blockers, target, cb){
   take.onclick=()=>{ el('blockModal').classList.remove('show'); cb(null); };
   wrap.appendChild(take);
   el('blockModal').classList.add('show');
+}
+
+// =====================================================================================================
+// ---- Online multiplayer: private rooms with a join code, spectators, and a room leaderboard ----
+// Two players, each running this same engine with themselves as G.player. The TURN player's engine is
+// authoritative: it runs the whole turn. Whenever the opponent has a decision to make (block step, action
+// step, a destroyed Shield's 【Burst】, the opening mulligan, the turn-order pick) the complete game state is
+// handed across ("hop"); the opponent's engine runs the genuine prompt on its own screen and hands the
+// state back, and the turn goes on. Everyone else — the waiting player and the spectators — receives
+// read-only state views and simply renders them. The opponent's own triggered effects during your turn
+// (a 【Destroyed】 choice on their Unit, a "you may pay" on their card) resolve automatically with the
+// engine's best choice, as they do for the AI.
+// Transport: WebRTC data channels brokered by the public PeerJS server; the room code is the host's peer
+// id, so nothing is stored anywhere — a room lives while the host's tab is open.
+const NET = { on:false, role:null /* 'host' | 'guest' | 'spec' */, active:false, inHop:false, hop:null,
+  peer:null, host:null /* guest/spec: the connection to the host */, guest:null /* host: the guest's connection */, specs:[] /* host: spectator connections */,
+  code:'', me:'', names:{ host:'', guest:'' }, specNames:[], decks:{ host:null, guest:null }, started:false, gameId:'', seq:0,
+  logBuf:[], viewT:null, lastView:null, lastViewStr:'', overRec:null, warn:'' };
+const MP_PROTO = 1;
+const MP_CODE_ALPHA = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+const MP_PEERJS_URLS = ['https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js', 'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js'];
+const MP_STEP_LABEL = { block:'deciding whether to block', action:'using Action abilities / commands', burst:'resolving a Burst', bursts:'resolving Bursts', mulligan:'looking at their opening hand', order:'choosing who goes first', turn:'taking their turn' };
+function mpBuild(){ return MP_PROTO+'-'+GUNDAM_CARDS.length; }
+function mpOppName(){ return NET.role==='host' ? NET.names.guest : NET.names.host; }
+
+// ---- state transfer ----
+// Pack an object graph (cycles included) into a flat table. Functions and DOM nodes are dropped; everything
+// else — cards, sides, the pending battle, parsed effects — travels. `extra` rides along in the same table so a
+// loose card (a Shield popped off the zone, mid-resolution) keeps its identity with the state it belongs to.
+function mpPack(root, extra){
+  const table=[], ids=new Map();
+  const enc=(v)=>{
+    if (v===undefined) return undefined; if (v===null) return null;
+    const t=typeof v;
+    if (t==='function' || t==='symbol') return undefined;
+    if (t==='number') return Number.isFinite(v) ? v : { $n:String(v) };
+    if (t!=='object') return v;
+    if (typeof Node!=='undefined' && v instanceof Node) return undefined;
+    if (ids.has(v)) return { $r:ids.get(v) };
+    const id=table.length; ids.set(v, id); table.push(null);
+    let out;
+    if (Array.isArray(v)) out=v.map(x=>{ const e=enc(x); return e===undefined ? null : e; });
+    else if (v instanceof Set) out={ $set:[...v].map(x=>{ const e=enc(x); return e===undefined ? null : e; }) };
+    else if (v instanceof Map) out={ $map:[...v].map(([k,x])=>[enc(k), enc(x)]) };
+    else {
+      // A card from the pool travels as its printing id plus whatever differs from a freshly made copy (its damage, rest
+      // state, grants…): a deck of 40 untouched cards is a few hundred bytes, not a copy of every effect text.
+      const tpl = typeof v.uid==='number' && typeof v.def==='string' ? mpTemplate(v.def) : null;
+      out={};
+      if (tpl){ out.$c=v.def; const del=[]; for (const k of Object.keys(tpl)) if (!(k in v)) del.push(k); if (del.length) out.$del=del; }
+      for (const k of Object.keys(v)){
+        if (k.charCodeAt(0)===95 && k.startsWith('_mp')) continue;
+        if (tpl && k in tpl && mpSameAsTemplate(v[k], tpl[k])) continue;
+        const e=enc(v[k]); if (e!==undefined) out[k]=e; }
+    }
+    table[id]=out;
+    return { $r:id };
+  };
+  const r=enc(root), x=extra!==undefined ? enc(extra) : undefined;
+  return { t:table, r, x, uid };
+}
+// Is a card's field still exactly what makeCard gave it? A template value never references another object, so anything
+// holding a card (an effect's `source`), a cycle, or a function is a difference by definition.
+function mpSameAsTemplate(v, t){
+  if (v===t) return true;
+  if (v===null || t===null || typeof v!=='object' || typeof t!=='object') return typeof v==='number' && typeof t==='number' ? v===t : v===t;
+  if (Array.isArray(v)!==Array.isArray(t)) return false;
+  if (typeof v.uid==='number' || v instanceof Set || v instanceof Map) return false;
+  if (Array.isArray(v)){ if (v.length!==t.length) return false; for (let i=0;i<v.length;i++) if (!mpSameAsTemplate(v[i], t[i])) return false; return true; }
+  const kv=Object.keys(v).filter(k=>v[k]!==undefined), kt=Object.keys(t);
+  if (kv.length!==kt.length) return false;
+  for (const k of kv){ if (!(k in t)) return false; if (typeof v[k]==='function') return false; if (!mpSameAsTemplate(v[k], t[k])) return false; }
+  return true;
+}
+// A fresh copy of a printing as makeCard builds it (minus uid/owner), kept as JSON so every use gets its own objects.
+let MP_TPL=null;
+function mpTemplate(defId){
+  if (!MP_TPL) MP_TPL=new Map();
+  let s=MP_TPL.get(defId);
+  if (s===undefined){
+    const def=CARD_BY_ID.get(defId);
+    if (!def){ MP_TPL.set(defId, null); return null; }
+    const save=uid; let t=null;
+    try{ t=makeCard(def, 'player'); } finally { uid=save; }
+    delete t.uid; delete t.owner;
+    s=JSON.stringify(t); MP_TPL.set(defId, s);
+  }
+  return s ? JSON.parse(s) : null;
+}
+// Rebuild a packed graph IN PLACE: the root fills `rootObj`, each side fills the object `sides[who]` names, and every
+// card (an object with a numeric uid and a name) re-uses the object `keep` holds for that uid — so a reference the
+// running engine still holds (the attacker in a battle, a Shield mid-Burst) stays valid after the state comes back.
+function mpUnpack(pack, keep, sides, rootObj){
+  const objs=new Array(pack.t.length), used=new Set();
+  pack.t.forEach((raw,i)=>{
+    if (Array.isArray(raw)) objs[i]=[];
+    else if (raw.$set) objs[i]=new Set();
+    else if (raw.$map) objs[i]=new Map();
+    else if (rootObj && pack.r && pack.r.$r===i) objs[i]=rootObj;
+    else if (sides && raw.who && raw.deck && sides[raw.who] && !used.has(sides[raw.who])){ objs[i]=sides[raw.who]; used.add(objs[i]); }
+    else if (keep && typeof raw.uid==='number' && (raw.$c || raw.name!=null) && keep.get(raw.uid) && !used.has(keep.get(raw.uid))){ objs[i]=keep.get(raw.uid); used.add(objs[i]); }
+    else objs[i]={};
+  });
+  const dec=e=>{ if (e && typeof e==='object'){ if ('$r' in e) return objs[e.$r]; if ('$n' in e) return Number(e.$n); } return e; };
+  pack.t.forEach((raw,i)=>{ const o=objs[i];
+    if (Array.isArray(raw)){ o.length=0; for (const x of raw) o.push(dec(x)); }
+    else if (raw.$set){ for (const x of raw.$set) o.add(dec(x)); }
+    else if (raw.$map){ for (const [k,x] of raw.$map) o.set(dec(k), dec(x)); }
+    else {
+      for (const k of Object.keys(o)) delete o[k];
+      if (raw.$c){ const tpl=mpTemplate(raw.$c); if (tpl) Object.assign(o, tpl); if (raw.$del) for (const k of raw.$del) delete o[k]; }
+      for (const k of Object.keys(raw)){ if (k==='$c' || k==='$del') continue; o[k]=dec(raw[k]); }
+    }
+  });
+  return { root:dec(pack.r), extra:pack.x!==undefined ? dec(pack.x) : undefined, objs };
+}
+// Every card object this engine currently holds, by uid (the state plus any loose cards a hop carried).
+function mpCardMap(loose){
+  const m=new Map(), seen=new Set();
+  const walk=(o,d)=>{ if (!o || typeof o!=='object' || seen.has(o) || d>14) return; seen.add(o);
+    if (Array.isArray(o)){ for (const x of o) walk(x,d+1); return; }
+    if (o instanceof Set || o instanceof Map) return;
+    if (typeof o.uid==='number' && o.name!=null && !m.has(o.uid)) m.set(o.uid, o);
+    for (const k in o) walk(o[k], d+1); };
+  walk(G,0); if (loose) walk(loose,0);
+  return m;
+}
+// Load a packed state into THIS engine. `flip` turns the packer's perspective around (its player is our enemy):
+// the side objects swap and every 'player'/'enemy' marker — card owners, the turn, the first player — flips with them.
+function mpLoadState(pack, flip, loose){
+  const keep=mpCardMap(loose);
+  const sides = flip ? { player:G.enemy, enemy:G.player } : { player:G.player, enemy:G.enemy };
+  const r=mpUnpack(pack, keep, sides, G);
+  if (flip){ const p=G.player; G.player=G.enemy; G.enemy=p; mpFlipMarkers(r.objs); }
+  if (typeof pack.uid==='number' && pack.uid>uid) uid=pack.uid;
+  return r.extra;
+}
+function mpFlipMarkers(objs){
+  const sw=v=>v==='player' ? 'enemy' : v==='enemy' ? 'player' : v;
+  for (const o of objs){ if (!o || typeof o!=='object' || Array.isArray(o) || o instanceof Set || o instanceof Map) continue;
+    if (typeof o.owner==='string') o.owner=sw(o.owner);
+    if (typeof o.who==='string' && o.deck) o.who=sw(o.who); }
+  for (const k of ['turn','firstPlayer','skipDrawSide','winner']) if (typeof G[k]==='string') G[k]=sw(G[k]);
+  const a=G.playerDeckName; G.playerDeckName=G.enemyDeckName; G.enemyDeckName=a;
+  if (G.setup){ const p=G.setup.playerPreset; G.setup.playerPreset=G.setup.enemyPreset; G.setup.enemyPreset=p; }
+}
+// The purely-local UI part of G — the selection mode, the modal queue, the input lock — never travels: a state that
+// comes back from the opponent must not disturb what this screen was doing.
+const MP_UI_KEYS=['mode','selected','pending','pendingHandIdx','peekUid','modalQueue','activateCands','activateCostUnit','activatePrepaid','activateDiscardPicks','activateRestSub','cmdInFlight','actionLock','_lockT','setupSeq','exExiledWait'];
+function mpSaveUi(){ const o={}; for (const k of MP_UI_KEYS) o[k]=G[k]; return o; }
+function mpRestoreUi(o){ for (const k of MP_UI_KEYS) G[k]=o[k]; }
+function mpSanitizeUi(){ G.mode='idle'; G.selected=null; G.pending=null; G.pendingHandIdx=-1; G.peekUid=null; G.modalQueue=[]; G.activateCands=null; G.cmdInFlight=null; G.actionLock=false; G._lockT=null; G.exExiledWait=null; }
+
+// ---- transport ----
+function mpLoadPeerJs(cb, i){
+  if (typeof Peer!=='undefined'){ cb(); return; }
+  i=i||0; if (i>=MP_PEERJS_URLS.length){ mpLobbyError('Could not load the networking library — check your connection and try again.'); return; }
+  const s=document.createElement('script'); s.src=MP_PEERJS_URLS[i]; s.onload=()=>cb(); s.onerror=()=>mpLoadPeerJs(cb, i+1); document.head.appendChild(s);
+}
+function mpNewCode(){ let s=''; for (let i=0;i<5;i++) s+=MP_CODE_ALPHA[Math.floor(Math.random()*MP_CODE_ALPHA.length)]; return s; }
+function mpPeerId(code){ return 'gtcgroom'+String(code||'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
+function mpPeerOpts(){ return { debug:0 }; }
+function mpSend(c, msg){ try{ if (c && c.open) c.send(msg); }catch(e){} }
+function mpSendOpp(msg){ mpSend(NET.role==='host' ? NET.guest : NET.host, msg); }
+function mpSendHost(msg){ mpSend(NET.host, msg); }
+function mpBroadcast(msg, except){ if (NET.role!=='host') return; if (NET.guest && NET.guest!==except) mpSend(NET.guest, msg); for (const c of NET.specs) if (c!==except) mpSend(c, msg); }
+function mpReset(){
+  try{ if (NET.peer) NET.peer.destroy(); }catch(e){}
+  clearTimeout(NET.viewT);
+  Object.assign(NET, { on:false, role:null, active:false, inHop:false, hop:null, peer:null, host:null, guest:null, specs:[], code:'', names:{ host:'', guest:'' }, specNames:[], decks:{ host:null, guest:null }, started:false, gameId:'', seq:0, logBuf:[], viewT:null, lastView:null, lastViewStr:'', overRec:null, warn:'', open:false, inGame:false, overShown:false });
+  const w=el('mpWait'); if (w){ w.classList.remove('warn'); w.classList.remove('show'); }
+}
+function mpCreateRoom(){
+  mpReset(); NET.on=true; NET.role='host'; NET.names.host=NET.me; NET.code=mpNewCode();
+  mpRenderLobby('Opening the room…');
+  const open=()=>{
+    const p=new Peer(mpPeerId(NET.code), mpPeerOpts()); NET.peer=p;
+    p.on('open', ()=>{ NET.open=true; mpRenderLobby(); });
+    p.on('error', e=>{
+      if (e && e.type==='unavailable-id'){ NET.code=mpNewCode(); try{ p.destroy(); }catch(x){} open(); return; }   // code already taken: roll another
+      if (NET.started && e && e.type==='peer-unavailable') return;
+      mpLobbyError('Connection problem: '+(e && e.type || e));
+    });
+    p.on('disconnected', ()=>{ try{ if (!p.destroyed) p.reconnect(); }catch(e){} });
+    p.on('connection', c=>{
+      c.on('data', d=>mpOnData(c, d));
+      c.on('close', ()=>mpPeerLeft(c)); c.on('error', ()=>mpPeerLeft(c));
+    });
+  };
+  open();
+}
+function mpJoinRoom(code, asSpec){
+  code=String(code||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if (code.length<4){ mpLobbyError('Enter the 5-character room code.'); return; }
+  mpReset(); NET.on=true; NET.role=asSpec ? 'spec' : 'guest'; NET.code=code;
+  mpRenderLobby('Connecting to room '+code+'…');
+  const p=new Peer(undefined, mpPeerOpts()); NET.peer=p;
+  let connected=false;
+  p.on('open', ()=>{
+    const c=p.connect(mpPeerId(code), { reliable:true }); NET.host=c;
+    c.on('open', ()=>{ connected=true; mpSend(c, { t:'hello', name:NET.me, role:asSpec ? 'spec' : 'player', build:mpBuild(), results:mpResults() }); });
+    c.on('data', d=>mpOnData(c, d));
+    c.on('close', ()=>mpLost()); c.on('error', ()=>mpLost());
+    setTimeout(()=>{ if (!connected && NET.on && NET.role!=='host') mpLobbyError('No open room answered with code '+code+'. Check the code — the host must keep the game open.'); }, 12000);
+  });
+  p.on('error', e=>{ const t=e && e.type; if (t==='peer-unavailable') mpLobbyError('No open room with code '+code+'.'); else if (!connected) mpLobbyError('Connection problem: '+(t||e)); });
+  p.on('disconnected', ()=>{ try{ if (!p.destroyed) p.reconnect(); }catch(e){} });
+}
+function mpLeave(){
+  if (NET.role==='host') mpBroadcast({ t:'hostLeft' }); else mpSendHost({ t:'leave' });
+  mpReset(); closeSetupModal();
+  if (!G.over && G.player && G.player.deck && G.player.deck.length){ G.over=true; }   // the online game is abandoned
+  mpRestoreTitle();
+}
+function mpLost(){
+  if (!NET.on) return;
+  NET.warn='Connection to the room was lost.';
+  if (NET.started) mpShowWait('⚠ Connection lost — <button onclick="mpLeave()" class="ghost" style="padding:4px 10px;font-size:12px">Leave room</button>', true);
+  else mpRenderLobby();
+}
+function mpPeerLeft(c){
+  if (!NET.on || NET.role!=='host') return;
+  if (c===NET.guest){ NET.guest=null; NET.names.guest=''; NET.decks.guest=null;
+    if (NET.started){ NET.warn='Your opponent left the room.'; mpShowWait('⚠ Your opponent disconnected — <button onclick="mpLeave()" class="ghost" style="padding:4px 10px;font-size:12px">Leave room</button>', true); }
+    else { NET.warn='Your opponent left the room.'; mpRenderLobby(); }
+    mpLobbySync(); return; }
+  const i=NET.specs.indexOf(c); if (i>=0){ NET.specs.splice(i,1); NET.specNames.splice(i,1); mpLobbySync(); }
+}
+// Every message the room carries.
+function mpOnData(c, d){
+  if (!d || typeof d!=='object' || !NET.on) return;
+  if (NET.role==='host'){
+    switch (d.t){
+      case 'hello': {
+        let name=String(d.name||'Guest').slice(0,20)||'Guest';
+        if (name===NET.names.host || name===NET.names.guest || NET.specNames.includes(name)) name=name.slice(0,16)+' ('+(2+NET.specNames.length)+')';   // two Alices would share a leaderboard row
+        if (d.build!==mpBuild()) NET.warn='A player is on a different game version — if things look wrong, everyone should reload.';
+        if (d.role==='player' && !NET.guest && !NET.started){ NET.guest=c; c._mpRole='guest'; NET.names.guest=name; }
+        else { c._mpRole='spec'; NET.specs.push(c); NET.specNames.push(name); }
+        if (Array.isArray(d.results)) mpMergeResults(d.results);
+        mpSend(c, { t:'welcome', role:c._mpRole, name, code:NET.code, names:NET.names, specNames:NET.specNames, build:mpBuild(), results:mpResults(), started:NET.started, view:NET.started ? NET.lastView : null, over:NET.overRec });
+        mpLobbySync(); mpRenderLobby(); return; }
+      case 'deck': if (c===NET.guest){ NET.decks.guest=d.deck; mpLobbySync(); mpRenderLobby(); mpMaybeStart(); } return;
+      case 'hop': if (c===NET.guest){ for (const s of NET.specs) mpSend(s, { t:'view', from:'guest', pack:d.pack, log:d.log||[], seq:d.seq }); mpOnHop(d); } return;   // spectators see what the guest handed over
+      case 'hopDone': if (c===NET.guest){ if (NET.specs.length && (d.pack || (d.log && d.log.length))) for (const s of NET.specs) mpSend(s, { t:'view', from:'guest', pack:d.pack||null, log:d.log||[], seq:d.seq }); mpOnHopDone(d); } return;
+      case 'view': if (c===NET.guest){ NET.lastView=d; mpApplyView(d); for (const s of NET.specs) mpSend(s, d); } return;
+      case 'over': if (c===NET.guest){ mpOnOver(d.rec); for (const s of NET.specs) mpSend(s, d); } return;
+      case 'results': if (Array.isArray(d.list)) mpMergeResults(d.list); return;
+      case 'leave': mpPeerLeft(c); try{ c.close(); }catch(e){} return;
+    }
+    return;
+  }
+  switch (d.t){
+    case 'welcome':
+      NET.role=d.role; if (d.name) NET.me=d.name; NET.names=d.names||NET.names; NET.specNames=d.specNames||[]; NET.started=!!d.started;
+      if (d.build!==mpBuild()) NET.warn='The host is on a different game version — if things look wrong, everyone should reload.';
+      if (Array.isArray(d.results)) mpMergeResults(d.results);
+      if (d.started && d.view){ mpEnterGame(); mpApplyView(d.view); }
+      if (d.over) mpOnOver(d.over);
+      mpRenderLobby(); return;
+    case 'lobby': NET.names=d.names||NET.names; NET.specNames=d.specNames||[]; NET.decks.host=d.hostDeck||null; if (d.guestDeck!==undefined) NET.decks.guest=d.guestDeck; if (d.started===false && NET.started){ NET.started=false; G.over=true; mpHideWait(); } mpRenderLobby(); return;
+    case 'start': NET.started=true; NET.gameId=d.gameId; NET.names=d.names||NET.names; NET.overRec=null; mpEnterGame(); mpShowWait(`${mpOppName()||'The host'} is setting up the game…`); return;
+    case 'hop': mpOnHop(d); return;
+    case 'hopDone': mpOnHopDone(d); return;
+    case 'view': mpApplyView(d); return;
+    case 'over': mpOnOver(d.rec); return;
+    case 'results': if (Array.isArray(d.list)) mpMergeResults(d.list); return;
+    case 'hostLeft': NET.warn='The host closed the room.'; if (NET.started) mpShowWait('⚠ The host closed the room — <button onclick="mpLeave()" class="ghost" style="padding:4px 10px;font-size:12px">Leave</button>', true); else mpRenderLobby(); return;
+  }
+}
+function mpLobbySync(){ if (NET.role!=='host') return; mpBroadcast({ t:'lobby', names:NET.names, specNames:NET.specNames, hostDeck:NET.decks.host ? { name:NET.decks.host.name } : null, guestDeck:NET.decks.guest ? { name:NET.decks.guest.name } : null, started:NET.started }); }
+
+// ---- hops: the opponent makes a decision on their own screen, then the state comes back ----
+function mpHop(step, args, cont, opts){
+  opts=opts||{};
+  const conn = NET.role==='host' ? NET.guest : NET.host;
+  if (!NET.on || !conn || !conn.open){ mpHopFallback(step, args, cont); return; }
+  clearTimeout(NET.viewT); NET.viewT=null;
+  NET.hop={ step, cont, opts, ui:mpSaveUi(), loose:args };
+  NET.active=false;
+  const lines=NET.logBuf.splice(0);
+  mpSend(conn, { t:'hop', step, pack:mpPack(G, args), log:lines, seq:++NET.seq });
+  if (NET.role==='host' && NET.specs.length){ const v={ t:'view', from:'host', pack:mpPack(G), log:lines, seq:NET.seq }; NET.lastView=v; for (const s of NET.specs) mpSend(s, v); }   // spectators see the state and lines up to here
+  mpShowWait(`⏳ ${mpOppName()||'Opponent'} is ${MP_STEP_LABEL[step]||step}…`);
+}
+// The opponent is gone: resolve the step the way the AI would, so the game never wedges (a revealed Shield still
+// resolves or goes to the trash; nobody blocks or acts for them).
+function mpHopFallback(step, args, cont){
+  const was=NET.inHop; NET.inHop=true;   // the hooks stand aside: the local engine takes the AI path for the absent side
+  try {
+    if (step==='order'){ cont({ first:Math.random()<0.5 ? 'player' : 'enemy' }); return; }
+    if (step==='burst' && args && args.card){ triggerBurst(args.card, G.enemy, cont, !!args.allowChoice); return; }
+    if (step==='bursts'){ resolveBurstsTogether((args && args.cards || []).filter(Boolean), G.enemy, cont); return; }
+    cont(null);
+  } finally { NET.inHop=was; }
+}
+function mpOnHopDone(msg){
+  const h=NET.hop; if (!h || msg.step!==h.step) return;
+  NET.hop=null;
+  let result=null;
+  if (msg.pack){ result=mpLoadState(msg.pack, true, h.loose); mpRestoreUi(h.ui); }
+  else result=msg.result;
+  if (msg.log) mpAppendLog(msg.log, 'opp');
+  NET.active=true; mpHideWait(); render();
+  try{ h.cont(result); }catch(e){ console.error(e); }
+  mpAfterLoad();
+}
+function mpOnHop(msg){
+  if (!NET.on || NET.role==='spec') return;
+  clearTimeout(NET.viewT); NET.viewT=null;
+  NET.inHop=true; NET.active=false; mpHideWait();
+  const args=mpLoadState(msg.pack, true) || {};
+  mpSanitizeUi(); mpEnterGame();
+  if (msg.log) mpAppendLog(msg.log, 'opp');   // appended while inactive: their lines must not echo back to them
+  NET.active=true;
+  mpSetNameLabels(); render();
+  switch (msg.step){
+    case 'turn': NET.inHop=false; NET.hop=null; beginTurn('player'); break;   // the turn — and authority — is ours until it ends
+    case 'block': { const blockers=(args.blockers||[]).filter(b=>b && G.player.field.includes(b) && !b.rested && b.hp>0);
+      if (!blockers.length || !args.atk){ mpHopReturn('block', { blk:null }, false); break; }
+      promptPlayerBlock(args.atk, blockers, args.target||null, b=>mpHopReturn('block', { blk:b ? b.uid : null }, false)); break; }
+    case 'action': offerPlayerActionStep(args.attacker||null, ()=>mpHopReturn('action', null, true)); break;
+    case 'burst': if (!args.card){ mpHopReturn('burst', null, true); break; } triggerBurst(args.card, G.player, ()=>mpHopReturn('burst', null, true), !!args.allowChoice); break;
+    case 'bursts': resolveBurstsTogether((args.cards||[]).filter(Boolean), G.player, ()=>mpHopReturn('bursts', null, true)); break;
+    case 'mulligan': mpHandMulligan(()=>mpHopReturn('mulligan', null, true)); break;
+    case 'order': mpOrderPrompt(args, first=>mpHopReturn('order', { first }, false)); break;
+    default: mpHopReturn(msg.step, null, false);
+  }
+}
+// Hand the state (or just a result) back once every prompt the step opened has closed.
+function mpHopReturn(step, result, withState){
+  const go=()=>{
+    if (!NET.on) return;
+    if (modalBusy() || (G.mode!=='idle' && G.mode!=='attack-target') || (G.modalQueue && G.modalQueue.length)){ setTimeout(go, 60); return; }
+    clearTimeout(NET.viewT); NET.viewT=null;
+    NET.inHop=false; NET.active=false;
+    const msg={ t:'hopDone', step, log:NET.logBuf.splice(0), seq:++NET.seq };
+    if (withState) msg.pack=mpPack(G, result); else msg.result=result;
+    mpSendOpp(msg);
+    if (G.over) mpAfterLoad();
+  };
+  go();
+}
+
+// ---- views: the running engine's state, for everyone who is only watching ----
+function mpQueueView(){ if (!NET.on || !NET.active || NET.viewT) return; NET.viewT=setTimeout(()=>{ NET.viewT=null; mpSendView(); }, 120); }
+function mpSendView(){
+  if (!NET.on || !NET.active || NET.role==='spec') return;
+  const pack=mpPack(G); const s=JSON.stringify(pack);
+  const lines=NET.logBuf.splice(0);
+  if (s===NET.lastViewStr && !lines.length) return;
+  NET.lastViewStr=s;
+  const msg={ t:'view', from:NET.role, pack, log:lines, seq:++NET.seq };
+  if (NET.role==='host'){ NET.lastView=msg; mpBroadcast(msg); } else mpSendHost(msg);
+}
+function mpApplyView(msg){
+  if (!NET.on || NET.active || !msg) return;
+  if (!msg.pack){ if (msg.log) mpAppendLog(msg.log, msg.from); return; }   // lines only
+  const flip = NET.role==='spec' ? msg.from==='guest' : true;
+  mpLoadState(msg.pack, flip, NET.hop ? NET.hop.loose : null);
+  if (NET.hop) mpRestoreUi(NET.hop.ui); else mpSanitizeUi();
+  if (msg.log) mpAppendLog(msg.log, msg.from);
+  mpEnterGame(); mpSetNameLabels(); if (!NET.hop) mpHideWait(); render();
+  mpAfterLoad();
+}
+function mpAfterLoad(){
+  if (G.over && NET.overRec && !NET.overShown) mpShowOver(NET.overRec);
+}
+// Log lines travel with the state; a line written from the other player's point of view is turned around for this screen.
+function mpAppendLog(lines, from){
+  for (const [msg, cls] of lines){
+    let text=msg, c=cls;
+    if (NET.role==='spec'){ const sender = from==='guest' ? NET.names.guest : NET.names.host; text=mpFlipText(msg, sender, null); c = from==='guest' ? (cls==='me' ? 'ai' : cls==='ai' ? 'me' : cls) : cls; }
+    else { text=mpFlipText(msg, mpOppName(), NET.me); c = cls==='me' ? 'ai' : cls==='ai' ? 'me' : cls; }
+    log(text, c);
+  }
+}
+function mpFlipText(s, theirName, myName){
+  s=String(s);
+  const esc=x=>x.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  s=s.replace(/\bYou\b/g,'\u0001').replace(/\bYour\b/g,'\u0002').replace(/\byours\b/g,'\u0004').replace(/\byou\b/g,'\u0003').replace(/\byour\b/g,'\u0004');
+  if (myName){ s=s.replace(new RegExp('\\b'+esc(myName)+"'s",'g'),'your').replace(new RegExp('\\b'+esc(myName)+'\\b','g'),'you'); }
+  const n=theirName||'Opponent';
+  s=s.replace(/\u0001/g, n).replace(/\u0002/g, n+"'s").replace(/\u0003/g, n).replace(/\u0004/g, n+"'s");
+  // "You draw …" became "Bob draw …": agree the verb that follows the name.
+  s=s.replace(new RegExp('(^|[>.!?—]\\s*|^\\s*)('+esc(n)+') (don\'t|do not|have|are|draw|deploy|play|pair|attack|activate|discard|redraw|destroy|rest|choose|pay|gain|take|win|use|add|reveal|place|return|set|deal|intercept|declare|decline|put|look|search|move|shuffle|exile|keep|pass|recover|lose|get|give|remove|repair|retreat|target|mulligan|block)\\b','g'),
+    (m,pre,name,v)=>pre+name+' '+({ "don't":"doesn't", 'do not':'does not', have:'has', are:'is', pay:'pays', pass:'passes', search:'searches', go:'goes', do:'does' }[v] || v+'s'));
+  s=s.replace(/\ba you\b/g,'your').replace(new RegExp('\\ba '+esc(n)+'\\b','g'), n+"'s");
+  return s.replace(/^(you|your)\b/, m=>m[0].toUpperCase()+m.slice(1)).replace(/([.!?]\s+)(you|your)\b/g, (m,p,w)=>p+w[0].toUpperCase()+w.slice(1));
+}
+function mpSetNameLabels(){
+  if (!NET.on) return;
+  const my = NET.role==='spec' ? NET.names.host : NET.me, opp = NET.role==='spec' ? NET.names.guest : mpOppName();
+  const pn=el('playerName'), en=el('enemyName');
+  if (pn) pn.textContent=`${G.playerDeckName||''} (${my||'?'})`;
+  if (en) en.textContent=`${G.enemyDeckName||''} (${opp||'?'})`;
+}
+function mpEnterGame(){
+  if (NET.inGame) return; NET.inGame=true;
+  closeSetupModal(); el('overlay').classList.add('hidden'); el('log').innerHTML='';
+}
+let _mpWaitEl=null;
+function mpShowWait(html, sticky){
+  let w=el('mpWait'); if (!w){ w=document.createElement('div'); w.id='mpWait'; document.body.appendChild(w); }
+  w.innerHTML=html; w.classList.add('show'); w.classList.toggle('warn', !!sticky);
+}
+function mpHideWait(){ const w=el('mpWait'); if (w && !w.classList.contains('warn')) w.classList.remove('show'); }
+
+// ---- the game, online ----
+// Both decks are in: the host's engine sets the game up — dice, hands, mulligans (each on its owner's screen), Shields.
+function mpMaybeStart(){
+  if (NET.role!=='host' || NET.started || !NET.decks.host || !NET.decks.guest || !NET.guest) return;
+  NET.started=true; NET.gameId=mpNewCode()+mpNewCode(); NET.overRec=null; NET.overShown=false; NET.inGame=false;
+  mpBroadcast({ t:'start', gameId:NET.gameId, names:NET.names });
+  uid=1; HIST.length=0; try{ const h=document.getElementById('histRibbon'); if(h) h.innerHTML=''; }catch(e){}
+  Object.assign(G, { turn:'player', turnNumber:1, phase:'main', selected:null, mode:'idle', pending:null, pendingHandIdx:-1, over:false, modalQueue:[], retarget:null, curBattle:null, curAttack:null,
+                     firstPlayer:'player', skipDrawSide:null, turnSeq:1, winner:null, player:makeSide('player'), enemy:makeSide('enemy'), mpActUses:0 });
+  G.setup={ playerPreset:NET.decks.host, enemyPreset:NET.decks.guest }; G.setupSeq=(G.setupSeq||0)+1;
+  G.playerDeckName=NET.decks.host.name; G.enemyDeckName=NET.decks.guest.name;
+  mpEnterGame(); NET.active=true; mpSetNameLabels();
+  mpDiceRoll();
+}
+function mpDiceRoll(){
+  let pr,er; do{ pr=1+Math.floor(Math.random()*6); er=1+Math.floor(Math.random()*6); } while(pr===er);
+  const won = pr>er, me=NET.names.host, opp=NET.names.guest;
+  const m=setupModal(`<h2 style="color:#d8b4ff;margin:14px 0 10px">Roll for turn order</h2>
+    <div style="font-size:30px;margin:14px 0">🎲 ${me} <b style="color:#86efac">${pr}</b> &nbsp;vs&nbsp; ${opp} <b style="color:#fca5a5">${er}</b> 🎲</div>
+    <p style="color:${won?'#86efac':'#fca5a5'};font-size:14px">${won ? 'You won the roll — choose who takes the first turn.' : opp+' won the roll and is choosing…'}</p>
+    <div id="orderBtns" style="margin-top:8px"></div>`);
+  const go=(first)=>{ G.firstPlayer=first; G.skipDrawSide=null; mpSetupDeal(); };
+  if (won){
+    el('orderBtns').innerHTML=`<button id="goFirst" style="background:#2e6b3a;color:#fff;border:none;border-radius:8px;padding:11px 20px;margin:4px;cursor:pointer;font-weight:600">Go First</button>
+      <button id="goSecond" style="background:#3a3a6b;color:#fff;border:none;border-radius:8px;padding:11px 20px;margin:4px;cursor:pointer;font-weight:600">Go Second (+1 EX Resource)</button>`;
+    el('goFirst').onclick=()=>go('player'); el('goSecond').onclick=()=>go('enemy');
+    return;
+  }
+  mpHop('order', { pr:er, er:pr, winnerName:opp }, res=>{ go(res && res.first==='player' ? 'enemy' : 'player'); }, { noState:true });   // the guest's "me first" is our enemy first
+}
+// The roll winner's choice, on their own screen.
+function mpOrderPrompt(args, cb){
+  const m=setupModal(`<h2 style="color:#d8b4ff;margin:14px 0 10px">Roll for turn order</h2>
+    <div style="font-size:30px;margin:14px 0">🎲 You <b style="color:#86efac">${args.pr}</b> &nbsp;vs&nbsp; ${mpOppName()} <b style="color:#fca5a5">${args.er}</b> 🎲</div>
+    <p style="color:#86efac;font-size:14px">You won the roll — choose who takes the first turn.</p>
+    <div style="margin-top:8px"><button id="goFirst" style="background:#2e6b3a;color:#fff;border:none;border-radius:8px;padding:11px 20px;margin:4px;cursor:pointer;font-weight:600">Go First</button>
+      <button id="goSecond" style="background:#3a3a6b;color:#fff;border:none;border-radius:8px;padding:11px 20px;margin:4px;cursor:pointer;font-weight:600">Go Second (+1 EX Resource)</button></div>`);
+  el('goFirst').onclick=()=>{ closeSetupModal(); mpShowWait(`⏳ ${mpOppName()} is setting up the game…`); cb('player'); };
+  el('goSecond').onclick=()=>{ closeSetupModal(); mpShowWait(`⏳ ${mpOppName()} is setting up the game…`); cb('enemy'); };
+}
+function mpSetupDeal(){
+  const pp=G.setup.playerPreset, ep=G.setup.enemyPreset;
+  G.player.deck=shuffle(buildPresetDeck('player', pp)); G.enemy.deck=shuffle(buildPresetDeck('enemy', ep));
+  for (let i=0;i<HAND_START;i++){ draw(G.player,true); draw(G.enemy,true); }
+  // Each player may redraw once, the first player deciding first (Q10) — each on their own screen.
+  const order = G.firstPlayer==='player' ? ['me','opp'] : ['opp','me'];
+  const step=(i)=>{ if (!NET.on) return; if (i>=2){ mpSetupShields(); return; }
+    if (order[i]==='me') mpHandMulligan(()=>step(i+1)); else { closeSetupModal(); mpHop('mulligan', {}, ()=>step(i+1)); } };
+  step(0);
+}
+// The genuine opening-hand screen, continuing into `done` (no solo-mode navigation).
+function mpHandMulligan(done){
+  const show=(allow)=>{
+    const hand=G.player.hand.map(setupMiniCard).join('');
+    setupModal(`<h2 style="color:#d8b4ff;margin:14px 0 10px">Your opening hand</h2>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:14px 0">${hand}</div>
+      <p style="color:#9aa;font-size:13px">${allow ? 'You may redraw your whole hand once — all 5 go to the bottom of your deck, you draw 5 new cards, then your deck is shuffled.' : 'Mulligan used — this is your hand.'}</p>
+      <div>${allow ? '<button id="keepHand" style="background:#2e6b3a;color:#fff;border:none;border-radius:8px;padding:11px 20px;margin:4px;cursor:pointer;font-weight:600">Keep</button> <button id="mullHand" style="background:#7a3a3a;color:#fff;border:none;border-radius:8px;padding:11px 20px;margin:4px;cursor:pointer;font-weight:600">Mulligan</button>'
+                     : '<button id="keepHand" style="background:#2e6b3a;color:#fff;border:none;border-radius:8px;padding:11px 20px;margin:4px;cursor:pointer;font-weight:600">Continue</button>'}</div>`);
+    el('keepHand').onclick=()=>{ closeSetupModal(); if (NET.inHop) mpShowWait(`⏳ ${mpOppName()} is setting up the game…`); done(); };
+    if (allow) el('mullHand').onclick=()=>{ redrawHand(G.player); log('You redraw your opening hand.', 'me'); show(false); };
+  };
+  show(true);
+}
+function mpSetupShields(){
+  for (const s of [G.player, G.enemy]){ s.shields.length=0; for (let i=0;i<SHIELD_MAX && s.deck.length;i++) s.shields.push(s.deck.pop()); s.base=exBaseToken(s.who); }
+  const m=setupModal(`<h2 style="color:#d8b4ff;margin:14px 0 10px">Ready to battle</h2>
+    <div style="font-size:30px;letter-spacing:4px;margin:8px 0">${'🛡'.repeat(SHIELD_MAX)}</div>
+    <p style="color:#9aa;font-size:13px">6 face-down Shields and an EX Base are set for each side. ${G.firstPlayer==='player' ? 'You take' : NET.names.guest+' takes'} the first turn.</p>
+    <div><button id="beginBtl" style="background:#2e6b3a;color:#fff;border:none;border-radius:8px;padding:11px 24px;margin:4px;cursor:pointer;font-weight:600">Begin Battle</button></div>`);
+  el('beginBtl').onclick=()=>mpSetupFinalize();
+}
+function mpSetupFinalize(){
+  closeSetupModal();
+  const second = G.firstPlayer==='player' ? G.enemy : G.player;
+  second.ex=1; second.resAvail=1;
+  el('overlay').classList.add('hidden'); el('log').innerHTML='';
+  log(`Battle start! <b>${G.playerDeckName}</b> (you) vs <b>${G.enemyDeckName}</b> (${NET.names.guest}).`, 'sys');
+  log(`${G.firstPlayer==='player' ? 'You take' : NET.names.guest+' takes'} the first turn. ${second===G.player ? 'You gain' : NET.names.guest+' gains'} an EX Resource (going second). 6 Shields + EX Base each.`, 'sys');
+  G.turnNumber=1;
+  beginTurn(G.firstPlayer);
+}
+// The turn is over: the opponent's engine takes it from here.
+function mpHandOffTurn(){
+  if (!NET.on) return;
+  clearTimeout(NET.viewT); NET.viewT=null;
+  NET.active=false; NET.hop=null;
+  G.turn='enemy'; G.mode='idle'; G.selected=null; G.pending=null; G.phase='start';
+  showTurnBanner('enemy'); setPrompt(''); render();
+  const conn = NET.role==='host' ? NET.guest : NET.host;
+  if (!conn || !conn.open){ mpShowWait('⚠ Your opponent is not connected — <button onclick="mpLeave()" class="ghost" style="padding:4px 10px;font-size:12px">Leave room</button>', true); return; }
+  mpSend(conn, { t:'hop', step:'turn', pack:mpPack(G), log:NET.logBuf.splice(0), seq:++NET.seq });
+  mpSendViewTo(NET.role==='host' ? NET.specs : null);   // spectators see the hand-over at once
+}
+function mpSendViewTo(list){ if (!list || !list.length) return; const msg={ t:'view', from:NET.role, pack:mpPack(G), log:[], seq:NET.seq }; NET.lastView=msg; for (const c of list) mpSend(c, msg); }
+// Block step for the player's attack: the opponent decides on their own screen (nothing to ask with no Blocker up).
+function mpBlockStep(atk, target, cont){
+  if (!NET.on){ cont(aiBlockStep(atk, target)); return; }
+  const blockers = effHighManeuver(atk) ? [] : G.enemy.field.filter(b=>effBlocker(b) && !b.rested && b.hp>0 && b!==target && blockerAllowed(b, atk));
+  if (!blockers.length){ cont(null); return; }
+  mpHop('block', { atk, target, blockers }, res=>{
+    const blk = res && res.blk!=null ? blockers.find(b=>b.uid===res.blk) : null;
+    if (blk && G.enemy.field.includes(blk) && !blk.rested && blk.hp>0){
+      blk.rested=true; log(`${who(G.enemy)}'s <b>${blk.name}</b> &lt;Blocker&gt; intercepts${target?'':' your attack'}!`, 'ai');
+      afterBlockDeclared(blk, G.enemy); G.curBattle={ atk, def:blk };
+      cont(blk); return;
+    }
+    cont(null);
+  }, { noState:true });
+}
+// Action step (8-4): the defending player's window first, then the turn player's; it goes around again while either used something.
+function mpActionStep(attacker, cb){
+  const round=()=>{
+    if (G.over){ cb(); return; }
+    const before=G.mpActUses||0;
+    mpHop('action', { attacker }, ()=>{
+      if (G.over){ cb(); return; }
+      const oppActed=(G.mpActUses||0)!==before, b2=G.mpActUses||0;
+      G._mpActLocal=true;
+      offerPlayerActionStep(attacker, ()=>{ G._mpActLocal=false; if (G.over){ cb(); return; } if (oppActed || (G.mpActUses||0)!==b2) round(); else cb(); });
+    });
+  };
+  round();
+}
+// ---- game over, results, leaderboard ----
+function mpResults(){ return lsGet('gtcg_mp_results', []); }
+function mpMergeResults(list){
+  const have=mpResults(); const ids=new Set(have.map(r=>r.id)); let added=0;
+  for (const r of list){ if (r && r.id && !ids.has(r.id) && r.w && r.l){ have.push(r); ids.add(r.id); added++; } }
+  if (added){ have.sort((a,b)=>(a.ts||0)-(b.ts||0)); lsSet('gtcg_mp_results', have.slice(-500)); }
+  return added;
+}
+function mpGameOver(win){
+  const meName=NET.me, opp=mpOppName();
+  const rec={ id:NET.gameId || (mpNewCode()+mpNewCode()), ts:Date.now(), room:NET.code, turns:G.turnNumber,
+    w:{ name:win ? meName : opp, deck:win ? G.playerDeckName : G.enemyDeckName }, l:{ name:win ? opp : meName, deck:win ? G.enemyDeckName : G.playerDeckName },
+    hostWon: NET.role==='host' ? win : !win };
+  mpMergeResults([rec]);
+  const msg={ t:'over', rec };
+  if (NET.role==='host') mpBroadcast(msg); else mpSendHost(msg);
+  mpOnOver(rec);
+}
+function mpOnOver(rec){
+  if (!rec) return;
+  NET.overRec=rec; mpMergeResults([rec]);
+  if (NET.role==='host') mpLobbySync();
+  mpShowOver(rec);
+}
+function mpShowOver(rec){
+  if (NET.overShown) return; NET.overShown=true;
+  G.over=true; NET.active=false; NET.hop=null; mpHideWait(); closeSetupModal();
+  const iWon = NET.role==='spec' ? null : rec.w.name===NET.me && rec.l.name!==NET.me;
+  const win = NET.role==='spec' ? rec.hostWon : iWon;
+  fx('direct'); setTimeout(()=>sound(win ? 'win' : 'lose'), 250);
+  const ov=el('overlay'); ov.classList.remove('hidden');
+  ov.innerHTML = `<h2 class="result ${win?'win':'loss'}">${NET.role==='spec' ? rec.w.name.toUpperCase()+' WINS' : (win ? 'VICTORY' : 'DEFEAT')}</h2>
+    <p><b>${rec.w.name}</b> (${rec.w.deck}) defeats <b>${rec.l.name}</b> (${rec.l.deck}) on turn ${rec.turns}.</p>
+    <div id="mpOverBoard" style="max-width:560px;width:100%">${mpLeaderboardHTML(true)}</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center"><button id="mpAgainBtn" class="gold">BACK TO LOBBY</button><button id="mpLeaveBtn" class="ghost">LEAVE ROOM</button></div>`;
+  el('mpAgainBtn').onclick=()=>mpBackToLobby();
+  el('mpLeaveBtn').onclick=()=>mpLeave();
+  log(NET.role==='spec' ? `${rec.w.name} wins!` : (win ? 'You win!' : 'You are defeated.'), 'sys');
+  try{ render(); }catch(e){}
+}
+function mpBackToLobby(){
+  NET.started=false; NET.inGame=false; NET.overShown=false; NET.active=false; NET.hop=null; NET.inHop=false;
+  NET.decks.host=null; NET.decks.guest=null;
+  if (NET.role==='host'){ NET.overRec=null; mpLobbySync(); }
+  el('overlay').classList.remove('hidden'); el('overlay').innerHTML='';
+  mpRenderLobby();
+}
+// Wins and losses per player, from the results every device in the room has seen (merged whenever players meet).
+function mpLeaderboardHTML(thisRoom){
+  const all=mpResults(), list=thisRoom ? all.filter(r=>r.room===NET.code) : all;
+  const P=new Map();
+  for (const r of list){ for (const [n,w] of [[r.w.name,1],[r.l.name,0]]){ const e=P.get(n)||(P.set(n,{ name:n, w:0, l:0, streak:0, last:0 }), P.get(n)); if (w) e.w++; else e.l++; } }
+  for (const r of list) for (const [n,w] of [[r.w.name,1],[r.l.name,0]]){ const e=P.get(n); e.streak = w ? (e.streak>=0 ? e.streak+1 : 1) : (e.streak<=0 ? e.streak-1 : -1); e.last=r.ts; }
+  const rows=[...P.values()].sort((a,b)=>(b.w-a.w) || (a.l-b.l) || (b.last-a.last));
+  const pct=e=>{ const n=e.w+e.l; return n ? Math.round(100*e.w/n)+'%' : '—'; };
+  const table = rows.length ? `<table class="mp-table"><tr><th>#</th><th style="text-align:left">Player</th><th>W</th><th>L</th><th>Win %</th><th>Streak</th></tr>${rows.map((e,i)=>`<tr${e.name===NET.me?' class="me"':''}><td>${i+1}</td><td style="text-align:left">${mpEsc(e.name)}</td><td>${e.w}</td><td>${e.l}</td><td>${pct(e)}</td><td>${e.streak>0?'🔥'+e.streak:e.streak<0?'❄'+(-e.streak):'—'}</td></tr>`).join('')}</table>`
+    : `<p style="color:#778;font-size:12px;margin:6px 0">No games recorded ${thisRoom ? 'in this room' : ''} yet.</p>`;
+  const recent=list.slice(-8).reverse().map(r=>`<div class="mp-recent"><span>${new Date(r.ts).toLocaleDateString()}</span> <b>${mpEsc(r.w.name)}</b> <span style="opacity:.7">(${mpEsc(r.w.deck)})</span> beat <b>${mpEsc(r.l.name)}</b> <span style="opacity:.7">(${mpEsc(r.l.deck)})</span> · turn ${r.turns}</div>`).join('');
+  return `<div class="mp-board"><div class="mp-board-head"><b>🏆 Leaderboard</b><span><button class="db-filter ${thisRoom?'on':''}" onclick="mpBoardScope(true)">This room${NET.code?' '+NET.code:''}</button> <button class="db-filter ${thisRoom?'':'on'}" onclick="mpBoardScope(false)">All rooms</button></span></div>${table}${recent ? `<div class="mp-recent-wrap">${recent}</div>` : ''}</div>`;
+}
+function mpBoardScope(room){ for (const id of ['mpOverBoard','mpLobbyBoard']){ const n=el(id); if (n) n.innerHTML=mpLeaderboardHTML(room); } }
+function mpEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// ---- lobby ----
+function mpOpenLobby(){
+  mpReset(); NET.me=String(lsGet('gtcg_mp_name','')||'').slice(0,20);
+  mpRenderLobby();
+}
+function mpLobbyError(msg){ NET.warn=msg; mpReset(); NET.warn=msg; mpRenderLobby(); }
+function mpRenderLobby(status){
+  if (NET.started && NET.inGame) return;   // mid-game: the board is up
+  const btn=(id,label,cls,extra)=>`<button id="${id}" class="${cls||''}" style="padding:10px 16px;${extra||''}">${label}</button>`;
+  const warn = NET.warn ? `<div class="mp-warn">${mpEsc(NET.warn)}</div>` : '';
+  let body='';
+  if (!NET.on){
+    body=`<p style="color:#9aa;font-size:13px;margin:0 0 12px">Play a friend over the internet in a private room: one of you creates a room and shares its 5-letter code, the other joins with it. Anyone else with the code can watch as a spectator. Results count toward the room's leaderboard.</p>
+      <div class="mp-row"><label>Your name</label><input id="mpName" maxlength="20" placeholder="Pilot name" value="${mpEsc(NET.me)}"></div>
+      <div class="mp-cols">
+        <div class="mp-col"><h3>Create a room</h3><p>You host the game; keep this tab open.</p>${btn('mpCreate','＋ Create room','gold')}</div>
+        <div class="mp-col"><h3>Join a room</h3><div class="mp-row"><input id="mpCode" maxlength="5" placeholder="CODE" style="text-transform:uppercase;letter-spacing:3px;width:110px;text-align:center"></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">${btn('mpJoin','Join as player')}${btn('mpWatch','Watch as spectator','ghost')}</div></div>
+      </div>`;
+  } else {
+    const hostName=NET.names.host||'…', guestName=NET.names.guest;
+    const dk=(d)=>d ? `<span style="color:#7ee29a">✓ ${mpEsc(d.name)}</span>` : '<span style="color:#aa8">choosing a deck…</span>';
+    const myDeck = NET.role==='host' ? NET.decks.host : NET.role==='guest' ? NET.decks.guest : null;
+    const players=`<div class="mp-players">
+        <div class="mp-player"><div class="mp-tag">HOST</div><b>${mpEsc(hostName)}</b>${NET.me===hostName && NET.role==='host' ? ' <span class="mp-you">you</span>' : ''}<div class="mp-deck">${NET.started ? '' : dk(NET.decks.host)}</div></div>
+        <div class="mp-vs">VS</div>
+        <div class="mp-player"><div class="mp-tag">GUEST</div>${guestName ? `<b>${mpEsc(guestName)}</b>${NET.role==='guest' ? ' <span class="mp-you">you</span>' : ''}<div class="mp-deck">${NET.started ? '' : dk(NET.decks.guest)}</div>` : '<span style="color:#aa8">waiting for a player to join…</span>'}</div>
+      </div>
+      <div style="color:#9aa;font-size:12px;margin:6px 0">👁 Spectators: ${NET.specNames.length ? NET.specNames.map(mpEsc).join(', ') : 'none'}${NET.role==='spec' ? ' (you are watching)' : ''}</div>`;
+    const codeBox=`<div class="mp-codebox"><div style="font-size:11px;color:#9aa;letter-spacing:1px">ROOM CODE</div><div class="mp-code">${NET.code||'·····'}</div><div style="font-size:11px;color:#9aa">${NET.role==='host' ? 'Share it with your opponent and any spectators.' : 'You are in this room.'}</div></div>`;
+    let action='';
+    if (status) action=`<p style="color:#aab">${mpEsc(status)}</p>`;
+    else if (NET.role==='host' && !NET.open) action=`<p style="color:#aab">Opening the room…</p>`;
+    else if (NET.started) action=`<p style="color:#aab">A game is in progress.</p>`;
+    else if (NET.role==='spec') action=`<p style="color:#aab">The game starts once both players have picked their decks.</p>`;
+    else if (!myDeck) action=`${btn('mpPickDeck','🃏 Pick your deck','gold')}`;
+    else if (!guestName && NET.role==='host') action=`<p style="color:#aab">Waiting for an opponent to join with the code…</p>${btn('mpPickDeck','Change deck','ghost')}`;
+    else action=`<p style="color:#aab">Waiting for ${mpEsc(NET.role==='host' ? guestName : hostName)} to pick a deck… the game starts automatically.</p>${btn('mpPickDeck','Change deck','ghost')}`;
+    body=`${codeBox}${players}<div style="margin:10px 0">${action}</div><div id="mpLobbyBoard">${mpLeaderboardHTML(true)}</div>`;
+  }
+  const m=setupModal(`<div style="position:relative"><h2 style="color:#d8b4ff;margin:4px 0 10px">⚔ Play Online</h2>${warn}${body}
+    <div style="margin-top:14px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">${NET.on ? btn('mpLeaveLobby','Leave room','ghost') : btn('mpCloseLobby','Back to title','ghost')}</div></div>`, 720);
+  const nm=m.querySelector('#mpName'); if (nm){ nm.oninput=()=>{ NET.me=nm.value.trim().slice(0,20); lsSet('gtcg_mp_name', NET.me); }; }
+  const need=()=>{ if (!NET.me){ NET.me='Pilot '+Math.floor(100+Math.random()*900); lsSet('gtcg_mp_name', NET.me); } };
+  const c=m.querySelector('#mpCreate'); if (c) c.onclick=()=>{ need(); NET.warn=''; mpLoadPeerJs(()=>mpCreateRoom()); };
+  const j=m.querySelector('#mpJoin'); if (j) j.onclick=()=>{ need(); NET.warn=''; const code=m.querySelector('#mpCode').value; mpLoadPeerJs(()=>mpJoinRoom(code, false)); };
+  const w=m.querySelector('#mpWatch'); if (w) w.onclick=()=>{ need(); NET.warn=''; const code=m.querySelector('#mpCode').value; mpLoadPeerJs(()=>mpJoinRoom(code, true)); };
+  const cl=m.querySelector('#mpCloseLobby'); if (cl) cl.onclick=()=>{ NET.warn=''; closeSetupModal(); };
+  const lv=m.querySelector('#mpLeaveLobby'); if (lv) lv.onclick=()=>mpLeave();
+  const pd=m.querySelector('#mpPickDeck'); if (pd) pd.onclick=()=>mpChooseDeck();
+  const cd=m.querySelector('#mpCode'); if (cd) cd.onkeydown=(e)=>{ if (e.key==='Enter' && j) j.onclick(); };
+}
+// Deck choice for an online game: presets and this device's custom decks (build decks from the solo deck picker).
+function mpChooseDeck(){
+  const used=new Set();
+  const tileStyle=(art,border)=>`position:relative;width:150px;height:200px;border-radius:12px;border:1px solid ${border};cursor:pointer;overflow:hidden;padding:0;`+
+    (art ? `background-image:url('${art}');background-size:cover;background-position:center top` : 'background:linear-gradient(160deg,#23204a,#191636)');
+  const shade=`<div style="position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,0) 45%,rgba(8,6,20,.92) 88%)"></div>`;
+  const tile=(d,cls,i,custom)=>`<div class="${cls}" data-i="${i}" style="${tileStyle(presetArt(d,used), custom?'#34d399':'#6a4fb0')}">${shade}
+      <div style="position:absolute;bottom:0;left:0;right:0;padding:8px 6px;color:#fff;font-size:14px;font-weight:700;text-shadow:0 1px 3px #000">${mpEsc(d.name)}${custom?'<div style="font-size:10px;color:#7ee29a;font-weight:600">CUSTOM</div>':''}</div></div>`;
+  const customs=customDecks();
+  const m=setupModal(`<h2 style="color:#d8b4ff;margin:14px 0 6px">Choose your deck</h2>
+    <p style="color:#9aa;margin:0 0 10px;font-size:13px">Pick a preset or one of your custom decks.</p>
+    <div style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center">${PRESET_DECKS.map((d,i)=>tile(d,'mp-deck-p',i,false)).join('')}${customs.map((d,i)=>tile(d,'mp-deck-c',i,true)).join('')}</div>
+    <div style="margin-top:12px"><button id="mpDeckBack" class="ghost">Back</button></div>`);
+  m.querySelectorAll('.mp-deck-p').forEach(t=>t.onclick=()=>mpDeckChosen(PRESET_DECKS[+t.dataset.i]));
+  m.querySelectorAll('.mp-deck-c').forEach(t=>t.onclick=()=>mpDeckChosen(customDecks()[+t.dataset.i]));
+  el('mpDeckBack').onclick=()=>mpRenderLobby();
+}
+function mpDeckChosen(d){
+  if (!d) return;
+  const deck={ name:d.name, dg:d.dg };
+  if (NET.role==='host'){ NET.decks.host=deck; mpLobbySync(); mpRenderLobby(); mpMaybeStart(); }
+  else { NET.decks.guest=deck; mpSendHost({ t:'deck', deck }); mpRenderLobby(); }
 }
 
 // ---- rendering ----
@@ -14952,8 +15667,8 @@ function pruneTriggerCands(){
 }
 function render(){
   pruneTriggerCands();
-  if (G.modalQueue && G.modalQueue.length) setTimeout(pumpModalQueue, 0);   // a waiting effect takes the modal once it's free
-  if (G.exExiledWait) scheduleExExiled();                                     // a deferred EX-exiled trigger (Calibarn) waits for the play to settle
+  if (G.modalQueue && G.modalQueue.length && !NET.hop) setTimeout(pumpModalQueue, 0);   // a waiting effect takes the modal once it's free
+  if (G.exExiledWait && !NET.hop) scheduleExExiled();                                     // a deferred EX-exiled trigger (Calibarn) waits for the play to settle
   // Refresh cached AP/HP for every Unit so turn-conditional team auras (e.g. Gundam's
   // "During your turn, all your Units get AP+1") and mid-turn pairings update immediately
   // on both sides — combat and the display both read the cached values.
@@ -14962,7 +15677,7 @@ function render(){
     for (const u of s.field){ if (u.hp>0){ syncWhileHp(u, s); u.ap = effAp(u); u.maxHp = effMaxHp(u); } }
   }
   el('poolCount').textContent = `${POOL_STATS.cards} CARDS · ${POOL_STATS.printings}`;
-  el('turnInfo').innerHTML = `Turn <b>${G.turnNumber}</b> · ${G.turn==='player'?'<b>Your</b> move':'<b>'+who(G.enemy)+'</b> acting'}`;
+  el('turnInfo').innerHTML = `Turn <b>${G.turnNumber}</b> · ${G.turn==='player' ? (NET.on && NET.role==='spec' ? '<b>'+who(G.player)+'</b> acting' : '<b>Your</b> move') : '<b>'+who(G.enemy)+'</b> acting'}`;
   el('enemyShieldZone').innerHTML = shieldZoneHTML(G.enemy) + '<div class="z-label">SHIELDS</div>';
   el('playerShieldZone').innerHTML = shieldZoneHTML(G.player) + '<div class="z-label">SHIELDS</div>';
   // With no enemy base, a direct attack lands on the shields — highlight the shield zone as the target.
@@ -15038,8 +15753,13 @@ function render(){
   if (_nothingLeft) el('endTurnBtn').classList.add('urge'); else el('endTurnBtn').classList.remove('urge');
   hideTargetArrow();
   el('cancelBtn').style.display = (G.mode!=='idle' && G.turn==='player' && !(G.mode==='discard' && !(G.pending&&G.pending.onCancel))) ? 'inline-block' : 'none';
+  if (NET.on && NET.role==='spec'){   // a spectator sees neither hand: card backs only
+    el('hand').innerHTML = _hn ? Array.from({length:Math.min(_hn,10)},(_,i)=>`<div class="fan-slot" style="margin-left:${i?-30:0}px"><div class="card" style="background:url('${HAND_BACK_IMG}') center/cover"></div></div>`).join('') : '';
+    el('peekOverlay').classList.remove('show');
+  }
   bind();
   applyVisualFx();
+  if (NET.on && NET.active) mpQueueView();   // online: everyone watching gets this state
 }
 function fieldHTML(side, ctx){
   return side.field.map(c=>cardFace(c,ctx)).join('');   // base is rendered in its own zone; an empty mat shows just the mat
@@ -15292,6 +16012,7 @@ function cancelAction(){
 el('rulesBtn').addEventListener('click', ()=>{
   if(G.over) return;                                   // game-over screen owns the overlay
   el('startBtn').style.display='none';                 // mid-game: show rules, not the start button
+  if (el('mpBtn')) el('mpBtn').style.display='none';
   el('introText').style.display='none';
   el('backToBattleBtn').style.display='inline-block';
   el('overlay').classList.remove('hidden');
@@ -15309,6 +16030,21 @@ document.addEventListener('click', (e)=>{
 }, true);
 el('soundBtn').addEventListener('click', ()=>{ SOUND.on=!SOUND.on; el('soundBtn').textContent=SOUND.on?'🔊':'🔇'; if(SOUND.on){ unlockAudio(); const ac=audioCtx(); sound('deploy'); try{ log(`Audio: ${ac?ac.state:'unavailable'}${ac&&ac.state!=='running'?' — tap again to enable':''}.`, 'sys'); }catch(e){} } });
 el('startBtn').addEventListener('click', ()=>{ unlockAudio(); startGame(); });
+el('mpBtn').addEventListener('click', ()=>{ unlockAudio(); mpOpenLobby(); });
+// The title screen's markup, restored after an online game's result screen replaced it (Leave room).
+const _TITLE_HTML = el('overlay').innerHTML;
+function mpRestoreTitle(){
+  const ov=el('overlay');
+  if (!ov.querySelector('#startBtn')){
+    ov.innerHTML=_TITLE_HTML;
+    el('startBtn').addEventListener('click', ()=>{ unlockAudio(); startGame(); });
+    el('mpBtn').addEventListener('click', ()=>{ unlockAudio(); mpOpenLobby(); });
+    el('backToBattleBtn').addEventListener('click', ()=>{ ov.classList.add('hidden'); });
+    el('bgBtn2').addEventListener('click', ()=>{ matBgRender(); el('bgModal').classList.add('show'); });
+  }
+  ov.classList.remove('hidden');
+  el('startBtn').style.display='inline-block'; el('introText').style.display='block'; el('backToBattleBtn').style.display='none'; el('mpBtn').style.display='inline-block';
+}
 // ---- Playmat backgrounds: a picture of the player's own for each mat (phone gallery / camera / file), kept in
 // localStorage as a downscaled JPEG so it survives reloads and installs; "Reset" returns the mat to its stock art. ----
 const MATBG = { key: s=>'gtcg_matbg_'+s, fitKey: s=>'gtcg_matbg_fit_'+s, tileKey: s=>'gtcg_matbg_tile_'+s, blurKey: s=>'gtcg_matbg_blur_'+s, dimKey: 'gtcg_matbg_dim' };

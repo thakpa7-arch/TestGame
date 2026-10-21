@@ -23,3 +23,12 @@ Always send both updated-build links after finishing a task (push first, then re
 - After any change, regenerate `game.js` and run the suite; every script must report `Errors: 0`:
   `run_cards.js` (all cards), `pt_gd05_games.js` (full GD05 games), `fuzz_player.js` / `fuzz_hard.js`
   (AI win-rate sanity). Keep base-set behavior and win rates steady.
+
+## Online multiplayer (private rooms)
+- Title → ⚔ PLAY ONLINE. Rooms are PeerJS/WebRTC (room code = host's peer id); no server of ours. Each client runs
+  the same engine as `G.player`; the turn player's engine is authoritative and hands the packed state across
+  (`mpPack`/`mpLoadState`, cards diffed against `makeCard` templates, identity kept by uid) at turn changes and at
+  the opponent's decisions (block, action step, Bursts, mulligan, turn order — `mpHop`). Everyone else renders
+  read-only views. The opponent's own triggered choices on your turn resolve automatically (as for the AI).
+- Leaderboard: results in localStorage `gtcg_mp_results`, merged between devices on connect (`mpMergeResults`).
+- Tests: `dev/mp_roundtrip.js` (harness) and `dev/mp_check.js` (3 Chromium contexts, needs the PeerJS broker).

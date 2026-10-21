@@ -24,6 +24,8 @@ Run everything from this directory. Scripts read the game from `../gundam-card-g
     node fuzz_ui.js [seed] [games]    # random human play through the real UI entry points (fuzz_harness.js)
     node pw_check.js                  # Chromium smoke (needs /opt/pw-browsers/chromium)
     NG=8 [AILVL=hard] node pw_play.js # Chromium: real setup flow + random play to game over; reports JS errors
+    ROUNDS=1 node mp_roundtrip.js     # online play: full games with the multiplayer state pack -> flip -> unpack round trip at every turn
+    node mp_check.js [outdir]         # Chromium, 3 browsers: host + guest + spectator play a real online game (needs 0.peerjs.com)
 
 Importing a new set from the gcg-api dataset (https://github.com/yzRobo/gcg-api, data/cards.ndjson):
 
