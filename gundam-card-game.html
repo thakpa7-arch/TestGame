@@ -611,6 +611,43 @@
   #blockModal .act-info:hover { background: #6a4fb0; }
   #blockModal button.act-pass { flex: 1 0 100%; margin-top: 4px; }
   @media (max-width: 420px){ #blockModal button.act-opt { width: 104px; } }
+  /* Block step: every <Blocker> that can step in is a card tile too, with the trade it would make under its name. */
+  #blockModal button.act-opt.blk-opt { border-color: rgba(52,211,153,.55); }
+  #blockModal button.act-opt.blk-opt .act-tag { color: #6ee7b7; }
+  /* The battle inside the dialog: the attacker, an arrow, and what it is hitting (a Unit, the Base or the Shields). A Blocker
+     that stepped in (or one you hover) takes the arrow, and the first target is shown crossed out beside it. */
+  #blockModal.battle { background: rgba(4,7,14,.5); }
+  .bat-strip { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 2px 0 12px; }
+  .bat-card { position: relative; width: 76px; height: 106px; border-radius: 8px; background: #0c1426 center/cover no-repeat; border: 2px solid #f87171; box-shadow: 0 0 16px rgba(239,68,68,.45); display: flex; align-items: flex-end; justify-content: center; text-align: center; font-weight: 800; overflow: hidden; cursor: zoom-in; flex: 0 0 auto; }
+  .bat-card.def { border-color: #fbbf24; box-shadow: 0 0 16px rgba(251,191,36,.4); }
+  .bat-card.blk { border-color: #34d399; box-shadow: 0 0 18px rgba(52,211,153,.6); }
+  .bat-card .bat-nm { width: 100%; background: rgba(0,0,0,.72); padding: 2px 3px; line-height: 1.15; font-size: 9.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bat-card .bat-st { position: absolute; top: 4px; left: 4px; right: 4px; display: flex; justify-content: space-between; font-size: 10px; }
+  .bat-card .bat-st span { background: rgba(0,0,0,.75); border-radius: 5px; padding: 1px 4px; }
+  .bat-card.zone { background: linear-gradient(180deg,#14213f,#0a1020); font-size: 26px; align-items: center; flex-direction: column; justify-content: center; gap: 4px; cursor: default; }
+  .bat-card.zone .bat-nm { font-size: 9.5px; background: none; white-space: normal; }
+  .bat-arrow { display: flex; flex-direction: column; align-items: center; color: #f87171; font-weight: 900; font-size: 26px; line-height: 1; min-width: 64px; }
+  .bat-arrow small { font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase; opacity: .9; margin-top: 2px; }
+  .bat-strip.blocked .bat-arrow, .bat-strip.preview .bat-arrow { color: #34d399; }
+  .bat-strip .bat-was { position: relative; opacity: .45; filter: grayscale(.6); }
+  .bat-strip .bat-was::after { content: "✕"; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 30px; color: #f87171; pointer-events: none; }
+  @media (max-width: 420px){ .bat-card { width: 64px; height: 90px; } .bat-arrow { min-width: 44px; font-size: 22px; } .bat-strip { gap: 6px; } }
+  /* On the board: the attacker, what it is hitting, and the Blocker that stepped in — joined by an arrow drawn over the table. */
+  .card.bt-atk { outline: 3px solid #f87171; outline-offset: -3px; box-shadow: 0 0 22px 4px rgba(239,68,68,.85); }
+  .card.bt-def { outline: 3px dashed #fbbf24; outline-offset: -3px; box-shadow: 0 0 20px 3px rgba(251,191,36,.85); animation: targetBreathe 1.05s ease-in-out infinite; }
+  .card.bt-blk { outline: 3px solid #34d399; outline-offset: -3px; box-shadow: 0 0 22px 4px rgba(52,211,153,.9); }
+  .card.bt-was { filter: saturate(.5) brightness(.75); }
+  .shield-zone.zone-hit { outline: 3px dashed #fbbf24; outline-offset: -2px; border-radius: 8px; animation: targetBreathe 1.15s ease-in-out infinite; }
+  #battleArrow { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 94; filter: drop-shadow(0 2px 6px rgba(0,0,0,.7)); overflow: visible; }
+  #battleArrow .ba-glow { fill: none; stroke-width: 14; stroke-linecap: round; opacity: .35; }
+  #battleArrow .ba-line { fill: none; stroke-width: 5; stroke-linecap: round; stroke-dasharray: 14 10; animation: baFlow .8s linear infinite; }
+  #battleArrow .ba-was { fill: none; stroke: #9ca3af; stroke-width: 3; stroke-dasharray: 4 8; opacity: .5; }
+  @keyframes baFlow { to { stroke-dashoffset: -24; } }
+  #battleArrow .ba-beam { fill: none; stroke-width: 6; stroke-linecap: round; opacity: .95; transition: stroke-dashoffset .26s ease-out, opacity .45s ease-in .4s; }
+  .ba-label { position: fixed; z-index: 94; transform: translate(-50%,-50%); pointer-events: none; background: rgba(8,10,20,.9); border: 1px solid currentColor; color: #f87171; font-size: 11px; font-weight: 900; letter-spacing: .06em; padding: 3px 8px; border-radius: 999px; white-space: nowrap; box-shadow: 0 2px 10px rgba(0,0,0,.6); display: none; }
+  .ba-label.show { display: block; }
+  .ba-label.blk { color: #34d399; }
+  @media (prefers-reduced-motion: reduce){ #battleArrow .ba-line, .card.bt-def, .shield-zone.zone-hit { animation: none; } }
 
   /* ---- online multiplayer: lobby, waiting banner, leaderboard ---- */
   #mpWait { position: fixed; top: 8px; left: 50%; transform: translateX(-50%); z-index: 1300; background: rgba(20,18,46,.96); border: 1px solid #8b6ee0; color: #e8e4ff; border-radius: 10px; padding: 8px 14px; font-size: 13px; font-weight: 700; box-shadow: 0 6px 24px rgba(0,0,0,.6); display: none; max-width: calc(100vw - 24px); text-align: center; }
@@ -9212,6 +9249,125 @@ function drawTargetArrow(x,y){
 function hideTargetArrow(){ if(_arrowSvg) _arrowSvg.style.display='none'; }
 document.addEventListener('mousemove', (e)=>{ if(targetArrowSource()) drawTargetArrow(e.clientX,e.clientY); else hideTargetArrow(); });
 
+// ---- the battle on the board: the attacker, what it is hitting, and the Blocker that stepped in — joined by an arrow ----
+// Read from the engine's own battle state (G.curAttack / G.curBattle), so every screen of an online game shows the same thing.
+function battleView(){
+  try{
+    const atk=G.curAttack; if (!atk || G.over || !G.player || !G.enemy) return null;
+    const atkSide = atk.owner==='player' ? G.player : G.enemy, foe = atkSide===G.player ? G.enemy : G.player;
+    if (!atkSide.field.includes(atk)) return null;
+    const cb = G.curBattle && G.curBattle.atk===atk ? G.curBattle : null;
+    const blocked = !!(cb && cb.blk && cb.def===cb.blk);
+    const def = cb ? cb.def : null;                      // the Unit being hit (the Blocker once one stepped in); null = the player
+    const orig = blocked ? (cb.orig||null) : def;        // what the attack was declared on
+    const spot = u => u ? { uid:u.uid, base:u.type==='base' } : (foe.base ? { uid:foe.base.uid, base:true } : { shields: foe===G.player ? 'player' : 'enemy' });
+    return { atkUid:atk.uid, blocked, defUid: def ? def.uid : null, blkUid: blocked ? cb.blk.uid : null, origUid: orig ? orig.uid : null,
+             target: spot(def), origTarget: spot(orig), blkName: blocked ? cb.blk.name : '' };
+  }catch(e){ return null; }
+}
+let _bvCache=null;   // the battle view of the render in progress (cardFace reads it)
+// The on-table node of a spot: a Unit or Base card, or a Shield zone.
+function battleNode(t){
+  if (!t) return null;
+  if (t.shields) return document.getElementById(t.shields+'ShieldZone');
+  if (t.uid==null) return null;
+  return document.querySelector(`#enemyField .card[data-uid="${t.uid}"], #playerField .card[data-uid="${t.uid}"], #enemyBase .card[data-uid="${t.uid}"], #playerBase .card[data-uid="${t.uid}"]`);
+}
+function nodeCenter(n){ const r=n.getBoundingClientRect(); if (!r || (!r.width && !r.height)) return null; return { x:r.left+r.width/2, y:r.top+r.height/2, r:Math.min(r.width, r.height)/2 }; }
+let _baSvg=null, _baLabel=null;
+function battleArrowLayer(){
+  if (_baSvg) return _baSvg;
+  const s=document.createElementNS('http://www.w3.org/2000/svg','svg'); s.id='battleArrow';
+  s.innerHTML='<path class="ba-was" id="baWas" d=""/><path class="ba-glow" id="baGlow" d=""/><path class="ba-line" id="baLine" d=""/><polygon id="baHead" points=""/><g id="baBeams"></g>';
+  document.body.appendChild(s);
+  _baLabel=document.createElement('div'); _baLabel.className='ba-label'; document.body.appendChild(_baLabel);
+  _baSvg=s; return s;
+}
+// A curve from the edge of one card to the edge of the other, bowed a little to one side.
+function battleCurve(a, b){
+  const dx=b.x-a.x, dy=b.y-a.y, L=Math.hypot(dx,dy)||1, ux=dx/L, uy=dy/L;
+  const p0={ x:a.x+ux*a.r*0.7, y:a.y+uy*a.r*0.7 }, p1={ x:b.x-ux*b.r*0.9, y:b.y-uy*b.r*0.9 };
+  const mx=(p0.x+p1.x)/2, my=(p0.y+p1.y)/2, bow=Math.min(60, L*0.18);
+  const cx=mx-uy*bow, cy=my+ux*bow;
+  return { d:`M${p0.x},${p0.y} Q${cx},${cy} ${p1.x},${p1.y}`, cx, cy, end:p1, ang:Math.atan2(p1.y-cy, p1.x-cx)*180/Math.PI, mid:{ x:(p0.x+2*cx+p1.x)/4, y:(p0.y+2*cy+p1.y)/4 } };
+}
+function drawBattleArrow(){
+  try{
+    const v=_bvCache=battleView(); const svg=battleArrowLayer();
+    const line=svg.querySelector('#baLine'), glow=svg.querySelector('#baGlow'), was=svg.querySelector('#baWas'), head=svg.querySelector('#baHead');
+    const clear=()=>{ line.setAttribute('d',''); glow.setAttribute('d',''); was.setAttribute('d',''); head.setAttribute('points',''); _baLabel.classList.remove('show'); };
+    const from=v && battleNode({ uid:v.atkUid }), to=v && battleNode(v.target);
+    const a=from && nodeCenter(from), b=to && nodeCenter(to);
+    if (!v || !a || !b){ clear(); return; }
+    const col = v.blocked ? '#34d399' : '#f87171';
+    const c=battleCurve(a, b);
+    line.setAttribute('d', c.d); line.setAttribute('stroke', col); glow.setAttribute('d', c.d); glow.setAttribute('stroke', col);
+    head.setAttribute('points','0,-10 20,0 0,10'); head.setAttribute('fill', col); head.setAttribute('transform', `translate(${c.end.x},${c.end.y}) rotate(${c.ang})`);
+    // Blocked: the attack was aimed somewhere else — a faint dotted line still shows where.
+    const wn = v.blocked ? battleNode(v.origTarget) : null, w = wn && nodeCenter(wn);
+    was.setAttribute('d', w ? battleCurve(a, w).d : '');
+    _baLabel.textContent = v.blocked ? `🛡 BLOCKED by ${v.blkName}` : (v.target.shields ? '⚔ ATTACKING THE SHIELDS' : v.target.base ? '⚔ ATTACKING THE BASE' : '⚔ ATTACKING');
+    _baLabel.classList.toggle('blk', v.blocked); _baLabel.style.left=c.mid.x+'px'; _baLabel.style.top=c.mid.y+'px'; _baLabel.classList.add('show');
+  }catch(e){}
+}
+// A one-shot beam from one spot to another: battle damage landing (red: the attacker's hit, gold: the defender's hit
+// back), or an effect "ping" (purple) from the card dealing it to the Unit it chose. Drawn by applyVisualFx after a render.
+// Queue one. The spots are measured NOW — a Unit destroyed by the hit is gone from the table by the time the render draws it.
+function beamFx(fromSpot, toSpot, color){
+  const e={ kind:'beam', from:fromSpot, to:toSpot, color };
+  try{ const f=battleNode(fromSpot), t=battleNode(toSpot); if (f && t && f!==t){ e.a=nodeCenter(f); e.b=nodeCenter(t); } }catch(x){}
+  fxQueue.push(e);
+}
+function fxBeam(fromSpot, toSpot, color, a, b){
+  try{
+    const svg=battleArrowLayer();
+    if (!a || !b){ const f=battleNode(fromSpot), t=battleNode(toSpot); if (!f || !t || f===t) return; a=nodeCenter(f); b=nodeCenter(t); }
+    if (!a || !b) return;
+    const p=document.createElementNS('http://www.w3.org/2000/svg','path'); p.setAttribute('class','ba-beam'); p.setAttribute('stroke', color||'#ff6b5e');
+    p.setAttribute('d', `M${a.x},${a.y} L${b.x},${b.y}`);
+    const L=Math.hypot(b.x-a.x, b.y-a.y); p.style.strokeDasharray=String(L); p.style.strokeDashoffset=String(L);
+    svg.querySelector('#baBeams').appendChild(p);
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{ p.style.strokeDashoffset='0'; p.style.opacity='0'; }));
+    setTimeout(()=>{ try{ p.remove(); }catch(e){} }, 1000);
+  }catch(e){}
+}
+try{ window.addEventListener('resize', ()=>drawBattleArrow()); window.addEventListener('scroll', ()=>drawBattleArrow(), true); }catch(e){}
+// The lighter backdrop of a battle dialog goes when the dialog closes, however it was closed.
+try{ new MutationObserver(()=>{ const m=el('blockModal'); if (m && !m.classList.contains('show') && m.classList.contains('battle')) m.classList.remove('battle'); })
+       .observe(el('blockModal'), { attributes:true, attributeFilter:['class'] }); }catch(e){}
+// The battle shown inside the Block / Action Step dialog: the attacker ➜ what it is hitting; with a Blocker (declared, or hovered
+// as a preview) the arrow goes to the Blocker and the first target is crossed out beside it. Tap a picture to read the card.
+let _batStrip=null;
+function battleStripHTML(atk, def, blk, preview){
+  const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const foe = atk.owner==='player' ? G.enemy : G.player;
+  const card=(c, cls)=>`<div class="bat-card ${cls}" data-uid="${c.uid}" title="${esc(c.name)} — tap to read"${c.img?` style="background-image:url('${esc(c.img)}')"`:''}>`
+    +`<span class="bat-st"><span>⚔${c.type==='base' ? Math.max(0,(c.baseAp!=null ? effAp(c) : c.ap)||0) : effAp(c)}</span><span>❤${c.hp}</span></span><span class="bat-nm">${esc(c.name)}</span></div>`;
+  const tgt = def ? card(def,'def') : (foe.base ? card(foe.base,'def')
+            : `<div class="bat-card zone def">🛡<span class="bat-nm">${foe===G.player ? 'YOUR' : esc(who(foe))+'’S'} SHIELDS<br>${foe.shields.length} left</span></div>`);
+  const arrow=t=>`<div class="bat-arrow">➜<small>${t}</small></div>`;
+  if (blk) return `<div class="bat-strip ${preview?'preview':'blocked'}">${card(atk,'atk')}${arrow(preview?'would block':'blocked by')}${card(blk,'blk')}<div class="bat-was" title="The attack was aimed here">${tgt}</div></div>`;
+  return `<div class="bat-strip">${card(atk,'atk')}${arrow(def ? 'attacks' : 'attacks you')}${tgt}</div>`;
+}
+function battleStripShow(atk, def, blk, preview){
+  try{
+    if (!preview) _batStrip={ atk, def, blk };
+    const host=el('blockMsg').querySelector('.bat-host'); if (!host || !atk) return;
+    host.innerHTML=battleStripHTML(atk, def, blk, preview);
+    const cards=[atk, def, blk, G.player.base, G.enemy.base].filter(Boolean);
+    host.querySelectorAll('.bat-card[data-uid]').forEach(n=>{ const c=cards.find(x=>String(x.uid)===n.dataset.uid); if (c) n.onclick=()=>inspect(c); });
+  }catch(e){}
+}
+// What a <Blocker> would make of the battle (the same simple read as the board's combat preview: AP against HP, the attacker's <First Strike>).
+function blockOutcome(atk, b){
+  const a=effAp(atk), d=effAp(b);
+  const bDies = a>=b.hp, aDies = d>=atk.hp && !(effFirstStrike(atk) && bDies);
+  if (bDies && aDies) return `Trade: both are destroyed`;
+  if (bDies) return `It is destroyed; ${atk.name} takes ${d} and survives`;
+  if (aDies) return `It destroys ${atk.name} and survives (takes ${a})`;
+  return `Both survive: it takes ${a}, ${atk.name} takes ${d}`;
+}
+
 // Full-width "YOUR TURN / ENEMY TURN" sweep at the start of each turn.
 function showTurnBanner(turn){
   try{
@@ -11476,7 +11632,7 @@ function aiBlockStep(atk, target){
   }
   const blk = pickAiBlocker(atk, blockers, target);
   blk.rested=true; log(`${who(G.enemy)}'s <b>${blk.name}</b> &lt;Blocker&gt; intercepts${target?'':' your attack'}!`, 'ai');
-  afterBlockDeclared(blk, G.enemy); G.curBattle={ atk, def:blk };
+  afterBlockDeclared(blk, G.enemy); G.curBattle={ atk, def:blk, blk, orig:target };
   aiBattleRedirect(blk, atk);
   return blk;
 }
@@ -11535,6 +11691,7 @@ function strikePlayer(atk, defSide, done){
   const side = defSide===G.player ? 'ai' : 'me';
   const atkSide = defSide===G.player ? G.enemy : G.player;
   fxLunge(atk);
+  beamFx({ uid:atk.uid }, defSide.base ? { uid:defSide.base.uid } : { shields: defSide===G.player ? 'player' : 'enemy' }, '#ff6b5e');   // the hit, drawn over the table
   if (atk.type==='unit') atk.ap=effAp(atk);   // live AP (Lupus Rex, GQuuuuuuX)
   const ap = Math.max(0, atk.ap||0);
   if (ap<=0){ log(`<b>${atk.name}</b> has 0 AP — no damage is dealt.`, side); done(); return; }   // 5-5-5
@@ -12384,6 +12541,9 @@ function battle(atk, def, atkSide, defSide){
   if (!(atk.readiedMidAttack===G.turnSeq && G.curAttack===atk)) atk.rested=true;
   atk.readiedMidAttack=null; G.curAttack=atk;
   fxLunge(atk);
+  // The hits, drawn as beams over the table: the attacker's (red), and the defender's hit back (gold).
+  beamFx({ uid:atk.uid }, { uid:def.uid }, '#ff6b5e');
+  if (effAp(def)>0) beamFx({ uid:def.uid }, { uid:atk.uid }, '#fbbf24');
   G.curBattle = { atk, def };          // "while this Unit is battling…" conditions (e.g. Reginlaze Julia) read this
   // First Strike only triggers on this Unit's attack — i.e. on its owner's turn. The
   // attacker is always the turn player here, so only the attacker's First Strike applies;
@@ -13086,6 +13246,8 @@ function effectRest(u, side, own){
 // damage to the resolving effect's source (G.effSrc).
 function damage(u, dmg, side, kind, dealer){
   if (u.hp<=0) return;
+  // An effect "ping": a beam from the card dealing it to the Unit it chose (drawn over the table by the next render).
+  if (kind!=='battle' && kind!=='self' && dmg>0){ const src=dealer || G.effSrc; if (src && typeof src.uid==='number' && src!==u) beamFx({ uid:src.uid }, { uid:u.uid }, '#c084fc'); }
   // "When your (AEUG) cards deal damage to enemy Units, increase the damage dealt by 1." (ZZ Gundam)
   if (u.type==='unit' && dmg>0 && kind!=='self'){
     const dl = dealer || (kind==='battle' ? (G.curBattle && (G.curBattle.def===u ? G.curBattle.atk : G.curBattle.atk===u ? G.curBattle.def : null)) : G.effSrc);
@@ -14958,9 +15120,12 @@ function offerPlayerActionStep(attacker, cb){
   const opts=collectPlayerActions(attacker);
   if (!opts.length){ cb(); return; }
   const atkSide = attacker ? (G.player.field.includes(attacker) ? G.player : G.enemy) : null;
+  if (attacker) render();   // the attack is on the table: the attacker, what it is hitting (or the Blocker), and the arrow between them
   el('blockMsg').innerHTML = attacker
-    ? `<b>Action Step</b> — ${who(atkSide)}'s <b>${attacker.name}</b> (AP ${attacker.ap}) is attacking. Use an Action ability/command, or Pass.`
+    ? `<div class="bat-host"></div><b>Action Step</b> — ${who(atkSide)}'s <b>${attacker.name}</b> (AP ${attacker.ap}) is attacking. Use an Action ability/command, or Pass.`
     : `<b>End Phase — Action Step.</b> Use an Action ability/command before the Repair Step, or Pass.`;
+  if (attacker){ const cb=G.curBattle && G.curBattle.atk===attacker ? G.curBattle : null, blk=cb && cb.blk && cb.def===cb.blk ? cb.blk : null;
+    battleStripShow(attacker, blk ? (cb.orig||null) : (cb ? cb.def : null), blk); }
   const wrap=el('blockBtns'); wrap.innerHTML='';
   // Each usable card is shown as its picture (a Unit's or Base's 【Activate･Action】, or an 【Action】 Command in hand): tap the
   // card to use it, its ⓘ to read the full card first. The name and the ability text sit under the art.
@@ -14983,7 +15148,7 @@ function offerPlayerActionStep(attacker, cb){
   const pass=document.createElement('button'); pass.className='ghost act-pass'; pass.textContent = attacker ? 'Pass (continue battle)' : 'Pass (continue to Repair)';
   pass.onclick=()=>{ el('blockModal').classList.remove('show'); cb(); };
   wrap.appendChild(pass);
-  el('blockModal').classList.add('show');
+  el('blockModal').classList.toggle('battle', !!attacker); el('blockModal').classList.add('show');
 }
 // An AI attack, in the official order (8-1): attack step (target declared, attacker rested, 【Attack】
 // effects) → block step (the player may intercept) → action step (the player may use 【Action】s) →
@@ -15024,7 +15189,7 @@ function resolveAiAttackInner(atk, done0, forced){
     // Block step (8-3): the player may intercept with an active <Blocker> — never the attacked Unit itself.
     const blockers = pl.field.filter(b=>effBlocker(b) && !b.rested && b.hp>0 && b!==target && blockerAllowed(b, atk));
     const afterBlock=(blk)=>{
-      if (blk){ blk.rested=true; log(`You intercept with <b>${blk.name}</b> &lt;Blocker&gt;.`, 'me'); afterBlockDeclared(blk, G.player); G.curBattle={ atk, def:blk }; }
+      if (blk){ blk.rested=true; log(`You intercept with <b>${blk.name}</b> &lt;Blocker&gt;.`, 'me'); afterBlockDeclared(blk, G.player); G.curBattle={ atk, def:blk, blk, orig:target }; }
       if (blk||target) aiBattleRedirect(atk, blk||target);   // the AI's attacker (e.g. Qubeley Mk-II) would die: redirect
       // Action step (8-4), then the damage step (8-5).
       offerPlayerActionStep(atk, ()=>{
@@ -15074,22 +15239,36 @@ function promptTokenChoice(specs, cb){
 }
 function promptPlayerBlock(atk, blockers, target, cb){
   if (modalBusy()){ whenModalFree(()=>promptPlayerBlock(atk, blockers.filter(b=>G.player.field.includes(b) && !b.rested && b.hp>0), target, cb)); return; }
+  render();   // the attack is on the table: the attacker, what it is hitting, and the arrow between them
   const tgtTxt = target ? `your <b>${target.name}</b>` : (G.player.base ? `your <b>${G.player.base.name}</b> base` : 'you directly');
-  el('blockMsg').innerHTML = `${who(G.enemy)}'s <b>${atk.name}</b> (AP ${atk.ap}) attacks ${tgtTxt}. Intercept with a &lt;Blocker&gt;?`;
+  // The battle drawn in the dialog (attacker ➜ target), then each <Blocker> as its card: tap one to block with it, its ⓘ to read it.
+  el('blockMsg').innerHTML = `<div class="bat-host"></div>${who(G.enemy)}'s <b>${atk.name}</b> (AP ${atk.ap}) attacks ${tgtTxt}. Intercept with a &lt;Blocker&gt;?`;
+  battleStripShow(atk, target, null);
   const wrap=el('blockBtns'); wrap.innerHTML='';
+  const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   blockers.forEach(b=>{
-    const btn=document.createElement('button');
-    btn.innerHTML = `🛡 ${b.name} (⚔${b.ap}/❤${b.hp})`;
+    const btn=document.createElement('button'); btn.className='act-opt blk-opt'; btn.title=`${b.name} — tap to block with it`;
+    btn.innerHTML = `<span class="act-art"${b.img?` style="background-image:url('${esc(b.img)}')"`:''}>${b.img?'':esc(b.name)}</span>`
+      +`<span class="act-tag">🛡 ⚔${b.ap}/❤${b.hp}</span><span class="act-info" title="Read the card">ⓘ</span>`
+      +`<span class="act-txt"><b>🛡 ${esc(b.name)}</b><small>${esc(blockOutcome(atk, b))}</small></span>`;
+    const info=btn.querySelector('.act-info'); if (info) info.onclick=(e)=>{ e.stopPropagation(); inspect(b); };
+    // Hovering (or focusing) a Blocker previews it stepping in front of the target.
+    btn.onmouseenter=btn.onfocus=()=>battleStripShow(atk, target, b, true);
+    btn.onmouseleave=btn.onblur=()=>battleStripShow(atk, target, null);
     btn.onclick=()=>{ el('blockModal').classList.remove('show'); cb(b); };
     wrap.appendChild(btn);
   });
-  const take=document.createElement('button'); take.className='ghost';
-  take.textContent = target ? `Don't block (let it hit ${target.name})`
+  const take=document.createElement('button'); take.className='ghost act-pass';
+  const a=effAp(atk);
+  const takeSub = target ? (a>=target.hp ? `${target.name} is destroyed` : `${target.name} takes ${a} and survives`) + (effAp(target)>0 ? `, ${atk.name} takes ${effAp(target)}` : '')
+                : (G.player.base ? `${G.player.base.name} takes ${a}${a>=G.player.base.hp?' and is destroyed':''}` : (G.player.shields.length>0 ? '' : ''));
+  take.innerHTML = esc(target ? `Don't block (let it hit ${target.name})`
                     : (G.player.base ? `Don't block (base takes it)`
-                    : (G.player.shields.length>0 ? `Don't block (lose 1 shield)` : `Don't block — you LOSE`));
+                    : (G.player.shields.length>0 ? `Don't block (lose ${effSuppression(atk) && G.player.shields.length>1 ? 2 : 1} shield${effSuppression(atk) && G.player.shields.length>1 ? 's' : ''})` : `Don't block — you LOSE`)))
+                 + (takeSub ? ` <span style="opacity:.6;font-size:10px">${esc(takeSub)}</span>` : '');
   take.onclick=()=>{ el('blockModal').classList.remove('show'); cb(null); };
   wrap.appendChild(take);
-  el('blockModal').classList.add('show');
+  el('blockModal').classList.add('battle'); el('blockModal').classList.add('show');
 }
 
 // =====================================================================================================
@@ -15613,7 +15792,7 @@ function mpBlockStep(atk, target, cont){
     const blk = res && res.blk!=null ? blockers.find(b=>b.uid===res.blk) : null;
     if (blk && G.enemy.field.includes(blk) && !blk.rested && blk.hp>0){
       blk.rested=true; log(`${who(G.enemy)}'s <b>${blk.name}</b> &lt;Blocker&gt; intercepts${target?'':' your attack'}!`, 'ai');
-      afterBlockDeclared(blk, G.enemy); G.curBattle={ atk, def:blk };
+      afterBlockDeclared(blk, G.enemy); G.curBattle={ atk, def:blk, blk, orig:target };
       cont(blk); return;
     }
     cont(null);
@@ -15802,6 +15981,12 @@ function cardFace(c, ctx){
     if (G.mode==='support-target' && G.pending && c!==G.pending.src && G.player.field.includes(c)) cls.push('selectable');
     if (G.mode==='action-step-target' && G.pending?.cands.includes(c.uid)) cls.push('selectable');
   }
+  // The battle in progress: the attacker, what it is hitting (a Unit or the Base), the Blocker that stepped in, the first target it left.
+  if ((ctx==='field-player' || ctx==='field-enemy') && _bvCache){ const bv=_bvCache;
+    if (c.uid===bv.atkUid) cls.push('bt-atk');
+    else if (bv.blocked && c.uid===bv.blkUid) cls.push('bt-blk');
+    else if (c.uid===bv.defUid || (!bv.blocked && bv.target.base && c.uid===bv.target.uid)) cls.push('bt-def');
+    else if (bv.blocked && bv.origTarget.uid===c.uid) cls.push('bt-was'); }
   const isBase = c.type==='base';
   if (isBase) cls.push('isbase');
   const style = c.img ? `background-image:url('${c.img}')` : '';
@@ -15974,7 +16159,8 @@ function fx(kind, uid){ sound(kind); if(uid!=null) fxQueue.push({kind,uid}); if(
 function screenShake(){ const r=el('app'); if(!r) return; r.classList.remove('shake'); void r.offsetWidth; r.classList.add('shake'); setTimeout(()=>r.classList.remove('shake'),420); }
 function applyVisualFx(){
   const CLS={ die:'fx-die', lungeUp:'fx-lunge-up', lungeDown:'fx-lunge-down', enter:'fx-enter' };
-  for(const f of fxQueue){ const node=document.querySelector(`.card[data-uid="${f.uid}"]`); if(node){ const cls=CLS[f.kind]||'fx-hit'; node.classList.remove(cls); void node.offsetWidth; node.classList.add(cls); } }
+  for(const f of fxQueue){ if (f.kind==='beam'){ fxBeam(f.from, f.to, f.color, f.a, f.b); continue; }
+    const node=document.querySelector(`.card[data-uid="${f.uid}"]`); if(node){ const cls=CLS[f.kind]||'fx-hit'; node.classList.remove(cls); void node.offsetWidth; node.classList.add(cls); } }
   fxQueue=[];
   G.player.breakingShield=false; G.enemy.breakingShield=false;   // one-shot
 }
@@ -16028,6 +16214,7 @@ function render(){
     if (!s) continue;
     for (const u of s.field){ if (u.hp>0){ syncWhileHp(u, s); u.ap = effAp(u); u.maxHp = effMaxHp(u); } }
   }
+  _bvCache=battleView();
   el('poolCount').textContent = `${POOL_STATS.cards} CARDS · ${POOL_STATS.printings}`;
   el('turnInfo').innerHTML = `Turn <b>${G.turnNumber}</b> · ${G.turn==='player' ? (NET.on && NET.role==='spec' ? '<b>'+who(G.player)+'</b> acting' : '<b>Your</b> move') : '<b>'+who(G.enemy)+'</b> acting'}`;
   el('enemyShieldZone').innerHTML = shieldZoneHTML(G.enemy) + '<div class="z-label">SHIELDS</div>';
@@ -16036,6 +16223,9 @@ function render(){
   const _atkSel = G.mode==='attack-target' ? G.player.field.find(x=>x.uid===G.selected) : null;
   el('enemyShieldZone').classList.toggle('zone-target',
     G.mode==='attack-target' && !G.enemy.base && G.enemy.shields.length>0 && !!_atkSel && !cantHitPlayer(_atkSel));
+  // A declared attack on the Shields (no Base, no Blocker) lights the zone it is coming to.
+  { const hit = _bvCache && !_bvCache.blocked && _bvCache.target.shields;
+    el('enemyShieldZone').classList.toggle('zone-hit', hit==='enemy'); el('playerShieldZone').classList.toggle('zone-hit', hit==='player'); }
   el('enemyResources').innerHTML = resHTML(G.enemy); el('playerResources').innerHTML = resHTML(G.player);
   el('enemyResText').textContent = `${G.enemy.resAvail}/${G.enemy.resMax}${G.enemy.ex?'+EX':''} ·`;
   el('playerResText').textContent = `${G.player.resAvail}/${G.player.resMax}${G.player.ex?'+EX':''} ·`;
@@ -16111,6 +16301,7 @@ function render(){
   }
   bind();
   applyVisualFx();
+  drawBattleArrow();   // the attack in progress, drawn over the fresh table
   if (NET.on && NET.active) mpQueueView();   // online: everyone watching gets this state
 }
 function fieldHTML(side, ctx){
