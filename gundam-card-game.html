@@ -598,6 +598,19 @@
   #blockModal .ask-body { flex: 1; min-width: 0; }
   #blockModal .ask-eff { display: block; opacity: .8; font-size: 11px; margin-top: 4px; }
   #blockModal .ins-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+  /* Action Step: the 【Action】 abilities and commands you can use right now, as card pictures — tap one to use it, its ⓘ to read it. */
+  #blockBtns:has(.act-opt) { justify-content: center; gap: 10px; max-height: 60vh; overflow-y: auto; padding: 2px; }
+  #blockModal button.act-opt { position: relative; flex: 0 0 auto; width: 116px; padding: 0; background: var(--panel-2); border: 2px solid rgba(251,191,36,.5); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; text-align: left; letter-spacing: 0; line-height: 1.2; }
+  #blockModal button.act-opt:hover, #blockModal button.act-opt:focus-visible { border-color: #34d399; box-shadow: 0 0 14px rgba(52,211,153,.45); filter: none; transform: translateY(-2px); }
+  #blockModal .act-art { display: flex; align-items: center; justify-content: center; width: 100%; aspect-ratio: 5 / 7; background: #0c1426 center/cover no-repeat; font-size: 11px; font-weight: 800; text-align: center; padding: 6px; }
+  #blockModal .act-txt { display: block; padding: 5px 6px 6px; font-size: 10.5px; min-height: 48px; }
+  #blockModal .act-txt b { display: block; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #blockModal .act-txt small { display: block; opacity: .75; font-size: 10px; font-weight: 500; margin-top: 2px; max-height: 3.6em; overflow: hidden; }
+  #blockModal .act-tag { position: absolute; top: 5px; left: 5px; background: rgba(0,0,0,.72); color: #fbbf24; font-size: 10px; padding: 2px 6px; border-radius: 6px; font-weight: 800; pointer-events: none; }
+  #blockModal .act-info { position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; border-radius: 50%; background: rgba(0,0,0,.72); color: #fff; font-size: 14px; display: flex; align-items: center; justify-content: center; cursor: zoom-in; }
+  #blockModal .act-info:hover { background: #6a4fb0; }
+  #blockModal button.act-pass { flex: 1 0 100%; margin-top: 4px; }
+  @media (max-width: 420px){ #blockModal button.act-opt { width: 104px; } }
 
   /* ---- online multiplayer: lobby, waiting banner, leaderboard ---- */
   #mpWait { position: fixed; top: 8px; left: 50%; transform: translateX(-50%); z-index: 1300; background: rgba(20,18,46,.96); border: 1px solid #8b6ee0; color: #e8e4ff; border-radius: 10px; padding: 8px 14px; font-size: 13px; font-weight: 700; box-shadow: 0 6px 24px rgba(0,0,0,.6); display: none; max-width: calc(100vw - 24px); text-align: center; }
@@ -14787,7 +14800,7 @@ function collectPlayerActions(attacker){
         && activateCostPayable(u, G.player) && activateReady(u));   // the full readiness check (timing, battle-only effects, Moebius…)
     if (slot===1) swapActivate(u);
     if (ok){
-      opts.push({ label:`⚡ ${u.name}`, sub:String(act.text||'').replace(/</g,'&lt;').replace(/>/g,'&gt;'), run:(afterCb)=>{ useActivateSlot(u, act); flashCard(u,'YOUR ACTION');   // "<Breach 3>" isn't a tag
+      opts.push({ label:`⚡ ${u.name}`, card:u, tag:'Ability', sub:String(act.text||'').replace(/</g,'&lt;').replace(/>/g,'&gt;'), run:(afterCb)=>{ useActivateSlot(u, act); flashCard(u,'YOUR ACTION');   // "<Breach 3>" isn't a tag
         actionStepActivate(u, attacker, ()=>{ if (u.activate && u.activate.oncePerTurn) u.activatedThisTurn=true; if (afterCb) afterCb(); }, null, ()=>{ render(); if (afterCb) afterCb(); }); } });
     }
   }
@@ -14798,7 +14811,7 @@ function collectPlayerActions(attacker){
       if (c.action && c.action.kind==='retarget'){
         // Only while an ENEMY Unit is attacking, onto a rested friendly Unit of the named trait.
         if (!attacker || !G.enemy.field.includes(attacker) || !retargetCands(G.player, c.action, attacker).length) continue;
-        opts.push({ label:`▸ ${c.name}`, sub:'Change the attack target', run:(afterCb)=>{
+        opts.push({ label:`▸ ${c.name}`, card:c, sub:'Change the attack target', run:(afterCb)=>{
           const h=G.player.hand.indexOf(c); if(h<0) return;
           const cands=retargetCands(G.player, c.action, attacker); if(!cands.length){ if(afterCb) afterCb(); return; }
           G.player.hand.splice(h,1); payCost(G.player, effectiveCost(G.player,c));
@@ -14812,7 +14825,7 @@ function collectPlayerActions(attacker){
       // "Choose 1 of the following effects": the player picks a legal mode, then it resolves with modal choosers (the
       // attacking Unit listed first). Cancel at the mode choice keeps the card in hand.
       if (c.action && c.action.kind==='modal'){
-        opts.push({ label:`▸ ${c.name}`, sub:'Action command — choose 1 effect', run:(afterCb)=>{
+        opts.push({ label:`▸ ${c.name}`, card:c, sub:'Action command — choose 1 effect', run:(afterCb)=>{
           chooseCommandMode(c, G.player, m=>{
             const h=G.player.hand.indexOf(c);
             if (!m || h<0){ if (afterCb) afterCb(); return; }
@@ -14826,7 +14839,7 @@ function collectPlayerActions(attacker){
       // A "during this battle" kill effect only means something while a Unit battles a Unit (the shield guard's "only while an
       // enemy Unit attacks you" is cmdPlayable's).
       if (c.action && c.action.kind==='grantBattleKill' && !(attacker && G.curBattle && G.curBattle.def && G.curBattle.def.type==='unit')) continue;
-      opts.push({ label:`▸ ${c.name}`, sub:'Action command', run:(afterCb0)=>{
+      opts.push({ label:`▸ ${c.name}`, card:c, sub:'Action command', run:(afterCb0)=>{
         const h=G.player.hand.indexOf(c); if(h<0)return;
         // Once the 【Action】 resolved: "After activating this card's 【Action】, you may pair this card from your trash…" (Sturm und Drang)
         const afterCb=()=>afterCommandMain(c, G.player, ()=>{ if (afterCb0) afterCb0(); });
@@ -14949,10 +14962,25 @@ function offerPlayerActionStep(attacker, cb){
     ? `<b>Action Step</b> — ${who(atkSide)}'s <b>${attacker.name}</b> (AP ${attacker.ap}) is attacking. Use an Action ability/command, or Pass.`
     : `<b>End Phase — Action Step.</b> Use an Action ability/command before the Repair Step, or Pass.`;
   const wrap=el('blockBtns'); wrap.innerHTML='';
-  opts.forEach(o=>{ const b=document.createElement('button'); b.innerHTML=`${o.label}${o.sub?` <span style="opacity:.6;font-size:10px">${o.sub}</span>`:''}`;
+  // Each usable card is shown as its picture (a Unit's or Base's 【Activate･Action】, or an 【Action】 Command in hand): tap the
+  // card to use it, its ⓘ to read the full card first. The name and the ability text sit under the art.
+  const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  opts.forEach(o=>{ const b=document.createElement('button'); const c=o.card;
+    if (c){
+      b.className='act-opt'; b.title=`${c.name} — tap to use`;
+      const kind = o.tag || (c.type==='command' ? `Cost ${effectiveCost(G.player,c)}` : 'Ability');
+      // A Command shows its 【Action】 clause (the printed text is HTML; clauses are separated by <br>), not its Burst or Pilot lines.
+      let sub=o.sub;
+      if (!o.tag && c.type==='command'){ const segs=String(c.printText || c.effect || '').split(/<br\s*\/?>/i);
+        sub=(segs.find(s=>/【\s*Action/i.test(s)) || segs[0] || o.sub).replace(/^\s*【\s*Main\s*】\s*\/\s*/i,'').trim() || o.sub; }
+      b.innerHTML=`<span class="act-art"${c.img?` style="background-image:url('${esc(c.img)}')"`:''}>${c.img?'':esc(c.name)}</span>`
+        +`<span class="act-tag">${esc(kind)}</span><span class="act-info" title="Read the card">ⓘ</span>`
+        +`<span class="act-txt"><b>${o.label}</b><small>${sub||''}</small></span>`;
+      const info=b.querySelector('.act-info'); if (info) info.onclick=(e)=>{ e.stopPropagation(); inspect(c); };
+    } else b.innerHTML=`${o.label}${o.sub?` <span style="opacity:.6;font-size:10px">${o.sub}</span>`:''}`;
     b.onclick=()=>{ el('blockModal').classList.remove('show'); G.mpActUses=(G.mpActUses||0)+1; o.run(()=>{ render(); setTimeout(()=>offerPlayerActionStep(attacker, cb), 80); }); render(); };
     wrap.appendChild(b); });
-  const pass=document.createElement('button'); pass.className='ghost'; pass.textContent = attacker ? 'Pass (continue battle)' : 'Pass (continue to Repair)';
+  const pass=document.createElement('button'); pass.className='ghost act-pass'; pass.textContent = attacker ? 'Pass (continue battle)' : 'Pass (continue to Repair)';
   pass.onclick=()=>{ el('blockModal').classList.remove('show'); cb(); };
   wrap.appendChild(pass);
   el('blockModal').classList.add('show');
