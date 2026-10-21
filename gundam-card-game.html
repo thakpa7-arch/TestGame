@@ -12402,10 +12402,10 @@ function breachShield(atk, defSide){
 // Hard AI: what intercepting `atk` (attacking `target`, or the AI when null) with `b` is worth — what the block saves (a
 // shield, the Base, the attacked Unit), plus destroying the attacker, minus losing the blocker and having it rested for the
 // player's remaining attackers. Only the attacker's <First Strike> counts in battle (battle()).
-function aiBlockValue(b, atk, target){
+function aiBlockValue(b, atk, target, safe){
   const ai=G.enemy, ap=effAp(atk);
   let gain;
-  if (target) gain = ap>=target.hp ? keepVal(target) : 0.3;
+  if (target) gain = ap>=target.hp && !safe ? keepVal(target) : 0.3;
   else if (ai.base && ai.base.hp>0) gain = ap>=ai.base.hp ? 2.5 : 1.0*ap/ai.base.hp;
   else { const sh=ai.shields.length; gain = sh<=0 ? 1000 : aiShieldWorth(sh); }
   const kill = (effAp(b)>=atk.hp && !(effFirstStrike(atk) && ap>=b.hp)) ? keepVal(atk) : 0;
@@ -12419,11 +12419,33 @@ function aiWantsBlock(atk, target){
   // so it protects dwindling shields aggressively; otherwise it blocks for a favourable trade.
   const blockers = G.enemy.field.filter(b=>effBlocker(b) && !b.rested && b.hp>0 && b!==target && blockerAllowed(b, atk));
   if (!blockers.length) return false;
-  return blockers.some(b=>aiBlockValue(b, atk, target)>0);   // the value of the best block decides
+  const safe=aiCommandSaves(atk, target);   // an 【Action】 Command in hand saves the Unit by itself — no need to spend a Blocker on it
+  return blockers.some(b=>aiBlockValue(b, atk, target, safe)>0);   // the value of the best block decides
 }
 function pickAiBlocker(atk, blockers, target){
   // The blocker whose block is worth the most (aiBlockValue).
-  return [...blockers].sort((x,y)=>aiBlockValue(y, atk, target)-aiBlockValue(x, atk, target))[0];
+  const safe=aiCommandSaves(atk, target);
+  return [...blockers].sort((x,y)=>aiBlockValue(y, atk, target, safe)-aiBlockValue(x, atk, target, safe))[0];
+}
+// Would an 【Action】 Command the AI can play now (by aiActionStep's own bar) leave `target` standing against `atk` — an AP cut
+// on the attacker, a damage guard, a heal? Then the attacked Unit isn't in danger, and a Blocker is only worth spending for
+// what it destroys. (The same plans aiActionStep will choose from once the block step is over.)
+function aiCommandSaves(atk, target){
+  const ai=G.enemy; if (!target || !ai.hand.length) return false;
+  const ctx={ attacker:atk, mine:target, theirs:atk, direct:false, endPhase:false };
+  const base=aiActValue(ctx, []);
+  for (const c of ai.hand){
+    if (c.type!=='command' || !/【\s*Action/i.test(c.effect||'')) continue;
+    const cost=effectiveCost(ai,c);
+    if (totalRes(ai) < lvNeed(ai, c, false) || ai.resAvail < cost) continue;
+    const need = ai.ex>0 && ai.resAvail-cost < ai.ex ? 6 : 2;
+    for (const p of aiActionPlans(c, ctx)){
+      if (aiActValue(ctx, p.mods) - base + (p.extra||0) < need) continue;
+      const D=aiActVirt(target, p.mods), A=aiActVirt(atk, p.mods);
+      if (!D.gone && (A.gone || aiBattleHit(D, A) < D.hp)) return true;
+    }
+  }
+  return false;
 }
 
 // Fire a Unit's 【Destroyed】 as it leaves play. For the player, deck-look effects use their own modal,
@@ -12961,6 +12983,12 @@ function aiPostCombatLoop(){
 // Hard AI: of the deployable Units `deps` (best first), the one to place now — the top of the affordable set with the most
 // value. A set's value is its Units' stats plus the Link Pilot in hand that one of them (or a Unit already in play) can still
 // be paid for alongside it. Up to 8 cards are combined (255 subsets).
+// What playing `c` takes from the AI's resources: its cost — or the alternative's, when that is the only way it can be played
+// (Unicorn Gundam (Destroy Mode) for 0 over its linked Unicorn Mode; aiPayAltIfNeeded takes that alternative).
+function aiPlayCost(ai, c){
+  if (totalRes(ai) >= lvNeed(ai, c, false) && ai.resAvail >= effectiveCost(ai,c)) return effectiveCost(ai,c);
+  return altAfford(ai,c) ? effectiveCost(ai,c,null,true) : effectiveCost(ai,c);
+}
 function aiBestSpend(deps){
   const ai=G.enemy; if (!deps.length) return null;
   const pool=deps.slice(0, 8), res=ai.resAvail, room=FIELD_MAX-ai.field.length;
@@ -12969,7 +12997,7 @@ function aiBestSpend(deps){
   let best=null, bestV=-1;
   for (let m=0; m<(1<<pool.length); m++){   // m=0: pairing a Pilot alone beats every body this turn
     let cost=0, v=0, n=0; const set=[];
-    for (let i=0; i<pool.length; i++) if (m&(1<<i)){ const u=pool[i]; cost+=effectiveCost(ai,u); v+=uval(u); n++; set.push(u); }
+    for (let i=0; i<pool.length; i++) if (m&(1<<i)){ const u=pool[i]; cost+=aiPlayCost(ai,u); v+=uval(u); n++; set.push(u); }
     if (cost>res || n>room) continue;
     // The best Link Pilot still payable after the set: its stats, plus the pairing bonus (the Unit attacks this turn).
     let pv=0;
@@ -13165,7 +13193,7 @@ function aiSurvivableKill(ready, ts, amt, guardOk){
 // 【Action】 Commands it keeps for the player's turn, minus EX Resources.
 function aiSpareRes(utility, self){
   const ai=G.enemy; let held=0, act=0;
-  if (ai.field.length<FIELD_MAX && AI_LVL==='hard' && !G._aiPostDeploy) for (const u of ai.hand) if (u.type==='unit' && canAfford(ai,u)) held=Math.max(held, effectiveCost(ai,u));
+  if (ai.field.length<FIELD_MAX && AI_LVL==='hard' && !G._aiPostDeploy) for (const u of ai.hand) if (u.type==='unit' && canAfford(ai,u)) held=Math.max(held, aiPlayCost(ai,u));
   if (utility) act=aiActionReserve(self);
   return ai.resAvail - ai.ex - held - act;
 }
@@ -14184,7 +14212,7 @@ function aiActionStep(attacker, resume){
   const base=aiActValue(ctx, []), ownTurn=G.turn==='enemy';
   // On its own turn, keep what the hard AI's held-back deploys need (it places them after combat).
   const reserve = ownTurn && AI_LVL==='hard' && !G._aiPostDeploy && ai.field.length<FIELD_MAX
-    ? Math.min(Infinity, ...ai.hand.filter(u=>u.type==='unit' && canAfford(ai,u)).map(u=>effectiveCost(ai,u))) : 0;
+    ? Math.min(Infinity, ...ai.hand.filter(u=>u.type==='unit' && canAfford(ai,u)).map(u=>aiPlayCost(ai,u))) : 0;
   let best=null;
   for (const c of ai.hand){
     if (c.type!=='command' || !/【\s*Action/i.test(c.effect||'')) continue;

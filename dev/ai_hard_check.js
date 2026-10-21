@@ -92,6 +92,15 @@ A.setAiLevel('hard');
 // …but a 2/4 Blocker that kills the 2/2 and survives takes the free kill.
 { fresh('player'); const bl=stick('enemy',2,4,{blocker:true}); const big=stick('enemy',5,5,{rested:true}); const atk=stick('player',2,2);
   playerAttacks(atk, big); ok('hard: a free kill on a chip is taken', bl.rested && atk.hp<=0 && big.hp===5, `bl rested ${bl.rested} atk.hp ${atk.hp} big.hp ${big.hp}`); }
+// A 3/3 attacks the AI's rested 2/3 while it holds Infinite Variations (AP-2 on the attacker, with a white Blocker in play):
+// the Command saves the Unit by itself, so the 1/1 white Blocker is not thrown away on a chump block…
+{ fresh('player'); const bl=stick('enemy',1,1,{color:'White',blocker:true}); const mine=stick('enemy',2,3,{rested:true}); const atk=stick('player',3,3);
+  G.enemy.hand.push(A.makeCard(A.CARD_BY_ID.get('GD06-118'),'enemy'));
+  playerAttacks(atk, mine); ok('hard: a Command that saves the Unit is played instead of a chump block', !bl.rested && bl.hp===1 && mine.hp===2 && !G.enemy.hand.length, `bl rested ${bl.rested} mine.hp ${mine.hp} hand ${G.enemy.hand.length}`); }
+// …but a 3/4 white Blocker that kills the 3/3 and survives still takes the free kill.
+{ fresh('player'); const bl=stick('enemy',3,4,{color:'White',blocker:true}); const mine=stick('enemy',2,3,{rested:true}); const atk=stick('player',3,3);
+  G.enemy.hand.push(A.makeCard(A.CARD_BY_ID.get('GD06-118'),'enemy'));
+  playerAttacks(atk, mine); ok('hard: the free kill is still taken over the saving Command', bl.rested && atk.hp<=0 && mine.hp===3, `bl rested ${bl.rested} atk.hp ${atk.hp} mine.hp ${mine.hp}`); }
 // Two attackers, one of them killable: the Blocker is used on the one it kills (the 3/3), not the 6/6 it would die to.
 { fresh('player'); const bl=stick('enemy',4,4,{blocker:true}); const big=stick('player',6,6), small=stick('player',3,3);
   playerAttacks(big, null); ok('hard: the Blocker waits for the attacker it can kill', !bl.rested && G.enemy.shields.length===5, `bl rested ${bl.rested} shields ${G.enemy.shields.length}`);
