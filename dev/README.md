@@ -18,9 +18,12 @@ Run everything from this directory. Scripts read the game from `../gundam-card-g
     node harsh_check.js               # Harsh Meta Slave Deck reports replayed through the real UI paths (modals, action step)
     node pw_harsh.js                  # the same reports in Chromium with real clicks
     ROUNDS=6 node pt_games.js         # full games across every preset; conservation + rules invariants
+    AI=hard ROUNDS=8 node pt_smart.js # the hard AI's benchmark: a scripted player that blocks, trades and curves out like a
+                                      # person (PAIRS=1 per-game lines, TRACE=<AI deck> AIDBG=1 logs the games that deck loses)
+    node ai_hard_check.js             # hard-AI plays: attacks vs blocks/counter-attacks, value-based blocks, best spend
     node fuzz_ui.js [seed] [games]    # random human play through the real UI entry points (fuzz_harness.js)
     node pw_check.js                  # Chromium smoke (needs /opt/pw-browsers/chromium)
-    NG=8 node pw_play.js              # Chromium: real setup flow + random play to game over; reports JS errors
+    NG=8 [AILVL=hard] node pw_play.js # Chromium: real setup flow + random play to game over; reports JS errors
 
 Importing a new set from the gcg-api dataset (https://github.com/yzRobo/gcg-api, data/cards.ndjson):
 

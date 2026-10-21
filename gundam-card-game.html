@@ -10943,12 +10943,12 @@ function attackUnitHook(atk, atkSide){
 function aiBlockStep(atk, target){
   if (effHighManeuver(atk)) return null;
   const blockers = G.enemy.field.filter(b=>effBlocker(b) && !b.rested && b.hp>0 && b!==target && blockerAllowed(b, atk));
-  if (!blockers.length || !aiWantsBlock(atk)){
+  if (!blockers.length || !aiWantsBlock(atk, target)){
     const rt=aiRetarget(atk, target); if (rt) return rt;   // no block: maybe an 【Action】 retarget
     if (target) aiBattleRedirect(target, atk);
     return null;
   }
-  const blk = pickAiBlocker(atk, blockers);
+  const blk = pickAiBlocker(atk, blockers, target);
   blk.rested=true; log(`${who(G.enemy)}'s <b>${blk.name}</b> &lt;Blocker&gt; intercepts${target?'':' your attack'}!`, 'ai');
   afterBlockDeclared(blk, G.enemy); G.curBattle={ atk, def:blk };
   aiBattleRedirect(blk, atk);
@@ -12394,12 +12394,27 @@ function breachShield(atk, defSide){
 }
 
 // ---- Blocker decision helpers (AI as defender) ----
-function aiWantsBlock(atk){
+// Hard AI: what intercepting `atk` (attacking `target`, or the AI when null) with `b` is worth — what the block saves (a
+// shield, the Base, the attacked Unit), plus destroying the attacker, minus losing the blocker and having it rested for the
+// player's remaining attackers. Only the attacker's <First Strike> counts in battle (battle()).
+function aiBlockValue(b, atk, target){
+  const ai=G.enemy, ap=effAp(atk);
+  let gain;
+  if (target) gain = ap>=target.hp ? keepVal(target) : 0.3;
+  else if (ai.base && ai.base.hp>0) gain = ap>=ai.base.hp ? 2.5 : 1.0*ap/ai.base.hp;
+  else { const sh=ai.shields.length; gain = sh<=0 ? 1000 : aiShieldWorth(sh); }
+  const kill = (effAp(b)>=atk.hp && !(effFirstStrike(atk) && ap>=b.hp)) ? keepVal(atk) : 0;
+  const loss = ap>=b.hp ? keepVal(b) : 0;
+  const more = G.player.field.some(u=>u!==atk && !u.rested && !u.sick && effAp(u)>0);
+  return gain + kill - loss - (more ? 1 : 0.3);
+}
+function aiWantsBlock(atk, target){
   if (AI_LVL==='easy' && Math.random()<0.5) return false;    // easy AI often forgets to block
   // Decide whether to spend a <Blocker> intercepting this attack. Shields are the AI's life total,
   // so it protects dwindling shields aggressively; otherwise it blocks for a favourable trade.
-  const blockers = G.enemy.field.filter(b=>effBlocker(b) && !b.rested && b.hp>0);
+  const blockers = G.enemy.field.filter(b=>effBlocker(b) && !b.rested && b.hp>0 && b!==target && blockerAllowed(b, atk));
   if (!blockers.length) return false;
+  if (AI_LVL==='hard') return blockers.some(b=>aiBlockValue(b, atk, target)>0);   // the value of the best block decides
   const best = pickAiBlocker(atk, blockers);
   const ap = effAp(atk);
   const kills = effAp(best) >= atk.hp;                   // the blocker destroys the attacker
@@ -12408,7 +12423,9 @@ function aiWantsBlock(atk){
   if (best.hp > ap && effAp(best) > 0) return true;      // survives the counter and bites back
   return false;
 }
-function pickAiBlocker(atk, blockers){
+function pickAiBlocker(atk, blockers, target){
+  // Hard: the blocker whose block is worth the most (aiBlockValue).
+  if (AI_LVL==='hard') return [...blockers].sort((x,y)=>aiBlockValue(y, atk, target)-aiBlockValue(x, atk, target))[0];
   // Most adequate blocker first (kills and/or survives); among equally-good ones, spend the LEAST
   // valuable body so the AI's best <Blocker> stays available for the next threat.
   const ap = effAp(atk);
@@ -12952,6 +12969,28 @@ function aiPostCombatLoop(){
   if (G._aiGuard++ < 40 && aiMainStep()){ render(); setTimeout(aiPostCombatLoop, FLASH_MS+150); return; }
   log(`${who(G.enemy)} ends its turn.`, 'ai'); endTurn();
 }
+// Hard AI: of the deployable Units `deps` (best first), the one to place now — the top of the affordable set with the most
+// value. A set's value is its Units' stats plus the Link Pilot in hand that one of them (or a Unit already in play) can still
+// be paid for alongside it. Up to 8 cards are combined (255 subsets).
+function aiBestSpend(deps){
+  const ai=G.enemy; if (!deps.length) return null;
+  const pool=deps.slice(0, 8), res=ai.resAvail, room=FIELD_MAX-ai.field.length;
+  const pilots=ai.hand.filter(c=>c.type==='pilot');
+  const uval=u=>u.baseAp+u.baseHp+(parseTrigger(u.effect,'Deploy')?2:0);
+  let best=null, bestV=-1;
+  for (let m=0; m<(1<<pool.length); m++){   // m=0: pairing a Pilot alone beats every body this turn
+    let cost=0, v=0, n=0; const set=[];
+    for (let i=0; i<pool.length; i++) if (m&(1<<i)){ const u=pool[i]; cost+=effectiveCost(ai,u); v+=uval(u); n++; set.push(u); }
+    if (cost>res || n>room) continue;
+    // The best Link Pilot still payable after the set: its stats, plus the pairing bonus (the Unit attacks this turn).
+    let pv=0;
+    for (const p of pilots){ const hosts=[...set, ...ai.field.filter(u=>u.type==='unit' && !u.pilot && !u.noPilot)].filter(u=>linkMatches(u,p));
+      for (const h of hosts){ const pc=effectiveCost(ai,p,h); if (cost+pc<=res) pv=Math.max(pv, (p.pAp||0)+(p.pHp||0)*0.5+4); } }
+    v+=pv;
+    if (v>bestV){ bestV=v; best=set; }
+  }
+  return best && best.length ? best.sort((a,b)=>uval(b)-uval(a))[0] : null;
+}
 // Perform the single highest-priority main-phase action; return true if something was done.
 function aiMainStep(){
   const ai=G.enemy, pl=G.player;
@@ -13001,7 +13040,11 @@ function aiMainStep(){
     // A Unit that would just sit summoning-sick waits until after combat (see aiPostCombatLoop), so a
     // shield-break Burst like Close Combat can't pick it off mid-combat. It loses nothing by waiting.
     const holdForPostCombat = c => AI_LVL==='hard' && !G._aiPostDeploy && !c.blitz && !linkPilotInHand(c);
-    const dep = ai.hand.filter(c=>c.type==='unit' && canAfford(ai,c) && !holdForPostCombat(c)).sort((a,b)=>depScore(b)-depScore(a))[0];
+    const deps = ai.hand.filter(c=>c.type==='unit' && canAfford(ai,c) && !holdForPostCombat(c)).sort((a,b)=>depScore(b)-depScore(a));
+    // Hard: spend the turn's resources on the combination of bodies (and the Link Pilots that pair with them) worth the most,
+    // not just the biggest one — a 3 and a 2 beat a 4 that leaves 1 idle (aiBestSpend). The first of that set goes down now;
+    // the next tick re-plans with what is left.
+    const dep = AI_LVL==='hard' ? aiBestSpend(deps) : deps[0];
     if (dep){ aiPayAltIfNeeded(ai, dep); const i=ai.hand.indexOf(dep); ai.hand.splice(i,1); payCost(ai, effectiveCost(ai,dep)); dep.rested=false; dep.sick=!dep.blitz; ai.field.push(dep); flashCard(dep,'ENEMY DEPLOY'); log(`${who(G.enemy)} deploys <b>${dep.name}</b>.`, 'ai'); runTrigger(dep, ai, parseTrigger(dep.effect,'Deploy'), 'Deploy'); onUnitDeployed(dep, ai); return true; }
   }
   // pair a pilot — evaluate EVERY (pilot, unit) combination and take the best one. Forming a Link is
@@ -13445,6 +13488,122 @@ function planAiAttacks(attackers){
   }
   return plan;
 }
+// ---- Hard AI: attack planning that respects the player's answers ----
+// Each attack is judged against what a competent player does with it: block it with an active <Blocker> when that kills the
+// attacker or saves something worth more than the blocker, and on their own turn destroy the attacker it left rested. An
+// attack whose expected value (after those answers) is below staying home is not made; an active <Blocker> stays home when
+// the player's board threatens the AI's life. Lethal is still taken with everything (aiHasLethal).
+// Is the AI ahead in the race? (its life buffer at least the player's) — then shields are worth pressing.
+function aiRacing(){ const ai=G.enemy, pl=G.player; return ai.shields.length+(ai.base&&ai.base.hp>0?1:0) >= pl.shields.length+(pl.base&&pl.base.hp>0?1:0); }
+// What `u` sitting rested through the player's next turn costs the AI: the player's best killer of it (all their Units ready
+// then). A killer that survives the counter takes the Unit cheaply; a trade only costs the difference.
+function aiExposure(u){
+  let worst=0;
+  for (const k of G.player.field){ if (k.hp<=0 || effAp(k)<u.hp) continue;
+    const surv = k.hp>effAp(u) || effFirstStrike(k);
+    worst=Math.max(worst, surv ? Math.max(0, keepVal(u)*0.6-2) : Math.max(0, keepVal(u)-keepVal(k))*0.4); }
+  return worst * (aiRacing() ? 0.6 : 1);   // ahead in the race, a body spent on the attacker is a hit the player didn't make
+}
+// A card's worth in a trade: its stats, plus the extra card a paired Pilot is.
+function aiCardsVal(u){ return keepVal(u) + (u.pilotCard ? 1.5 : 0); }
+// What a landed direct hit is worth with the player's defences at `st` ({ baseHp, shields } — the state after the attacks
+// before it in the sequence).
+function aiFaceValueAt(atk, st){
+  const ap=effAp(atk);
+  if (st.baseHp>0) return Math.min(3, 3*ap/st.baseHp);
+  if (st.shields<=0) return 1000;
+  const n=Math.min(effSuppression(atk)?2:1, st.shields);
+  return aiShieldWorth(st.shields) * n * (aiRacing() ? 1.15 : 1);
+}
+// A shield's worth to the side that has `sh` of them: the fewer they are, the nearer the loss.
+function aiShieldWorth(sh){ return sh<=1 ? 7 : sh===2 ? 5 : sh===3 ? 4 : sh===4 ? 3.5 : 3; }
+// The player's best answer to `atk` attacking `target` (null = the player, whose defences are at `st`) with one of
+// `blockers` — the block a competent player makes (it kills the attacker, or saves more than the blocker is worth) — or null
+// when they let it through.
+function aiPlayerBlock(atk, target, blockers, st){
+  if (effHighManeuver(atk)) return null;
+  let best=null;
+  const must = !target && st.baseHp<=0 && st.shields<=0;
+  for (const b of blockers){
+    if (b===target || b.hp<=0 || !blockerAllowed(b, atk)) continue;
+    const gain = target ? (effAp(atk)>=target.hp ? aiCardsVal(target) : 0.3)
+      : st.baseHp>0 ? Math.min(3, 3*effAp(atk)/st.baseHp)
+      : aiShieldWorth(st.shields);
+    const kill = (effAp(b)>=atk.hp && !(effFirstStrike(atk) && effAp(atk)>=b.hp)) ? aiCardsVal(atk) : 0;
+    const loss = effAp(atk)>=b.hp ? aiCardsVal(b) : 0;
+    const v = gain + kill - loss - 0.5;
+    if ((must || v>0) && (!best || v>best.v)) best={ b, v };
+  }
+  return best ? best.b : null;
+}
+// What keeping an active <Blocker> home is worth: a lot when the player's attackers next turn could run the AI out of life.
+function aiBlockerHoldValue(){
+  const ai=G.enemy, pl=G.player;
+  const swings = pl.field.filter(u=>u.hp>0 && effAp(u)>0 && !cantHitPlayer(u)).length;
+  const buffer = ai.shields.length + (ai.base&&ai.base.hp>0 ? 1 : 0);
+  if (swings >= buffer) return 5;
+  if (aiUnderPressure()) return 2.5;
+  return 0.8;
+}
+// The AI's attacks this turn, in order: [{ a, t }] with t a player Unit or null for the player. Each attacker takes its best
+// option (a clean kill, a chip, or the player's shields); the sequence is then played through against the player's blocks,
+// with the Base and shields wearing down attack by attack, and the attack with the worst value is dropped until every
+// remaining one is worth making (a trade of the attacker needs a clear gain).
+function aiPlanHard(attackers){
+  const pl=G.player, holdV=aiBlockerHoldValue();
+  const st0={ baseHp: pl.base&&pl.base.hp>0 ? pl.base.hp : 0, shields: pl.shields.length };
+  const taken=new Set();   // Units a planned attack already destroys
+  const cands=[];
+  for (const a of [...attackers].sort((x,y)=>effAp(y)-effAp(x))){
+    const lures=lureTargets(a, pl);
+    const units=pl.field.filter(u=>u.hp>0 && !effUntargetable(u) && (u.rested || canHitActive(a,u)) && !taken.has(u));
+    const exp=aiExposure(a), hold=effBlocker(a) ? holdV : 0;
+    let best=null;
+    for (const t of (lures.length ? lures.filter(u=>units.includes(u)) : units)){
+      const kills=aiKillsInBattle(a,t), dies=effAp(t)>=a.hp && !(effFirstStrike(a)&&kills);
+      // A kill is worth the card(s), a <Blocker> out of the way, and the shield a <Breach> attacker then breaks; a chip is worth
+      // little, and nothing on a Unit whose <Repair> heals it back by the AI's next turn.
+      const raw=(kills ? aiCardsVal(t)+1+(effBlocker(t)?1:0)+(effBreach(a)>0 && st0.baseHp<=0 && st0.shields>0 ? aiShieldWorth(st0.shields)*0.8 : 0)
+                       : (effRepair(t)>=effAp(a) ? 0 : 0.3*effAp(a))) - (dies?aiCardsVal(a)+1:0) - (dies?0:exp) - hold;
+      if (!best || raw>best.raw) best={ a, t, raw, kills };
+    }
+    if (!lures.length && !cantHitPlayer(a)){ const raw=aiFaceValueAt(a, st0)-exp-hold; if (!best || raw>best.raw) best={ a, t:null, raw, kills:false }; }
+    if (!best) continue;
+    if (best.t && best.kills) taken.add(best.t);
+    cands.push(best);
+  }
+  // Attack order: planned kills first (smallest killer first), then the player's shields strongest-first (aiPostMain's order).
+  const order=list=>[...list].sort((x,y)=>{ const px=!!x.t, py=!!y.t; if (px!==py) return px?-1:1; if (px&&py) return effAp(x.a)-effAp(y.a); return effAp(y.a)-effAp(x.a); });
+  // The value of a sequence of attacks, played through against the player's blocks with their defences wearing down.
+  const total=list=>{
+    let blockers=pl.field.filter(b=>effBlocker(b) && !b.rested && b.hp>0), sum=0;
+    const st=Object.assign({}, st0);
+    for (const c of list){
+      const a=c.a, exp=aiExposure(a), hold=effBlocker(a) ? holdV : 0;
+      const b=aiPlayerBlock(a, c.t, blockers, st);
+      let v;
+      if (b){ blockers=blockers.filter(x=>x!==b);
+        const bk=effAp(b)>=a.hp && !(effFirstStrike(a) && effAp(a)>=b.hp), bd=effAp(a)>=b.hp;
+        v=(bd?aiCardsVal(b):0) - (bk?aiCardsVal(a)+1:0) - (bk?0:exp) - hold + 0.5; }   // +0.5: the blocker is rested now
+      else if (c.t) v=c.raw;
+      else { v=aiFaceValueAt(a, st)-exp-hold;
+        if (st.baseHp>0) st.baseHp=Math.max(0, st.baseHp-effAp(a)); else st.shields=Math.max(0, st.shields-(effSuppression(a)?2:1)); }
+      c.v=v; sum+=v;
+    }
+    return sum;
+  };
+  // Drop the attack whose removal gains the most, while that gains anything (an attack that only baits a block out of the
+  // way of the others stays).
+  let chosen=order(cands), cur=total(chosen);
+  for (let guard=0; chosen.length && guard<12; guard++){
+    if (G.aiDebug) log(`[plan] ${chosen.map(c=>`${c.a.name}→${c.t?c.t.name:'face'} raw ${c.raw.toFixed(1)} v ${c.v.toFixed(1)}`).join(' | ')} = ${cur.toFixed(1)}`, 'sys');
+    let bestList=null, bestV=cur;
+    for (const c of chosen){ const l=chosen.filter(x=>x!==c); const v=total(l); if (v>bestV+1e-9){ bestV=v; bestList=l; } }
+    if (!bestList) break;
+    chosen=bestList; cur=total(chosen);
+  }
+  return chosen;
+}
 // After the main phase: use ready activated abilities, then run the attack sequence.
 function aiPostMain(){
   if (G.over) return;
@@ -13463,19 +13622,30 @@ function aiPostMain(){
   }
   render();
 
-  const attackers = ai.field.filter(u=>(!u.sick || deployTurnAttackOk(u, G.player)) && !u.rested && (u.ap>0 || aiShieldBomb(u)) && !trashBlocksAttack(u,ai));
+  let attackers = ai.field.filter(u=>(!u.sick || deployTurnAttackOk(u, G.player)) && !u.rested && (u.ap>0 || aiShieldBomb(u)) && !trashBlocksAttack(u,ai));
   // If swinging everything at the player wins this turn, commit to going face (take lethal).
   G.aiForceFace = aiHasLethal(attackers);
   if (G.aiForceFace) log(`${who(G.enemy)} goes for the win!`, 'ai');
-  const plan = planAiAttacks(attackers);
+  const plan = (AI_LVL==='hard' && !G.aiForceFace) ? new Map() : planAiAttacks(attackers);
   // The attacks a Command was played for this turn (Rasid's Orders' trade into a bigger active Unit, the AP-2 that lets an
   // attacker survive its kill) join the plan.
   { const tp=G._aiAttackPlan;
     if (!G.aiForceFace && tp && tp.turnSeq===G.turnSeq) for (const [uid, t] of tp.map){ const a=attackers.find(x=>x.uid===uid);
       if (a && !plan.has(uid) && ![...plan.values()].includes(t) && G.player.field.includes(t) && t.hp>0 && !effUntargetable(t) && (t.rested || canHitActive(a, t))) plan.set(uid, t); } }
+  if (AI_LVL==='hard' && !G.aiForceFace){
+    // Hard: only the attacks worth making against a player who blocks and punishes (aiPlanHard); the rest stay home. 'face'
+    // marks an attack on the player so resolveAiAttack doesn't swap in a trade of its own.
+    const forced=[...plan.keys()];
+    const hp=aiPlanHard(attackers.filter(a=>!plan.has(a.uid)));
+    const seq=[...forced.map(uid=>attackers.find(a=>a.uid===uid)), ...hp.map(c=>c.a)];
+    for (const c of hp) plan.set(c.a.uid, c.t || 'face');
+    const held=attackers.filter(a=>!seq.includes(a));
+    if (held.length) log(`${who(G.enemy)} holds ${held.map(u=>'<b>'+u.name+'</b>').join(', ')} back.`, 'ai');
+    attackers=seq;
+  }
   // Sequence: take the planned kills first (with their small assigned attackers, clearing threats),
   // then push the remaining bodies at the player's shields strongest-first.
-  attackers.sort((a,b)=>{
+  else attackers.sort((a,b)=>{
     const pa=plan.has(a.uid), pb=plan.has(b.uid);
     if (pa!==pb) return pa?-1:1;                 // planned kills resolve first
     if (pa&&pb) return effAp(a)-effAp(b);        // among kills: smallest killer first
@@ -14260,9 +14430,10 @@ function resolveAiAttackInner(atk, done0, forced){
   const pl=G.player;
   // Units may only attack a RESTED enemy unit (or any unit if granted <attack active>), or the player directly.
   const attackable = pl.field.filter(u=>u.hp>0 && !effUntargetable(u) && (u.rested || canHitActive(atk,u)));
-  // Honour the planned target (from planAiAttacks) if it's still a legal kill this attacker can reach.
-  let target = (forced && attackable.includes(forced)) ? forced : null;
-  if (!target){
+  // Honour the planned target (from planAiAttacks) if it's still a legal kill this attacker can reach; 'face' (aiPlanHard) is
+  // a planned attack on the player.
+  let target = (forced && forced!=='face' && attackable.includes(forced)) ? forced : null;
+  if (!target && forced!=='face'){
     // A clean kill destroys the target and survives the counter (or strikes first).
     const bestKill = attackable.filter(u=> aiKillsInBattle(atk, u) && (effFirstStrike(atk) || effAp(u)<atk.hp))
                                .sort((a,b)=>aiThreatScore(b)-aiThreatScore(a))[0] || null;

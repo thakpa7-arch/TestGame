@@ -11,6 +11,7 @@ const { chromium } = require('/opt/node22/lib/node_modules/playwright');
     await p.route('**://images.weserv.nl/**', r=>r.abort());
     await p.goto('file://'+require('path').resolve(__dirname,'../gundam-card-game.html')); await p.waitForTimeout(400);
     await p.click('#startBtn'); await p.waitForTimeout(500);
+    if (process.env.AILVL){ await p.click(`button.dbAi[data-lvl="${process.env.AILVL}"]`); await p.waitForTimeout(400); }   // AILVL=easy|normal|hard
     const decks = await p.evaluate(()=>PRESET_DECKS.map(d=>d.name));
     await p.click(`text="${decks[(g*2) % decks.length]}"`); await p.waitForTimeout(600);
     const setupLog=[];
