@@ -529,6 +529,10 @@
   #bgModal .bg-sub { font-size: 12px; color: var(--muted); margin-bottom: 12px; line-height: 1.4; }
   #bgModal .bg-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); }
   #bgModal .bg-prev { width: 120px; height: 68px; flex-shrink: 0; border-radius: 8px; border: 1px solid rgba(200,50,43,.45); background: #0d1628 center/cover no-repeat; }
+  #bgModal h4 { font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--gold); margin: 12px 0 2px; }
+  /* a sleeve preview is card-shaped (63:88), shown as a little stack like the deck on the mat */
+  #bgModal .bg-prev.sleeve { width: 50px; height: 70px; border-radius: 5px; border-color: rgba(160,175,210,.7); margin: 0 6px 6px 0;
+    box-shadow: 2px 2px 0 rgba(90,110,150,.55), 4px 4px 0 rgba(90,110,150,.3); }
   #bgModal .bg-ctl { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; min-width: 0; }
   #bgModal .bg-ctl b { font-size: 13px; }
   #bgModal .bg-pick { display: inline-block; background: var(--blue); color: #fff; padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; }
@@ -562,6 +566,9 @@
   #cropMode button { padding: 6px 10px; font-size: 12px; }
   #cropMode button.on { background: var(--gold); color: #1a1200; border-color: var(--gold); }
   #cropModal.whole #cropStage { cursor: default; }
+  /* framing a sleeve: the frame is a card, and only "pick a part" makes sense */
+  #cropModal.sleeve #cropMode { display: none; }
+  #cropModal.sleeve #cropFrame { border-radius: 6px; }
   @media (max-height: 560px){ #cropStage { height: 44vh; min-height: 150px; } #cropModal .crop-box { padding: 8px 12px; } #cropModal .bg-sub { display: none; } }
   #blockModal { position: fixed; inset: 0; background: rgba(4,7,14,.84); z-index: 95; display: none; align-items: center; justify-content: center; padding: 18px; }
   #blockModal.show { display: flex; }
@@ -811,7 +818,7 @@
     <button id="cancelBtn" class="ghost" style="display:none">Cancel</button>
     <button id="rulesBtn" class="ghost">Rules</button>
     <button id="soundBtn" class="ghost" title="Toggle sound">🔊</button>
-    <button id="bgBtn" class="ghost" title="Playmat backgrounds — use your own photos">🖼</button>
+    <button id="bgBtn" class="ghost" title="Playmats &amp; card sleeves — use your own photos">🖼</button>
   </div>
 </div>
 
@@ -824,21 +831,29 @@
 <div id="peekOverlay"></div>
 
 <div id="bgModal"><div class="bg-box">
-  <h3>Playmat backgrounds</h3>
-  <p class="bg-sub">Use any picture from your phone or computer for each mat. After choosing one you pick the part that goes on the mat. Pictures are saved on this device only.</p>
+  <h3>Playmats &amp; card sleeves</h3>
+  <p class="bg-sub">Use any picture from your phone or computer for each mat and for each side's card sleeves (the backs of the deck, Shields and hidden hand). After choosing one you frame the part that is used. Pictures are saved on this device only.</p>
+  <h4>Playmat backgrounds</h4>
   <div class="bg-row" data-side="player"><div class="bg-prev"></div><div class="bg-ctl"><b>Your mat</b>
     <label class="bg-pick">📷 Choose picture<input type="file" accept="image/*"></label>
     <div class="bg-btns"><button class="ghost bg-adjust" title="Move, zoom or crop the picture">✂ Adjust</button><button class="ghost bg-reset">Reset</button></div></div></div>
   <div class="bg-row" data-side="enemy"><div class="bg-prev"></div><div class="bg-ctl"><b>Enemy mat</b>
     <label class="bg-pick">📷 Choose picture<input type="file" accept="image/*"></label>
     <div class="bg-btns"><button class="ghost bg-adjust" title="Move, zoom or crop the picture">✂ Adjust</button><button class="ghost bg-reset">Reset</button></div></div></div>
-  <div class="bg-row bg-dim"><span>Picture brightness</span><input type="range" id="bgDim" min="0" max="100" step="5"></div>
+  <div class="bg-row bg-dim"><span>Mat picture brightness</span><input type="range" id="bgDim" min="0" max="100" step="5"></div>
+  <h4>Card sleeves</h4>
+  <div class="bg-row" data-sleeve="player"><div class="bg-prev sleeve"></div><div class="bg-ctl"><b>Your sleeves</b>
+    <label class="bg-pick">📷 Choose picture<input type="file" accept="image/*"></label>
+    <div class="bg-btns"><button class="ghost bg-adjust" title="Move, zoom or crop the picture">✂ Adjust</button><button class="ghost bg-reset">Reset</button></div></div></div>
+  <div class="bg-row" data-sleeve="enemy"><div class="bg-prev sleeve"></div><div class="bg-ctl"><b>Enemy sleeves</b>
+    <label class="bg-pick">📷 Choose picture<input type="file" accept="image/*"></label>
+    <div class="bg-btns"><button class="ghost bg-adjust" title="Move, zoom or crop the picture">✂ Adjust</button><button class="ghost bg-reset">Reset</button></div></div></div>
   <div class="ins-btns"><button id="bgClose">Close</button></div>
 </div></div>
 <div id="cropModal"><div class="crop-box">
   <h3 id="cropTitle">Frame the picture</h3>
   <div id="cropMode"><button class="ghost on" data-mode="crop" title="Pick a part of the picture">✂ Pick a part</button><button class="ghost" data-mode="blur" title="The whole picture, with a blurred copy filling the rest of the mat">▣ Whole picture</button><button class="ghost" data-mode="tile" title="The whole picture repeated across the mat">▦ Tiled</button></div>
-  <p class="bg-sub">The frame is the shape of the mat on this screen. <span id="cropHint">Drag the picture to move it, pinch, scroll or use the slider to zoom. What is inside the frame goes on the mat.</span></p>
+  <p class="bg-sub"><span id="cropShape">The frame is the shape of the mat on this screen.</span> <span id="cropHint">Drag the picture to move it, pinch, scroll or use the slider to zoom. What is inside the frame goes on the mat.</span></p>
   <div id="cropStage"><canvas id="cropCanvas"></canvas><div id="cropFrame"><span class="crop-tag" id="cropTag"></span></div></div>
   <div class="crop-zoom"><span id="cropZoomLabel">Zoom</span><input type="range" id="cropZoom" min="0" max="100" step="1"><button class="ghost" id="cropFit" title="Back to the starting zoom / tile size">Fit</button></div>
   <div class="ins-btns"><button class="ghost" id="cropCancel">Cancel</button><button id="cropOk">✔ Use this</button></div>
@@ -865,7 +880,7 @@
      Every card is genuine — real names, art, costs, AP/HP and effect text.</p>
   <button id="startBtn">START BATTLE</button>
   <button id="mpBtn" class="gold" title="Play a friend in a private room with a code; spectators welcome">⚔ PLAY ONLINE</button>
-  <button id="bgBtn2" class="ghost" style="font-size:12px;padding:7px 14px" title="Use your own pictures on the playmats">🖼 Playmat backgrounds</button>
+  <button id="bgBtn2" class="ghost" style="font-size:12px;padding:7px 14px" title="Use your own pictures on the playmats and card sleeves">🖼 Playmats &amp; sleeves</button>
   <button id="backToBattleBtn" class="gold" style="display:none">◀ Back to Battle</button>
   <div class="rules">
     <b>How to win (official):</b> you defeat your opponent the moment a Unit deals them battle damage
@@ -8871,6 +8886,7 @@ function deckShuffled(side, quiet){
     const zone=document.getElementById(side===G.player ? 'playerDeckZone' : 'enemyDeckZone'); if (!zone) return;
     const dk=zone.querySelector('.deck-card'); const r=(dk||zone).getBoundingClientRect(); if (!r || !r.width) return;
     const f=document.createElement('div'); f.className='shuf-fx'; f.style.left=r.left+'px'; f.style.top=r.top+'px'; f.style.width=r.width+'px'; f.style.height=r.height+'px';
+    const sv=sleeveImg(side===G.player ? 'player' : 'enemy'); if (sv) f.style.setProperty('--shield-img', `url("${sv}")`);   // that side's sleeves
     f.innerHTML=shuffleCardsHTML(6, r.width*0.9);
     document.body.appendChild(f);
     setTimeout(()=>{ try{ f.remove(); }catch(e){} }, 1300);
@@ -8885,7 +8901,7 @@ function shuffleCardsHTML(n, dx){
 function shuffleInterlude(title, then){
   const seq=G.setupSeq||0;
   setupModal(`<h2 style="color:#d8b4ff;margin:14px 0 10px">${title}</h2>
-    <div class="shuf-stage"><div class="shuf-deck">${shuffleCardsHTML(7, 34)}</div></div>
+    <div class="shuf-stage"><div class="shuf-deck" style="${sleeveStyle('player')}">${shuffleCardsHTML(7, 34)}</div></div>
     <p style="color:#9aa;font-size:13px">Riffle, riffle, cut — every order is equally likely.</p>`);
   sound('shuffle');
   setTimeout(()=>{ if ((G.setupSeq||0)!==seq) return; then(); }, 1150);
@@ -15810,7 +15826,7 @@ function render(){
   el('enemyHandCount').textContent=G.enemy.hand.length;
   { const n=Math.min(G.enemy.hand.length,10), mid=(n-1)/2;
     el('enemyHandFan').innerHTML=Array.from({length:n},(_,i)=>
-      `<div class="eh-card" style="background-image:url('${HAND_BACK_IMG}');transform:rotate(${((i-mid)*5).toFixed(1)}deg) translateY(${(Math.abs(i-mid)*1.5).toFixed(1)}px)"></div>`).join('');
+      `<div class="eh-card" style="background-image:url('${handBackImg('enemy')}');transform:rotate(${((i-mid)*5).toFixed(1)}deg) translateY(${(Math.abs(i-mid)*1.5).toFixed(1)}px)"></div>`).join('');
   }
   el('enemyDeckZone').innerHTML = deckStackHTML(G.enemy);
   el('playerDeckZone').innerHTML = deckStackHTML(G.player);
@@ -15874,7 +15890,7 @@ function render(){
   hideTargetArrow();
   el('cancelBtn').style.display = (G.mode!=='idle' && G.turn==='player' && !(G.mode==='discard' && !(G.pending&&G.pending.onCancel))) ? 'inline-block' : 'none';
   if (NET.on && NET.role==='spec'){   // a spectator sees neither hand: card backs only
-    el('hand').innerHTML = _hn ? Array.from({length:Math.min(_hn,10)},(_,i)=>`<div class="fan-slot" style="margin-left:${i?-30:0}px"><div class="card" style="background:url('${HAND_BACK_IMG}') center/cover"></div></div>`).join('') : '';
+    el('hand').innerHTML = _hn ? Array.from({length:Math.min(_hn,10)},(_,i)=>`<div class="fan-slot" style="margin-left:${i?-30:0}px"><div class="card" style="background:url('${handBackImg('player')}') center/cover"></div></div>`).join('') : '';
     el('peekOverlay').classList.remove('show');
   }
   bind();
@@ -16283,21 +16299,28 @@ async function matBgAdjust(side){
 // around and zooms (pinch / mouse wheel / slider). The picture always covers the frame, so there are never empty mat corners. ----
 // CROP.mode: 'crop' (frame a part), 'tile' (the whole picture repeated; CROP.tile = one tile's width as a share of the mat's width)
 // or 'blur' (the whole picture over a softened copy; CROP.blur = how soft, 0–100). The one slider serves zoom / tile size / blur by mode.
-const CROP={ side:null, im:null, mode:'crop', tile:0.2, blur:BLUR_DEF, x:0, y:0, s:1, min:1, max:1, frame:null, ptrs:new Map(), pinch:null, raf:0 };
+// CROP.kind: 'mat' (the frame is the mat's shape on this screen) or 'sleeve' (the frame is a card; framing only).
+const CROP={ kind:'mat', side:null, im:null, mode:'crop', tile:0.2, blur:BLUR_DEF, x:0, y:0, s:1, min:1, max:1, frame:null, ptrs:new Map(), pinch:null, raf:0 };
 const TILE_MIN=0.05, TILE_MAX=0.6;
 function matAspect(side){
   const m=document.querySelector('.mat.'+side), r=m && m.getBoundingClientRect ? m.getBoundingClientRect() : null;
   return r && r.width>40 && r.height>40 ? r.width/r.height : (innerWidth>innerHeight ? 2.6 : 1.3);
 }
-function matBgCrop(side, im, keep, mode, tile, blur){
+function matBgCrop(side, im, keep, mode, tile, blur){ cropOpen('mat', side, im, keep, mode, tile, blur); }
+function sleeveCrop(side, im, keep){ cropOpen('sleeve', side, im, keep, 'crop'); }
+function cropOpen(kind, side, im, keep, mode, tile, blur){
   const modal=el('cropModal'), stage=el('cropStage'), cv=el('cropCanvas'), fr=el('cropFrame');
   if (!modal || !stage || !cv || !cv.getContext) return;
-  CROP.side=side; CROP.im=im; CROP.ptrs.clear(); CROP.pinch=null; if (tile) CROP.tile=tile; if (blur!=null) CROP.blur=blur; cropSetMode(mode||CROP.mode||'crop', true);
-  el('cropTag').textContent = side==='enemy' ? 'ENEMY MAT' : 'YOUR MAT';
-  el('cropTitle').textContent = side==='enemy' ? 'Frame the enemy mat picture' : 'Frame your mat picture';
+  CROP.kind=kind; CROP.side=side; CROP.im=im; CROP.ptrs.clear(); CROP.pinch=null; if (tile) CROP.tile=tile; if (blur!=null) CROP.blur=blur;
+  modal.classList.toggle('sleeve', kind==='sleeve');
+  cropSetMode(kind==='sleeve' ? 'crop' : (mode||CROP.mode||'crop'), true);
+  const mine=side!=='enemy';
+  el('cropTag').textContent = kind==='sleeve' ? (mine ? 'YOUR SLEEVES' : 'ENEMY SLEEVES') : (mine ? 'YOUR MAT' : 'ENEMY MAT');
+  el('cropTitle').textContent = kind==='sleeve' ? (mine ? 'Frame your sleeve picture' : 'Frame the enemy sleeve picture') : (mine ? 'Frame your mat picture' : 'Frame the enemy mat picture');
+  const shape=el('cropShape'); if (shape) shape.textContent = kind==='sleeve' ? 'The frame is the shape of a card.' : 'The frame is the shape of the mat on this screen.';
   modal.classList.add('show');
-  // the stage is laid out now that the modal shows; frame = mat shape at ~86% of the stage
-  const W=stage.clientWidth||600, H=stage.clientHeight||300, asp=matAspect(side);
+  // the stage is laid out now that the modal shows; frame = mat (or card) shape at ~86% of the stage
+  const W=stage.clientWidth||600, H=stage.clientHeight||300, asp=kind==='sleeve' ? SLEEVE.asp : matAspect(side);
   let fw=W*0.86, fh=fw/asp; if (fh>H*0.86){ fh=H*0.86; fw=fh*asp; }
   CROP.frame={ x:(W-fw)/2, y:(H-fh)/2, w:fw, h:fh, W, H };
   fr.style.left=CROP.frame.x+'px'; fr.style.top=CROP.frame.y+'px'; fr.style.width=fw+'px'; fr.style.height=fh+'px';
@@ -16344,7 +16367,7 @@ function cropSetMode(mode, quiet){
   m.classList.toggle('whole', mode!=='crop');
   const hint=el('cropHint'); if (hint) hint.textContent = mode==='tile' ? 'The whole picture repeats across the mat like a pattern. The slider sets the tile size.'
     : mode==='blur' ? 'The whole picture is shown at its own shape, and a copy of it fills the rest of the mat — nothing is cut off on any screen. The slider sets how blurred that copy is.'
-    : 'Drag the picture to move it, pinch, scroll or use the slider to zoom. What is inside the frame goes on the mat.';
+    : `Drag the picture to move it, pinch, scroll or use the slider to zoom. What is inside the frame goes on ${CROP.kind==='sleeve' ? 'the card backs' : 'the mat'}.`;
   const lab=el('cropZoomLabel'); if (lab) lab.textContent = mode==='tile' ? 'Tile size' : mode==='blur' ? 'Blur' : 'Zoom';
   const fit=el('cropFit'); if (fit) fit.textContent = mode==='crop' ? 'Fit' : 'Default';
   if (CROP.frame) cropSlider();
@@ -16382,10 +16405,53 @@ function cropClose(){ el('cropModal').classList.remove('show'); CROP.im=null; CR
   el('cropModal').addEventListener('click', e=>{ if (e.target===el('cropModal')) cropClose(); });
   el('cropOk').addEventListener('click', ()=>{ if (!CROP.im) return;
     try{ const im=CROP.im, whole={ x:0, y:0, w:im.naturalWidth, h:im.naturalHeight };
-      matBgStore(CROP.side, im, CROP.mode==='crop' ? cropRect() : whole, CROP.mode, CROP.tile, CROP.blur); cropClose(); }
+      if (CROP.kind==='sleeve') sleeveStore(CROP.side, im, cropRect());
+      else matBgStore(CROP.side, im, CROP.mode==='crop' ? cropRect() : whole, CROP.mode, CROP.tile, CROP.blur);
+      cropClose(); }
     catch(e){ alert('That picture could not be saved: '+(e && e.message ? e.message : e)); } });
-  window.addEventListener('resize', ()=>{ if (CROP.im && el('cropModal').classList.contains('show')) matBgCrop(CROP.side, CROP.im, cropRect()); });
+  window.addEventListener('resize', ()=>{ if (CROP.im && el('cropModal').classList.contains('show')){ if (CROP.kind==='sleeve') sleeveCrop(CROP.side, CROP.im, cropRect()); else matBgCrop(CROP.side, CROP.im, cropRect()); } });
 })();
+// ---- Card sleeves: a picture of the player's own on the backs of one side's face-down cards — the deck stack, the Shields,
+// the shuffle riffles and the hidden hand — framed card-shaped like a mat picture and kept in localStorage as a small JPEG.
+// The mat elements carry the sleeve as their own --shield-img, so every card back inside a mat follows it. ----
+const SLEEVE={ key: s=>'gtcg_sleeve_'+s, asp: 63/88, src:{}, cache:{} };
+function sleeveImg(side){
+  if (!(side in SLEEVE.cache)){ const d=lsGet(SLEEVE.key(side), null); SLEEVE.cache[side] = typeof d==='string' && d.startsWith('data:') ? d : null; }
+  return SLEEVE.cache[side];
+}
+function handBackImg(side){ return sleeveImg(side) || HAND_BACK_IMG; }
+// Inline style for a card back shown outside the mats (a shuffle flurry, the setup shuffle), so it wears that side's sleeve.
+function sleeveStyle(side){ const s=sleeveImg(side); return s ? `--shield-img:url('${s}')` : ''; }   // single quotes: it sits inside a style="…" attribute
+function applySleeve(side){
+  const m=document.querySelector('.mat.'+side); if (!m || !m.style || !m.style.setProperty) return;
+  const img=sleeveImg(side);
+  try{ if (img) m.style.setProperty('--shield-img', `url("${img}")`); else m.style.removeProperty('--shield-img'); }catch(e){}
+}
+function applySleeves(){ applySleeve('player'); applySleeve('enemy'); }
+function sleeveStore(side, im, rect){
+  let data=matBgEncode(im, rect, 480, 0.85);   // a card back is small on screen; 480px tall is sharp on a phone's deck stack
+  try{ localStorage.setItem(SLEEVE.key(side), JSON.stringify(data)); }
+  catch(e){ data=matBgEncode(im, rect, 300, 0.7); localStorage.setItem(SLEEVE.key(side), JSON.stringify(data)); }   // storage full: a smaller copy
+  delete SLEEVE.cache[side]; applySleeve(side); matBgRender();
+  if (G && G.player && G.enemy) render();   // the hidden hand's card backs are drawn inline
+}
+function sleeveReset(side){
+  try{ localStorage.removeItem(SLEEVE.key(side)); }catch(e){}
+  delete SLEEVE.cache[side]; delete SLEEVE.src[side]; applySleeve(side); matBgRender();
+  if (G && G.player && G.enemy) render();
+}
+async function sleeveChoose(side, file){
+  if (!file) return;
+  try{ const im=await matBgLoad(file); SLEEVE.src[side]=im; sleeveCrop(side, im, null); }
+  catch(e){ alert('That picture could not be used: '+(e && e.message ? e.message : e)); }
+}
+async function sleeveAdjust(side){
+  try{
+    let im=SLEEVE.src[side];
+    if (!im){ const data=sleeveImg(side); if (!data) return; im=await matBgLoad(data); }
+    sleeveCrop(side, im, null);
+  }catch(e){ alert('That picture could not be opened: '+(e && e.message ? e.message : e)); }
+}
 function matBgRender(){
   const m=el('bgModal'); if (!m || !m.querySelectorAll) return;
   m.querySelectorAll('.bg-row[data-side]').forEach(r=>{
@@ -16394,6 +16460,11 @@ function matBgRender(){
     p.style.backgroundImage = img ? `url("${img}")` : (mat ? getComputedStyle(mat).backgroundImage.split('url(').slice(-1).map(s=>'url('+s)[0] : '');
     const fit=img ? matBgFit(side) : 'crop';
     p.style.backgroundSize = fit==='tile' ? `${(matBgTile(side)*100).toFixed(1)}% auto` : fit==='blur' ? 'contain' : ''; p.style.backgroundRepeat = fit==='tile' ? 'repeat' : '';
+    r.querySelector('.bg-reset').disabled=!img; r.querySelector('.bg-adjust').disabled=!img;
+  });
+  m.querySelectorAll('.bg-row[data-sleeve]').forEach(r=>{
+    const side=r.dataset.sleeve, img=sleeveImg(side), p=r.querySelector('.bg-prev');
+    p.style.backgroundImage=`url("${img||CARD_BACK_IMG}")`;   // the stock official back until the player picks one
     r.querySelector('.bg-reset').disabled=!img; r.querySelector('.bg-adjust').disabled=!img;
   });
   const d=el('bgDim'); if (d) d.value=matBgDim();
@@ -16407,8 +16478,14 @@ el('bgModal').querySelectorAll('.bg-row[data-side]').forEach(r=>{
   r.querySelector('.bg-adjust').addEventListener('click', ()=>matBgAdjust(side));
   r.querySelector('.bg-reset').addEventListener('click', ()=>{ try{ localStorage.removeItem(MATBG.key(side)); localStorage.removeItem(MATBG.fitKey(side)); localStorage.removeItem(MATBG.tileKey(side)); localStorage.removeItem(MATBG.blurKey(side)); }catch(e){} delete MATBG.src[side]; applyMatBg(side); matBgRender(); });
 });
+el('bgModal').querySelectorAll('.bg-row[data-sleeve]').forEach(r=>{
+  const side=r.dataset.sleeve;
+  r.querySelector('input[type=file]').addEventListener('change', e=>{ sleeveChoose(side, e.target.files && e.target.files[0]); e.target.value=''; });
+  r.querySelector('.bg-adjust').addEventListener('click', ()=>sleeveAdjust(side));
+  r.querySelector('.bg-reset').addEventListener('click', ()=>sleeveReset(side));
+});
 el('bgDim').addEventListener('input', e=>{ lsSet(MATBG.dimKey, +e.target.value); applyMatBgs(); });
-applyMatBgs();
+applyMatBgs(); applySleeves();
 el('inspect').addEventListener('click', e=>{ if(e.target.id==='inspect') closeInspect(); });
 el('playerTrashRow').addEventListener('click', ()=>{ showPileViewer((G.player&&G.player.trash)||[], 'Your Trash (Graveyard)'); });
 el('playerExileRow').addEventListener('click', ()=>{ showPileViewer((G.player&&G.player.exile)||[], 'Your Exile'); });
