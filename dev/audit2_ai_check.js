@@ -116,10 +116,10 @@ for (const [id, kind] of [[CLOSE,'damage'],[INDIG,'buff'],[UNFORESEEN,'debuff'],
 
 // ---- End Phase (the player's) ----
 { fresh('player'); hand('enemy',[MIRACLE]); const d0=G.enemy.deck.length;
-  A.endTurn();
+  A.endTurn(); drainTasks();   // the AI's Action Step play pauses on a timer so the table shows it (aiActionPause)
   ok('player End Phase: A Miracle (no enemy Unit attacked) — the AI draws 2', inTrash('enemy', NAME(MIRACLE)) && G.enemy.deck.length===d0-3, `deck ${d0}->${G.enemy.deck.length} (2 + its draw phase)`); }
 { fresh('player'); hand('enemy',[MIRACLE]); const atk=stick('player',1,1); stick('enemy',0,5,{rested:true});
-  playerAttacks(atk, null); hand('enemy',[MIRACLE]); A.endTurn();
+  playerAttacks(atk, null); hand('enemy',[MIRACLE]); A.endTurn(); drainTasks();
   ok('player End Phase: no A Miracle after an enemy Unit attacked', !inTrash('enemy', NAME(MIRACLE))); }
 { fresh('player'); const blk=stick('player',2,4,{blocker:true}); stick('enemy',4,4); hand('enemy',[SIEGE]);
   A.endTurn();

@@ -10999,6 +10999,17 @@ function activateReady(u){
       if (!fc.length) return false;
     } }
   if (act && act.kind==='setActiveAll' && !side.field.some(x=>x.rested && x.hp>0 && (!act.traits.length || act.traits.some(tr=>(x.trait||'').toLowerCase().includes('('+tr+')'))) && (!act.blocker || effBlocker(x)))) return false;
+  // "Choose 1 enemy / friendly Unit" with no Unit it could choose can't be used: it isn't offered (the inspector's ⚡ button,
+  // the Action Step's tiles) and the AI doesn't use it — the cost would be spent for nothing (the same candidates as activatePickTarget).
+  if (act && (act.scope==='enemy' || act.scope==='friendly') && act.kind!=='tokenDuel'){
+    let tAct=act; while (tAct && tAct.kind==='cond' && tAct.inner && !tAct.filter) tAct=tAct.inner;
+    if (!tAct || tAct.scope!==act.scope) tAct=act;
+    const foe = side===G.player ? G.enemy : G.player;
+    try{
+      if (act.scope==='enemy'){ if (!enemyTargets(foe, tAct).length) return false; }
+      else if (!friendlyTargets(side, tAct).length && !(tAct.filter && tAct.filter.anySide && friendlyTargets(foe, tAct).length)) return false;
+    }catch(e){}
+  }
   return activateCostPayable(u, side);
 }
 // Begin activation: pay nothing yet if a target is needed, else resolve immediately.
@@ -15024,6 +15035,7 @@ function aiActionResume(attacker, cb){
   if (G.mode!=='idle' && G.mode!=='attack-target'){ setTimeout(()=>aiActionResume(attacker, cb), 200); return; }
   render();
   if (attacker && !aiActionCtx(attacker)){ cb(); return; }
+  if (aiActionPause(attacker, ()=>offerPlayerActionStep(attacker, cb))) return;   // its Command stays in view for a moment
   offerPlayerActionStep(attacker, cb);
 }
 function collectPlayerActions(attacker){
@@ -15183,6 +15195,19 @@ function aiActionAbilities(attacker){
   if (used) render();
   return used;
 }
+// A short pause after the AI used an ability or played a Command in an Action Step, so what it did (the card, the effect's beam)
+// stays in view before the player's own dialog opens over it. Capped per step so a chain of free uses can't hold the step up.
+const AI_ACTION_PAUSE_MS=250;
+function aiActionPause(attacker, next){
+  if (NET.on || G.over) return false;
+  const key=`${G.turnSeq}|${attacker ? attacker.uid : 'end'}`;
+  if (!G._aiActPause || G._aiActPause.key!==key) G._aiActPause={ key, n:0 };
+  if (G._aiActPause.n>=6) return false;
+  G._aiActPause.n++;
+  render();
+  setTimeout(next, AI_ACTION_PAUSE_MS);
+  return true;
+}
 function offerPlayerActionStep(attacker, cb){
   if (G.over){ cb(); return; }
   if (modalBusy()){ whenModalFree(()=>offerPlayerActionStep(attacker, cb)); return; }   // after the open choice
@@ -15190,7 +15215,12 @@ function offerPlayerActionStep(attacker, cb){
   if (NET.on && NET.active && !NET.inHop && !G._mpActLocal){ mpActionStep(attacker, cb); return; }
   if (!NET.on){
     // The AI's 【Activate･Action】 abilities, then (once any choice they opened for the player is closed) the step goes on.
-    if (aiActionAbilities(attacker) && (G.over || modalBusy())){ if (G.over){ cb(); return; } whenModalFree(()=>offerPlayerActionStep(attacker, cb)); return; }
+    if (aiActionAbilities(attacker)){
+      if (G.over){ cb(); return; }
+      if (modalBusy()){ whenModalFree(()=>offerPlayerActionStep(attacker, cb)); return; }
+      // The table shows what it did (the card, the effect's beam) for a moment before your own Action Step dialog opens over it.
+      if (aiActionPause(attacker, ()=>offerPlayerActionStep(attacker, cb))) return;
+    }
     // The AI may play an 【Action】 Command first, and again after each of the player's plays (the step ends when both pass).
     if (aiActionStep(attacker, ()=>aiActionResume(attacker, cb))) return;
   }
