@@ -331,6 +331,22 @@
   .db-row { display: flex; align-items: center; gap: 6px; background: #1a1930; border: 1px solid #32304e; border-radius: 7px; padding: 3px 6px; font-size: 12px; color: #e6e6f2; }
   .db-row b { flex: 1; text-align: left; font-weight: 600; }
   .db-row button { background: #32304e; color: #fff; border: none; border-radius: 5px; width: 22px; height: 22px; cursor: pointer; font-weight: 800; }
+  /* Deck import / export dialog (plain-text decklists); sits above the setup screens */
+  #dbIo { position: fixed; inset: 0; background: rgba(4,7,14,.84); z-index: 1300; display: none; align-items: center; justify-content: center; padding: 16px; }
+  #dbIo.show { display: flex; }
+  #dbIo .io-box { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; max-width: 480px; width: 100%; max-height: 92vh; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  #dbIo h3 { font-size: 17px; margin: 0; }
+  #dbIo .io-sub { font-size: 12px; color: var(--muted); line-height: 1.45; margin: 0; }
+  #dbIo textarea { width: 100%; box-sizing: border-box; min-height: 190px; max-height: 42vh; resize: vertical; background: #0b0905; color: var(--txt); border: 1px solid var(--line); border-radius: 8px; padding: 10px;
+    font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre; overflow: auto; }
+  #dbIo textarea:focus { outline: none; border-color: var(--gold); }
+  #dbIo .io-note { font-size: 12px; line-height: 1.45; color: var(--muted); white-space: pre-wrap; }
+  #dbIo .io-note.ok { color: #9be29a; }
+  #dbIo .io-note.bad { color: #f0a3a3; }
+  #dbIo .io-btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  #dbIo .io-btns button { padding: 8px 14px; font-size: 13px; }
+  #dbIo .io-btns .io-sp { flex: 1; }
+  #dbIo input[type=file] { display: none; }
 
   /* Hearthstone-style hand fan: each card sits in a rotated slot; focusing straightens and lifts it */
   .hand-row { overflow: visible; }
@@ -857,6 +873,14 @@
   <div id="cropStage"><canvas id="cropCanvas"></canvas><div id="cropFrame"><span class="crop-tag" id="cropTag"></span></div></div>
   <div class="crop-zoom"><span id="cropZoomLabel">Zoom</span><input type="range" id="cropZoom" min="0" max="100" step="1"><button class="ghost" id="cropFit" title="Back to the starting zoom / tile size">Fit</button></div>
   <div class="ins-btns"><button class="ghost" id="cropCancel">Cancel</button><button id="cropOk">✔ Use this</button></div>
+</div></div>
+<div id="dbIo"><div class="io-box">
+  <h3 id="ioTitle">Export deck</h3>
+  <p class="io-sub" id="ioSub"></p>
+  <textarea id="ioText" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+  <div class="io-note" id="ioNote"></div>
+  <div class="io-btns" id="ioBtns"></div>
+  <input type="file" id="ioFile" accept=".txt,.json,.csv,text/plain,application/json">
 </div></div>
 <div id="inspect"><div class="ins-box">
   <img id="insImg" alt="">
@@ -9575,19 +9599,21 @@ function setupChooseDeck(){
   const chip=`background:rgba(0,0,0,.7);color:#fff;border:1px solid #555;border-radius:6px;padding:2px 7px;cursor:pointer;font-size:12px`;
   const cards=PRESET_DECKS.map((d,i)=>
     `<div class="setup-deck" data-i="${i}" style="${tileStyle(presetArt(d,used),'#6a4fb0')}">${shade}
-      <div style="position:absolute;top:4px;right:4px"><button class="db-copy" data-kind="p" data-i="${i}" title="Duplicate as a custom deck" style="${chip}">⧉</button></div>
+      <div style="position:absolute;top:4px;right:4px;display:flex;gap:4px"><button class="db-export" data-kind="p" data-i="${i}" title="Export this deck as a text list" style="${chip}">⬇</button><button class="db-copy" data-kind="p" data-i="${i}" title="Duplicate as a custom deck" style="${chip}">⧉</button></div>
       <div style="position:absolute;bottom:0;left:0;right:0;padding:8px 6px;color:#fff;font-size:14px;font-weight:700;text-shadow:0 1px 3px #000">${d.name}${wl(d.name)}</div>
     </div>`).join('');
   const customs=customDecks().map((d,i)=>
     `<div class="setup-custom" data-c="${i}" style="${tileStyle(presetArt(d,used),'#34d399')}">${shade}
       <div style="position:absolute;top:4px;right:4px;display:flex;gap:4px">
+        <button class="db-export" data-kind="c" data-c="${i}" title="Export this deck as a text list" style="${chip}">⬇</button>
         <button class="db-copy" data-kind="c" data-c="${i}" title="Duplicate deck" style="background:rgba(0,0,0,.7);color:#fff;border:1px solid #555;border-radius:6px;padding:2px 7px;cursor:pointer;font-size:12px">⧉</button>
         <button class="db-edit" data-c="${i}" title="Edit deck" style="background:rgba(0,0,0,.7);color:#fff;border:1px solid #555;border-radius:6px;padding:2px 7px;cursor:pointer;font-size:12px">✏️</button>
         <button class="db-del" data-c="${i}" title="Delete deck" style="background:rgba(0,0,0,.7);color:#fff;border:1px solid #555;border-radius:6px;padding:2px 7px;cursor:pointer;font-size:12px">🗑</button>
       </div>
       <div style="position:absolute;bottom:0;left:0;right:0;padding:8px 6px;color:#fff;font-size:14px;font-weight:700;text-shadow:0 1px 3px #000">${d.name}<div style="font-size:10px;color:#7ee29a;font-weight:600">CUSTOM</div>${wl(d.name)}</div>
     </div>`).join('');
-  const newTile=`<button id="dbNew" style="${tileStyle('','#6a4fb0')};border-style:dashed;color:#b8a8e8;font-size:15px;font-weight:700">＋<br>DECK<br>BUILDER</button>`;
+  const newTile=`<button id="dbNew" style="${tileStyle('','#6a4fb0')};border-style:dashed;color:#b8a8e8;font-size:15px;font-weight:700">＋<br>DECK<br>BUILDER</button>
+    <button id="dbImportTile" title="Paste or open a decklist (copies and card numbers) and build from it" style="${tileStyle('','#34d399')};border-style:dashed;color:#9be29a;font-size:15px;font-weight:700">⬆<br>IMPORT<br>DECK</button>`;
   const aiBtn=(lvl,label)=>`<button class="db-filter dbAi ${AI_LVL===lvl?'on':''}" data-lvl="${lvl}">${label}</button>`;
   const m=setupModal(`${setupBackBtn('Title', setupBackToTitle)}<h2 style="color:#d8b4ff;margin:14px 0 6px">Choose your deck</h2>
     <p style="color:#9aa;margin:0 0 10px;font-size:13px">Pick a preset, one of your custom decks, or build your own. The AI plays the other preset.</p>
@@ -9607,6 +9633,11 @@ function setupChooseDeck(){
   m.querySelectorAll('.db-del').forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); const ds=customDecks(); if(confirm(`Delete deck "${ds[+b.dataset.c].name}"?`)){ ds.splice(+b.dataset.c,1); lsSet('gtcg_customDecks',ds); setupChooseDeck(); } });
   m.querySelectorAll('.dbAi').forEach(b=>b.onclick=()=>{ AI_LVL=b.dataset.lvl; lsSet('gtcg_ai',AI_LVL); setupChooseDeck(); });
   const nb=m.querySelector('#dbNew'); if(nb) nb.onclick=()=>openDeckBuilder(-1);
+  const ib=m.querySelector('#dbImportTile'); if(ib) ib.onclick=()=>{ openDeckBuilder(-1); deckIoOpen('import', { onImport: dbImportList }); };
+  m.querySelectorAll('.db-export').forEach(b=>b.onclick=(e)=>{ e.stopPropagation();
+    const s = b.dataset.kind==='p' ? PRESET_DECKS[+b.dataset.i] : customDecks()[+b.dataset.c];
+    if (s) deckIoOpen('export', { name:s.name, deck:dgToMap(s.dg) });
+  });
 }
 function setupDeckChosen(preset){
   if (!preset) return;
@@ -9663,6 +9694,8 @@ function renderDeckBuilder(){
       <span style="flex:1"></span>
       <button id="dbSave" style="background:#2e6b3a;color:#fff;border:none;border-radius:8px;padding:9px 18px;cursor:pointer;font-weight:700">Save deck</button>
       ${DB.editIdx>=0?'<button id="dbSaveCopy" style="background:#3a3a6b;color:#fff;border:none;border-radius:8px;padding:9px 14px;cursor:pointer;font-weight:700" title="Save as a new deck, keeping the original">Save as copy</button>':''}
+      <button id="dbImport" class="ghost" style="padding:9px 12px;font-size:13px" title="Paste or open a decklist (copies and card numbers)">⬆ Import</button>
+      <button id="dbExport" class="ghost" style="padding:9px 12px;font-size:13px" title="Copy, save or share this deck as a text list">⬇ Export</button>
       <button id="dbBack" style="background:#333;color:#fff;border:none;border-radius:8px;padding:9px 14px;cursor:pointer">Back</button>
     </div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;justify-content:center">
@@ -9681,6 +9714,8 @@ function renderDeckBuilder(){
   el('dbSearch').oninput=e=>{ DB.fText=e.target.value; renderDBGrid(); };
   m.querySelectorAll('.dbF').forEach(b=>b.onclick=()=>{ DB['f'+b.dataset.g]=b.dataset.v; renderDeckBuilder(); });
   el('dbBack').onclick=()=>setupChooseDeck();
+  el('dbImport').onclick=()=>deckIoOpen('import', { onImport: dbImportList });
+  el('dbExport').onclick=()=>{ if (!dbCount()){ alert('Add some cards first — there is nothing to export yet.'); return; } deckIoOpen('export', { name:(DB.name||'Deck').trim(), deck:DB.deck }); };
   const sc=m.querySelector('#dbSaveCopy');
   if (sc) sc.onclick=()=>{
     if (dbCount()!==50){ alert('A deck must be exactly 50 cards (currently '+dbCount()+').'); return; }
@@ -9755,6 +9790,154 @@ function dbRemove(id){
   if (!DB.deck[id]) return;
   DB.deck[id]--; if(DB.deck[id]<=0) delete DB.deck[id];
   renderDBGrid(); renderDBSide();
+}
+
+// ---- Deck import / export: plain-text decklists, one card per line ("4 ST01-001 Gundam"), that can be copied, saved
+// as a file, shared, and pasted back into any copy of the game. Lists from other tools work too: the card number is
+// found anywhere on the line and the copies are read before it ("4 ", "4x ") or after it ("x4", "×4", a trailing
+// number); names and comments are ignored. The game's own one-line deck code ("4nST01-001a3n…") and the JSON form
+// {name, cards:{number:copies}} are accepted as well. A printing id (ST01-001-p2) keeps that art when the game has it.
+const DECK_ID_RE=/([A-Z]{1,4}\d{2,3}-\d{3})(?:-[pP](\d+))?(?![\w-])/i;
+function deckIdNorm(m){ return m[1].toUpperCase()+(m[2]?'-p'+m[2]:''); }
+function deckImportId(raw){
+  if (CARD_BY_ID.has(raw)) return raw;
+  const base=cardNum(raw); return CARD_BY_ID.has(base) ? base : null;
+}
+function deckImportable(id){ const d=CARD_BY_ID.get(id); return !!d && ['unit','pilot','command','base'].includes(d.type); }
+function dgToMap(dg){ const m={}; for (const e of parsePreset(dg||'')) m[e.id]=(m[e.id]||0)+e.n; return m; }
+function deckListParse(text){
+  const r={ name:'', cards:{}, unknown:[], clipped:[], ignored:0, total:0, colors:[] };
+  const add=(raw,n)=>{ n=Math.floor(+n||0); if (n<=0) return; const id=deckImportId(raw);
+    if (!id || !deckImportable(id)){ if (!r.unknown.includes(raw)) r.unknown.push(raw); return; }
+    r.cards[id]=(r.cards[id]||0)+n; };
+  let t=String(text||'').replace(/^﻿/,'').trim();
+  if (!t) return r;
+  let lines=null;
+  if (t[0]==='{' || t[0]==='['){   // JSON: {name, cards:{id:n}} / {cards:[{id,n}]} / [{id,n}]
+    try{ const j=JSON.parse(t); const c=Array.isArray(j) ? j : j && j.cards;
+      const list=Array.isArray(c) ? c : (c && typeof c==='object' ? Object.entries(c).map(([id,n])=>({id,n})) : null);
+      if (list){ if (j && typeof j.name==='string') r.name=j.name.trim().slice(0,24);
+        for (const e of list){ const id=e && (e.id||e.number||e.code||e.card); if (typeof id==='string'){ const m=id.match(DECK_ID_RE); if (m) add(deckIdNorm(m), e.n!=null?e.n:(e.count!=null?e.count:(e.qty!=null?e.qty:(e.copies!=null?e.copies:1)))); else if (!r.unknown.includes(id)) r.unknown.push(id); } }
+        lines=[]; }
+    }catch(e){}
+  }
+  if (lines===null && /^\d+n[A-Z]{1,4}\d{2,3}-\d{3}/i.test(t) && !/\s/.test(t)) lines=parsePreset(t).map(e=>e.n+' '+e.id);   // the game's deck code
+  if (lines===null) lines=t.split(/[\r\n;]+/);
+  let first=true;
+  for (let line of lines){
+    line=line.trim(); if (!line) continue;
+    let m;
+    if ((m=line.match(/^(?:deck|name|title)\s*[:=]\s*(.+)$/i))){ r.name=m[1].trim().slice(0,24); first=false; continue; }
+    if (/^(#|\/\/)/.test(line)){   // a comment; the first line of the list, when it is one, names the deck
+      const h=line.replace(/^(#+|\/\/)\s*/,'').trim();
+      if (first && h && !r.name && !DECK_ID_RE.test(h) && !/^\d+\s*cards?\b/i.test(h)) r.name=h.slice(0,24);
+      first=false; continue; }
+    first=false;
+    const re=new RegExp(DECK_ID_RE.source,'gi'); const hits=[]; let h;
+    while ((h=re.exec(line))) hits.push({ id:deckIdNorm(h), at:h.index, end:h.index+h[0].length });
+    if (!hits.length){ r.ignored++; continue; }
+    hits.forEach((hit,i)=>{
+      const before=line.slice(i?hits[i-1].end:0, hit.at), after=line.slice(hit.end, i+1<hits.length?hits[i+1].at:undefined);
+      let n=1, c;
+      if ((c=before.match(/(\d+)\s*[x×]?\s*$/i))) n=+c[1];
+      else if ((c=after.match(/^\s*[x×]\s*(\d+)/i)) || (c=after.match(/[\s(]\s*[x×]\s*(\d+)\b/i)) || (c=after.match(/[\s(](\d+)\s*\)?\s*$/))) n=+c[1];
+      add(hit.id, n);
+    });
+  }
+  // at most 4 copies of a card number across its printings (6-1-1); extra copies are dropped from the later printings
+  const byNum={}; for (const id of Object.keys(r.cards)){ const k=cardNum(id); (byNum[k]=byNum[k]||[]).push(id); }
+  for (const [num,ids] of Object.entries(byNum)){
+    ids.sort((a,b)=>printingsOf(num).indexOf(a)-printingsOf(num).indexOf(b));
+    let left=4; for (const id of ids){ const n=r.cards[id]; if (n>left){ if (!r.clipped.includes(num)) r.clipped.push(num); if (left>0) r.cards[id]=left; else delete r.cards[id]; } left=Math.max(0, left-n); }
+  }
+  const cols=new Set(); for (const id of Object.keys(r.cards)){ const d=CARD_BY_ID.get(id); if (d && d.color && d.color!=='-') cols.add(d.color); }
+  r.colors=[...cols].sort(); r.total=Object.values(r.cards).reduce((a,b)=>a+b,0);
+  return r;
+}
+// The text form of a deck: a name line, a summary line, then the cards grouped by type (copies, number, name).
+function deckListText(name, deckMap){
+  const rows=Object.entries(deckMap||{}).filter(([,n])=>n>0).map(([id,n])=>({ id, n, d:CARD_BY_ID.get(id) })).filter(r=>r.d);
+  const order={unit:0,pilot:1,command:2,base:3}, label={unit:'Units',pilot:'Pilots',command:'Commands',base:'Bases'};
+  rows.sort((a,b)=>((order[a.d.type]??9)-(order[b.d.type]??9)) || ((a.d.lv||0)-(b.d.lv||0)) || ((a.d.cost||0)-(b.d.cost||0)) || a.d.name.localeCompare(b.d.name) || a.id.localeCompare(b.id));
+  const total=rows.reduce((s,r)=>s+r.n,0), cols=[...new Set(rows.map(r=>r.d.color).filter(c=>c&&c!=='-'))];
+  const out=[`# ${(name||'Deck').trim()||'Deck'}`, `# ${total} cards${cols.length?' · '+cols.join(' / '):''} · copies, card number, name`];
+  let type=null;
+  for (const r of rows){
+    if (r.d.type!==type){ type=r.d.type; out.push('', `# ${label[type]||type} (${rows.filter(x=>x.d.type===type).reduce((s,x)=>s+x.n,0)})`); }
+    const pr=printingsOf(r.id), alt=pr.length>1 && r.id!==cardNum(r.id) ? ` [art ${pr.indexOf(r.id)+1} of ${pr.length}]` : '';
+    out.push(`${r.n} ${r.id} ${r.d.name}${alt}`);
+  }
+  return out.join('\n')+'\n';
+}
+// The dialog: 'export' shows the list with Copy / Save file / Share; 'import' takes a pasted list, a file or the
+// clipboard, previews what it found, and hands the parsed deck to onImport.
+const DIO={ mode:null, onImport:null };
+function ioNote(t, cls){ const n=el('ioNote'); if (!n) return; n.textContent=t||''; n.className='io-note'+(cls?' '+cls:''); }
+function deckIoClose(){ const m=el('dbIo'); if (m && m.classList) m.classList.remove('show'); DIO.mode=null; DIO.onImport=null; }
+async function copyText(text, ta){
+  try{ if (typeof navigator!=='undefined' && navigator.clipboard && navigator.clipboard.writeText){ await navigator.clipboard.writeText(text); return true; } }catch(e){}
+  try{ ta.focus(); ta.select(); const ok=document.execCommand('copy'); ta.setSelectionRange(0,0); return !!ok; }catch(e){ return false; }
+}
+function deckIoPreview(){
+  const ta=el('ioText'); if (!ta) return;
+  if (!String(ta.value||'').trim()){ ioNote(''); return; }
+  const p=deckListParse(ta.value);
+  if (!p.total && !p.unknown.length){ ioNote('No card numbers found yet — each line needs one, such as ST01-001.', 'bad'); return; }
+  const nums=Object.keys(p.cards).length, parts=[];
+  parts.push(`${p.total} card${p.total===1?'':'s'} · ${nums} card number${nums===1?'':'s'}${p.colors.length?' · '+p.colors.join(' / '):''}${p.name?` · name “${p.name}”`:''}`);
+  if (p.total && p.total!==50) parts.push('A deck needs exactly 50 cards to be saved; you can finish it in the builder.');
+  if (p.colors.length>2) parts.push('More than two colours — the deck cannot be saved as it is.');
+  if (p.clipped.length) parts.push(`Cut to 4 copies: ${p.clipped.join(', ')}.`);
+  if (p.unknown.length) parts.push(`Not in this game (skipped): ${p.unknown.slice(0,12).join(', ')}${p.unknown.length>12?' …':''}.`);
+  if (p.ignored) parts.push(`${p.ignored} line${p.ignored===1?'':'s'} without a card number ignored.`);
+  ioNote(parts.join('\n'), p.unknown.length ? 'bad' : (p.total===50 && p.colors.length<=2 ? 'ok' : ''));
+}
+function deckIoOpen(mode, opts){
+  opts=opts||{}; DIO.mode=mode; DIO.onImport=opts.onImport||null;
+  const m=el('dbIo'), ta=el('ioText'), btns=el('ioBtns'); if (!m || !ta || !btns) return;
+  const nav=typeof navigator!=='undefined' ? navigator : {};
+  ioNote('');
+  if (mode==='export'){
+    const text=deckListText(opts.name, opts.deck);
+    el('ioTitle').textContent='Export deck';
+    el('ioSub').textContent='Copy this list, save it as a file or share it. Each line is the number of copies, the card number and the name. Paste it into Import on any device to get the deck back.';
+    ta.value=text; ta.readOnly=true; ta.oninput=null;
+    btns.innerHTML=`<button class="ghost" id="ioCopy">📋 Copy</button><button class="ghost" id="ioSave">💾 Save file</button>${nav.share?'<button class="ghost" id="ioShare">📤 Share</button>':''}<span class="io-sp"></span><button id="ioClose">Close</button>`;
+    const fname=String(opts.name||'deck').replace(/[\\/:*?"<>|]+/g,'').trim()||'deck';
+    el('ioCopy').onclick=async()=>{ const ok=await copyText(text, ta); ioNote(ok ? 'Copied to the clipboard.' : 'Could not copy automatically — select the text and copy it yourself.', ok?'ok':'bad'); };
+    el('ioSave').onclick=()=>{ try{
+        const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([text],{type:'text/plain'})); a.download=fname+'.txt';
+        document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href), 3000);
+        ioNote(`Saved as ${fname}.txt`, 'ok');
+      }catch(e){ ioNote('Could not save a file here — use Copy instead.', 'bad'); } };
+    const sh=el('ioShare'); if (sh) sh.onclick=async()=>{ try{ await nav.share({ title: opts.name||'Deck', text }); }catch(e){} };
+    el('ioClose').onclick=deckIoClose;
+  } else {
+    el('ioTitle').textContent='Import deck';
+    el('ioSub').textContent='Paste a decklist: one card per line as copies and card number, like "4 ST01-001" (a name after the number is fine). Lists exported from this game, a saved .txt file and the one-line deck code also work. The cards replace what is in the builder.';
+    ta.value=''; ta.readOnly=false; ta.oninput=deckIoPreview;
+    btns.innerHTML=`${nav.clipboard&&nav.clipboard.readText?'<button class="ghost" id="ioPaste">📋 Paste</button>':''}<button class="ghost" id="ioOpen">📂 Open file</button><span class="io-sp"></span><button class="ghost" id="ioClose">Cancel</button><button id="ioGo">⬆ Import</button>`;
+    const pb=el('ioPaste'); if (pb) pb.onclick=async()=>{ try{ const t=await nav.clipboard.readText(); if (t && t.trim()){ ta.value=t; deckIoPreview(); } else ioNote('The clipboard is empty.', 'bad'); }catch(e){ ioNote('Clipboard access was refused — paste into the box instead.', 'bad'); } };
+    el('ioOpen').onclick=()=>{ const f=el('ioFile'); if (f) f.click(); };
+    const fi=el('ioFile'); if (fi) fi.onchange=e=>{ const f=e.target.files && e.target.files[0]; e.target.value=''; if (!f) return;
+      const rd=new FileReader(); rd.onload=()=>{ ta.value=String(rd.result||''); deckIoPreview(); }; rd.onerror=()=>ioNote('Could not read that file.', 'bad'); rd.readAsText(f); };
+    el('ioClose').onclick=deckIoClose;
+    el('ioGo').onclick=()=>{
+      const p=deckListParse(ta.value);
+      if (!p.total){ ioNote('No card numbers found. Each line needs a card number such as ST01-001.', 'bad'); return; }
+      if (p.unknown.length && !confirm(`${p.unknown.length} card number${p.unknown.length>1?'s are':' is'} not in this game and will be skipped:\n${p.unknown.slice(0,12).join(', ')}${p.unknown.length>12?' …':''}\n\nImport the other ${p.total} cards?`)) return;
+      const cb=DIO.onImport; deckIoClose(); if (cb) cb(p);
+    };
+    deckIoPreview();
+  }
+  m.classList.add('show');
+  if (mode==='import') setTimeout(()=>{ try{ ta.focus(); }catch(e){} }, 60);
+}
+// Put an imported list into the builder (replacing its cards); a named list names a new deck.
+function dbImportList(p){
+  DB.deck={}; for (const [id,n] of Object.entries(p.cards)) if (n>0) DB.deck[id]=n;
+  if (p.name && DB.editIdx<0) DB.name=p.name;
+  renderDeckBuilder();
 }
 function setupDiceRoll(){
   let pr,er; do{ pr=1+Math.floor(Math.random()*6); er=1+Math.floor(Math.random()*6); } while(pr===er);
@@ -16495,6 +16678,7 @@ el('enemyShieldZone').addEventListener('click', attackDirect);
 el('enemyBaseZone').addEventListener('click', ()=>{ if(G.mode==='attack-target') attackDirect(); });
 el('enemyField').addEventListener('click', e=>{ if(G.mode==='attack-target' && e.target.classList.contains('battlefield')) attackDirect(); });
 document.addEventListener('keydown', e=>{
+  if (el('dbIo').classList.contains('show')){ if (e.key==='Escape') deckIoClose(); return; }   // the deck import / export dialog
   if (e.target && /^(INPUT|TEXTAREA)$/.test(e.target.tagName||'')) return;   // typing in the deck builder's fields
   if (el('cropModal').classList.contains('show')){ if(e.key==='Escape') cropClose(); else if(e.key==='Enter') el('cropOk').click(); return; }   // framing a mat picture
   if(G.over) return;

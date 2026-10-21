@@ -7,6 +7,7 @@ Run everything from this directory. Scripts read the game from `../gundam-card-g
     node run_cards.js                 # every card instantiates + parses -> must say Errors: 0
     node cover.js [cards.json]        # printed 【…】 clauses with no parsed effect
     node rules_check.js               # comprehensive-rules conformance (cites rule numbers)
+    node deckio_check.js              # deck import / export: every preset round-trips through the text list; pasted formats parse
     node gd06_check.js                # GD06 cards that needed bespoke engine support (43 cases)
     node keywords_check.js            # keyword mechanics vs their reminder text
     node while_check.js               # "While <cond>, …" continuous abilities
