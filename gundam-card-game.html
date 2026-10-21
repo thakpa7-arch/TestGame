@@ -37,6 +37,9 @@
     height: 100%;
     color: var(--txt); font-family: "Segoe UI", Roboto, system-ui, sans-serif;
     overflow: hidden; -webkit-text-size-adjust: 100%;
+    /* Touch: no 300ms tap delay / double-tap zoom, no grey tap flash, and no pull-to-refresh
+       (a swipe at the top of a scrolled board must not reload the game mid-match). */
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent; overscroll-behavior-y: contain;
   }
   html { background: #161004; }
   body { background: transparent; }
@@ -501,6 +504,10 @@
   #overlay .rules { text-align: left; max-width: 640px; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
   #overlay .rules b { color: var(--txt); }
   #overlay.hidden { display: none; }
+  /* The overlay scrolls; when its content is taller than the screen a centered column clips its top
+     (the START button) out of reach — `safe` keeps it reachable where supported, the short-viewport
+     rule below covers the rest. */
+  #overlay { justify-content: safe center; }
   .badge { display:inline-block; background: var(--panel); border:1px solid var(--line); border-radius:6px; padding:2px 8px; margin:2px; font-size:11px; }
 
   @media (max-width: 820px) {
@@ -509,20 +516,42 @@
        normal page scroll reaches the hand + End Turn (otherwise body becomes a dead inner
        scroll box and the bottom row is clipped off-screen). */
     html, body { height: auto; min-height: 100%; overflow-x: hidden; overflow-y: auto; }
-    header { flex-wrap: wrap; }
-    header h1 { font-size: 14px; }
-    .row { flex-direction: column; align-items: stretch; gap: 6px; }
-    .side-stats { width: 100%; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 12px; }
-    .side-stats .name { width: 100%; }
+    /* Header: one short line — the game's name is dropped (the prompt pill takes that spot), the
+       turn/phase line stays at the right. */
+    header { flex-wrap: nowrap; justify-content: flex-end; min-height: 34px; padding-bottom: 4px; }
+    header h1, header .sub { display: none; }
+    header .turn-info { font-size: 11px; white-space: nowrap; }
+    .prompt { left: max(10px, env(safe-area-inset-left)); right: auto; transform: none; top: max(8px, env(safe-area-inset-top));
+      max-width: calc(100vw - 150px); font-size: 12px; padding: 6px 12px; }
+    .row { flex-direction: column; align-items: stretch; gap: 5px; }
+    /* Side panels collapse to a single strip: name on the left, the enemy's hand fan + count on the right. */
+    .side-stats { width: 100%; flex-direction: row; flex-wrap: nowrap; align-items: center; justify-content: space-between; gap: 4px 10px; padding: 5px 10px; }
+    .side-stats .name { width: auto; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+    .eh-wrap { min-height: 0; gap: 6px; }
+    .eh-card { width: 20px; height: 28px; margin-left: -11px; }
+    .eh-count { font-size: 12px; }
     .battlefield { min-height: 124px; }
     :root { --card-h: clamp(96px, 15vh, 132px); }   /* smaller mobile base; cards stay variable-sized so board fitting works */
     /* Keep the fan on phones too. The lift/scale is driven by :active (press) via the shared rules
        above; render() tightens the overlap so the whole fan fits the row width. overflow visible so
        the pressed card can pop up above the row. */
     .hand-row { overflow: visible; height: calc(var(--card-h) + 30px); align-items: flex-end; padding-bottom: 4px; }
-    #logPanel { width: 44vw; max-width: 190px; bottom: 6px; right: 6px; }
-    #log { max-height: 110px; font-size: 9px; }
-    #logHeader { font-size: 9px; padding: 4px 8px; }
+    /* Battle log: starts minimized (see the logHeader handler) as a small tab at the bottom-right so it
+       never sits on the hand; opened, it is a bottom sheet across the screen. The controls row leaves
+       room for the tab so the sound button isn't under it. */
+    #logPanel { left: 6px; right: 6px; width: auto; max-width: none; bottom: max(6px, env(safe-area-inset-bottom)); }
+    #logPanel.collapsed { left: auto; width: auto; }
+    #log { max-height: 36vh; font-size: 10px; }
+    #logHeader { font-size: 10px; padding: 6px 10px; }
+    .controls { padding-right: 60px; padding-left: 60px; gap: 8px; }
+    .controls button { padding: 10px 14px; }
+    /* Setup screens: two deck tiles per row, the Back button on its own line above the heading. */
+    #setupModal { padding: 10px; }
+    #setupModal > div { padding: 16px 12px; }
+    #setupModal h2 { margin-top: 38px !important; font-size: 22px; }
+    .setup-deck, .setup-custom, #dbNew { width: 136px !important; height: 182px !important; }
+    #dbSide { width: 100% !important; max-height: 26vh !important; }
+    #dbGrid { max-height: 40vh !important; }
     #inspect .ins-box { flex-direction: column; align-items: center; }
     #inspect img { width: 150px; }
     #overlay { justify-content: flex-start; }
@@ -554,11 +583,34 @@
      breakpoint above, but too short for the desktop board). Shrink the cards so both
      rows + the hand fit, and let the board scroll so the hand / End Turn stay reachable. */
   @media (max-height: 560px) {
-    :root { --card-h: clamp(66px, 13vh, 120px); }
+    :root { --card-h: clamp(66px, 13vh, 120px); --col: 130px; }
     html, body { height: auto; min-height: 100%; overflow-x: hidden; overflow-y: auto; }
     #app { height: auto; min-height: 100vh; min-height: 100dvh; overflow: visible; gap: 3px; }
     header h1 { font-size: 13px; }
+    header .sub { display: none; }
     .hand-row { height: calc(var(--card-h) + 10px); overflow-x: auto; }
+    /* Title / rules screen: top-aligned so the START button is never clipped above the scroll. */
+    #overlay { justify-content: flex-start; padding: 12px 16px; gap: 8px; }
+    #overlay h2 { font-size: 22px; }
+    .side-stats { padding: 6px; gap: 4px; }
+    .side-stats .name { font-size: 12px; }
+    .eh-wrap { min-height: 0; }
+    #log { max-height: 30vh; }
+    /* The mat's side columns keep a readable width (the card-derived width is ~34px here, and the
+       zone labels then sit on top of the cards). */
+    .mat { padding: 5px; gap: 4px; min-height: 150px; }
+    .mat-col { width: 52px; gap: 3px; }
+    .zone .z-label { font-size: 7px; }
+    .zone.exilez { flex: 0 0 22px; }
+    .zone.exilez .z-count { font-size: 11px; margin-right: 22px; }
+    .mat.enemy .zone.exilez .z-count { margin-right: 0; margin-left: 22px; }
+    .base-zone .bz-slot .card, .deck-stack .deck-card, .trash-body .trash-card { width: 34px; height: 48px; }
+    .shield-zone .sz-label { font-size: 7px; }
+    .shield-card { width: 30px; height: 18px; font-size: 8px; }
+    .shield-card + .shield-card { margin-top: -8px; }
+    .mat-bottom { height: 28px; }
+    .zone.resarea .resources { gap: 2px; padding-right: 70px; }
+    .zone.resarea .res { width: 11px; height: 15px; }
   }
 </style>
 </head>
@@ -15079,6 +15131,8 @@ el('logHeader').addEventListener('click', ()=>{
   const p=el('logPanel'); const collapsed=p.classList.toggle('collapsed');
   el('logToggle').textContent = collapsed ? '▸' : '▾';
 });
+// Phones start with the log minimized — open, it would cover the hand and the End Turn row.
+if (typeof matchMedia==='function' && matchMedia('(max-width: 820px), (max-height: 560px)').matches){ el('logPanel').classList.add('collapsed'); el('logToggle').textContent='▸'; }
 el('cancelBtn').addEventListener('click', ()=>cancelAction());
 // Cancel button and Escape key: back out of the current choice without losing what's already under way.
 function cancelAction(){
