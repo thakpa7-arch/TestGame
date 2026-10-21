@@ -190,7 +190,6 @@
     color: #ff8b84; text-align: right; line-height: 1.15; pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,.9); }
   .mat.enemy .zone .z-label { bottom: auto; top: 2px; right: auto; left: 5px; text-align: left; }
   .mat.enemy .zone { clip-path: polygon(0 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%); }
-  .mat .empty-hint { color: rgba(214,226,255,.62); text-shadow: 0 1px 3px rgba(0,0,0,.85); }
   /* Base + shields (left column) */
   .zone.base-zone { flex: 1.1; flex-direction: column; }
   .base-zone .bz-slot { display: flex; justify-content: center; }
@@ -14960,8 +14959,8 @@ function render(){
   if (el('enemyExileCount')) el('enemyExileCount').textContent=G.enemy.exile.length;
   if (el('playerExileCount')) el('playerExileCount').textContent=G.player.exile.length;
 
-  el('enemyField').innerHTML = fieldHTML(G.enemy,'field-enemy','No enemy units');
-  el('playerField').innerHTML = fieldHTML(G.player,'field-player','Play a card from your hand');
+  el('enemyField').innerHTML = fieldHTML(G.enemy,'field-enemy');
+  el('playerField').innerHTML = fieldHTML(G.player,'field-player');
   fitBattlefields();
   el('enemyBase').innerHTML = G.enemy.base ? cardFace(G.enemy.base,'field-enemy') : `<div class="bz-empty">no base</div>`;
   el('playerBase').innerHTML = G.player.base ? cardFace(G.player.base,'field-player') : `<div class="bz-empty">no base</div>`;
@@ -15017,9 +15016,8 @@ function render(){
   bind();
   applyVisualFx();
 }
-function fieldHTML(side, ctx, emptyMsg){
-  const cards = side.field.map(c=>cardFace(c,ctx));   // base is rendered in its own zone now
-  return cards.length ? cards.join('') : `<div class="empty-hint">${emptyMsg}</div>`;
+function fieldHTML(side, ctx){
+  return side.field.map(c=>cardFace(c,ctx)).join('');   // base is rendered in its own zone; an empty mat shows just the mat
 }
 function shieldZoneHTML(side){
   const n=side.shields.length; let cards='';
