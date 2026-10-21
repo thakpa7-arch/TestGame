@@ -539,6 +539,13 @@
   #blockModal.show { display: flex; }
   #blockModal .block-box { background: var(--panel); border: 1px solid var(--red); border-radius: 14px; max-width: 460px; width: 100%; padding: 18px; box-shadow: 0 0 24px rgba(239,68,68,.35); }
   #blockModal #blockMsg { font-size: 14px; line-height: 1.5; margin-bottom: 12px; }
+  /* A question about a specific card (a Burst) shows its art beside the text; tap the art to inspect it. */
+  #blockModal .ask-card { display: flex; gap: 12px; align-items: flex-start; }
+  #blockModal .ask-card.ask-multi { flex-direction: column; }
+  #blockModal .ask-arts { display: flex; gap: 8px; flex-wrap: wrap; flex: 0 0 auto; }
+  #blockModal .ask-art { flex: 0 0 96px; width: 96px; height: 134px; border-radius: 8px; background: #0c1426 center/cover no-repeat; border: 1px solid rgba(251,191,36,.55); box-shadow: 0 0 14px rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; text-align: center; font-size: 11px; font-weight: 800; padding: 4px; cursor: zoom-in; }
+  #blockModal .ask-body { flex: 1; min-width: 0; }
+  #blockModal .ask-eff { display: block; opacity: .8; font-size: 11px; margin-top: 4px; }
   #blockModal .ins-btns { display: flex; gap: 8px; flex-wrap: wrap; }
 
   #overlay { position: fixed; inset: 0; background: rgba(5,8,16,.8); backdrop-filter: blur(1.5px); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; text-align: center; gap: 14px; padding: 24px 18px; overflow-y: auto; }
@@ -6229,9 +6236,24 @@ function g4Resolve(card, side, act, label, after){
 // Resolve a triggered action for `side`, auto-targeting sensibly. `label` is 'Deploy' / 'Pair'.
 // ---- chosen-card effects read by parseChoiceClause, shared by the AI (runTrigger) and the player (resolvePlayerTrigger) ----
 // A yes/no question for an optional effect ("You may …"), queued behind any open choice.
-function askOptional(msg, yesLabel, noLabel, onYes, onNo){
-  if (modalBusy()){ whenModalFree(()=>askOptional(msg, yesLabel, noLabel, onYes, onNo)); return; }
-  el('blockMsg').innerHTML=msg;
+// Card art for a question about one card (a Burst): the picture beside the question text. `cards` may be an array (several
+// Shields revealed together) — each picture is shown. Tapping a picture opens the full-size inspect view over the question.
+function askCardHTML(cards, bodyHTML){
+  const list=(Array.isArray(cards) ? cards : [cards]).filter(Boolean);
+  const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const arts=list.map(c=>`<div class="ask-art" data-uid="${esc(c.uid)}" title="${esc(c.name)}"${c.img?` style="background-image:url('${c.img}')"`:''}>${c.img?'':esc(c.name)}</div>`).join('');
+  // one card: art beside the text; several: the row of pictures above the text so neither is squeezed on a phone
+  return `<div class="ask-card${list.length>1?' ask-multi':''}"><div class="ask-arts">${arts}</div><div class="ask-body">${bodyHTML}</div></div>`;
+}
+// Wire the tap-to-inspect on any card art placed in the block modal's message.
+function wireAskArt(cards){
+  const list=(Array.isArray(cards) ? cards : [cards]).filter(Boolean);
+  el('blockMsg').querySelectorAll('.ask-art').forEach(n=>{ const c=list.find(x=>String(x.uid)===n.dataset.uid); if (c) n.onclick=()=>inspect(c); });
+}
+function askOptional(msg, yesLabel, noLabel, onYes, onNo, card){
+  if (modalBusy()){ whenModalFree(()=>askOptional(msg, yesLabel, noLabel, onYes, onNo, card)); return; }
+  el('blockMsg').innerHTML = card ? askCardHTML(card, msg) : msg;
+  if (card) wireAskArt(card);
   const wrap=el('blockBtns'); wrap.innerHTML='';
   const yes=document.createElement('button'); yes.textContent=yesLabel;
   yes.onclick=()=>{ el('blockModal').classList.remove('show'); onYes(); pumpModalQueue(); };
@@ -11289,8 +11311,8 @@ function triggerBurst(card, side, done, allowChoice){
   if (side===G.player){
     const line=String(card.effect||'').split(/<br\s*\/?>/i).find(s=>/【\s*Burst\s*】/.test(s))||'';
     const txt=plain(line).replace(/^.*?【\s*Burst\s*】\s*/,'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    askOptional(`<b>Burst — ${card.name}</b>: your Shield was destroyed.${txt?`<br><span style="opacity:.8;font-size:11px">【Burst】${txt}</span>`:''}<br>Activate its 【Burst】?`,
-      'Activate 【Burst】', "Don't activate", ()=>resolveBurst(card, side, done, allowChoice), decline);
+    askOptional(`<b>Burst — ${card.name}</b>: your Shield was destroyed.${txt?`<span class="ask-eff">【Burst】${txt}</span>`:''}<br>Activate its 【Burst】?`,
+      'Activate 【Burst】', "Don't activate", ()=>resolveBurst(card, side, done, allowChoice), decline, card);
     return;
   }
   if (!aiWantsBurst(card, side)){ decline(); return; }
@@ -11309,9 +11331,10 @@ function resolveBurstsTogether(cards, side, done){
     if (!pend.length){ render(); if (done) done(); return; }
     if (G.over){ for (const c of pend.splice(0)) if (!side.trash.includes(c)) sendToTrash(c, side); render(); if (done) done(); return; }
     if (side===G.player && pend.length>=2){
+      const shown=pend.slice();
       chooseOrder(pend.map(c=>`${c.name} — 【Burst】${clauseText(c, 'Burst', 110)}`),
-        `<b>Burst</b>: ${pend.length} of your Shields with 【Burst】 were destroyed together. Choose the one to resolve first.`,
-        i=>triggerBurst(pend.splice(i,1)[0], side, next, true));
+        askCardHTML(shown, `<b>Burst</b>: ${pend.length} of your Shields with 【Burst】 were destroyed together. Choose the one to resolve first.`),
+        i=>triggerBurst(pend.splice(i,1)[0], side, next, true), shown);
       return;
     }
     triggerBurst(pend.shift(), side, next, true);
@@ -11326,9 +11349,10 @@ function clauseText(card, kw, max){
 }
 // The player orders their own effects that trigger at the same time (10-1-6-5, Q107): pick the one to resolve next from `labels`.
 // `cb(i)` runs with the chosen index. Queued behind any open choice.
-function chooseOrder(labels, msg, cb){
-  if (modalBusy()){ whenModalFree(()=>chooseOrder(labels, msg, cb)); return; }
+function chooseOrder(labels, msg, cb, cards){
+  if (modalBusy()){ whenModalFree(()=>chooseOrder(labels, msg, cb, cards)); return; }
   el('blockMsg').innerHTML=msg;
+  if (cards) wireAskArt(cards);
   const wrap=el('blockBtns'); wrap.innerHTML='';
   labels.forEach((t,i)=>{ const b=document.createElement('button'); b.innerHTML=t;
     b.onclick=()=>{ el('blockModal').classList.remove('show'); cb(i); pumpModalQueue(); }; wrap.appendChild(b); });
@@ -11374,7 +11398,8 @@ function resolveBurst(card, side, done, allowChoice){
       onUnitDeployed(card, side, finish, side!==G.player); });
     if (side===G.player){
       whenModalFree(()=>{
-        el('blockMsg').innerHTML=`<b>Burst — ${card.name}</b>: add it to your hand, or deploy it as an (AP${card.unitMode.ap}・HP${card.unitMode.hp}) Unit instead?`;
+        el('blockMsg').innerHTML=askCardHTML(card, `<b>Burst — ${card.name}</b>: add it to your hand, or deploy it as an (AP${card.unitMode.ap}・HP${card.unitMode.hp}) Unit instead?`);
+        wireAskArt(card);
         const wrap=el('blockBtns'); wrap.innerHTML='';
         const hb=document.createElement('button'); hb.textContent='Add to hand'; hb.onclick=()=>{ el('blockModal').classList.remove('show'); toHand(); pumpModalQueue(); };
         const ub=document.createElement('button'); ub.textContent=`Deploy as a Unit (AP${card.unitMode.ap}・HP${card.unitMode.hp})`; ub.onclick=()=>{ el('blockModal').classList.remove('show'); asU(); };
