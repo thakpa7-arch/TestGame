@@ -9525,6 +9525,7 @@ function unitHasTrait(unit, side, trait){
 // deployed mid-effect, where we can't safely enter target-selection mode).
 function onUnitDeployed(unit, side, after, forceAuto){
   fxQueue.push({ kind:'enter', uid: unit.uid });        // pop-in animation on the next render
+  mpFxRecord({ k:'fx', kind:'enter', uid:unit.uid }); mpShowPlay(unit, side, unit.token ? 'TOKEN' : 'DEPLOY');   // online: the other screens see it arrive
   if (!side.deployedTraits || side.deployedTraits.turnSeq!==G.turnSeq) side.deployedTraits={ turnSeq:G.turnSeq, set:new Set() };
   for (const t of String(unit.trait||'').toLowerCase().match(/\(([^)]+)\)/g)||[]) side.deployedTraits.set.add(t.replace(/[()]/g,'').trim());
   if (!unit.token && G.player && G.enemy && [...G.player.field, ...G.enemy.field].some(x=>x.deployRestedAura!=null && x.linked && x.hp>0 && (unit.lv||0)<=x.deployRestedAura)){
@@ -10394,7 +10395,7 @@ function beginTurn(turn){
   s.hadTurn = true;   // resources have now been dealt at least once — safe to reconcile spent EX
   // 4) Main Phase — deploy, pair, activate, play commands, attack.
   G.phase='main';
-  log(`— ${who(s)}'s turn ${G.turnNumber} —`, 'sys');
+  log(`— ${who(s)==='You' ? 'Your' : who(s)+"'s"} turn ${G.turnNumber} —`, 'sys');
   showTurnBanner(turn);
   render();
   if (turn==='enemy'){ setPrompt(`${who(G.enemy)} is deploying...`); setTimeout(aiTurn, 700); }
@@ -10601,7 +10602,7 @@ function playFromHand(uidv, exConfirmed){
     s.hand.splice(idx,1); payCost(s, effectiveCost(s,card));
     sendToTrash(s.base, s);   // the outgoing Base is discarded (no-op for the EX Base token)
     s.base = card; card.rested=false; card.sick=false;
-    sound('deploy');
+    sound('deploy'); mpShowPlay(card, s, 'BASE');
     log(`You deploy base <b>${card.name}</b> (HP ${card.hp}) — it now guards your shields.`, 'me');
     closeInspect();
     resolvePlayerTrigger(card, s, parseTrigger(card.effect,'Deploy'), 'Deploy', ()=>{ clearSel(); render(); checkEnd(); });
@@ -10616,7 +10617,7 @@ function playFromHand(uidv, exConfirmed){
     s.hand.splice(idx,1); payCost(s, effectiveCost(s,card));
     card.rested=false; card.sick = !card.blitz;
     s.field.push(card);
-    sound('deploy');
+    sound('deploy'); mpShowPlay(card, s, 'DEPLOY');
     log(`You deploy <b>${card.name}</b>${card.blitz?' &lt;Blitz&gt;':''}.`, 'me');
     closeInspect();
     resolvePlayerTrigger(card, s, parseTrigger(card.effect,'Deploy'), 'Deploy', ()=>{ onUnitDeployed(card, s, ()=>{ clearSel(); render(); checkEnd(); }); });
@@ -11496,7 +11497,7 @@ function fieldClick(uidv){
     const h=G.player.hand.findIndex(c=>c.uid===card.uid);
     if(h>=0){ G.player.hand.splice(h,1); payCost(G.player, G.pending.cost!=null ? G.pending.cost : effectiveCost(G.player,card)); }
     card.rested=false; card.sick=!card.blitz; G.player.field.push(card);
-    G.mode='idle'; G.pending=null; sound('deploy');
+    G.mode='idle'; G.pending=null; sound('deploy'); mpShowPlay(card, G.player, 'DEPLOY');
     log(`You deploy <b>${card.name}</b>${card.blitz?' &lt;Blitz&gt;':''}.`, 'me');
     resolvePlayerTrigger(card, G.player, parseTrigger(card.effect,'Deploy'), 'Deploy', ()=>{ onUnitDeployed(card, G.player, ()=>{ clearSel(); render(); checkEnd(); }); });
     return;
@@ -13536,6 +13537,7 @@ function pairFromHand(card, side, act, label){
 function attachPilot(u, p, onDone){
   u.pilot={ name:p.name, pAp:p.pAp, pHp:p.pHp };
   u.pilotCard = p;   // saved so both go to trash together when the unit is destroyed
+  mpShowPlay(p, u.owner==='player' ? G.player : G.enemy, 'PILOT');
   // A Pilot's own 【Activate】 (Kou Uraki's 【Activate･Action】) is gained by the paired Unit (3-3-9-2).
   // A Unit that already has its own 【Activate】 keeps it: the gained one goes in the second slot.
   if (p.activate){ const g=Object.assign({}, p.activate, { fromPilot:true }); u.activateFromPilot = true;
@@ -15769,6 +15771,13 @@ function mpApplyView(msg){
 // result. Recorded only on the engine that is running the game; played on every screen that only watches. ----
 function mpFxRecord(ev){ if (!NET.on || !NET.active || NET.role==='spec') return; if (!NET.fxBuf) NET.fxBuf=[]; if (NET.fxBuf.length<120) NET.fxBuf.push(ev); mpQueueView(); }
 function mpFxSpot(sp){ if (!sp) return null; if (sp.shields) return { shields:sp.shields }; if (sp.uid!=null) return { uid:sp.uid }; return null; }
+// A card this engine's player put onto the table (a deployed Unit or token, a paired Pilot, a Base): the player saw
+// it happen, but the other screens get the same card pop-up the AI's plays show. Once per card per turn.
+function mpShowPlay(card, side, what){
+  if (!card || !NET.on || !NET.active || NET.role==='spec' || card._mpShown===G.turnSeq) return;
+  card._mpShown=G.turnSeq;
+  mpFxRecord({ k:'flash', uid:card.uid, tag:(side===G.player ? 'YOUR ' : 'ENEMY ')+what });
+}
 function mpFxTake(){ return NET.fxBuf && NET.fxBuf.length ? NET.fxBuf.splice(0) : []; }
 function mpFindCard(uidv){ try{ return mpCardMap().get(uidv) || null; }catch(e){ return null; } }
 function mpPlayFx(list, flip){
@@ -15808,7 +15817,10 @@ function mpFlipText(s, theirName, myName){
   s=String(s);
   const esc=x=>x.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
   s=s.replace(/\bYou\b/g,'\u0001').replace(/\bYour\b/g,'\u0002').replace(/\byours\b/g,'\u0004').replace(/\byou\b/g,'\u0003').replace(/\byour\b/g,'\u0004');
-  if (myName){ s=s.replace(new RegExp('\\b'+esc(myName)+"'s",'g'),'your').replace(new RegExp('\\b'+esc(myName)+'\\b','g'),'you'); }
+  if (myName){ s=s.replace(new RegExp('\\b'+esc(myName)+"'s",'g'),'your').replace(new RegExp('\\b'+esc(myName)+'\\b','g'),'you');
+    // "Bob takes the first turn" became "you takes …": the verb agrees with "you" again.
+    s=s.replace(/\b([Yy]ou) (has|is|does|doesn't|takes|gains|draws|deploys|plays|pairs|attacks|activates|discards|redraws|destroys|rests|chooses|pays|wins|uses|adds|reveals|places|returns|sets|deals|declares|declines|puts|looks|searches|moves|shuffles|keeps|passes|loses|gets|gives|removes|blocks|mulligans)\b/g,
+      (m,y,v)=>y+' '+({ has:'have', is:'are', does:'do', "doesn't":"don't", searches:'search', passes:'pass' }[v] || v.slice(0,-1))); }
   const n=theirName||'Opponent';
   s=s.replace(/\u0001/g, n).replace(/\u0002/g, n+"'s").replace(/\u0003/g, n).replace(/\u0004/g, n+"'s");
   // "You draw …" became "Bob draw …": agree the verb that follows the name.
