@@ -89,6 +89,36 @@ for (const id of ['GD05-049','GD05-049-p1','GD05-049-p2'].filter(x=>A.CARD_BY_ID
   ok('GD05-049: the sacrificed Zaku\'s 【Destroyed】 comes after the AI\'s destroy', G.enemy.field.length===0 && o.length===1 && /^Char's Zaku/.test(ovTitle(o[0])),
     `e ${G.enemy.field.length} ov ${o.map(ovTitle)}`); }
 
+// The choice is live on the board too (the attack-target prompt doesn't linger): tap a Unit, tap Sazabi, or Cancel.
+function boardAttack(){ fresh(); const sz=put('GD05-049','player'); const gm=put('ST01-001','player'); put('ST01-001','enemy');
+  G.selected=sz.uid; G.mode='attack-target'; A.attackDirect(); drainTasks(); return { sz, gm, mode:G.mode }; }
+const finishAttack=()=>{ for (let k=0;k<6 && modalOpen();k++){ if(!clickBtn(/^(No|Don|Pass|Skip)/)) break; } drainTasks(); };
+{ const r=boardAttack();
+  ok('GD05-049: while the sacrifice is open the board is in its own pick mode', r.mode==='gd05-sac-own', r.mode);
+  // The dialog has no backdrop then, or it covers the field and a tap on Sazabi lands on "No target".
+  ok('GD05-049: the choice leaves the board uncovered (board-pick dialog)', el('blockModal').classList.contains('board-pick'));
+  A.fieldClick(r.gm.uid); drainTasks();
+  ok('GD05-049: the board-pick look goes when the choice closes', !el('blockModal').classList.contains('board-pick'));
+  ok('GD05-049: tapping your Unit on the board sacrifices it and closes the choice', !G.player.field.includes(r.gm) && G.enemy.field.length===0 && G.mode!=='gd05-sac-own');
+  finishAttack();
+  ok('GD05-049: …and the attack still lands', G.enemy.shields.length<6, 'shields '+G.enemy.shields.length); }
+{ const r=boardAttack(); A.fieldClick(r.sz.uid); drainTasks();
+  ok('GD05-049: tapping Sazabi on the board sacrifices Sazabi (not a back-out)', !G.player.field.includes(r.sz) && G.enemy.field.length===0 && G.player.neoZeonSelfKill===true, `p ${G.player.field.map(u=>u.name)} e ${G.enemy.field.length}`); }
+{ const r=boardAttack(); const foe=G.enemy.field[0]; A.fieldClick(foe.uid); drainTasks();
+  ok('GD05-049: tapping an enemy Unit doesn\'t start a new attack or close the choice', G.mode==='gd05-sac-own' && modalOpen() && G.enemy.field.includes(foe));
+  A.cancelAction(); drainTasks();
+  ok('GD05-049: Cancel declines the sacrifice', G.player.field.length===2 && G.enemy.field.length===1 && !(modalOpen() && btns().some(b=>/No target/.test(txt(b)))) && G.mode!=='gd05-sac-own');
+  finishAttack();
+  ok('GD05-049: …and the attack still lands after Cancel', G.enemy.shields.length<6, 'shields '+G.enemy.shields.length); }
+// Gyunei's Jagd Doga 【Activate】: the same board pick, but it's not optional.
+{ fresh(); const gy=put('GD05-057','player'); gy.rested=true; const z=put('ST01-001','player');
+  A.gd05GyuneiActivate(gy, G.player); drainTasks();
+  ok('GD05-057: the destroy choice opens (no decline button)', G.mode==='gd05-sac-own' && modalOpen() && btns().length===1, btns().map(txt).join(' / '));
+  A.cancelAction(); A.fieldClick(gy.uid); drainTasks();
+  ok('GD05-057: Cancel / tapping itself keeps the choice open', G.mode==='gd05-sac-own' && modalOpen() && G.player.field.length===2);
+  A.fieldClick(z.uid); drainTasks();
+  ok('GD05-057: tapping the other Unit destroys it and sets Gyunei active', G.player.field.length===1 && !gy.rested && G.mode==='idle' && !modalOpen()); }
+
 // ── GD05-049 (AI): the player chooses which of their non-battling Units to destroy; the attack completes.
 { fresh('enemy'); const sz=put('GD05-049','enemy'); put('GD05-053','enemy'); put('ST01-001','player'); put('ST03-006','player');
   let done=false; A.resolveAiAttack(sz, ()=>{ done=true; }, null); drainTasks();

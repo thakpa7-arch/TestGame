@@ -626,6 +626,9 @@
   /* The battle inside the dialog: the attacker, an arrow, and what it is hitting (a Unit, the Base or the Shields). A Blocker
      that stepped in (or one you hover) takes the arrow, and the first target is shown crossed out beside it. */
   #blockModal.battle { background: rgba(4,7,14,.5); }
+  /* Picking one of your own Units on the board (Sazabi / Jagd Doga): no backdrop, the box sits at the top so the field stays tappable. */
+  #blockModal.board-pick { background: transparent; pointer-events: none; align-items: flex-start; }
+  #blockModal.board-pick .block-box { pointer-events: auto; }
   .bat-strip { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 2px 0 12px; }
   .bat-card { position: relative; width: 76px; height: 106px; border-radius: 8px; background: #0c1426 center/cover no-repeat; border: 2px solid #f87171; box-shadow: 0 0 16px rgba(239,68,68,.45); display: flex; align-items: flex-end; justify-content: center; text-align: center; font-weight: 800; overflow: hidden; cursor: zoom-in; flex: 0 0 auto; }
   .bat-card.def { border-color: #fbbf24; box-shadow: 0 0 16px rgba(251,191,36,.4); }
@@ -6278,15 +6281,26 @@ function gd05SacInteractive(side, sourceCard, after){
   // The opponent having no Units does NOT block the sacrifice — "you MAY destroy 1 of your Units" is
   // worth taking for its 【Destroyed】 / trash-return value (e.g. Zeong's token); the AI just destroys
   // nothing if it has no Units. Modal chooser with an explicit "No target" to decline.
+  // Another choice is still open (a Pilot's 【Attack】, a 【Destroyed】…): ask once it's answered, not over it.
+  if (modalBusy()){ whenModalFree(()=>gd05SacInteractive(side, sourceCard, after)); return; }
   const foeCands=nonBattlingUnits(G.enemy);
-  G.pending={ sourceCard, after, cands: ownCands.map(u=>u.uid) };
-  el('blockMsg').innerHTML = `<b>${sourceCard.name}</b> 【Attack】 — you may destroy one of YOUR Units${foeCands.length?' (then the AI destroys one of its non-battling Units)':''}, or choose No target.`;
+  // The choice is live on the board too: tap one of your Units (Sazabi included) or Cancel / right-click to decline.
+  G.mode='gd05-sac-own';
+  G.pending={ sourceCard, card: sourceCard, after, cands: ownCands.map(u=>u.uid) };
+  setPrompt(`${sourceCard.name} 【Attack】: tap one of YOUR Units to destroy it, or Cancel to decline.`);
+  gd05SacModal(`<b>${sourceCard.name}</b> 【Attack】 — you may destroy one of YOUR Units${foeCands.length?' (then the AI destroys one of its non-battling Units)':''}, or choose No target.`,
+    ownCands, 'No target (don’t sacrifice)');
+  render();
+}
+// The button list for a "destroy one of YOUR Units" choice (G.mode 'gd05-sac-own'); every answer goes through gd05SacResolve.
+function gd05SacModal(msg, cands, noLabel){
+  el('blockMsg').innerHTML = msg;
   const wrap=el('blockBtns'); wrap.innerHTML='';
-  ownCands.forEach(u=>{ const b=document.createElement('button'); b.innerHTML=`💥 ${u.name} <span style="opacity:.6;font-size:10px">⚔${effAp(u)}/❤${u.hp}</span>`;
-    b.onclick=()=>{ el('blockModal').classList.remove('show'); gd05SacResolve(u.uid); }; wrap.appendChild(b); });
-  const none=document.createElement('button'); none.className='ghost'; none.textContent='No target (don’t sacrifice)';
-  none.onclick=()=>{ el('blockModal').classList.remove('show'); gd05SacResolve(null); }; wrap.appendChild(none);
-  el('blockModal').classList.add('show');
+  cands.forEach(u=>{ const b=document.createElement('button'); b.innerHTML=`💥 ${u.name} <span style="opacity:.6;font-size:10px">⚔${effAp(u)}/❤${u.hp}</span>`;
+    b.onclick=()=>gd05SacResolve(u.uid); wrap.appendChild(b); });
+  if (noLabel){ const none=document.createElement('button'); none.className='ghost'; none.textContent=noLabel;
+    none.onclick=()=>gd05SacResolve(null); wrap.appendChild(none); }
+  el('blockModal').classList.add('board-pick'); el('blockModal').classList.add('show');
 }
 // Gyunei's Jagd Doga (GD05-057) 【Activate】: destroy 1 of your OTHER Units (a (Neo Zeon) self-kill),
 // then set this Unit active and bar it from attacking the enemy player this turn. Player picks the
@@ -6304,11 +6318,12 @@ function gd05GyuneiActivate(u, side){
     render();
   };
   if (side===G.player){
-    el('blockMsg').innerHTML = `<b>${u.name}</b> 【Activate】 — destroy one of YOUR other Units to set ${u.name} active.`;
-    const wrap=el('blockBtns'); wrap.innerHTML='';
-    cands.forEach(c=>{ const b=document.createElement('button'); b.innerHTML=`💥 ${c.name} <span style="opacity:.6;font-size:10px">⚔${effAp(c)}/❤${c.hp}</span>`;
-      b.onclick=()=>{ el('blockModal').classList.remove('show'); finish(c); }; wrap.appendChild(b); });
-    el('blockModal').classList.add('show');
+    // Same board-live choice as Sazabi's, but "Choose 1 of your other Units" isn't optional once activated.
+    G.mode='gd05-sac-own';
+    G.pending={ card: u, cands: cands.map(c=>c.uid), mandatory:true, onPick: uid=>finish(cands.find(x=>x.uid===uid)) };
+    setPrompt(`${u.name} 【Activate】: tap one of YOUR other Units to destroy it.`);
+    gd05SacModal(`<b>${u.name}</b> 【Activate】 — destroy one of YOUR other Units to set ${u.name} active.`, cands, null);
+    render();
   } else {
     const free=cands.find(x=>gd05ReturnsOnSelfKill(x) && !x.token);
     const val=x=>((x.baseAp||0)+(x.baseHp||0))+(x.pilot?5:0);   // paired Units are worth more — give them up last
@@ -6317,9 +6332,12 @@ function gd05GyuneiActivate(u, side){
 }
 // Finish the player's Sazabi sacrifice: uid = chosen Unit, or null when declined.
 function gd05SacResolve(uid){
-  const p=G.pending; if(!p) return;
+  const p=G.pending; if(!p || G.mode!=='gd05-sac-own') return;
+  if (uid==null && p.mandatory){ flashPrompt(`${p.card.name}: this effect isn't optional — choose one of your Units.`); return; }
+  el('blockModal').classList.remove('show'); el('blockModal').classList.remove('board-pick');
   const after=p.after, src=p.sourceCard;
   G.mode='idle'; G.pending=null; defaultPrompt();
+  if (p.onPick){ p.onPick(uid); pumpModalQueue(); return; }   // Gyunei's Jagd Doga 【Activate】
   if (uid!=null){
     const sac=G.player.field.find(c=>c.uid===uid);
     if (sac){
@@ -9613,8 +9631,8 @@ function fxBeam(fromSpot, toSpot, color, a, b){
   }catch(e){}
 }
 try{ window.addEventListener('resize', ()=>drawBattleArrow()); window.addEventListener('scroll', ()=>drawBattleArrow(), true); }catch(e){}
-// The lighter backdrop of a battle dialog goes when the dialog closes, however it was closed.
-try{ new MutationObserver(()=>{ const m=el('blockModal'); if (m && !m.classList.contains('show') && m.classList.contains('battle')) m.classList.remove('battle'); })
+// The lighter (battle) / absent (board-pick) backdrop goes when the dialog closes, however it was closed.
+try{ new MutationObserver(()=>{ const m=el('blockModal'); if (m && !m.classList.contains('show')) for (const k of ['battle','board-pick']) if (m.classList.contains(k)) m.classList.remove(k); })
        .observe(el('blockModal'), { attributes:true, attributeFilter:['class'] }); }catch(e){}
 // The battle shown inside the Block / Action Step dialog: the attacker ➜ what it is hitting; with a Blocker (declared, or hovered
 // as a preview) the arrow goes to the Blocker and the first target is crossed out beside it. Tap a picture to read the card.
@@ -11792,7 +11810,7 @@ function fieldClick(uidv){
   }
   if (G.mode==='gd05-sac-own'){
     const p=G.pending;
-    if (!p.cands.includes(uidv)){ flashPrompt('Tap one of YOUR highlighted Units, or Cancel to decline.'); return; }
+    if (!p.cands.includes(uidv)){ flashPrompt(p.mandatory ? 'Tap one of YOUR highlighted Units.' : 'Tap one of YOUR highlighted Units, or Cancel to decline.'); return; }
     gd05SacResolve(uidv); return;
   }
   if (G.mode==='self-rest-pick'){
