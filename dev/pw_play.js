@@ -18,7 +18,7 @@ const { chromium } = require('/opt/node22/lib/node_modules/playwright');
     for (let i=0;i<40;i++){
       const st = await p.evaluate(()=>({ hand:G.player.hand.length, sh:G.player.shields.length, enemySh:G.enemy.shields.length, mode:G.mode }));
       const vis = await p.evaluate(()=>[...document.querySelectorAll('button')].filter(x=>x.offsetParent!==null).map(x=>(x.textContent||'').trim().slice(0,40)));
-      const skip=/^(End Turn|Rules|🔊|🔀|🖼.*|← .*|⧉|Easy|Normal|Hard|＋DECKBUILDER|⬆IMPORTDECK)$/;
+      const skip=/^(End Turn|Rules|🔊|✨|🔀|🖼.*|← .*|⧉|Easy|Normal|Hard|＋DECKBUILDER|⬆IMPORTDECK)$/;
       const cand=vis.filter(t=>t && !skip.test(t));
       if (st.sh===6 && st.enemySh===6 && !cand.length) break;           // dealt and no setup prompt left
       if (cand.length){

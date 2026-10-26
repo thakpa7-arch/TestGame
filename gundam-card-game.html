@@ -401,6 +401,10 @@
 
   /* Victory / defeat stinger */
   #overlay h2.result { animation: vicPop .8s cubic-bezier(.2,1.7,.35,1) both; }
+  #overlay .mission { font-size: 12px; font-weight: 900; letter-spacing: 6px; padding: 4px 18px; margin-bottom: 6px; transform: skewX(-12deg); animation: missionIn .6s ease-out both;
+    color: #fff; background: linear-gradient(90deg, rgba(30,64,175,.9), rgba(220,38,38,.9)); box-shadow: 0 2px 12px rgba(0,0,0,.6); }
+  @keyframes missionIn { 0%{ opacity: 0; transform: translateX(-40px) skewX(-12deg); } 100%{ opacity: 1; transform: skewX(-12deg); } }
+  #overlay .mission.loss { background: linear-gradient(90deg, rgba(60,60,70,.9), rgba(127,29,29,.95)); }
   #overlay h2.result.win { background: linear-gradient(90deg, #fde68a, var(--gold), #fde68a); -webkit-background-clip: text; background-clip: text; color: transparent;
     text-shadow: none; filter: drop-shadow(0 0 26px rgba(251,191,36,.6)); }
   #overlay h2.result.loss { background: linear-gradient(90deg, #fca5a5, #ef4444, #fca5a5); -webkit-background-clip: text; background-clip: text; color: transparent;
@@ -661,6 +665,158 @@
   .prompt .pr-txt { min-width: 0; }
   .prompt .pr-txt b { color: #e9d5ff; }
   .prompt .pr-txt small { display: block; opacity: .7; font-size: 10px; line-height: 1.2; max-height: 2.4em; overflow: hidden; }
+  /* ---- board feedback (vfxFlush): every effect is a short-lived, click-through overlay over the card or zone ---- */
+  .vx { position: fixed; z-index: 92; pointer-events: none; }
+  .vx b, .vx i { position: absolute; display: block; pointer-events: none; }
+  .vx i { font-style: normal; }
+  /* the ring explosion: a white-hot core, the shock ring, a second ring, smoke, sparks */
+  .vx-boom .core { inset: 18%; border-radius: 50%; background: radial-gradient(circle, #fff 0%, #fff6c8 18%, #ffb347 42%, rgba(255,90,30,.75) 62%, rgba(255,60,20,0) 72%);
+    animation: vxCore .7s ease-out forwards; mix-blend-mode: screen; }
+  .vx-boom .ring { inset: 30%; border-radius: 50%; border: 3px solid rgba(255,236,190,.95); box-shadow: 0 0 14px rgba(255,200,120,.9), inset 0 0 10px rgba(255,200,120,.7);
+    animation: vxRing .6s ease-out forwards; }
+  .vx-boom .ring.r2 { border-width: 2px; animation: vxRing .85s .12s ease-out both; opacity: 0; }
+  .vx-boom .smoke { inset: 22%; border-radius: 50%; background: radial-gradient(circle, rgba(60,50,46,.55) 0%, rgba(40,34,32,.35) 45%, transparent 70%);
+    animation: vxSmoke 1.25s .18s ease-out both; opacity: 0; }
+  .vx-boom.big .ring { border-width: 4px; }
+  .vx .spark { left: 50%; top: 50%; width: 5px; height: 5px; margin: -2px; border-radius: 50%; background: #fff3c4; box-shadow: 0 0 8px 2px #ffb347;
+    animation: vxBit var(--l,.7s) var(--d,0s) cubic-bezier(.15,.7,.3,1) both; }
+  @keyframes vxCore { 0%{ transform: scale(.15); opacity: 1; } 35%{ transform: scale(1.05); opacity: 1; } 100%{ transform: scale(1.35); opacity: 0; } }
+  @keyframes vxRing { 0%{ transform: scale(.2); opacity: 1; } 100%{ transform: scale(2.7); opacity: 0; } }
+  @keyframes vxSmoke { 0%{ transform: scale(.4); opacity: 0; } 30%{ opacity: 1; } 100%{ transform: scale(1.7) translateY(-12%); opacity: 0; } }
+  @keyframes vxBit { 0%{ transform: translate(0,0) rotate(0); opacity: 1; } 100%{ transform: translate(var(--dx),var(--dy)) rotate(var(--r)); opacity: 0; } }
+  /* a hit that doesn't destroy: a white flash and sparks */
+  .vx-hit .flash { inset: 10%; border-radius: 50%; background: radial-gradient(circle, rgba(255,255,255,.95), rgba(255,140,90,.5) 40%, transparent 70%); mix-blend-mode: screen;
+    animation: vxCore .38s ease-out forwards; }
+  /* repair: a green glow and rising plus signs */
+  .vx-heal .glow { inset: 0; border-radius: 10px; box-shadow: 0 0 22px 6px rgba(74,222,128,.75), inset 0 0 18px rgba(74,222,128,.6); animation: vxFade 1s ease-out forwards; }
+  .vx-heal .plus { bottom: 10%; color: #86efac; font-weight: 900; font-size: 18px; text-shadow: 0 0 8px #22c55e; animation: vxRise 1.05s ease-out both; }
+  .vx-heal .plus:nth-child(2){ left: 14%; animation-delay: 0s; } .vx-heal .plus:nth-child(3){ left: 70%; animation-delay: .12s; }
+  .vx-heal .plus:nth-child(4){ left: 40%; animation-delay: .22s; } .vx-heal .plus:nth-child(5){ left: 24%; animation-delay: .34s; }
+  .vx-heal .plus:nth-child(6){ left: 82%; animation-delay: .42s; } .vx-heal .plus:nth-child(7){ left: 55%; animation-delay: .5s; }
+  @keyframes vxRise { 0%{ transform: translateY(0) scale(.6); opacity: 0; } 20%{ opacity: 1; } 100%{ transform: translateY(-70px) scale(1.1); opacity: 0; } }
+  @keyframes vxFade { 0%{ opacity: 0; } 25%{ opacity: 1; } 100%{ opacity: 0; } }
+  /* AP up (a red-orange surge rising) / AP down (a blue drain falling) */
+  .vx-pwr .aura { inset: 0; border-radius: 10px; animation: vxFade 1s ease-out forwards; }
+  .vx-pwr.up .aura { background: linear-gradient(0deg, rgba(255,110,40,.6), rgba(255,180,60,.15) 60%, transparent); box-shadow: 0 0 20px 4px rgba(255,120,40,.7); }
+  .vx-pwr.down .aura { background: linear-gradient(180deg, rgba(80,140,255,.55), rgba(80,140,255,.12) 60%, transparent); box-shadow: 0 0 18px 3px rgba(80,140,255,.6); }
+  .vx-tag { position: absolute; left: 50%; top: 18%; transform: translateX(-50%); font-weight: 900; font-size: 15px; white-space: nowrap; letter-spacing: 1px;
+    padding: 1px 7px; border-radius: 6px; background: rgba(10,8,5,.82); animation: vxTag 1.05s ease-out both; }
+  .vx-pwr.up .vx-tag { color: #fdba74; border: 1px solid rgba(253,186,116,.7); }
+  .vx-pwr.down .vx-tag { color: #93c5fd; border: 1px solid rgba(147,197,253,.7); }
+  @keyframes vxTag { 0%{ opacity: 0; transform: translate(-50%,10px) scale(.7); } 18%{ opacity: 1; transform: translate(-50%,0) scale(1.1); } 75%{ opacity: 1; } 100%{ opacity: 0; transform: translate(-50%,-14px); } }
+  /* rest: a dark band sweeps down; set active: a white glint sweeps across */
+  .vx-rest, .vx-ready { overflow: hidden; border-radius: 10px; }
+  .vx-rest .band { left: 0; right: 0; height: 40%; top: -40%; background: linear-gradient(180deg, transparent, rgba(0,0,0,.5), transparent); animation: vxBand .55s ease-in forwards; }
+  .vx-ready .glint { top: -20%; bottom: -20%; width: 30%; left: -40%; background: linear-gradient(90deg, transparent, rgba(255,255,255,.75), transparent); transform: skewX(-20deg); animation: vxGlint .6s ease-out forwards; }
+  @keyframes vxBand { to { top: 100%; } }
+  @keyframes vxGlint { to { left: 120%; } }
+  /* catapult launch: a rail flash, speed lines and thruster flames behind the card as it arrives */
+  .vx-launch .rail { left: -10%; right: -10%; height: 3px; background: linear-gradient(90deg, transparent, #bfe9ff, #fff, #bfe9ff, transparent); box-shadow: 0 0 12px #7dd3fc; animation: vxFade .5s ease-out forwards; }
+  .vx-launch.from-below .rail { bottom: -6px; } .vx-launch.from-above .rail { top: -6px; }
+  .vx-launch .lines { inset: -30% 8%; background: repeating-linear-gradient(90deg, transparent 0 9px, rgba(191,233,255,.55) 9px 10px, transparent 10px 23px); animation: vxLines .55s ease-out forwards; }
+  .vx-launch .fl { width: 16%; height: 34%; border-radius: 50% 50% 50% 50% / 30% 30% 70% 70%;
+    background: radial-gradient(ellipse at 50% 20%, #fff 0%, #a5f3fc 30%, rgba(56,189,248,.65) 55%, transparent 75%); filter: blur(1px); animation: vxFlame .7s ease-out forwards; }
+  .vx-launch .f1 { left: 26%; } .vx-launch .f2 { right: 26%; }
+  .vx-launch.from-below .fl { top: 92%; } .vx-launch.from-above .fl { bottom: 92%; transform: rotate(180deg); }
+  @keyframes vxLines { 0%{ opacity: 0; transform: scaleY(1.6); } 25%{ opacity: 1; } 100%{ opacity: 0; transform: scaleY(.6); } }
+  @keyframes vxFlame { 0%{ opacity: 0; transform: scaleY(.3); } 20%{ opacity: 1; transform: scaleY(1.3); } 100%{ opacity: 0; transform: scaleY(.4); } }
+  .vx-launch.from-above .fl { animation-name: vxFlameDown; }
+  @keyframes vxFlameDown { 0%{ opacity: 0; transform: rotate(180deg) scaleY(.3); } 20%{ opacity: 1; transform: rotate(180deg) scaleY(1.3); } 100%{ opacity: 0; transform: rotate(180deg) scaleY(.4); } }
+  /* Base online: a hexagonal barrier ripples over it */
+  .vx-base .hex { inset: -8%; border-radius: 12px; opacity: 0; animation: vxFade 1.3s ease-out forwards;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='42' viewBox='0 0 24 42'%3E%3Cpath d='M12 0l12 7v14L12 28 0 21V7zM12 28l12 7v7M12 28L0 35v7' fill='none' stroke='%237dd3fc' stroke-width='1.2'/%3E%3C/svg%3E");
+    background-size: 16px 28px; box-shadow: 0 0 24px rgba(125,211,252,.8), inset 0 0 22px rgba(125,211,252,.6); }
+  .vx-base .ring { inset: 20%; border-radius: 50%; border: 2px solid rgba(125,211,252,.9); animation: vxRing .9s ease-out forwards; }
+  .vx-cap { position: absolute; left: 50%; bottom: -4px; transform: translateX(-50%); white-space: nowrap; font-size: 10px; font-weight: 900; letter-spacing: 2px;
+    color: #bae6fd; background: rgba(6,16,30,.85); border: 1px solid rgba(125,211,252,.6); padding: 1px 6px; border-radius: 4px; animation: vxTag 1.35s ease-out both; }
+  /* a Pilot boards: the eyes light up — a Gundam's twin eyes glint green, a mono-eye sweeps pink */
+  .vx-eye { overflow: hidden; border-radius: 10px; }
+  .vx-eye .flare { left: -20%; right: -20%; top: 28%; height: 3px; margin-top: -1px; animation: vxFlare .9s .1s ease-out both; opacity: 0; }
+  .vx-eye.twin .flare { background: linear-gradient(90deg, transparent, rgba(134,239,172,.9), #fff, rgba(134,239,172,.9), transparent); box-shadow: 0 0 12px #4ade80; }
+  .vx-eye.mono .flare { background: linear-gradient(90deg, transparent, rgba(244,114,182,.9), #fff, rgba(244,114,182,.9), transparent); box-shadow: 0 0 12px #f472b6; }
+  .vx-eye .dot { top: 28%; width: 9px; height: 9px; margin: -4px; border-radius: 50%; background: #fff; animation: vxEyeOn .9s .05s ease-out both; opacity: 0; }
+  .vx-eye.twin .dot { box-shadow: 0 0 10px 4px #4ade80; } .vx-eye.twin .d1 { left: 42%; } .vx-eye.twin .d2 { left: 58%; }
+  .vx-eye.mono .dot { box-shadow: 0 0 12px 5px #f472b6; left: 20%; animation: vxMono 1s .05s ease-in-out both; }
+  @keyframes vxFlare { 0%{ opacity: 0; transform: scaleX(.1); } 30%{ opacity: 1; transform: scaleX(1); } 100%{ opacity: 0; transform: scaleX(1.2); } }
+  @keyframes vxEyeOn { 0%{ opacity: 0; transform: scale(.3); } 25%{ opacity: 1; transform: scale(1.5); } 70%{ opacity: 1; transform: scale(1); } 100%{ opacity: 0; } }
+  @keyframes vxMono { 0%{ opacity: 0; left: 20%; } 15%{ opacity: 1; } 45%{ left: 78%; } 75%{ left: 50%; opacity: 1; } 100%{ left: 50%; opacity: 0; } }
+  /* the call as a Pilot launches */
+  .vx-call { z-index: 93; display: flex; justify-content: center; }
+  .vx-call span { font-size: 12px; font-weight: 900; font-style: italic; letter-spacing: .5px; color: #fff; white-space: nowrap; padding: 3px 10px; border-radius: 4px;
+    background: linear-gradient(90deg, rgba(220,38,38,.92), rgba(30,64,175,.92)); box-shadow: 0 2px 10px rgba(0,0,0,.6); text-shadow: 0 1px 2px #000;
+    animation: vxCall 1.65s ease-out both; }
+  @keyframes vxCall { 0%{ opacity: 0; transform: translateX(-30px) skewX(-12deg); } 12%{ opacity: 1; transform: translateX(0) skewX(-12deg); } 80%{ opacity: 1; } 100%{ opacity: 0; transform: translateX(20px) skewX(-12deg); } }
+  /* bounce: the card blasts off toward its owner's hand; exile: it dissolves into scanlines */
+  .vx-ghost .gimg { inset: 0; border-radius: 10px; background-size: cover; background-position: center; background-color: #0c1426; }
+  .vx-bounce .gimg { animation: vxBounceUp .8s ease-in forwards; } .vx-bounce.down .gimg { animation-name: vxBounceDown; }
+  .vx-bounce .trail { left: 30%; right: 30%; top: 50%; height: 120%; background: linear-gradient(180deg, rgba(125,211,252,.7), transparent); filter: blur(4px); animation: vxFade .7s ease-out forwards; }
+  .vx-bounce.up .trail { top: 40%; } .vx-bounce.down .trail { top: auto; bottom: 40%; transform: rotate(180deg); }
+  @keyframes vxBounceUp { 0%{ transform: none; opacity: 1; } 100%{ transform: translateY(-160px) scale(.5) rotate(-8deg); opacity: 0; } }
+  @keyframes vxBounceDown { 0%{ transform: none; opacity: 1; } 100%{ transform: translateY(160px) scale(.5) rotate(8deg); opacity: 0; } }
+  .vx-exile .gimg { filter: sepia(1) hue-rotate(150deg) saturate(3) brightness(1.2); animation: vxExile .95s steps(9) forwards; }
+  .vx-exile .scan { inset: 0; border-radius: 10px; background: repeating-linear-gradient(0deg, rgba(103,232,249,.55) 0 2px, transparent 2px 5px); animation: vxFade .95s ease-out forwards; }
+  @keyframes vxExile { 0%{ clip-path: inset(0 0 0 0); opacity: 1; } 100%{ clip-path: inset(48% 0 48% 0); opacity: 0; } }
+  /* Shields shatter into shards; a Shield placed shimmers in */
+  .vx-shatter .flash { inset: 0; border-radius: 10px; background: radial-gradient(circle, rgba(255,255,255,.9), rgba(147,197,253,.5) 45%, transparent 75%); animation: vxCore .45s ease-out forwards; }
+  .vx .shard { left: 50%; top: 50%; width: 12px; height: 16px; margin: -8px -6px; background: linear-gradient(135deg, #e0f2fe, #60a5fa 60%, #1e3a8a);
+    clip-path: polygon(50% 0, 100% 60%, 30% 100%, 0 40%); box-shadow: 0 0 6px #93c5fd; animation: vxBit var(--l,.8s) var(--d,0s) cubic-bezier(.12,.75,.3,1) both; }
+  .vx-shieldup, .vx-charge, .vx-spend { overflow: hidden; border-radius: 8px; }
+  .vx-shieldup .sweep, .vx-charge .sweep, .vx-spend .sweep { top: 0; bottom: 0; width: 40%; left: -45%; animation: vxGlint .75s ease-out forwards; }
+  .vx-shieldup .sweep { background: linear-gradient(90deg, transparent, rgba(147,197,253,.7), transparent); }
+  .vx-charge .sweep { background: linear-gradient(90deg, transparent, rgba(253,224,71,.85), transparent); box-shadow: 0 0 16px rgba(253,224,71,.6); }
+  .vx-spend .sweep { background: linear-gradient(90deg, transparent, rgba(253,224,71,.35), transparent); animation-duration: .5s; }
+  /* the attacker's verniers flare as it declares; a Blocker's shield flares as it cuts in (glow only: the card's own transform is left alone) */
+  .card.fx-attack { animation: fxAttack .55s ease-out; }
+  @keyframes fxAttack { 0%{ box-shadow: 0 0 0 rgba(255,120,40,0); } 30%{ box-shadow: 0 0 24px 8px rgba(255,120,40,.95), 0 0 6px 2px #fff; filter: brightness(1.25); } 100%{ box-shadow: 0 0 0 rgba(255,120,40,0); filter: none; } }
+  .card.fx-block { animation: fxBlock .65s ease-out; }
+  @keyframes fxBlock { 0%{ box-shadow: 0 0 0 rgba(96,165,250,0); } 30%{ box-shadow: 0 0 0 4px rgba(191,219,254,.95), 0 0 26px 10px rgba(96,165,250,.9); filter: brightness(1.2); } 100%{ box-shadow: 0 0 0 rgba(96,165,250,0); filter: none; } }
+  /* the Newtype flash (a Link): white-out, the bolt across the screen, Newtype space behind, LINK called out */
+  .vx-nt { position: fixed; inset: 0; z-index: 119; pointer-events: none; overflow: hidden; }
+  .vx-nt > b { position: absolute; display: block; }
+  .vx-nt .nt-bg { inset: 0; background: #fff; mix-blend-mode: screen; animation: ntWhite .5s ease-out forwards; }
+  .vx-nt .nt-space { inset: 0; mix-blend-mode: screen; opacity: 0; animation: ntSpace 1.6s .08s ease-out both;
+    background: radial-gradient(ellipse at 30% 40%, rgba(244,114,182,.45), transparent 55%), radial-gradient(ellipse at 70% 60%, rgba(56,189,248,.45), transparent 55%),
+                radial-gradient(ellipse at 50% 50%, rgba(167,139,250,.35), transparent 70%); }
+  .vx-nt .nt-bolt { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  .vx-nt .nt-bolt polyline { fill: none; stroke-linejoin: miter; stroke-linecap: round; stroke-dasharray: 4000; stroke-dashoffset: 4000; animation: ntBolt .9s ease-out forwards; }
+  .vx-nt .nt-bolt .b0 { stroke: #fff; stroke-width: 4; filter: drop-shadow(0 0 6px #fff) drop-shadow(0 0 14px #a78bfa); }
+  .vx-nt .nt-bolt .b1 { stroke: #c4b5fd; stroke-width: 2; opacity: .8; animation-delay: .06s; filter: drop-shadow(0 0 8px #f0abfc); }
+  .vx-nt .nt-burst { width: 20px; height: 20px; margin: -10px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 0 20px #fff, 0 0 40px #a78bfa, inset 0 0 14px #f0abfc;
+    animation: ntBurst .9s ease-out forwards; }
+  .vx-nt .nt-burst.n2 { border-color: #f0abfc; animation-delay: .16s; opacity: 0; animation-fill-mode: both; }
+  .vx-nt .nt-text { position: absolute; left: 0; right: 0; top: 40%; text-align: center; animation: ntText 1.55s .12s ease-out both; }
+  .vx-nt .nt-text b { display: block; font-size: 54px; font-weight: 900; letter-spacing: 14px; color: #fff; text-shadow: 0 0 14px #a78bfa, 0 0 34px #f0abfc, 0 3px 6px #000; }
+  .vx-nt .nt-text span { display: inline-block; margin-top: 4px; font-size: 14px; font-weight: 800; letter-spacing: 2px; color: #ede9fe; padding: 3px 14px;
+    background: rgba(20,10,40,.78); border: 1px solid rgba(196,181,253,.6); border-radius: 4px; }
+  @keyframes ntWhite { 0%{ opacity: .85; } 100%{ opacity: 0; } }
+  @keyframes ntSpace { 0%{ opacity: 0; } 20%{ opacity: 1; } 70%{ opacity: .8; } 100%{ opacity: 0; } }
+  @keyframes ntBolt { 0%{ stroke-dashoffset: 4000; opacity: 1; } 35%{ stroke-dashoffset: 0; opacity: 1; } 100%{ stroke-dashoffset: 0; opacity: 0; } }
+  @keyframes ntBurst { 0%{ transform: scale(.2); opacity: 1; } 100%{ transform: scale(9); opacity: 0; } }
+  @keyframes ntText { 0%{ opacity: 0; transform: scale(1.5); letter-spacing: 30px; } 18%{ opacity: 1; transform: scale(1); } 78%{ opacity: 1; } 100%{ opacity: 0; transform: scale(.96); } }
+  .vx-nt.lite .nt-bg, .vx-nt.lite .nt-bolt { display: none; }
+  /* card flash: Commands come in as a holo transmission, Bursts crackle, abilities glow violet, Bases blue */
+  #cardFlash .cf-card { position: relative; overflow: hidden; }
+  #cardFlash .cf-cmd { border-color: #22d3ee; box-shadow: 0 0 28px rgba(0,0,0,.7), 0 0 22px rgba(34,211,238,.5); }
+  #cardFlash .cf-cmd .cf-tag { color: #67e8f9; }
+  #cardFlash .cf-cmd::after { content: ''; position: absolute; left: 0; right: 0; top: -30%; height: 30%; pointer-events: none;
+    background: linear-gradient(180deg, transparent, rgba(103,232,249,.35), transparent); animation: cfScan .9s linear infinite; }
+  #cardFlash .cf-cmd .cf-img { background-blend-mode: normal; box-shadow: inset 0 0 0 1px rgba(103,232,249,.4); }
+  @keyframes cfScan { to { top: 100%; } }
+  #cardFlash .cf-burst { border-color: #fb923c; animation: cfBurst .5s ease-in-out 2; }
+  #cardFlash .cf-burst .cf-tag { color: #fdba74; }
+  @keyframes cfBurst { 0%,100%{ box-shadow: 0 0 28px rgba(0,0,0,.7), 0 0 14px rgba(251,146,60,.4); } 50%{ box-shadow: 0 0 28px rgba(0,0,0,.7), 0 0 36px 8px rgba(251,146,60,.95); } }
+  #cardFlash .cf-ability, #cardFlash .cf-link { border-color: #c084fc; box-shadow: 0 0 28px rgba(0,0,0,.7), 0 0 22px rgba(192,132,252,.55); }
+  #cardFlash .cf-ability .cf-tag, #cardFlash .cf-link .cf-tag { color: #d8b4fe; }
+  #cardFlash .cf-base { border-color: #7dd3fc; } #cardFlash .cf-base .cf-tag { color: #bae6fd; }
+  /* the turn banner as an eyecatch: a diagonal slash of colour under the call-out */
+  #turnBanner .tb-slash { position: absolute; left: -10%; right: -10%; top: 50%; height: 86px; margin-top: -43px; transform: skewY(-4deg); z-index: -1;
+    background: linear-gradient(90deg, transparent, rgba(30,64,175,.55) 18%, rgba(220,38,38,.5) 50%, rgba(250,204,21,.45) 82%, transparent);
+    border-top: 2px solid rgba(255,255,255,.35); border-bottom: 2px solid rgba(255,255,255,.35); }
+  #turnBanner .tb-slash.enemy { background: linear-gradient(90deg, transparent, rgba(127,29,29,.7) 20%, rgba(220,38,38,.6) 50%, rgba(127,29,29,.7) 80%, transparent); }
+  #turnBanner.show .tb-slash { animation: tbSlash 1.5s ease both; }
+  @keyframes tbSlash { 0%{ transform: skewY(-4deg) scaleX(0); } 18%{ transform: skewY(-4deg) scaleX(1); } 100%{ transform: skewY(-4deg) scaleX(1); } }
+  #turnBanner .tb-inner small { display: block; font-size: 11px; letter-spacing: 4px; margin-top: 2px; opacity: .85; font-weight: 800; }
+  @media (prefers-reduced-motion: reduce){ .vx .spark, .vx .shard, .vx-launch .lines, .card.fx-attack, .card.fx-block, #cardFlash .cf-cmd::after { animation: none; display: none; } }
   @media (prefers-reduced-motion: reduce){ #battleArrow .ba-line, .card.bt-def, .shield-zone.zone-hit, .card.fx-ping { animation: none; } }
 
   /* ---- online multiplayer: lobby, waiting banner, leaderboard ---- */
@@ -899,6 +1055,7 @@
     <button id="handShuffleBtn" class="ghost" title="Shuffle your hand — reorders the cards you hold (your deck is untouched)">🔀</button>
     <button id="rulesBtn" class="ghost">Rules</button>
     <button id="soundBtn" class="ghost" title="Toggle sound">🔊</button>
+    <button id="vfxBtn" class="ghost" title="Toggle battle effects (explosions, Newtype flash, launches)">✨</button>
     <button id="bgBtn" class="ghost" title="Playmats &amp; card sleeves — use your own photos">🖼</button>
   </div>
 </div>
@@ -5722,6 +5879,7 @@ function fireAttacked(u, side){
 // After a <Blocker> has been declared (and the blocker rested): "when this Unit activates <Blocker>, set
 // it as active" on its Pilot (Harry Ord, 【Once per Turn】), and "when this Unit is attacked" effects.
 function afterBlockDeclared(blk, side){
+  sound('block'); fxMark('block', blk.uid);
   fireAttacked(blk, side);
   const atk=G.curAttack; const im = atk && atk.pilotCard && atk.pilotCard.blockedImmune;   // Tokwan
   if (im!=null && (blk.lv||0)<=im){ atk.noBattleDmgBattle=true; log(`<b>${atk.name}</b> was blocked by a Lv.${blk.lv||0} Unit — it can't receive battle damage this battle.`, atk.owner==='player'?'me':'ai'); }
@@ -9189,6 +9347,7 @@ function who(side){ if (NET.on) return side===G.player ? (NET.role==='spec' ? NE
 const el = id => document.getElementById(id);
 
 function log(msg, cls='sys'){
+  msg=String(msg).replace(/(^|[.!?—]\s*)You's\b/g, '$1Your').replace(/\bYou's\b/g, 'your');   // who(side)+"'s" for the player: "You's base" reads "your base"
   if (NET.on && NET.active) NET.logBuf.push([msg, cls]);   // online: the line travels with the next state view
   const d=document.createElement('div'); d.className='entry '+cls; d.innerHTML=msg;
   el('log').prepend(d); while (el('log').children.length>40) el('log').lastChild.remove();
@@ -9211,7 +9370,7 @@ function setPrompt(t){ const p=el('prompt'); _promptTxt=t||''; if(!t){p.style.di
 }
 // Re-draw the prompt bar after a render, so the card beside it follows the board state (gone once the effect resolved).
 function promptSync(){ try{ const p=el('prompt'); if (p.style.display==='none' || !_promptTxt) return; const src=effectSource(); const had=p.classList.contains('with-card'); if (!!src!==had) setPrompt(_promptTxt); }catch(e){} }
-function flashPrompt(t){ setPrompt(t); clearTimeout(promptTimer); promptTimer=setTimeout(()=>{ if(!G.over) defaultPrompt(); },1700); }
+function flashPrompt(t){ sound('deny', true); setPrompt(t); clearTimeout(promptTimer); promptTimer=setTimeout(()=>{ if(!G.over) defaultPrompt(); },1700); }
 // Briefly reveal a played Command / Burst card center-screen so the player doesn't miss it.
 // FLASH_MS is shared by the reveal duration, the player's input lock, and the AI's pacing so a
 // card's animation always finishes before the next action begins.
@@ -9455,8 +9614,11 @@ function showTurnBanner(turn){
   try{
     let b=document.getElementById('turnBanner');
     if(!b){ b=document.createElement('div'); b.id='turnBanner'; document.body.appendChild(b); }
-    b.innerHTML=`<div class="tb-inner ${turn==='enemy'?'enemy':''}">${turn==='player'?'YOUR TURN':'ENEMY TURN'}</div>`;
+    // Styled after the anime's eyecatch: a diagonal slash of colour with the call-out over it.
+    b.innerHTML=`<div class="tb-slash ${turn==='enemy'?'enemy':''}"></div><div class="tb-inner ${turn==='enemy'?'enemy':''}">${turn==='player'?'YOUR TURN':'ENEMY TURN'}`+
+      `<small>${turn==='player' ? 'ALL UNITS — LAUNCH!' : 'CONDITION RED — ENEMY ATTACK'}</small></div>`;
     b.classList.remove('show'); void b.offsetWidth; b.classList.add('show');
+    if (G && !G.over) sound(turn==='player' ? 'turn' : 'eturn', true);
   }catch(e){}
 }
 let flashCardTimer=null;
@@ -9468,10 +9630,14 @@ function flashCard(card, tag){
   _flashCardUid=card.uid; _flashCardAt=Date.now();
   mpFxRecord({ k:'flash', uid:card.uid, tag:tag||'PLAYED' });
   histAdd(card, /ENEMY/i.test(tag||'')?'ai':'me');
+  // Each kind of card shown has its own look and sound (every screen makes the sound for itself as it shows the card).
+  const T=String(tag||''), cfKind = /BURST/.test(T) ? 'burst' : /COMMAND|ACTION/.test(T) ? 'cmd' : /ABILITY/.test(T) ? 'ability'
+    : /LINK/.test(T) ? 'link' : /EFFECT/.test(T) ? 'effect' : /BASE/.test(T) ? 'base' : /PILOT/.test(T) ? 'pilot' : 'deploy';
+  if (cfKind==='cmd') sound('command', true); else if (cfKind==='ability') sound('activate', true); else if (cfKind==='effect' || cfKind==='link') sound('effect', true);
   let host=document.getElementById('cardFlash');
   if (!host){ host=document.createElement('div'); host.id='cardFlash'; document.body.appendChild(host); }
   const img = card.img ? `style="background-image:url('${card.img}')"` : '';
-  host.innerHTML = `<div class="cf-card"><div class="cf-tag">${tag||'PLAYED'}</div>`+
+  host.innerHTML = `<div class="cf-card cf-${cfKind}"><div class="cf-tag">${tag||'PLAYED'}</div>`+
     `<div class="cf-img" ${img}>${card.img?'':card.name}</div>`+
     `<div class="cf-name">${card.name}</div><div class="cf-eff">${plain(card.printText||card.effect||'').slice(0,140)}</div></div>`;
   requestAnimationFrame(()=>host.classList.add('show'));
@@ -12161,6 +12327,7 @@ function declareAttack(atk, atkSide){
   atk.rested = true;   // attack step (8-2-1): the attacker is rested as the attack is declared
   atkSide.attackDeclTurn = G.turnSeq;   // "no enemy Units have attacked this turn" (A Miracle)
   G.curAttack = atk;   // "while this Unit is attacking" (Yzak Jule, Suletta Mercury) — cleared when the battle ends
+  sound('attack'); fxMark('attack', atk.uid);
   const apply=(act)=>{
     if (!act) return;
     if (act.kind==='selfbuff'){
@@ -12647,7 +12814,7 @@ function battle(atk, def, atkSide, defSide){
   // keeps it active.
   if (!(atk.readiedMidAttack===G.turnSeq && G.curAttack===atk)) atk.rested=true;
   atk.readiedMidAttack=null; G.curAttack=atk;
-  fxLunge(atk);
+  fxLunge(atk); sound(def.type==='unit' ? 'saber' : 'ping');   // Units cross beam sabers; a Base takes rifle fire
   // The hits, drawn as beams over the table: the attacker's (red), and the defender's hit back (gold).
   beamFx({ uid:atk.uid }, { uid:def.uid }, '#ff6b5e');
   if (effAp(def)>0) beamFx({ uid:def.uid }, { uid:atk.uid }, '#fbbf24');
@@ -13691,7 +13858,7 @@ function endGame(winnerSide){
   recordResult(G.playerDeckName, win);   // lifetime W/L per deck, shown on the deck picker
   fx('direct'); setTimeout(()=>sound(win?'win':'lose'), 250);
   const ov=el('overlay'); ov.classList.remove('hidden');
-  ov.innerHTML = `<h2 class="result ${win?'win':'loss'}">${win?'VICTORY':'DEFEAT'}</h2>
+  ov.innerHTML = `<div class="mission ${win?'win':'loss'}">${win?'MISSION COMPLETE':'MISSION FAILED'}</div><h2 class="result ${win?'win':'loss'}">${win?'VICTORY':'DEFEAT'}</h2>
     <p>${win?`The enemy line is shattered — your <b>${G.playerDeckName}</b> deck holds the field, commander!`
             :`Your forces are overwhelmed. <b>${G.enemyDeckName}</b> flies its banner over the battlefield.`}</p>
     <button id="againBtn">PLAY AGAIN</button>`;
@@ -15702,7 +15869,7 @@ function mpOnHopDone(msg){
   else result=msg.result;
   if (msg.log) mpAppendLog(msg.log, 'opp');
   NET.active=true; mpHideWait(); render();
-  mpPlayFx(msg.fx, true);
+  mpPlayFx(msg.fx, true, true);
   try{ h.cont(result); }catch(e){ console.error(e); }
   mpAfterLoad();
 }
@@ -15715,7 +15882,7 @@ function mpOnHop(msg){
   if (msg.log) mpAppendLog(msg.log, 'opp');   // appended while inactive: their lines must not echo back to them
   NET.active=true;
   mpSetNameLabels(); render();
-  mpPlayFx(msg.fx, true);
+  mpPlayFx(msg.fx, true, true);
   switch (msg.step){
     case 'turn': NET.inHop=false; NET.hop=null; beginTurn('player'); break;   // the turn — and authority — is ours until it ends
     case 'block': { const blockers=(args.blockers||[]).filter(b=>b && G.player.field.includes(b) && !b.rested && b.hp>0);
@@ -15769,7 +15936,7 @@ function mpApplyView(msg){
 // ---- effects: what the running engine shows (sounds, hits and destructions, card flashes, effect beams, the shuffle
 // riffle, the turn sweep) travels with the next state, so the opponent and the spectators see the play, not just its
 // result. Recorded only on the engine that is running the game; played on every screen that only watches. ----
-function mpFxRecord(ev){ if (!NET.on || !NET.active || NET.role==='spec') return; if (!NET.fxBuf) NET.fxBuf=[]; if (NET.fxBuf.length<120) NET.fxBuf.push(ev); mpQueueView(); }
+function mpFxRecord(ev){ if (!NET.on || !NET.active || NET.role==='spec' || NET.fxReplay) return; if (!NET.fxBuf) NET.fxBuf=[]; if (NET.fxBuf.length<120) NET.fxBuf.push(ev); mpQueueView(); }
 function mpFxSpot(sp){ if (!sp) return null; if (sp.shields) return { shields:sp.shields }; if (sp.uid!=null) return { uid:sp.uid }; return null; }
 // A card this engine's player put onto the table (a deployed Unit or token, a paired Pilot, a Base): the player saw
 // it happen, but the other screens get the same card pop-up the AI's plays show. Once per card per turn.
@@ -15780,8 +15947,9 @@ function mpShowPlay(card, side, what){
 }
 function mpFxTake(){ return NET.fxBuf && NET.fxBuf.length ? NET.fxBuf.splice(0) : []; }
 function mpFindCard(uidv){ try{ return mpCardMap().get(uidv) || null; }catch(e){ return null; } }
-function mpPlayFx(list, flip){
-  if (!Array.isArray(list) || !list.length || !NET.on || NET.active) return;
+function mpPlayFx(list, flip, handed){
+  // (handed: they came with a decision handed to this screen, which is already running the engine for it)
+  if (!Array.isArray(list) || !list.length || !NET.on || (NET.active && !handed)) return;
   NET.fxPlayed=(NET.fxPlayed||0)+list.length;
   const sw=v=>flip ? (v==='player' ? 'enemy' : v==='enemy' ? 'player' : v) : v;
   const swTag=t=>flip ? String(t||'').replace(/^(YOUR|ENEMY)\b/, m=>m==='YOUR' ? 'ENEMY' : 'YOUR') : t;
@@ -15789,15 +15957,17 @@ function mpPlayFx(list, flip){
   const spot=sp=>{ if (!sp) return null; if (sp.shields) return { shields:sw(sp.shields) }; if (sp.uid==null) return null;
     if (battleNode({ uid:sp.uid })) return { uid:sp.uid }; const c=mpFindCard(sp.uid); return c ? effectSpot(c) : null; };
   let vis=false, shake=false;
+  NET.fxReplay=true;   // replaying the other screen's effects: none of them is recorded again (they'd echo back)
   for (const ev of list){ try{
     if (!ev) continue;
-    if (ev.k==='snd') sound(ev.kind);
+    if (ev.k==='snd') sound(ev.kind, true);
     else if (ev.k==='fx'){ if (ev.uid!=null){ fxQueue.push({ kind:ev.kind, uid:ev.uid }); vis=true; } if (ev.kind==='direct'||ev.kind==='shield'||ev.kind==='die') shake=true; }
     else if (ev.k==='beam'){ const f=spot(ev.from), t=spot(ev.to); if (f && t){ fxQueue.push({ kind:'beam', from:f, to:t, color:ev.color }); vis=true; } }
     else if (ev.k==='flash'){ const c=mpFindCard(ev.uid); if (c) flashCard(c, swTag(ev.tag)); }
     else if (ev.k==='shuf') shuffleRiffle(sw(ev.who)==='player' ? G.player : G.enemy);
     else if (ev.k==='banner'){ if (NET.role==='spec') showTurnBanner(sw(ev.turn)); }
   }catch(e){} }
+  NET.fxReplay=false;
   if (vis) applyVisualFx();
   if (shake) screenShake();
 }
@@ -16013,7 +16183,7 @@ function mpShowOver(rec){
   const win = NET.role==='spec' ? rec.hostWon : iWon;
   fx('direct'); setTimeout(()=>sound(win ? 'win' : 'lose'), 250);
   const ov=el('overlay'); ov.classList.remove('hidden');
-  ov.innerHTML = `<h2 class="result ${win?'win':'loss'}">${NET.role==='spec' ? rec.w.name.toUpperCase()+' WINS' : (win ? 'VICTORY' : 'DEFEAT')}</h2>
+  ov.innerHTML = `${NET.role==='spec' ? '' : `<div class="mission ${win?'win':'loss'}">${win?'MISSION COMPLETE':'MISSION FAILED'}</div>`}<h2 class="result ${win?'win':'loss'}">${NET.role==='spec' ? rec.w.name.toUpperCase()+' WINS' : (win ? 'VICTORY' : 'DEFEAT')}</h2>
     <p><b>${rec.w.name}</b> (${rec.w.deck}) defeats <b>${rec.l.name}</b> (${rec.l.deck}) on turn ${rec.turns}.</p>
     <div id="mpOverBoard" style="max-width:560px;width:100%">${mpLeaderboardHTML(true)}</div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center"><button id="mpAgainBtn" class="gold">BACK TO LOBBY</button><button id="mpLeaveBtn" class="ghost">LEAVE ROOM</button></div>`;
@@ -16237,8 +16407,10 @@ function unlockAudio(){
 // Synthesized SFX with a smooth, futuristic sci-fi feel: soft sine/triangle tones with gentle
 // envelopes, lowpass-tamed timbres, airy filter-swept whooshes and shimmer pings — deliberately
 // kept soft so nothing is harsh or fatiguing.
-function sound(kind){
-  if (kind!=='ui') mpFxRecord({ k:'snd', kind });   // online: the opponent and the spectators hear it too
+const _sndAt={};
+function sound(kind, local){
+  _sndAt[kind]=Date.now();
+  if (kind!=='ui' && !local) mpFxRecord({ k:'snd', kind });   // online: the opponent and the spectators hear it too (local: a sound every screen makes for itself)
   if(!SOUND.on) return; const ac=audioCtx(); if(!ac) return;
   // Browsers (autoplay policy) start the context suspended. resume() is async, so if we schedule
   // immediately the very first sounds land while still suspended and are lost. Defer rendering until
@@ -16282,8 +16454,17 @@ function renderSound(ac, kind){
     o.connect(g); g.connect(out); o.start(t); o.stop(t+1); lfo.start(t); lfo.stop(t+1);
     tone(2637,.7,{type:'sine',gain:.045,delay:(delay||0)+.05,atk:.01}); };
 
-  if(kind==='deploy'){            // mobile suit sortie — servo whir, thruster burst, landing thud
-    servo(320,860,.3,.07); whoosh(.34,.12,260,1600,.05); sub(90,.16,.14,.26); ping(880,.14,.09,.3);
+  // the Newtype flash: a flexatone-like metallic wobble (inharmonic bell partials under a fast, slowing vibrato) after a
+  // slide-whistle rise — the sound the anime plays when a Newtype's senses fire.
+  const flex=(f0,delay,dur,gain)=>{ const t=t0+(delay||0);
+    [[1,1],[2.32,.45],[4.1,.22]].forEach(([m,a])=>{ const o=ac.createOscillator(), g=ac.createGain(), l=ac.createOscillator(), lg=ac.createGain();
+      o.type='sine'; o.frequency.setValueAtTime(f0*m,t); l.type='sine'; l.frequency.setValueAtTime(16,t); l.frequency.exponentialRampToValueAtTime(7,t+dur);
+      lg.gain.setValueAtTime(f0*m*.035,t); lg.gain.exponentialRampToValueAtTime(f0*m*.012,t+dur); l.connect(lg); lg.connect(o.frequency);
+      g.gain.setValueAtTime(.0001,t); g.gain.exponentialRampToValueAtTime((gain||.09)*a,t+.012); g.gain.exponentialRampToValueAtTime(.0004,t+dur);
+      o.connect(g); g.connect(out); o.start(t); o.stop(t+dur+.05); l.start(t); l.stop(t+dur+.05); }); };
+  if(kind==='deploy'){            // catapult sortie — the linear catapult charges, fires, thrusters roar, the suit lands
+    servo(180,900,.34,.06); tone(240,.3,{type:'sawtooth',gain:.045,to:1300,lp:1600,lpTo:3200,atk:.02});
+    whoosh(.42,.14,300,3000,.24); sub(72,.22,.16,.28); whoosh(.3,.06,2400,600,.46); ping(880,.14,.08,.5);
   } else if(kind==='hit'){        // beam clash — zap bite + metallic ring + detonation body
     zap(1900,240,.16,.13); tone(523,.2,{type:'triangle',gain:.10,to:392,delay:.02,atk:.002}); tone(370,.22,{type:'triangle',gain:.08,to:180,delay:.03,atk:.002}); sub(78,.24,.22,.02); whoosh(.2,.10,1800,300,.04);
   } else if(kind==='ping'){       // beam rifle shot — the classic descending "pshew"
@@ -16302,8 +16483,8 @@ function renderSound(ac, kind){
     tone(988,.1,{type:'square',gain:.07,lp:2600,atk:.004}); tone(740,.12,{type:'square',gain:.06,lp:2200,delay:.12,atk:.004}); whoosh(.25,.05,1500,500,.2);
   } else if(kind==='bounce'){     // emergency retreat — vernier thrusters flare and doppler away
     whoosh(.3,.1,500,3400); tone(340,.26,{type:'triangle',gain:.11,to:1100,lp:1600,lpTo:4200,atk:.004}); servo(700,380,.2,.05,.12);
-  } else if(kind==='link'){       // Newtype flash — the crystalline "kiin" shimmer
-    kiin(); tone(392,.14,{type:'triangle',gain:.08,to:588,atk:.005});
+  } else if(kind==='link'){       // Newtype flash — slide-whistle rise, the flexatone wobble, then the crystalline "kiin"
+    tone(700,.2,{type:'sine',gain:.07,to:2600,atk:.01}); flex(1180,.14,1.1,.11); flex(1760,.2,.8,.05); kiin(.3); whoosh(.6,.05,4000,9000,.14); sub(55,.5,.12,.14);
   } else if(kind==='pair'){       // pilot boards — hatch servo + cockpit confirm
     servo(280,620,.24,.06); ping(660,.14,.1,.18); tone(880,.1,{type:'sine',gain:.05,delay:.26,atk:.004});
   } else if(kind==='draw'){       // card draw — quick light upward slide
@@ -16320,6 +16501,59 @@ function renderSound(ac, kind){
     tone(520,.14,{type:'sine',gain:.10,to:280,lp:1800,lpTo:700,atk:.005}); whoosh(.2,.06,900,260); whoosh(.12,.03,2600,1400,.08);
   } else if(kind==='burst'){      // shield Burst — alert klaxon into an energy release
     klaxon(.06,0,1); zap(900,2600,.18,.1,.2); ping(1980,.22,.1,.24); sub(110,.2,.12,.2); whoosh(.3,.1,900,3800,.2);
+  } else if(kind==='attack'){     // attack declared — the mono-eye/visor flares ("pwuiin"), verniers kick in for the dash
+    tone(560,.26,{type:'sine',gain:.08,to:1700,atk:.01}); tone(1700,.18,{type:'sine',gain:.04,to:1500,delay:.24,atk:.01});
+    whoosh(.36,.12,380,2800,.08); sub(80,.14,.12,.08);
+  } else if(kind==='saber'){      // beam sabers cross — ignition hum, the crackling "bzzt" of the clash, a hard flare
+    tone(110,.42,{type:'sawtooth',gain:.07,to:150,lp:900,atk:.03}); tone(2300,.07,{type:'square',gain:.06,to:1400,lp:5000,delay:.12,atk:.002});
+    tone(1900,.09,{type:'square',gain:.05,to:1100,lp:4200,delay:.2,atk:.002}); whoosh(.18,.1,4200,1600,.12); sub(96,.2,.16,.12);
+  } else if(kind==='block'){      // a Blocker cuts in — the shield takes it with a heavy metallic clang
+    tone(420,.32,{type:'triangle',gain:.12,to:400,atk:.002}); tone(1131,.22,{type:'sine',gain:.06,atk:.002}); tone(1764,.16,{type:'sine',gain:.035,atk:.002});
+    sub(120,.18,.16); whoosh(.12,.08,3000,1200);
+  } else if(kind==='command'){    // a Command goes out over the comms — quick data-burst chirps on a soft carrier
+    [1400,1860,1180,2090,1580].forEach((f,i)=>tone(f,.045,{type:'square',gain:.035,lp:3600,delay:i*.055,atk:.002}));
+    tone(620,.36,{type:'sine',gain:.035,to:660,atk:.02}); whoosh(.16,.035,3000,1800,.25);
+  } else if(kind==='activate'){   // an ability fires — energy winds up and releases
+    tone(300,.3,{type:'sine',gain:.08,to:1200,atk:.02}); tone(450,.28,{type:'triangle',gain:.04,to:1800,lp:3000,atk:.02}); ping(1568,.24,.09,.28);
+  } else if(kind==='effect'){     // an effect resolves — a soft two-note chime
+    ping(1318,.18,.07); ping(1975,.2,.05,.07);
+  } else if(kind==='cancel'){     // back out — two descending blips
+    tone(880,.06,{type:'square',gain:.04,lp:2600,atk:.003}); tone(620,.08,{type:'square',gain:.035,lp:2200,delay:.07,atk:.003});
+  } else if(kind==='deny'){       // not allowed — a low console buzz
+    tone(150,.12,{type:'square',gain:.05,lp:900,atk:.004}); tone(150,.12,{type:'square',gain:.05,lp:900,delay:.15,atk:.004});
+  } else if(kind==='lockon'){     // targeting — the lock-on tone climbs and holds
+    [1568,1760,1976].forEach((f,i)=>tone(f,.05,{type:'square',gain:.03,lp:4200,delay:i*.07,atk:.002})); tone(2093,.16,{type:'sine',gain:.035,delay:.21,atk:.004});
+  } else if(kind==='select'){     // a Unit picked up — a light console tick
+    tone(1500,.035,{type:'square',gain:.03,lp:3800,atk:.002}); tone(2250,.03,{type:'sine',gain:.02,delay:.03,atk:.002});
+  } else if(kind==='turn'){       // eyecatch sting: your turn — a bright rising brass hit
+    [392,494,587].forEach((f,i)=>tone(f,.42,{type:'sawtooth',gain:.06,lp:2000,lpTo:3000,delay:i*.07,atk:.015})); tone(784,.55,{type:'sawtooth',gain:.07,lp:2600,delay:.22,atk:.02}); ping(1568,.4,.06,.3);
+  } else if(kind==='eturn'){      // eyecatch sting: the enemy's turn — a darker minor hit with a short alert
+    [330,392,466].forEach((f,i)=>tone(f,.45,{type:'sawtooth',gain:.06,lp:1500,delay:i*.07,atk:.015})); tone(233,.6,{type:'sawtooth',gain:.06,lp:1100,delay:.22,atk:.02}); klaxon(.035,.5,1);
+  } else if(kind==='charge'){     // a Resource comes online — the E-cap charging whine
+    tone(200,.42,{type:'sine',gain:.06,to:1400,atk:.03}); tone(400,.4,{type:'triangle',gain:.025,to:2800,lp:4000,atk:.03}); ping(2093,.18,.05,.38);
+  } else if(kind==='repair'){     // HP recovered — a sparkling repair arpeggio
+    [1046,1318,1568,2093].forEach((f,i)=>ping(f,.16,.05,i*.06));
+  } else if(kind==='powerup'){    // AP raised — a surging power-up
+    tone(220,.3,{type:'sawtooth',gain:.05,to:880,lp:1400,lpTo:3200,atk:.02}); ping(1760,.16,.05,.26);
+  } else if(kind==='powerdown'){  // AP lowered — power drains away
+    tone(760,.36,{type:'triangle',gain:.06,to:190,lp:2400,lpTo:600,atk:.01});
+  } else if(kind==='rest'){       // rested — a quiet servo settling down
+    tone(520,.16,{type:'sawtooth',gain:.025,to:260,lp:1000,atk:.01});
+  } else if(kind==='ready'){      // set active — systems back online
+    tone(300,.16,{type:'sawtooth',gain:.028,to:640,lp:1200,atk:.01}); ping(1318,.1,.035,.12);
+  } else if(kind==='eyeG'){       // a Gundam's twin eyes light up — "kyuiin" and a bright lens glint
+    tone(900,.2,{type:'sawtooth',gain:.045,to:2400,lp:3200,lpTo:5200,atk:.01}); ping(2637,.3,.06,.18); tone(3520,.2,{type:'sine',gain:.02,delay:.2,atk:.01});
+  } else if(kind==='eyeZ'){       // a mono-eye switches on and sweeps — the rising, wobbling "pwuiin"
+    const t=t0, o=ac.createOscillator(), g=ac.createGain(), l=ac.createOscillator(), lg=ac.createGain();
+    o.type='sine'; o.frequency.setValueAtTime(480,t); o.frequency.exponentialRampToValueAtTime(1500,t+.32); l.frequency.setValueAtTime(9,t); lg.gain.setValueAtTime(40,t);
+    l.connect(lg); lg.connect(o.frequency); g.gain.setValueAtTime(.0001,t); g.gain.exponentialRampToValueAtTime(.08,t+.03); g.gain.exponentialRampToValueAtTime(.0004,t+.5);
+    o.connect(g); g.connect(out); o.start(t); o.stop(t+.55); l.start(t); l.stop(t+.55);
+  } else if(kind==='base'){       // a Base comes online — a low fortress chord and the bulkheads locking
+    [98,147,196].forEach(f=>tone(f,.7,{type:'sawtooth',gain:.05,lp:700,lpTo:1400,atk:.05})); tone(260,.08,{type:'square',gain:.05,lp:1200,delay:.3,atk:.002}); tone(220,.08,{type:'square',gain:.05,lp:1100,delay:.42,atk:.002}); sub(60,.4,.14,.3);
+  } else if(kind==='exile'){      // removed from the game — a warp-out that falls through the floor
+    tone(1400,.5,{type:'sine',gain:.07,to:70,atk:.01}); whoosh(.45,.07,6000,300);
+  } else if(kind==='spark'){      // a light hit — short beam crack and sparks
+    zap(2200,600,.08,.08); whoosh(.1,.06,4200,2000,.02);
   } else if(kind==='win'){        // triumphant fanfare — brassy rising arpeggio
     [523,659,784,1047,1319].forEach((f,i)=>tone(f,.5,{type:'sawtooth',gain:.11,lp:2200,lpTo:3200,delay:i*.12,atk:.02}));
     ping(2093,.6,.08,.62); whoosh(.5,.06,800,3000,.5);
@@ -16331,7 +16565,7 @@ let fxQueue = [];
 function fx(kind, uid){ sound(kind); if(uid!=null) fxQueue.push({kind,uid}); mpFxRecord({ k:'fx', kind, uid:uid!=null?uid:null }); if(kind==='direct'||kind==='shield'||kind==='die') screenShake(); }
 function screenShake(){ const r=el('app'); if(!r) return; r.classList.remove('shake'); void r.offsetWidth; r.classList.add('shake'); setTimeout(()=>r.classList.remove('shake'),420); }
 function applyVisualFx(){
-  const CLS={ die:'fx-die', lungeUp:'fx-lunge-up', lungeDown:'fx-lunge-down', enter:'fx-enter' };
+  const CLS={ die:'fx-die', lungeUp:'fx-lunge-up', lungeDown:'fx-lunge-down', enter:'fx-enter', attack:'fx-attack', block:'fx-block' };
   for(const f of fxQueue){ if (f.kind==='beam'){ fxBeam(f.from, f.to, f.color, f.a, f.b); continue; }
     const node=document.querySelector(`.card[data-uid="${f.uid}"]`); if(node){ const cls=CLS[f.kind]||'fx-hit'; node.classList.remove(cls); void node.offsetWidth; node.classList.add(cls); } }
   fxQueue=[];
@@ -16339,6 +16573,156 @@ function applyVisualFx(){
 }
 // Queue the attacker's lunge toward the opposing row (visual only, no sound).
 function fxLunge(atk){ const kind=atk.owner==='player'?'lungeUp':'lungeDown'; fxQueue.push({ kind, uid: atk.uid }); mpFxRecord({ k:'fx', kind, uid:atk.uid }); }
+// A one-off mark on a card (the attacker's thrusters flaring, a Blocker's shield going up) — on every screen.
+function fxMark(kind, uid){ if (uid==null) return; fxQueue.push({ kind, uid }); mpFxRecord({ k:'fx', kind, uid }); }
+
+// ---- board feedback: every render is compared with the last one, and whatever changed on the table gets its moment ----
+// A Unit launching, a Pilot boarding (the Unit's eyes light up), a Link (the Newtype flash), damage, repairs, AP going up
+// or down, rest/active, destruction (the ring explosion), a bounce, an exile, Shields shattering, Resources charging.
+// Every screen works this out from the state it is showing, so the AI's plays, the opponent's online plays and a
+// spectator's view all get the same effects with no extra traffic. Visual only: nothing here touches the game.
+const VFX = { on: lsGet('gtcg_vfx', true)!==false, snap:null, rects:new Map(), q:[], raf:0 };
+const vfxReduced = ()=>{ try{ return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); }catch(e){ return false; } };
+function vfxLive(){ try{ const a=el('app'); return !!(a && a.getBoundingClientRect && a.getBoundingClientRect().width>0); }catch(e){ return false; } }
+function vfxSnap(){
+  const s={ mode:G.mode, sel:G.selected, sides:{}, live:!!(G.player.hadTurn || G.enemy.hadTurn) };
+  for (const k of ['player','enemy']){ const sd=G[k]; if (!sd) continue; const units={};
+    for (const u of sd.field||[]) units[u.uid]={ hp:u.hp, ap:u.ap, rested:!!u.rested, pilot:u.pilotCard?u.pilotCard.uid:null, pname:u.pilotCard?u.pilotCard.name:'', linked:!!u.linked, name:u.name, img:u.img };
+    if (sd.base) units[sd.base.uid]={ hp:sd.base.hp, base:true, rested:!!sd.base.rested, name:sd.base.name, img:sd.base.img };
+    s.sides[k]={ units, shields:(sd.shields||[]).length, res:(sd.resMax||0)+(sd.ex||0), avail:sd.resAvail||0 };
+  }
+  return s;
+}
+// Where a card that left the table went.
+function vfxWhere(uidv){
+  for (const k of ['player','enemy']){ const sd=G[k]; if (!sd) continue; const has=a=>(a||[]).some(c=>c && c.uid===uidv);
+    if (has(sd.hand)) return 'hand'; if (has(sd.exile)) return 'exile'; if (has(sd.deck) || has(sd.shields)) return 'deck'; }
+  return 'destroyed';
+}
+function vfxDiff(){
+  if (!G || !G.player || !G.enemy || !vfxLive()){ VFX.snap=null; return; }
+  const cur=vfxSnap(), prev=VFX.snap; VFX.snap=cur;
+  if (!VFX.raf) VFX.raf=requestAnimationFrame(vfxFlush);   // (also re-measures the cards, for the ones about to leave)
+  if (!prev || !prev.live || !cur.live || !VFX.on) return;   // setup (dealing, Shields, EX Base, mulligan) stays quiet
+  const ev=[], remote = !!(NET.on && !NET.active);
+  const now={}; for (const k in cur.sides) Object.assign(now, cur.sides[k].units);
+  for (const k in prev.sides){ const P=prev.sides[k], C=cur.sides[k]; if (!C) continue;
+    for (const id in P.units){ const p=P.units[id], c=now[id];
+      if (!c){ const w=vfxWhere(+id); ev.push({ t: w==='hand' ? 'bounce' : w==='exile' || w==='deck' ? 'exile' : p.base ? 'boomBig' : 'boom', uid:+id, side:k, img:p.img }); continue; }
+      const piloted = c.pilot!=null && c.pilot!==p.pilot;
+      if (piloted) ev.push({ t: c.linked && !p.linked ? 'link' : 'eye', uid:+id, side:k, name:c.name, pname:c.pname });
+      else if (c.linked && !p.linked) ev.push({ t:'link', uid:+id, side:k, name:c.name, pname:c.pname });
+      if (c.hp<p.hp) ev.push({ t:'dmg', uid:+id, n:p.hp-c.hp, remote });
+      else if (c.hp>p.hp && !piloted) ev.push({ t:'heal', uid:+id, n:c.hp-p.hp, remote });
+      if (!p.base && !piloted && c.ap!=null && p.ap!=null && c.ap!==p.ap) ev.push({ t: c.ap>p.ap ? 'apUp' : 'apDown', uid:+id, n:c.ap-p.ap });
+      if (c.rested!==p.rested) ev.push({ t: c.rested ? 'rest' : 'ready', uid:+id });
+    }
+    for (const id in C.units) if (!prev.sides.player.units[id] && !(prev.sides.enemy && prev.sides.enemy.units[id]))
+      ev.push({ t: C.units[id].base ? 'base' : 'launch', uid:+id, side:k, name:C.units[id].name });
+    if (C.shields<P.shields) ev.push({ t:'shatter', side:k, n:P.shields-C.shields });
+    else if (C.shields>P.shields) ev.push({ t:'shieldUp', side:k });
+    if (C.res>P.res) ev.push({ t:'charge', side:k });
+    else if (C.avail<P.avail) ev.push({ t:'spend', side:k });
+  }
+  if (/target/.test(cur.mode||'') && cur.mode!==prev.mode) ev.push({ t:'lockon' });
+  else if (cur.sel!=null && cur.sel!==prev.sel && cur.mode===prev.mode) ev.push({ t:'select' });
+  if (ev.length) VFX.q.push(...ev);
+}
+function vfxRect(uidv){
+  try{ const n=document.querySelector(`#enemyField .card[data-uid="${uidv}"], #playerField .card[data-uid="${uidv}"], #enemyBase .card[data-uid="${uidv}"], #playerBase .card[data-uid="${uidv}"]`);
+    if (n){ const r=n.getBoundingClientRect(); if (r.width) return { left:r.left, top:r.top, width:r.width, height:r.height }; } }catch(e){}
+  return VFX.rects.get(uidv) || null;
+}
+function vfxZone(id){ try{ const r=el(id).getBoundingClientRect(); return r.width ? { left:r.left, top:r.top, width:r.width, height:r.height } : null; }catch(e){ return null; } }
+function vxLayer(){ let l=document.getElementById('vfxLayer'); if (!l){ l=document.createElement('div'); l.id='vfxLayer'; document.body.appendChild(l); } return l; }
+function vxAt(r, cls, html, ms){
+  const d=document.createElement('div'); d.className='vx '+cls;
+  d.style.left=r.left+'px'; d.style.top=r.top+'px'; d.style.width=r.width+'px'; d.style.height=r.height+'px';
+  if (html) d.innerHTML=html; vxLayer().appendChild(d);
+  setTimeout(()=>{ try{ d.remove(); }catch(e){} }, ms||1200); return d;
+}
+const vxEsc=t=>String(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+// Particles flying out from the middle: count, spread (px), class.
+function vxBits(n, spread, cls, life){
+  let h=''; for (let i=0;i<n;i++){ const a=(i/n)*Math.PI*2 + Math.random()*.6, d=spread*(.55+Math.random()*.6);
+    h+=`<i class="${cls}" style="--dx:${(Math.cos(a)*d).toFixed(0)}px;--dy:${(Math.sin(a)*d).toFixed(0)}px;--r:${(Math.random()*540-270).toFixed(0)}deg;--d:${(Math.random()*.08).toFixed(2)}s;--l:${life||.7}s"></i>`; }
+  return h;
+}
+// Sounds the board feedback adds only when the action itself hasn't just made its own.
+const vfxRecent=(kinds, ms)=>kinds.some(k=>_sndAt[k] && Date.now()-_sndAt[k]<(ms||450));
+function vfxFlush(){
+  VFX.raf=0;
+  const q=VFX.q.splice(0), played=new Set(), lite=vfxReduced();
+  const snd=(k, skipIf)=>{ if (played.has(k) || (skipIf && vfxRecent(skipIf))) return; played.add(k); sound(k, true); };
+  let shake=false;
+  for (const e of q){ try{
+    const r = e.uid!=null ? vfxRect(e.uid) : null;
+    switch (e.t){
+      case 'boom': case 'boomBig': { if (!r) break; const big=e.t==='boomBig', h=r.height*(big?1.7:1.2);
+        const c={ left:r.left+r.width/2-h/2, top:r.top+r.height/2-h/2, width:h, height:h };
+        vxAt(c, 'vx-boom'+(big?' big':''), `<b class="core"></b><b class="ring"></b><b class="ring r2"></b><b class="smoke"></b>${lite?'':vxBits(big?16:11, h*.75, 'spark', .75)}`, 1300);
+        if (big) shake=true; snd('die', ['die']); break; }
+      case 'bounce': if (!r) break;
+        vxAt(r, 'vx-ghost vx-bounce '+(e.side==='player'?'down':'up'), `<b class="gimg" style="${e.img?`background-image:url('${vxEsc(e.img)}')`:''}"></b><b class="trail"></b>`, 900);
+        snd('bounce', ['bounce']); break;
+      case 'exile': if (!r) break;
+        vxAt(r, 'vx-ghost vx-exile', `<b class="gimg" style="${e.img?`background-image:url('${vxEsc(e.img)}')`:''}"></b><b class="scan"></b>`, 1000);
+        snd('exile', ['exile']); break;
+      case 'launch': if (!r) break;
+        vxAt(r, 'vx-launch '+(e.side==='player'?'from-below':'from-above'), `<b class="rail"></b><b class="lines"></b><b class="fl f1"></b><b class="fl f2"></b>`, 900); break;
+      case 'base': if (!r) break;
+        vxAt(r, 'vx-base', `<b class="hex"></b><b class="ring"></b><span class="vx-cap">BASE ONLINE</span>`, 1400); snd('base'); break;
+      case 'eye': case 'link': { if (!r) break; const gundam=/gundam/i.test(e.name||'');
+        vxAt(r, 'vx-eye '+(gundam?'twin':'mono'), gundam ? `<b class="flare"></b><b class="dot d1"></b><b class="dot d2"></b>` : `<b class="flare"></b><b class="dot"></b>`, 1100);
+        if (e.pname) vxAt({ left:r.left-40, top:r.top+r.height-6, width:r.width+80, height:26 }, 'vx-call', `<span>${vxEsc(e.pname)}, launching!</span>`, 1700);
+        if (e.t==='link') vxNewtype(r, e.name, e.pname, lite); else setTimeout(()=>snd(gundam?'eyeG':'eyeZ'), 240);
+        break; }
+      case 'dmg': if (!r) break;
+        vxAt(r, 'vx-hit', `<b class="flash"></b>${lite?'':vxBits(8, r.height*.42, 'spark', .5)}`, 800);
+        if (e.remote) floatNum(e.uid, '-'+e.n, '#ff6b5e');
+        snd('spark', ['hit','die','ping','shield','direct','saber','block','burst']); break;
+      case 'heal': if (!r) break;
+        vxAt(r, 'vx-heal', `<b class="glow"></b>${'<i class="plus">+</i>'.repeat(lite?2:6)}`, 1200);
+        if (e.remote) floatNum(e.uid, '+'+e.n, '#7ee29a');
+        snd('repair'); break;
+      case 'apUp': case 'apDown': { if (!r) break; const up=e.t==='apUp';
+        vxAt(r, 'vx-pwr '+(up?'up':'down'), `<b class="aura"></b><span class="vx-tag">AP${up?'+':''}${e.n}</span>`, 1100);
+        snd(up?'powerup':'powerdown', ['link','pair']); break; }
+      case 'rest': if (!r) break; vxAt(r, 'vx-rest', `<b class="band"></b>`, 600); snd('rest', ['attack','block','saber','ping']); break;
+      case 'ready': if (!r) break; vxAt(r, 'vx-ready', `<b class="glint"></b>`, 700); snd('ready', ['turn','eturn']); break;
+      case 'shatter': { const z=vfxZone(e.side==='player'?'playerShieldZone':'enemyShieldZone'); if (!z) break;
+        for (let i=0;i<Math.min(e.n,3);i++) setTimeout(()=>vxAt(z, 'vx-shatter', `<b class="flash"></b>${vxBits(lite?6:14, Math.max(60, z.height*.9), 'shard', .8)}`, 1000), i*160);
+        break; }
+      case 'shieldUp': { const z=vfxZone(e.side==='player'?'playerShieldZone':'enemyShieldZone'); if (z) vxAt(z, 'vx-shieldup', `<b class="sweep"></b>`, 900); break; }
+      case 'charge': { const z=vfxZone(e.side==='player'?'playerResources':'enemyResources'); if (z) vxAt(z, 'vx-charge', `<b class="sweep"></b>`, 900); snd('charge', ['turn','eturn']); break; }
+      case 'spend': { const z=vfxZone(e.side==='player'?'playerResources':'enemyResources'); if (z) vxAt(z, 'vx-spend', `<b class="sweep"></b>`, 600); break; }
+      case 'lockon': snd('lockon'); break;
+      case 'select': snd('select'); break;
+    }
+  }catch(x){} }
+  if (shake) screenShake();
+  // Remember where every card on the table is, for the ones that leave before the next look.
+  try{ document.querySelectorAll('#enemyField .card[data-uid], #playerField .card[data-uid], #enemyBase .card[data-uid], #playerBase .card[data-uid]').forEach(n=>{
+    const r=n.getBoundingClientRect(); if (r.width) VFX.rects.set(+n.dataset.uid, { left:r.left, top:r.top, width:r.width, height:r.height }); });
+    if (VFX.rects.size>200){ const keep=new Set([...G.player.field, ...G.enemy.field, G.player.base, G.enemy.base].filter(Boolean).map(u=>u.uid)); for (const k of VFX.rects.keys()) if (!keep.has(k)) VFX.rects.delete(k); }
+  }catch(e){}
+}
+// The Newtype flash: the screen whites out, a jagged bolt cracks across it through the Link Unit, the sky behind turns to
+// that shimmering Newtype space for a moment, and LINK comes up with the Pilot and the Unit.
+function vxNewtype(r, unit, pilot, lite){
+  try{
+    const W=window.innerWidth, H=window.innerHeight, cx=r.left+r.width/2, cy=r.top+r.height*.3;
+    const bolt=(amp)=>{ const n=16, pts=[]; for (let i=0;i<=n;i++){ const x=i/n*W, near=Math.min(1, Math.abs(x-cx)/(W*.5));
+      pts.push(`${x.toFixed(0)},${(cy + (i===0||i===n ? (Math.random()-.5)*H*.3 : (Math.random()-.5)*amp*(.25+near))).toFixed(0)}`); } return pts.join(' '); };
+    const d=document.createElement('div'); d.className='vx-nt'+(lite?' lite':'');
+    d.innerHTML=`<b class="nt-bg"></b><b class="nt-space"></b>`+
+      `<svg class="nt-bolt" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><polyline class="b0" points="${bolt(H*.22)}"/><polyline class="b1" points="${bolt(H*.16)}"/></svg>`+
+      `<b class="nt-burst" style="left:${cx}px;top:${cy}px"></b><b class="nt-burst n2" style="left:${cx}px;top:${cy}px"></b>`+
+      `<div class="nt-text"><b>LINK</b><span>${vxEsc(pilot)} × ${vxEsc(unit)}</span></div>`;
+    vxLayer().appendChild(d);
+    setTimeout(()=>{ try{ d.remove(); }catch(e){} }, 1700);
+  }catch(e){}
+}
 
 // Scale each battlefield's cards so ALL units fit its real width — no horizontal scrolling.
 // Overriding --card-h on the container rescales every card-internal size proportionally.
@@ -16387,6 +16771,7 @@ function render(){
     if (!s) continue;
     for (const u of s.field){ if (u.hp>0){ syncWhileHp(u, s); u.ap = effAp(u); u.maxHp = effMaxHp(u); } }
   }
+  try{ vfxDiff(); }catch(e){}   // what changed on the table since the last look gets its effect (visual only)
   _bvCache=battleView(); _fxSrc=effectSource();
   el('poolCount').textContent = `${POOL_STATS.cards} CARDS · ${POOL_STATS.printings}`;
   el('turnInfo').innerHTML = `Turn <b>${G.turnNumber}</b> · ${G.turn==='player' ? (NET.on && NET.role==='spec' ? '<b>'+who(G.player)+'</b> acting' : '<b>Your</b> move') : '<b>'+who(G.enemy)+'</b> acting'}`;
@@ -16758,6 +17143,7 @@ function pendingCandidate(uid){
 }
 // Cancel button and Escape key: back out of the current choice without losing what's already under way.
 function cancelAction(){
+  sound('cancel', true);
   // A discard the rules or a cost demand can't be backed out of (the hand-limit step, "draw 1, then discard
   // 1"). Only an optional "You may discard N. If you do, …" that hasn't started can be declined.
   if (G.mode==='discard'){
@@ -16818,6 +17204,8 @@ document.addEventListener('click', (e)=>{
   const b = e.target && e.target.closest && e.target.closest('button');
   if (b && !_NOSOUND_BTN[b.id]) sound('ui');
 }, true);
+el('vfxBtn').addEventListener('click', ()=>{ VFX.on=!VFX.on; lsSet('gtcg_vfx', VFX.on); el('vfxBtn').style.opacity=VFX.on?'':'.4'; el('vfxBtn').title=VFX.on?'Battle effects: on':'Battle effects: off'; sound('ui'); });
+try{ if (!VFX.on) el('vfxBtn').style.opacity='.4'; }catch(e){}
 el('soundBtn').addEventListener('click', ()=>{ SOUND.on=!SOUND.on; el('soundBtn').textContent=SOUND.on?'🔊':'🔇'; if(SOUND.on){ unlockAudio(); const ac=audioCtx(); sound('deploy'); try{ log(`Audio: ${ac?ac.state:'unavailable'}${ac&&ac.state!=='running'?' — tap again to enable':''}.`, 'sys'); }catch(e){} } });
 el('startBtn').addEventListener('click', ()=>{ unlockAudio(); startGame(); });
 el('mpBtn').addEventListener('click', ()=>{ unlockAudio(); mpOpenLobby(); });
