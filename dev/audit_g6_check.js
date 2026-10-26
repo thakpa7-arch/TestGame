@@ -364,9 +364,13 @@ for (const id of ['GD06-058','GD05-030','GD05-048','GD05-078']){
   A.resolveAiAttack(atk, ()=>{}, null); drainTasks();
   const asked=modal() && /exile/i.test(modal().msg); press(/Exile it/); const tiles=tileNames(); pickTile(/Presidential/); drainTasks(); passAll();
   ok('Presidential Office: destroyed -> you may exile it and deploy another Presidential Office from hand', asked && tiles.length===1 && G.player.base && G.player.base.def==='GD05-130' && G.player.exile.some(c=>c.def==='GD05-130') && G.player.hand.length>=1, `${asked} ${tiles} base ${G.player.base&&G.player.base.def} exile ${G.player.exile.length}`); }
-{ fresh('enemy'); G.player.base=card('GD05-130','player'); G.player.hand=[]; const atk=stick('enemy',6,6); A.resolveAiAttack(atk, ()=>{}, null); drainTasks();
+{ fresh('enemy'); G.player.base=card('GD05-130','player'); G.player.hand=noImg([card('GD05-130','player')]); const atk=stick('enemy',6,6); A.resolveAiAttack(atk, ()=>{}, null); drainTasks();
   const asked=modal() && /exile/i.test(modal().msg); press(/Don't/);
   ok("Presidential Office: declining keeps it in the trash", asked && G.player.trash.some(c=>c.def==='GD05-130') && !G.player.base); }
+// With no Presidential Office in hand the exile would buy nothing, so it isn't offered.
+{ fresh('enemy'); G.player.base=card('GD05-130','player'); G.player.hand=[]; const atk=stick('enemy',6,6); A.resolveAiAttack(atk, ()=>{}, null); drainTasks();
+  const asked=modal() && /exile/i.test(modal().msg);
+  ok("Presidential Office: nothing to deploy -> not offered, stays in the trash", !asked && G.player.trash.some(c=>c.def==='GD05-130') && !G.player.base); }
 { fresh('player'); G.enemy.base=card('GD05-130','enemy'); G.enemy.hand=[card('GD05-130','enemy')]; const atk=stick('player',6,6); A.fieldClick(atk.uid); drainTasks(); A.attackDirect(); drainTasks(); passAll(); drainTasks();
   ok('Presidential Office (AI): exiles the destroyed copy and deploys the one in hand', G.enemy.base && G.enemy.base.def==='GD05-130' && G.enemy.exile.length===1 && !G.enemy.hand.some(c=>c.def==='GD05-130')); }
 

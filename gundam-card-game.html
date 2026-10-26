@@ -817,6 +817,16 @@
   @keyframes tbSlash { 0%{ transform: skewY(-4deg) scaleX(0); } 18%{ transform: skewY(-4deg) scaleX(1); } 100%{ transform: skewY(-4deg) scaleX(1); } }
   #turnBanner .tb-inner small { display: block; font-size: 11px; letter-spacing: 4px; margin-top: 2px; opacity: .85; font-weight: 800; }
   @media (prefers-reduced-motion: reduce){ .vx .spark, .vx .shard, .vx-launch .lines, .card.fx-attack, .card.fx-block, #cardFlash .cf-cmd::after { animation: none; display: none; } }
+  /* Rearranging the hand: the card being dragged follows the pointer, a gold bar marks where it will land. */
+  .hand-row { user-select: none; -webkit-user-select: none; }
+  .hd-ghost { position: fixed !important; left: 0; top: 0; margin: 0 !important; z-index: 130; pointer-events: none; opacity: .96;
+    transition: none !important; animation: none !important; outline: 2px solid rgba(34,211,238,.85) !important; outline-offset: -2px;
+    box-shadow: 0 18px 42px rgba(0,0,0,.72), 0 0 26px rgba(34,211,238,.55) !important; }
+  .hd-mark { position: fixed; width: 5px; margin-left: -2px; border-radius: 3px; z-index: 129; pointer-events: none; display: none;
+    background: linear-gradient(#fef3c7, #fbbf24 40%, #f59e0b); box-shadow: 0 0 14px #fbbf24, 0 0 4px #fff; }
+  .hand-row .fan-slot.hd-src { opacity: .28; filter: grayscale(.6); }
+  .hand-row.hd-dragging .fan-slot:hover { transform: none !important; z-index: auto !important; }
+  .hand-row.hd-dragging .fan-slot:hover .card, .hand-row.hd-dragging .card:hover { transform: none !important; }
   @media (prefers-reduced-motion: reduce){ #battleArrow .ba-line, .card.bt-def, .shield-zone.zone-hit, .card.fx-ping { animation: none; } }
 
   /* ---- online multiplayer: lobby, waiting banner, leaderboard ---- */
@@ -1047,12 +1057,11 @@
     </div>
   </div>
 
-  <div class="hand-row" id="hand"></div>
+  <div class="hand-row" id="hand" title="Drag a card to rearrange your hand (touch: hold, then slide)"></div>
 
   <div class="controls">
     <button id="endTurnBtn" class="gold">End Turn</button>
     <button id="cancelBtn" class="ghost" style="display:none">Cancel</button>
-    <button id="handShuffleBtn" class="ghost" title="Shuffle your hand — reorders the cards you hold (your deck is untouched)">🔀</button>
     <button id="rulesBtn" class="ghost">Rules</button>
     <button id="soundBtn" class="ghost" title="Toggle sound">🔊</button>
     <button id="vfxBtn" class="ghost" title="Toggle battle effects (explosions, Newtype flash, launches)">✨</button>
@@ -6685,6 +6694,13 @@ function cmdModeLegal(a, side){
   if (a.kind==='trashRetrieve') return side.trash.some(c=>matchFilter(c, a.filter) && !c.token);
   return true;
 }
+// "You may <pay>. If you do, A. [Then, B.]" — true when neither A nor B could do anything right now, so the cost isn't offered.
+function optCostPointless(card, side, act){
+  const useless = a => { if (!a) return true; a.source = a.source || card;
+    if (a.kind==='deployFromHand') return !deployFromHandCands(side, a).length;
+    return !cmdModeLegal(a, side); };
+  return useless(act.inner) && useless(act.then);
+}
 // AI: how much a mode is worth now (higher is better; <0 = can't be chosen).
 function aiModeScore(card, side, a){
   if (!cmdModeLegal(a, side)) return -1;
@@ -7412,6 +7428,7 @@ function resolvePlayerTrigger(card, side, act, label, after){
   if (act.kind==='destroyThen'){ destroyThenTokens(card, side, act, label, fin); return; }
   if (act.kind==='exileSelfThen'){              // "You may exile this card in your trash from the game. If you do, …"
     if (!side.trash.includes(card)){ fin(); return; }
+    if (optCostPointless(card, side, act)){ log(`${label}: <b>${card.name}</b> — nothing it could do, so it stays in your trash.`, 'me'); fin(); return; }
     whenModalFree(()=>{
       el('blockMsg').innerHTML=`<b>${card.name}</b>: exile it from your trash to use its effect?`;
       const wrap=el('blockBtns'); wrap.innerHTML='';
@@ -7437,6 +7454,9 @@ function resolvePlayerTrigger(card, side, act, label, after){
   // "You may discard …. If you do, A. Then, B." — B resolves only after the discard was made (Q175 Gundam AGE-1 Normal: no
   // draw at Lv.7+ without discarding).
   const paidThen = act.kind==='payDiscard' && act.then ? ()=>resolvePlayerTrigger(card, side, act.then, label, after) : after;
+  // An optional cost whose effect has nothing to hit isn't offered (Strike Freedom GD05-002: "discard 2… return the enemy Unit with
+  // the lowest Lv" with no enemy Unit) — paying would only throw cards away.
+  if (act.kind==='payDiscard' && optCostPointless(card, side, act)){ log(`${label}: <b>${card.name}</b> — no legal target, so nothing to discard for.`, 'me'); fin(); return; }
   if (act.kind==='payDiscard' && act.filter){   // "You may discard 1 red card. If you do, …" — choose one that matches, or decline
     const cands=payDiscardCands(side, act);
     if (cands.length < act.count){ log(`${label}: <b>${card.name}</b> — no ${act.filter} card in your hand to discard.`, 'me'); fin(); return; }
@@ -7593,6 +7613,7 @@ function resolvePlayerTrigger(card, side, act, label, after){
   // "You may deal 1 damage to this Unit. If you do, …" (Chad Chadan, Kelley Layzner, Gundam GP02A) — your call.
   if (act.kind==='selfDamageThen' && act.may){
     if (!side.field.includes(card) || card.hp<=0){ fin(); return; }
+    if (act.inner && optCostPointless(card, side, act)){ log(`${label}: <b>${card.name}</b> — no legal target, so nothing to take damage for.`, 'me'); fin(); return; }
     askOptional(`<b>${card.name}</b> 【${label}】 — deal ${act.self} damage to <b>${card.name}</b> to use its effect?`, `Deal ${act.self} damage`, "Don't",
       ()=>{ log(`${label}: <b>${card.name}</b> takes ${act.self} damage.`, 'me'); damage(card, act.self, side, 'self');
             if (act.inner) return resolvePlayerTrigger(card, side, act.inner, label, after); render(); fin(); },
@@ -7650,6 +7671,7 @@ function resolvePlayerTrigger(card, side, act, label, after){
   if ((act.kind==='restBoth' || act.kind==='damageBoth' || act.kind==='selfPingBuff') && act.may && !act.mayAsked){
     const own = act.kind==='restBoth' ? restBothCands(side, act) : side.field.filter(u=>u.hp>0 && u.type==='unit');
     if (!own.length){ log(`${label}: <b>${card.name}</b> — no Unit of yours it can choose.`, 'me'); fin(); return; }
+    if (act.kind==='damageBoth' && !cmdModeLegal(act, side)){ log(`${label}: <b>${card.name}</b> — no enemy Unit it can choose.`, 'me'); fin(); return; }
     const what = act.kind==='restBoth' ? 'rest 1 of your active Units and 1 enemy Unit'
                : act.kind==='damageBoth' ? `deal ${act.amount} damage to 1 of your Units and 1 enemy Unit`
                : `deal ${act.self} damage to 1 of your Units (it gets AP+${act.ap} this turn)`;
@@ -9934,7 +9956,7 @@ function effMaxHp(u){
 
 // ---- setup / turns ----
 function startGame(){
-  uid = 1;
+  uid = 1; HAND_PREF.length=0;
   HIST.length=0; try{ const h=document.getElementById('histRibbon'); if(h) h.innerHTML=''; }catch(e){}
   Object.assign(G, { turn:'player', turnNumber:1, phase:'main', selected:null, mode:'idle', pending:null, pendingHandIdx:-1, over:false, modalQueue:[], retarget:null, curBattle:null, curAttack:null,
                      firstPlayer:'player', skipDrawSide:null, turnSeq:1, winner:null,
@@ -10952,7 +10974,7 @@ function afterCommandMain(card, side, done){
   if (side===G.player) promptTargetChoice(cands, `<b>${card.name}</b>: pair it from your trash with one of your (${tr}) Units as <b>${card.pilotMode.name}</b>?`, pair, "Don't pair");
   else pair([...cands].sort((a,b)=>(linkMatches(b,card.pilotMode)?5:0)-(linkMatches(a,card.pilotMode)?5:0) || effAp(b)-effAp(a))[0]);
 }
-function commit(card, handIdx, deferHooks){ const cost=effectiveCost(G.player,card); G.player.hand.splice(handIdx,1); payCost(G.player, cost); sendToTrash(card, G.player); if (!deferHooks) commandPlayed(card, G.player); }
+function commit(card, handIdx, deferHooks){ const cost=effectiveCost(G.player,card); { const hi=G.player.hand.indexOf(card); if (hi>=0) G.player.hand.splice(hi,1); } payCost(G.player, cost); sendToTrash(card, G.player); if (!deferHooks) commandPlayed(card, G.player); }
 
 // Auto-discard the lowest-value card from side's hand (used by AI / no-choice cases).
 // A Pilot card that may be deployed as a Unit instead (Master Asia): is that option open now?
@@ -15699,6 +15721,7 @@ function mpLoadState(pack, flip, loose){
   const r=mpUnpack(pack, keep, sides, G);
   if (flip){ const p=G.player; G.player=G.enemy; G.enemy=p; mpFlipMarkers(r.objs); }
   if (typeof pack.uid==='number' && pack.uid>uid) uid=pack.uid;
+  if (NET.role!=='spec') handApplyPref();
   return r.extra;
 }
 function mpFlipMarkers(objs){
@@ -16023,7 +16046,7 @@ function mpMaybeStart(){
   if (NET.role!=='host' || NET.started || !NET.decks.host || !NET.decks.guest || !NET.guest) return;
   NET.started=true; NET.gameId=mpNewCode()+mpNewCode(); NET.overRec=null; NET.overShown=false; NET.inGame=false; NET.setup=true;
   mpBroadcast({ t:'start', gameId:NET.gameId, names:NET.names });
-  uid=1; HIST.length=0; try{ const h=document.getElementById('histRibbon'); if(h) h.innerHTML=''; }catch(e){}
+  uid=1; HAND_PREF.length=0; HIST.length=0; try{ const h=document.getElementById('histRibbon'); if(h) h.innerHTML=''; }catch(e){}
   Object.assign(G, { turn:'player', turnNumber:1, phase:'main', selected:null, mode:'idle', pending:null, pendingHandIdx:-1, over:false, modalQueue:[], retarget:null, curBattle:null, curAttack:null,
                      firstPlayer:'player', skipDrawSide:null, turnSeq:1, winner:null, player:makeSide('player'), enemy:makeSide('enemy'), mpActUses:0 });
   G.setup={ playerPreset:NET.decks.host, enemyPreset:NET.decks.guest }; G.setupSeq=(G.setupSeq||0)+1;
@@ -16462,33 +16485,58 @@ function renderSound(ac, kind){
       lg.gain.setValueAtTime(f0*m*.035,t); lg.gain.exponentialRampToValueAtTime(f0*m*.012,t+dur); l.connect(lg); lg.connect(o.frequency);
       g.gain.setValueAtTime(.0001,t); g.gain.exponentialRampToValueAtTime((gain||.09)*a,t+.012); g.gain.exponentialRampToValueAtTime(.0004,t+dur);
       o.connect(g); g.connect(out); o.start(t); o.stop(t+dur+.05); l.start(t); l.stop(t+dur+.05); }); };
+  // low rolling noise (lowpass-swept) — explosion tails, hull rumble, thruster roar.
+  const rumble=(dur,gain,f0,f1,delay)=>{ const t=t0+(delay||0); const n=Math.max(1,Math.floor(ac.sampleRate*dur)); const buf=ac.createBuffer(1,n,ac.sampleRate); const d=buf.getChannelData(0);
+    let last=0; for(let i=0;i<n;i++){ last=last*.82+(Math.random()*2-1)*.18; d[i]=last*3; }
+    const src=ac.createBufferSource(); src.buffer=buf; const f=ac.createBiquadFilter(); f.type='lowpass'; f.Q.value=.6; f.frequency.setValueAtTime(f0,t); f.frequency.exponentialRampToValueAtTime(Math.max(40,f1),t+dur);
+    const g=ac.createGain(); g.gain.setValueAtTime(.0001,t); g.gain.exponentialRampToValueAtTime(gain,t+.015); g.gain.exponentialRampToValueAtTime(.0004,t+dur);
+    src.connect(f); f.connect(g); g.connect(out); src.start(t); src.stop(t+dur+.02); };
+  // crackle: a scatter of tiny hard noise ticks — sparks, debris, the fizz on a beam hit.
+  const crackle=(dur,gain,delay,count)=>{ const k=count||14; for(let i=0;i<k;i++){ const d=(delay||0)+dur*Math.pow(i/k, 1.4)+Math.random()*.012; whoosh(.012+Math.random()*.018, (gain||.05)*(1-i/k*.6), 2600+Math.random()*3400, 1800, d); } };
+  // clank: struck armour plate — inharmonic partials with a fast, uneven decay.
+  const clank=(f,gain,delay)=>{ [[1,1,.28],[2.76,.55,.16],[5.4,.32,.09],[8.9,.18,.05]].forEach(([m,a,dur])=>tone(f*m,dur,{type:'triangle',gain:(gain||.1)*a,delay,atk:.001})); };
+  // siren: the bridge's "whoop" alert — a sawtooth that sweeps up and falls back.
+  const siren=(f0,f1,dur,gain,delay)=>{ tone(f0,dur*.7,{type:'sawtooth',gain:gain||.06,to:f1,lp:2400,delay,atk:.01}); tone(f1,dur*.3,{type:'sawtooth',gain:(gain||.06)*.8,to:f0*.9,lp:2000,delay:(delay||0)+dur*.7,atk:.005}); };
+  // squelch: a radio channel keying open/shut — a click and a short burst of band-limited static.
+  const squelch=(gain,delay)=>{ tone(2200,.012,{type:'square',gain:(gain||.05)*1.2,lp:5000,delay,atk:.001}); whoosh(.09,gain||.05,1900,1500,(delay||0)+.008); };
+  // brass: a held chord through a filter that opens (a soft "swell" like a horn section).
+  const brass=(fs,dur,gain,delay)=>fs.forEach((f,i)=>{ tone(f,dur,{type:'sawtooth',gain:(gain||.06)/(1+i*.25),lp:700,lpTo:2600,delay,atk:.05}); tone(f*1.004,dur,{type:'sawtooth',gain:(gain||.06)*.5/(1+i*.25),lp:600,lpTo:2200,delay,atk:.06}); });
+  // the beam rifle: the classic falling "bishuuun" — a bright swept square with vibrato, a crack at the muzzle and a
+  // fainter echo of itself (the anime's ringing tail).
+  const rifle=(gain,delay)=>{ const d=delay||0;
+    tone(3400,.34,{type:'square',gain:(gain||.1)*.75,to:330,lp:5200,lpTo:900,delay:d,atk:.002}); tone(3420,.3,{type:'sawtooth',gain:(gain||.1)*.35,to:420,lp:4200,lpTo:800,delay:d,atk:.002});
+    whoosh(.08,(gain||.1)*.8,5200,2600,d); tone(1700,.5,{type:'sine',gain:(gain||.1)*.25,to:1500,delay:d+.06,atk:.01});
+    tone(2600,.26,{type:'square',gain:(gain||.1)*.22,to:300,lp:3000,lpTo:700,delay:d+.14,atk:.004}); };
   if(kind==='deploy'){            // catapult sortie — the linear catapult charges, fires, thrusters roar, the suit lands
     servo(180,900,.34,.06); tone(240,.3,{type:'sawtooth',gain:.045,to:1300,lp:1600,lpTo:3200,atk:.02});
     whoosh(.42,.14,300,3000,.24); sub(72,.22,.16,.28); whoosh(.3,.06,2400,600,.46); ping(880,.14,.08,.5);
-  } else if(kind==='hit'){        // beam clash — zap bite + metallic ring + detonation body
-    zap(1900,240,.16,.13); tone(523,.2,{type:'triangle',gain:.10,to:392,delay:.02,atk:.002}); tone(370,.22,{type:'triangle',gain:.08,to:180,delay:.03,atk:.002}); sub(78,.24,.22,.02); whoosh(.2,.10,1800,300,.04);
-  } else if(kind==='ping'){       // beam rifle shot — the classic descending "pshew"
-    zap(2400,300,.14,.15); zap(1800,260,.12,.08,.05);
-  } else if(kind==='shield'){     // beam deflected off the shield — electric bzzt + glassy shimmer
-    tone(1180,.16,{type:'sawtooth',gain:.08,to:880,lp:5200,lpTo:2400,atk:.002}); ping(1568,.24,.12,.03); whoosh(.22,.09,2600,4200,.02); sub(140,.12,.08);
-  } else if(kind==='die'){        // mobile suit explodes — layered anime detonation with crackle
-    sub(50,.7,.32); tone(190,.55,{type:'triangle',gain:.16,to:40,lp:1500,lpTo:140,atk:.002});
-    whoosh(.5,.2,1400,100); whoosh(.3,.12,3000,400,.08); whoosh(.25,.08,2400,300,.2);
-    tone(120,.6,{type:'sawtooth',gain:.06,to:34,lp:800,lpTo:100,delay:.03});
-  } else if(kind==='direct'){     // hit on the mothership — bridge klaxon + heavy boom
-    klaxon(.08,0,2); sub(60,.6,.28,.05); whoosh(.55,.16,1200,160,.05); tone(170,.5,{type:'triangle',gain:.12,to:55,lp:1800,lpTo:250,delay:.05});
-  } else if(kind==='ui'){         // cockpit console beep
-    tone(1245,.07,{type:'square',gain:.07,lp:3200,atk:.003}); tone(1660,.05,{type:'square',gain:.04,lp:3600,delay:.06,atk:.003});
-  } else if(kind==='endphase'){   // comms sign-off — descending double beep + vernier hiss
-    tone(988,.1,{type:'square',gain:.07,lp:2600,atk:.004}); tone(740,.12,{type:'square',gain:.06,lp:2200,delay:.12,atk:.004}); whoosh(.25,.05,1500,500,.2);
-  } else if(kind==='bounce'){     // emergency retreat — vernier thrusters flare and doppler away
-    whoosh(.3,.1,500,3400); tone(340,.26,{type:'triangle',gain:.11,to:1100,lp:1600,lpTo:4200,atk:.004}); servo(700,380,.2,.05,.12);
+  } else if(kind==='hit'){        // a beam hits armour — the sizzling "bachi", a struck plate ringing, a short blast
+    zap(2200,260,.12,.12); crackle(.22,.05,.02,12); clank(410,.11,.03); sub(82,.26,.22,.03); rumble(.35,.14,1600,140,.05);
+  } else if(kind==='ping'){       // beam rifle shot — the falling "bishuuun" with its ringing echo
+    rifle(.12); sub(120,.14,.08,.02);
+  } else if(kind==='shield'){     // a beam splashes on the shield's anti-beam coat — a hard fizz, a deep gong, glassy scatter
+    tone(1300,.18,{type:'sawtooth',gain:.08,to:820,lp:6000,lpTo:2000,atk:.002}); crackle(.28,.06,0,16); clank(196,.12,.02);
+    whoosh(.3,.09,2600,6000,.02); ping(1568,.3,.07,.06); sub(110,.2,.14,.01);
+  } else if(kind==='die'){        // a mobile suit explodes — the blast, a beat, then the reactor goes ("DOOON") and debris rains
+    crackle(.12,.08,0,8); sub(70,.3,.24); whoosh(.25,.16,2600,500);
+    sub(42,1.1,.24,.16); tone(150,.8,{type:'triangle',gain:.12,to:34,lp:1200,lpTo:110,delay:.16,atk:.004});
+    rumble(1.3,.2,2200,90,.16); whoosh(.5,.14,1800,180,.18); crackle(.7,.04,.32,18);
+  } else if(kind==='direct'){     // the ship is hit — the bridge alarm whoops, a heavy hull impact, the frame groans
+    siren(420,940,.42,.07); siren(420,940,.42,.06,.44); sub(56,.7,.2,.06); rumble(1,.15,1400,110,.06);
+    clank(98,.12,.08); tone(160,.6,{type:'sawtooth',gain:.05,to:70,lp:700,lpTo:200,delay:.3,atk:.05});
+  } else if(kind==='ui'){         // cockpit console — the soft "pi-pi" of a panel key
+    tone(1318,.06,{type:'square',gain:.05,lp:2600,atk:.003}); tone(1976,.07,{type:'sine',gain:.05,delay:.065,atk:.003});
+  } else if(kind==='endphase'){   // comms sign-off — the channel keys, a falling two-tone "roger", the line closes
+    squelch(.05); tone(1175,.09,{type:'square',gain:.06,lp:2400,delay:.06,atk:.004}); tone(880,.13,{type:'square',gain:.05,lp:2000,delay:.17,atk:.004}); squelch(.04,.33);
+  } else if(kind==='bounce'){     // emergency retreat — the verniers roar and the suit dopplers away
+    rumble(.45,.16,500,2600); whoosh(.4,.1,600,4200); tone(520,.42,{type:'triangle',gain:.1,to:180,lp:2400,lpTo:700,delay:.08,atk:.006}); servo(700,380,.2,.04,.02);
   } else if(kind==='link'){       // Newtype flash — slide-whistle rise, the flexatone wobble, then the crystalline "kiin"
     tone(700,.2,{type:'sine',gain:.07,to:2600,atk:.01}); flex(1180,.14,1.1,.11); flex(1760,.2,.8,.05); kiin(.3); whoosh(.6,.05,4000,9000,.14); sub(55,.5,.12,.14);
-  } else if(kind==='pair'){       // pilot boards — hatch servo + cockpit confirm
-    servo(280,620,.24,.06); ping(660,.14,.1,.18); tone(880,.1,{type:'sine',gain:.05,delay:.26,atk:.004});
-  } else if(kind==='draw'){       // card draw — quick light upward slide
-    whoosh(.13,.06,1400,3600); ping(1046,.09,.08,.02);
+  } else if(kind==='pair'){       // pilot boards — the hatch thunks shut, the panoramic monitor powers up, HUD confirms
+    clank(150,.09); servo(280,620,.24,.05,.06); tone(300,.4,{type:'sine',gain:.06,to:1400,delay:.14,atk:.02});
+    [1318,1568,1976].forEach((f,i)=>tone(f,.06,{type:'square',gain:.035,lp:3000,delay:.4+i*.06,atk:.003}));
+  } else if(kind==='draw'){       // card draw — a card slides off the deck and the HUD logs it
+    whoosh(.12,.09,1200,3800); tone(1568,.06,{type:'square',gain:.05,lp:3200,delay:.07,atk:.003}); tone(2093,.08,{type:'sine',gain:.07,delay:.11,atk:.003});
   } else if(kind==='shuffle'){    // riffle shuffle — a run of quick card-edge flicks, then the squared-up tap
     for(let i=0;i<11;i++) whoosh(.045,.05+.02*(i%2),2600+((i*37)%5)*180,1500,i*.052);
     tone(180,.07,{type:'triangle',gain:.07,to:120,lp:900,atk:.004,delay:.64}); whoosh(.08,.05,1800,700,.66);
@@ -16497,10 +16545,11 @@ function renderSound(ac, kind){
   } else if(kind==='diceLand'){   // the dice settle — two short knocks on the table
     tone(300,.07,{type:'triangle',gain:.09,to:170,lp:1400,atk:.003}); whoosh(.05,.05,2200,900,0);
     tone(260,.06,{type:'triangle',gain:.07,to:150,lp:1200,atk:.003,delay:.09}); whoosh(.04,.04,2000,800,.09);
-  } else if(kind==='mill'){       // cards to trash — darker slide with a static tail
-    tone(520,.14,{type:'sine',gain:.10,to:280,lp:1800,lpTo:700,atk:.005}); whoosh(.2,.06,900,260); whoosh(.12,.03,2600,1400,.08);
-  } else if(kind==='burst'){      // shield Burst — alert klaxon into an energy release
-    klaxon(.06,0,1); zap(900,2600,.18,.1,.2); ping(1980,.22,.1,.24); sub(110,.2,.12,.2); whoosh(.3,.1,900,3800,.2);
+  } else if(kind==='mill'){       // cards to the trash — scrap sliding down a chute, a dull clatter, static
+    tone(480,.18,{type:'sine',gain:.08,to:240,lp:1600,lpTo:600,atk:.005}); whoosh(.22,.06,900,260); clank(260,.05,.12); crackle(.2,.025,.12,8);
+  } else if(kind==='burst'){      // shield Burst — a warning tone, the trap springs: energy screams up and releases
+    siren(500,1000,.3,.05); tone(300,.36,{type:'sawtooth',gain:.06,to:2600,lp:1800,lpTo:5200,delay:.18,atk:.02});
+    sub(90,.4,.24,.52); whoosh(.5,.13,900,5200,.5); ping(1976,.4,.1,.54); kiin(.58);
   } else if(kind==='attack'){     // attack declared — the mono-eye/visor flares ("pwuiin"), verniers kick in for the dash
     tone(560,.26,{type:'sine',gain:.08,to:1700,atk:.01}); tone(1700,.18,{type:'sine',gain:.04,to:1500,delay:.24,atk:.01});
     whoosh(.36,.12,380,2800,.08); sub(80,.14,.12,.08);
@@ -16554,11 +16603,13 @@ function renderSound(ac, kind){
     tone(1400,.5,{type:'sine',gain:.07,to:70,atk:.01}); whoosh(.45,.07,6000,300);
   } else if(kind==='spark'){      // a light hit — short beam crack and sparks
     zap(2200,600,.08,.08); whoosh(.1,.06,4200,2000,.02);
-  } else if(kind==='win'){        // triumphant fanfare — brassy rising arpeggio
-    [523,659,784,1047,1319].forEach((f,i)=>tone(f,.5,{type:'sawtooth',gain:.11,lp:2200,lpTo:3200,delay:i*.12,atk:.02}));
-    ping(2093,.6,.08,.62); whoosh(.5,.06,800,3000,.5);
-  } else if(kind==='lose'){       // power-down — the reactor dying, filter closing
-    [392,294,196].forEach((f,i)=>tone(f,.5,{type:'triangle',gain:.16,to:f*.86,lp:2400,lpTo:500,delay:i*.18})); whoosh(.6,.10,1400,200,.2); servo(300,120,.5,.05,.3);
+  } else if(kind==='win'){        // MISSION COMPLETE — a brass sting: the pickup, a rising line, the held major chord over timpani
+    [392,523,659].forEach((f,i)=>tone(f,.18,{type:'sawtooth',gain:.08,lp:1400,lpTo:2600,delay:i*.11,atk:.015}));
+    brass([523,659,784,1047],1.4,.07,.36); sub(65,.5,.22,.36); sub(65,.4,.16,.62); sub(98,.6,.2,.86);
+    ping(2093,.9,.07,.5); whoosh(.8,.05,800,4200,.4); kiin(.9);
+  } else if(kind==='lose'){       // MISSION FAILED — a dark minor chord, the reactor dying, the monitor going black
+    brass([220,262,330],1.2,.05,0); [392,294,196].forEach((f,i)=>tone(f,.6,{type:'triangle',gain:.12,to:f*.84,lp:2000,lpTo:400,delay:.2+i*.2}));
+    servo(300,110,.7,.05,.5); rumble(1.2,.12,900,80,.4); tone(1500,.5,{type:'sine',gain:.04,to:60,delay:1.1,atk:.01});
   }
 }
 let fxQueue = [];
@@ -16603,7 +16654,8 @@ function vfxDiff(){
   if (!G || !G.player || !G.enemy || !vfxLive()){ VFX.snap=null; return; }
   const cur=vfxSnap(), prev=VFX.snap; VFX.snap=cur;
   if (!VFX.raf) VFX.raf=requestAnimationFrame(vfxFlush);   // (also re-measures the cards, for the ones about to leave)
-  if (!prev || !prev.live || !cur.live || !VFX.on) return;   // setup (dealing, Shields, EX Base, mulligan) stays quiet
+  if (!prev || !prev.live || !cur.live) return;   // setup (dealing, Shields, EX Base, mulligan) stays quiet
+  // (with the effects switched off (✨) the events still run: their sounds play, nothing is drawn)
   const ev=[], remote = !!(NET.on && !NET.active);
   const now={}; for (const k in cur.sides) Object.assign(now, cur.sides[k].units);
   for (const k in prev.sides){ const P=prev.sides[k], C=cur.sides[k]; if (!C) continue;
@@ -16637,6 +16689,7 @@ function vfxZone(id){ try{ const r=el(id).getBoundingClientRect(); return r.widt
 function vxLayer(){ let l=document.getElementById('vfxLayer'); if (!l){ l=document.createElement('div'); l.id='vfxLayer'; document.body.appendChild(l); } return l; }
 function vxAt(r, cls, html, ms){
   const d=document.createElement('div'); d.className='vx '+cls;
+  if (!VFX.on) return d;   // effects off: sounds only
   d.style.left=r.left+'px'; d.style.top=r.top+'px'; d.style.width=r.width+'px'; d.style.height=r.height+'px';
   if (html) d.innerHTML=html; vxLayer().appendChild(d);
   setTimeout(()=>{ try{ d.remove(); }catch(e){} }, ms||1200); return d;
@@ -16700,7 +16753,7 @@ function vfxFlush(){
       case 'select': snd('select'); break;
     }
   }catch(x){} }
-  if (shake) screenShake();
+  if (shake && VFX.on) screenShake();
   // Remember where every card on the table is, for the ones that leave before the next look.
   try{ document.querySelectorAll('#enemyField .card[data-uid], #playerField .card[data-uid], #enemyBase .card[data-uid], #playerBase .card[data-uid]').forEach(n=>{
     const r=n.getBoundingClientRect(); if (r.width) VFX.rects.set(+n.dataset.uid, { left:r.left, top:r.top, width:r.width, height:r.height }); });
@@ -16710,6 +16763,7 @@ function vfxFlush(){
 // The Newtype flash: the screen whites out, a jagged bolt cracks across it through the Link Unit, the sky behind turns to
 // that shimmering Newtype space for a moment, and LINK comes up with the Pilot and the Unit.
 function vxNewtype(r, unit, pilot, lite){
+  if (!VFX.on) return;
   try{
     const W=window.innerWidth, H=window.innerHeight, cx=r.left+r.width/2, cy=r.top+r.height*.3;
     const bolt=(amp)=>{ const n=16, pts=[]; for (let i=0;i<=n;i++){ const x=i/n*W, near=Math.min(1, Math.abs(x-cx)/(W*.5));
@@ -16853,7 +16907,6 @@ function render(){
   if (_nothingLeft) el('endTurnBtn').classList.add('urge'); else el('endTurnBtn').classList.remove('urge');
   hideTargetArrow();
   el('cancelBtn').style.display = (G.mode!=='idle' && G.turn==='player' && !(G.mode==='discard' && !(G.pending&&G.pending.onCancel)) && !mandatoryChoiceMsg()) ? 'inline-block' : 'none';
-  try{ el('handShuffleBtn').disabled = G.over || G.player.hand.length<2 || (NET.on && NET.role==='spec'); }catch(e){}
   if (NET.on && NET.role==='spec'){   // a spectator sees neither hand: card backs only
     el('hand').innerHTML = _hn ? Array.from({length:Math.min(_hn,10)},(_,i)=>`<div class="fan-slot" style="margin-left:${i?-30:0}px"><div class="card" style="background:url('${handBackImg('player')}') center/cover"></div></div>`).join('') : '';
     el('peekOverlay').classList.remove('show');
@@ -16926,10 +16979,96 @@ function attachHandPeek(node){
   node.addEventListener('touchcancel', cancel);
   node.addEventListener('contextmenu', e=>e.preventDefault());  // no long-press copy/select menu
 }
+// ---- rearranging the hand: drag a card along the hand and drop it where you want it (mouse: press and slide; touch:
+// hold until the card blows up, then slide). Only the order of the cards you hold changes. Online, the order you chose is
+// kept on your screen while the other engine runs the game (HAND_PREF, re-applied to every state that arrives).
+const HAND_PREF=[];
+const HDRAG={ p:null, dropAt:0 };
+function handApplyPref(){
+  const h=G.player && G.player.hand; if (!h || !HAND_PREF.length || h.length<2) return;
+  const at=new Map(HAND_PREF.map((u,i)=>[u,i]));
+  const known=h.filter(c=>at.has(c.uid)).sort((a,b)=>at.get(a.uid)-at.get(b.uid)), fresh=h.filter(c=>!at.has(c.uid));
+  h.splice(0, h.length, ...known, ...fresh);   // new cards (just drawn) stay at the right end
+}
+function handDragOk(){ return !!(G && G.player && !G.over && !(NET.on && NET.role==='spec') && G.player.hand.length>1); }
+function handDragSlots(){ return [...el('hand').querySelectorAll('.fan-slot')].map(s=>{ const c=s.querySelector('.card[data-uid]'); return c ? { s, uid:+c.dataset.uid } : null; }).filter(Boolean); }
+function handDragStart(p, x, y){
+  const node=el('hand').querySelector(`.card[data-uid="${p.uid}"]`) || p.node; let w=96, h=134;   // the live card (a hold redraws the hand)
+  try{ w=node.offsetWidth||w; h=node.offsetHeight||h; }catch(e){}
+  const g=node.cloneNode(true); g.removeAttribute('id'); g.classList.add('hd-ghost'); g.classList.remove('playable','dim','selectable');
+  g.style.width=w+'px'; g.style.height=h+'px'; document.body.appendChild(g);
+  const mk=document.createElement('div'); mk.className='hd-mark'; document.body.appendChild(mk);
+  Object.assign(p, { started:true, ghost:g, mark:mk, w, h, to:null });
+  el('hand').classList.add('hd-dragging');
+  if (G.peekUid!=null){ G.peekUid=null; el('peekOverlay').classList.remove('show'); el('peekOverlay').innerHTML=''; }
+  sound('select', true);
+  handDragMove(p, x, y);
+}
+function handDragMove(p, x, y){
+  p.ghost.style.transform=`translate(${(x-p.w/2).toFixed(0)}px, ${(y-p.h*0.62).toFixed(0)}px) rotate(${Math.max(-8, Math.min(8, (x-p.x0)/30)).toFixed(1)}deg) scale(1.08)`;
+  const all=handDragSlots(), from=all.findIndex(o=>o.uid===p.uid); if (from<0) return;
+  all[from].s.classList.add('hd-src');
+  const others=all.filter(o=>o.uid!==p.uid).map(o=>o.s.getBoundingClientRect());
+  let to=others.filter(r=>r.left+r.width/2 < x).length;
+  p.to=to;
+  if (to===from || !others.length){ p.mark.style.display='none'; return; }
+  const row=el('hand').getBoundingClientRect();
+  const mx = to===0 ? others[0].left-3 : to>=others.length ? others[others.length-1].right+3 : (others[to-1].left+others[to-1].width/2 + others[to].left+others[to].width/2)/2;
+  Object.assign(p.mark.style, { display:'block', left:mx.toFixed(0)+'px', top:(row.top+4).toFixed(0)+'px', height:Math.max(20, row.height-8).toFixed(0)+'px' });
+}
+function handDragEnd(p, drop){
+  HDRAG.p=null;
+  if (!p.started) return;
+  HDRAG.dropAt=Date.now();
+  try{ p.ghost.remove(); p.mark.remove(); }catch(e){}
+  el('hand').classList.remove('hd-dragging');
+  el('hand').querySelectorAll('.hd-src').forEach(x=>x.classList.remove('hd-src'));
+  const h=G.player && G.player.hand, from=h ? h.findIndex(c=>c.uid===p.uid) : -1;
+  if (drop && from>=0 && p.to!=null && p.to!==from && handDragOk()){
+    const [c]=h.splice(from,1); h.splice(Math.min(p.to, h.length), 0, c);
+    HAND_PREF.splice(0, HAND_PREF.length, ...h.map(x=>x.uid));
+    sound('rest', true);
+  }
+  render();
+}
+function attachHandDrag(node){
+  const uidv=+node.dataset.uid;
+  node.addEventListener('dragstart', e=>e.preventDefault());   // no browser image-drag
+  // Mouse / pen: press and slide.
+  node.addEventListener('pointerdown', e=>{
+    if (e.pointerType==='touch' || e.button>0 || !handDragOk() || HDRAG.p) return;
+    const p=HDRAG.p={ uid:uidv, node, x0:e.clientX, y0:e.clientY, started:false };
+    const mv=ev=>{ if (HDRAG.p!==p) return;
+      if (!p.started){ if (Math.hypot(ev.clientX-p.x0, ev.clientY-p.y0)<7) return; handDragStart(p, ev.clientX, ev.clientY); }
+      else handDragMove(p, ev.clientX, ev.clientY); ev.preventDefault(); };
+    const up=ev=>{ window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up);
+      if (HDRAG.p===p) handDragEnd(p, ev.type==='pointerup'); };
+    window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
+  });
+  // Touch: hold until the card blows up, then slide. A quick swipe stays a scroll / a tap. The listeners sit on the card
+  // itself: the hand is redrawn while the finger is down, and a touch keeps talking to the card it started on.
+  node.addEventListener('touchstart', e=>{
+    if (!handDragOk() || HDRAG.p || e.touches.length!==1) return;
+    const t=e.touches[0]; HDRAG.p={ uid:uidv, node, x0:t.clientX, y0:t.clientY, t0:Date.now(), started:false, touch:true };
+  }, {passive:true});
+  node.addEventListener('touchmove', e=>{
+    const p=HDRAG.p; if (!p || p.node!==node) return;
+    const t=e.touches[0]; if (!t) return;
+    if (!p.started){
+      if (Math.hypot(t.clientX-p.x0, t.clientY-p.y0)<8) return;
+      if (Date.now()-p.t0<220){ HDRAG.p=null; return; }   // moved before the hold: a scroll, not a drag
+      handDragStart(p, t.clientX, t.clientY);
+    } else handDragMove(p, t.clientX, t.clientY);
+    if (e.cancelable) e.preventDefault();
+  }, {passive:false});
+  const tend=e=>{ const p=HDRAG.p; if (!p || p.node!==node) return; handDragEnd(p, e.type==='touchend'); };
+  node.addEventListener('touchend', tend); node.addEventListener('touchcancel', tend);
+}
 function bind(){
   el('hand').querySelectorAll('.card').forEach(n=> {
     n.onclick=()=>{
       if(_lpFired){ _lpFired=false; return; }
+      if(Date.now()-HDRAG.dropAt<450) return;   // the release that ended a drag isn't a tap
       const c=G.player.hand.find(x=>x.uid===+n.dataset.uid);
       if(G.mode==='discard'){
         if(!c) return;
@@ -16950,7 +17089,7 @@ function bind(){
       // or play/target while resolving a mode. Holding the card blows it up (attachHandPeek).
       if(G.mode==='idle') inspect(c); else playFromHand(+n.dataset.uid);
     };
-    attachHandPeek(n);
+    attachHandPeek(n); attachHandDrag(n);
   });
   el('playerField').querySelectorAll('.card').forEach(n=>{ n.onclick=()=>{ if(_lpFired){ _lpFired=false; return; } fieldClick(+n.dataset.uid); }; attachLongPress(n, ()=>{ const c=G.player.field.find(x=>x.uid===+n.dataset.uid); if(c) inspect(c); }); });
   el('enemyField').querySelectorAll('.card').forEach(n=>{ n.onclick=()=>{ if(_lpFired){ _lpFired=false; return; } fieldClick(+n.dataset.uid); }; attachLongPress(n, ()=>{ const c=G.enemy.field.find(x=>x.uid===+n.dataset.uid); if(c) inspect(c); }); });
@@ -17100,16 +17239,6 @@ el('logHeader').addEventListener('click', ()=>{
 // Phones start with the log minimized — open, it would cover the hand and the End Turn row.
 if (typeof matchMedia==='function' && matchMedia('(max-width: 820px), (max-height: 560px)').matches){ el('logPanel').classList.add('collapsed'); el('logToggle').textContent='▸'; }
 el('cancelBtn').addEventListener('click', ()=>cancelAction());
-// Shuffle your hand: the cards you hold change order (the deck is untouched). Not while a hand card is being aimed — the
-// play in progress remembers the card by its place in the hand.
-el('handShuffleBtn').addEventListener('click', ()=>{
-  if (G.over || !G.player) return;
-  if (NET.on && NET.role==='spec') return;
-  if (G.player.hand.length<2){ flashPrompt('Nothing to shuffle — you hold fewer than 2 cards.'); return; }
-  if (G.mode!=='idle' && G.mode!=='discard'){ flashPrompt('Finish your current action first.'); return; }
-  shuffle(G.player.hand); G.peekUid=null;
-  sound('shuffle'); log('You shuffle your hand.', 'me'); render();
-});
 // The choice on the table can't be backed out of: a triggered effect that isn't "you may" must choose its target, and a
 // "Choose 1 to N" must take at least one. Returns the message to show instead of cancelling, or null when Cancel is allowed.
 // A Command mid-aim always goes back to hand, and a choice whose every candidate has since left play is simply skipped.
