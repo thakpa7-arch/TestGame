@@ -12,6 +12,7 @@ Run everything from this directory. Scripts read the game from `../gundam-card-g
     node keywords_check.js            # keyword mechanics vs their reminder text
     node while_check.js               # "While <cond>, …" continuous abilities
     node optcost_check.js             # an optional cost (discard / self-damage / exile) isn't offered when its effect has nothing to hit
+    node sazabi_check.js              # Sazabi GD05-049/052 sacrifices; the sacrificed Unit's 【Destroyed】 waits until Sazabi's effect is done
     node qub2.js; node qub3.js        # Qubeley token payoff + duel
     node pool_check.js                # pool-wide cards that needed bespoke engine support
     node review_check.js              # regressions for the adversarial-review findings (one case per finding)

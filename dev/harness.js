@@ -76,7 +76,7 @@ src += '\nglobal.__G = { ' + [
   'applyToTarget','onKillMatches','gd05NuBattleResolve','gd05NuGundamBattlePlayer','autoDiscard','parseClause','parseCondition',
   'matchTrashTrait','trashCount','refreshTrashStats','deployUnit',
   'preventsLowApBattle','lureTargets','endTurnChoices','useSupport','enemyCardDestroyed','duringPairMet','pilotReqOf','hasKeywordEffect','resolveDestroyedAct','playerDiscard','finishEndPhase',
-  'digDeploy','finishMultiDamage','gd05AxisDeploy','gd05AxisDeployable','gd05DeployBaseFromTrash',
+  'digDeploy','finishMultiDamage','gd05AxisDeploy','selfSacMillAI','gd05AxisDeployable','gd05DeployBaseFromTrash',
   'effBreach','repairAmount','supportAmount','parseTokenSpecs','effUntargetable','effSupport',
   'activateCostPayable','linkDenyBlockerHook','battleBounceHook','effectRest','preventsWeakBattleDamage',
   'gatedAttackAction','pairFromHand','pilotMainAction','triggerBurst','burstResolvePlayer','returnToHand',

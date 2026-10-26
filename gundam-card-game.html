@@ -755,6 +755,11 @@
   @keyframes vxBounceDown { 0%{ transform: none; opacity: 1; } 100%{ transform: translateY(160px) scale(.5) rotate(8deg); opacity: 0; } }
   .vx-exile .gimg { filter: sepia(1) hue-rotate(150deg) saturate(3) brightness(1.2); animation: vxExile .95s steps(9) forwards; }
   .vx-exile .scan { inset: 0; border-radius: 10px; background: repeating-linear-gradient(0deg, rgba(103,232,249,.55) 0 2px, transparent 2px 5px); animation: vxFade .95s ease-out forwards; }
+  /* a replaced Base: the clamps let go and it slides off its berth, dimming */
+  .vx-undock .gimg { animation: vxUndockUp .9s cubic-bezier(.5,0,.8,.4) forwards; } .vx-undock.down .gimg { animation-name: vxUndockDown; }
+  .vx-undock .clamp { inset: -3px; border-radius: 12px; border: 2px solid rgba(251,191,36,.85); box-shadow: 0 0 12px rgba(251,191,36,.6); animation: vxFade .5s ease-out forwards; }
+  @keyframes vxUndockUp { 0%{ transform: none; opacity: 1; filter: none; } 18%{ transform: translateY(3px); } 100%{ transform: translateY(-70px) scale(.85); opacity: 0; filter: brightness(.4) grayscale(.7); } }
+  @keyframes vxUndockDown { 0%{ transform: none; opacity: 1; filter: none; } 18%{ transform: translateY(-3px); } 100%{ transform: translateY(70px) scale(.85); opacity: 0; filter: brightness(.4) grayscale(.7); } }
   @keyframes vxExile { 0%{ clip-path: inset(0 0 0 0); opacity: 1; } 100%{ clip-path: inset(48% 0 48% 0); opacity: 0; } }
   /* Shields shatter into shards; a Shield placed shimmers in */
   .vx-shatter .flash { inset: 0; border-radius: 10px; background: radial-gradient(circle, rgba(255,255,255,.9), rgba(147,197,253,.5) 45%, transparent 75%); animation: vxCore .45s ease-out forwards; }
@@ -3792,7 +3797,7 @@ function destroyShieldArea(card, side, n, label, done){
   if (G.over){ render(); if (done) done(); return; }
   let k=0; const revealed=[];
   if (n>0 && foe.base){ const b=foe.base; foe.base=null; fx('die', b.uid); sendToTrash(b, foe); k++;
-    log(`${label}: <b>${card.name}</b> destroys ${who(foe)}'s <b>${b.name}</b> base.`, cls);
+    log(`${label}: <b>${card.name}</b> destroys ${whose(foe)} <b>${b.name}</b> base.`, cls);
     if (!b.token) whenModalFree(()=>fireDestroyed(b, foe)); }
   while (k<n && foe.shields.length){ k++; revealed.push(foe.shields.pop()); foe.breakingShield=true; fx('shield');
     log(`${label}: <b>${card.name}</b> destroys a ${who(foe)} shield (${foe.shields.length} left).`, cls); }
@@ -5396,7 +5401,7 @@ function applyToTarget(card, side, act, target, label){
     unitToDeckBottom(target, foe, name);                                        // its paired Pilot goes with it (3-3-6)
   }
   else if (act.kind==='destroy' && target===foe.base){
-    const b=target; foe.base=null; fx('die', b.uid); sendToTrash(b, foe); log(`${label}: <b>${name}</b> destroys ${who(foe)}'s <b>${b.name}</b> base.`, cls);
+    const b=target; foe.base=null; fx('die', b.uid); sendToTrash(b, foe); log(`${label}: <b>${name}</b> destroys ${whose(foe)} <b>${b.name}</b> base.`, cls);
     if (!b.token) whenModalFree(()=>fireDestroyed(b, foe)); }
   else if (act.kind==='destroy' && effDestroyGuarded(target, foe, side)){ /* Kindhearted: it can't be destroyed by enemy effects */ }
   else if (act.kind==='destroy'){ log(`${label}: <b>${name}</b> destroys <b>${target.name}</b>.`,cls); const i=foe.field.indexOf(target); if(i>=0)foe.field.splice(i,1); fx('die',target.uid); sendToTrash(target,foe); fireDestroyed(target, foe); }
@@ -6154,7 +6159,9 @@ function playerTrashRetrieve(card, side, act, label, after){
 }
 // Destroy a Unit as the result of a card effect; when by your own (Neo Zeon) effect, set the turn
 // flag (for Axis) and apply Jagd-Doga-style trash-return. `cause` 'cost' = destroyed to pay a cost (not "by an effect").
-function gd05DestroyUnit(u, owner, byOwnNeoZeon, cause){
+// `defer` (an array): the destroyed Unit's 【Destroyed】 waits until the effect that destroyed it has finished
+// (Sazabi mills / makes the opponent destroy first) — queued here, run with runDeferred.
+function gd05DestroyUnit(u, owner, byOwnNeoZeon, cause, defer){
   const i=owner.field.indexOf(u); if(i<0) return; owner.field.splice(i,1);
   const cls=owner===G.player?'me':'ai';
   fx('die', u.uid); log(`<b>${u.name}</b> is destroyed.`, cls);
@@ -6162,11 +6169,15 @@ function gd05DestroyUnit(u, owner, byOwnNeoZeon, cause){
   if (byOwnNeoZeon) owner.neoZeonSelfKill=true;
   // Its 【Destroyed】 (and its Pilot's), plus the "destroyed by an effect" watchers (Alpha Azieru) and a 【Destroyed】 it
   // gained this turn (At the Risk of One's Life) — the same path as any other destroy effect.
-  { const pc=G.destroyCause; G.destroyCause = cause||'effect'; try { fireDestroyed(u, owner); } finally { G.destroyCause=pc; } }
-  if (byOwnNeoZeon && gd05ReturnsOnSelfKill(u)){
-    const ti=owner.trash.indexOf(u); if(ti>=0){ owner.trash.splice(ti,1); resetUnit(u); owner.hand.push(u); log(`<b>${u.name}</b> returns from trash to ${owner===G.player?'your':'its'} hand.`, cls); }
-  }
+  const fire=()=>{
+    { const pc=G.destroyCause; G.destroyCause = cause||'effect'; try { fireDestroyed(u, owner); } finally { G.destroyCause=pc; } }
+    if (byOwnNeoZeon && gd05ReturnsOnSelfKill(u)){
+      const ti=owner.trash.indexOf(u); if(ti>=0){ owner.trash.splice(ti,1); resetUnit(u); owner.hand.push(u); log(`<b>${u.name}</b> returns from trash to ${owner===G.player?'your':'its'} hand.`, cls); }
+    }
+  };
+  if (defer) defer.push(fire); else fire();
 }
+function runDeferred(list){ while (list && list.length) list.shift()(); }
 // GD05-052 Sazabi 【Deploy】: "You MAY choose 1 of your other Units. Destroy it. If you do, place the
 // top N into your trash and add 1 milled (Neo Zeon) Unit to hand." The sacrifice is the gate — no
 // sacrifice, no mill. Shared mill+retrieve once the sacrifice is paid; returns the milled cards that
@@ -6189,12 +6200,14 @@ function selfSacMillAI(side, card, act){
   if (!free && val(sac)>6) return;                              // don't pitch a genuinely good Unit
   const cls=side===G.player?'me':'ai';
   log(`<b>${card.name}</b>: the AI destroys its <b>${sac.name}</b>.`, cls);
-  gd05DestroyUnit(sac, side, true);                            // its own (Neo Zeon) effect → Axis flag, Quess, trash-return
+  const later=[];
+  gd05DestroyUnit(sac, side, true, null, later);               // its own (Neo Zeon) effect → Axis flag, Quess, trash-return
   const nz=selfSacMillResolve(side, card, act);
   if (nz.length){
     const best=[...nz].sort((a,b)=>((b.baseAp||0)+(b.baseHp||0))-((a.baseAp||0)+(a.baseHp||0)))[0];
     const ti=side.trash.indexOf(best); if (ti>=0){ side.trash.splice(ti,1); resetUnit(best); side.hand.push(best); log(`<b>${card.name}</b>: the AI adds <b>${best.name}</b> to its hand.`, cls); }
   }
+  runDeferred(later);
   render();
 }
 // Player: pick which of your Units to sacrifice (or decline), then choose which milled Unit to keep.
@@ -6207,16 +6220,17 @@ function selfSacMillPlayer(card, side, act, after){
     (pick)=>{
       if (!pick){ fin(); return; }                             // declined the "may"
       log(`<b>${card.name}</b>: you destroy your <b>${pick.name}</b>.`, 'me');
-      gd05DestroyUnit(pick, side, true);
+      const later=[];
+      gd05DestroyUnit(pick, side, true, null, later);          // its 【Destroyed】 resolves after the mill + add
       const nz=selfSacMillResolve(side, card, act);
       if (nz.length){
         showLookAtTop(nz, `${card.name}: add 1 ${act.retrieveFilter||'Unit'} you placed in your trash to your hand`, ()=>true, true, (chosen)=>{
           if (chosen){ const ti=side.trash.indexOf(chosen); if (ti>=0){ side.trash.splice(ti,1); resetUnit(chosen); side.hand.push(chosen); log(`<b>${card.name}</b>: you add <b>${chosen.name}</b> to hand.`, 'me'); } }
-          render(); fin();
+          runDeferred(later); render(); fin();
         });
         return;
       }
-      render(); fin();
+      runDeferred(later); render(); fin();
     }, "Don't destroy");
 }
 // Units not in the current battle (the attacking Unit and the Unit it attacks are battling).
@@ -6237,20 +6251,21 @@ function gd05Sacrifice(side, sourceCard, after){
   const victim=foeCands.length ? [...foeCands].sort((a,b)=>val(a)-val(b))[0] : null;   // the opponent will lose (at least) their weakest
   if (!free && victim && val(sac) > val(victim)){ fin(); return; }   // don't sacrifice a better Unit than you remove
   log(`<b>${sourceCard.name}</b>: ${side===G.player?'you destroy your':'the AI destroys its'} <b>${sac.name}</b>.`, cls);
-  gd05DestroyUnit(sac, side, true);
+  const later=[];                                              // both 【Destroyed】s wait for the whole effect
+  gd05DestroyUnit(sac, side, true, null, later);
   const left=nonBattlingUnits(foe);
-  if (!left.length){ render(); fin(); return; }
+  if (!left.length){ runDeferred(later); render(); fin(); return; }
   if (foe===G.player){   // the player chooses which of their non-battling Units to destroy
     promptTargetChoice(left, `<b>${sourceCard.name}</b> 【Attack】 — the AI destroyed its <b>${sac.name}</b>. Choose 1 of your non-battling Units to destroy.`, (t)=>{
       if (!t || !G.player.field.includes(t)) t=nonBattlingUnits(G.player)[0];
-      if (t){ log(`<b>${sourceCard.name}</b>: you destroy your <b>${t.name}</b>.`, 'me'); gd05DestroyUnit(t, G.player, false); }
-      render(); checkEnd(); fin(); }, null);
+      if (t){ log(`<b>${sourceCard.name}</b>: you destroy your <b>${t.name}</b>.`, 'me'); gd05DestroyUnit(t, G.player, false, null, later); }
+      runDeferred(later); render(); checkEnd(); fin(); }, null);
     return;
   }
   const v=[...left].sort((a,b)=>val(a)-val(b))[0];
   log(`<b>${sourceCard.name}</b>: the AI destroys its <b>${v.name}</b>.`, 'ai');
-  gd05DestroyUnit(v, foe, false);
-  render(); fin();
+  gd05DestroyUnit(v, foe, false, null, later);
+  runDeferred(later); render(); fin();
 }
 // Player-interactive Sazabi sacrifice: you pick which of your Units to destroy (or decline). The AI's
 // own Sazabi: the AI decides, and you choose your non-battling Unit (gd05Sacrifice).
@@ -6309,9 +6324,11 @@ function gd05SacResolve(uid){
     const sac=G.player.field.find(c=>c.uid===uid);
     if (sac){
       log(`<b>${src.name}</b>: you destroy your <b>${sac.name}</b>.`, 'me');
-      gd05DestroyUnit(sac, G.player, true);
+      const later=[];                                          // 【Destroyed】s wait until the AI has destroyed its Unit too
+      gd05DestroyUnit(sac, G.player, true, null, later);
       const victim=nonBattlingUnits(G.enemy).sort((a,b)=>(((a.baseAp||0)+(a.baseHp||0))+(a.pilot?5:0))-(((b.baseAp||0)+(b.baseHp||0))+(b.pilot?5:0)))[0];   // the AI's choice, among its non-battling Units
-      if (victim){ log(`<b>${src.name}</b>: the AI destroys its <b>${victim.name}</b>.`, 'ai'); gd05DestroyUnit(victim, G.enemy, false); }
+      if (victim){ log(`<b>${src.name}</b>: the AI destroys its <b>${victim.name}</b>.`, 'ai'); gd05DestroyUnit(victim, G.enemy, false, null, later); }
+      runDeferred(later);
     }
   }
   render(); checkEnd();
@@ -6472,7 +6489,7 @@ function g4DamageBase(card, side, act, label){
   const cls=side===G.player?'me':'ai', foe=side===G.player?G.enemy:G.player, b=foe.base;
   G.effSrc=card;
   if (!b || b.hp<=0){ log(`${label}: <b>${card.name}</b> — ${foe===G.player?'you have':who(foe)+' has'} no Base to damage.`, cls); return; }
-  if (baseGuarded(foe, card.type==='unit'?card:null, false)){ log(`${who(foe)}'s <b>${b.name}</b> can't receive that damage.`, cls); return; }
+  if (baseGuarded(foe, card.type==='unit'?card:null, false)){ log(`${whose(foe,true)} <b>${b.name}</b> can't receive that damage.`, cls); return; }
   const amt=shieldAreaEffDamage(foe, act.amount); if (amt<=0) return;
   b.hp-=amt; floatNum(b.uid,'-'+amt,'#ff6b5e');
   log(`${label}: <b>${card.name}</b> deals ${amt} to ${foe===G.player?'your':who(foe)+"'s"} <b>${b.name}</b> Base.`, cls);
@@ -6633,11 +6650,11 @@ function selfRestNow(card, side, label){
 function damageEnemyBase(card, side, amt0, label){
   const cls=side===G.player?'me':'ai', foe=side===G.player?G.enemy:G.player, b=foe.base;
   if (!b || b.hp<=0){ log(`${label}: <b>${card.name}</b> — ${who(foe)} has no Base.`, cls); return; }
-  if (baseGuarded(foe, card.type==='unit'?card:null, false)){ log(`${who(foe)}'s <b>${b.name}</b> can't receive that damage.`, cls); return; }
+  if (baseGuarded(foe, card.type==='unit'?card:null, false)){ log(`${whose(foe,true)} <b>${b.name}</b> can't receive that damage.`, cls); return; }
   const amt=shieldAreaEffDamage(foe, amt0); if (amt<=0) return;
   G.effSrc=card; b.hp-=amt; floatNum(b.uid,'-'+amt,'#ff6b5e');
-  log(`${label}: <b>${card.name}</b> deals ${amt} to ${who(foe)}'s <b>${b.name}</b> base.`, cls);
-  if (b.hp<=0){ foe.base=null; fx('die', b.uid); sendToTrash(b, foe); log(`${who(foe)}'s ${b.name} base is destroyed.`, cls);
+  log(`${label}: <b>${card.name}</b> deals ${amt} to ${whose(foe)} <b>${b.name}</b> base.`, cls);
+  if (b.hp<=0){ foe.base=null; fx('die', b.uid); sendToTrash(b, foe); log(`${whose(foe,true)} ${b.name} base is destroyed.`, cls);
     if (!b.token) whenModalFree(()=>fireDestroyed(b, foe)); if (card.type==='unit') enemyCardDestroyed(card, side, 'base'); }
   else fx('hit', b.uid);
 }
@@ -7128,7 +7145,7 @@ function runTrigger(card, side, act, label){
     gd06DigPair(card, side, act, label, null);
   } else if (act.kind==='destroyEnemyBase'){
     // "destroy every enemy player's Base" (Gundam GP02A 【When Paired】)
-    if (foe.base){ const b=foe.base; foe.base=null; fx('die', b.uid); sendToTrash(b, foe); log(`${label}: <b>${name}</b> destroys ${who(foe)}'s <b>${b.name}</b> base.`, cls); if (!b.token) fireDestroyed(b, foe); }
+    if (foe.base){ const b=foe.base; foe.base=null; fx('die', b.uid); sendToTrash(b, foe); log(`${label}: <b>${name}</b> destroys ${whose(foe)} <b>${b.name}</b> base.`, cls); if (!b.token) fireDestroyed(b, foe); }
     else log(`${label}: <b>${name}</b> — the enemy has no Base.`, cls);
   } else if (act.kind==='pilotMain'){
     const inner = pilotMainAction(card);
@@ -9364,6 +9381,8 @@ function lockActions(ms=500){
 }
 function makeSide(who){ return { who, deck:[], hand:[], field:[], shields:[], trash:[], exile:[], base:null, resourceDeck:RES_MAX, resMax:0, resAvail:0, ex:0 }; }
 function me(){ return G.turn==='player' ? G.player : G.enemy; }
+// "Your" / "your" for the player (never "You's"), the opponent's name + 's otherwise.
+function whose(side, cap){ const n=who(side); return n==='You' ? (cap?'Your':'your') : n+"'s"; }
 function who(side){ if (NET.on) return side===G.player ? (NET.role==='spec' ? NET.names.host : 'You') : (mpOppName() || 'Opponent'); return side===G.player ? 'You' : (G.enemyDeckName || 'The AI'); }
 
 const el = id => document.getElementById(id);
@@ -11926,7 +11945,7 @@ function aiBlockStep(atk, target){
     return null;
   }
   const blk = pickAiBlocker(atk, blockers, target);
-  blk.rested=true; log(`${who(G.enemy)}'s <b>${blk.name}</b> &lt;Blocker&gt; intercepts${target?'':' your attack'}!`, 'ai');
+  blk.rested=true; log(`${whose(G.enemy,true)} <b>${blk.name}</b> &lt;Blocker&gt; intercepts${target?'':' your attack'}!`, 'ai');
   afterBlockDeclared(blk, G.enemy); G.curBattle={ atk, def:blk, blk, orig:target };
   aiBattleRedirect(blk, atk);
   return blk;
@@ -11995,8 +12014,8 @@ function strikePlayer(atk, defSide, done){
     // same time — unless the attacker has <First Strike> and destroys it first (8-5-2-4-2, 13-1-5-2).
     const b=defSide.base;
     let baseHit=false;
-    const hitBase=()=>{ if (baseGuarded(defSide, atk, true) || shieldGuarded(defSide, atk)){ log(`${who(defSide)}'s <b>${b.name}</b> can't receive battle damage from <b>${atk.name}</b>.`, side); return; }
-      b.hp-=ap; baseHit=true; floatNum(b.uid,'-'+ap,'#ff6b5e'); log(`<b>${atk.name}</b> hits ${who(defSide)}'s <b>${b.name}</b> base for ${ap}.`, side); };
+    const hitBase=()=>{ if (baseGuarded(defSide, atk, true) || shieldGuarded(defSide, atk)){ log(`${whose(defSide,true)} <b>${b.name}</b> can't receive battle damage from <b>${atk.name}</b>.`, side); return; }
+      b.hp-=ap; baseHit=true; floatNum(b.uid,'-'+ap,'#ff6b5e'); log(`<b>${atk.name}</b> hits ${whose(defSide)} <b>${b.name}</b> base for ${ap}.`, side); };
     const hitBack=()=>{ const d=Math.max(0, (b.baseAp!=null ? effAp(b) : b.ap)||0); if (d>0 && atkSide.field.includes(atk)) damage(atk, d, atkSide, 'battle', b); };
     if (effFirstStrike(atk)){ hitBase(); if (b.hp>0) hitBack(); } else { hitBase(); hitBack(); }
     // Izuma Colony GD04-126: "When this Base receives battle damage from an enemy Unit with N or less AP, deal M damage to that Unit."
@@ -12004,7 +12023,7 @@ function strikePlayer(atk, defSide, done){
         G.effSrc=b; log(`<b>${b.name}</b>: deals ${w.amount} damage to <b>${atk.name}</b> (${ap} AP attacker).`, defSide===G.player?'me':'ai'); damage(atk, w.amount, atkSide); } }
     const cont=()=>{
       if (b.hp<=0){
-        defSide.base=null; fx('die', b.uid); log(`${who(defSide)}'s ${b.name} base is destroyed.`, side); sendToTrash(b, defSide);
+        defSide.base=null; fx('die', b.uid); log(`${whose(defSide,true)} ${b.name} base is destroyed.`, side); sendToTrash(b, defSide);
         if (!b.token) whenModalFree(()=>fireDestroyed(b, defSide));   // the Base's own 【Destroyed】 (5th Luna, Freeden, Armory One…)
         enemyCardDestroyed(atk, atkSide, 'base');
         // The base is a shield-area card, so destroying it triggers "on shield break" effects (Sinanju).
@@ -13365,11 +13384,11 @@ function breachShield(atk, defSide){
   const amt=shieldAreaEffDamage(defSide, effBreach(atk));   // <Breach> is effect damage to the shield area
   if (amt<=0) return;
   if (shieldGuarded(defSide, atk)){ log(`${who(defSide)} shield area cards can't receive damage from <b>${atk.name}</b> during this battle.`, side); return; }
-  if (defSide.base && baseGuarded(defSide, atk, false)){ log(`${who(defSide)}'s <b>${defSide.base.name}</b> can't receive that damage.`, side); return; }
+  if (defSide.base && baseGuarded(defSide, atk, false)){ log(`${whose(defSide,true)} <b>${defSide.base.name}</b> can't receive that damage.`, side); return; }
   if (defSide.base){
     const b=defSide.base; b.hp-=amt; floatNum(b.uid,'-'+amt,'#ff6b5e');
-    log(`<b>${atk.name}</b> &lt;Breach ${amt}&gt; hits ${who(defSide)}'s <b>${b.name}</b> base for ${amt}.`, side);
-    if (b.hp<=0){ defSide.base=null; fx('die', b.uid); sendToTrash(b, defSide); log(`${who(defSide)}'s ${b.name} base is destroyed by Breach.`, side); if (!b.token) whenModalFree(()=>fireDestroyed(b, defSide)); enemyCardDestroyed(atk, atkSide, 'base');
+    log(`<b>${atk.name}</b> &lt;Breach ${amt}&gt; hits ${whose(defSide)} <b>${b.name}</b> base for ${amt}.`, side);
+    if (b.hp<=0){ defSide.base=null; fx('die', b.uid); sendToTrash(b, defSide); log(`${whose(defSide,true)} ${b.name} base is destroyed by Breach.`, side); if (!b.token) whenModalFree(()=>fireDestroyed(b, defSide)); enemyCardDestroyed(atk, atkSide, 'base');
       resolveShieldBreakTrigger(atk, defSide, null, true); }   // "when this Unit destroys an enemy shield area card with damage" (Dragon Gundam, Q361)
     else fx('hit', b.uid);
     return;
@@ -15439,7 +15458,7 @@ function offerPlayerActionStep(attacker, cb){
   const atkSide = attacker ? (G.player.field.includes(attacker) ? G.player : G.enemy) : null;
   if (attacker) render();   // the attack is on the table: the attacker, what it is hitting (or the Blocker), and the arrow between them
   el('blockMsg').innerHTML = attacker
-    ? `<div class="bat-host"></div><b>Action Step</b> — ${who(atkSide)}'s <b>${attacker.name}</b> (AP ${attacker.ap}) is attacking. Use an Action ability/command, or Pass.`
+    ? `<div class="bat-host"></div><b>Action Step</b> — ${whose(atkSide)} <b>${attacker.name}</b> (AP ${attacker.ap}) is attacking. Use an Action ability/command, or Pass.`
     : `<b>End Phase — Action Step.</b> Use an Action ability/command before the Repair Step, or Pass.`;
   if (attacker){ const cb=G.curBattle && G.curBattle.atk===attacker ? G.curBattle : null, blk=cb && cb.blk && cb.def===cb.blk ? cb.blk : null;
     battleStripShow(attacker, blk ? (cb.orig||null) : (cb ? cb.def : null), blk); }
@@ -15559,7 +15578,7 @@ function promptPlayerBlock(atk, blockers, target, cb){
   render();   // the attack is on the table: the attacker, what it is hitting, and the arrow between them
   const tgtTxt = target ? `your <b>${target.name}</b>` : (G.player.base ? `your <b>${G.player.base.name}</b> base` : 'you directly');
   // The battle drawn in the dialog (attacker ➜ target), then each <Blocker> as its card: tap one to block with it, its ⓘ to read it.
-  el('blockMsg').innerHTML = `<div class="bat-host"></div>${who(G.enemy)}'s <b>${atk.name}</b> (AP ${atk.ap}) attacks ${tgtTxt}. Intercept with a &lt;Blocker&gt;?`;
+  el('blockMsg').innerHTML = `<div class="bat-host"></div>${whose(G.enemy,true)} <b>${atk.name}</b> (AP ${atk.ap}) attacks ${tgtTxt}. Intercept with a &lt;Blocker&gt;?`;
   battleStripShow(atk, target, null);
   const wrap=el('blockBtns'); wrap.innerHTML='';
   const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -16154,7 +16173,7 @@ function mpBlockStep(atk, target, cont){
   mpHop('block', { atk, target, blockers }, res=>{
     const blk = res && res.blk!=null ? blockers.find(b=>b.uid===res.blk) : null;
     if (blk && G.enemy.field.includes(blk) && !blk.rested && blk.hp>0){
-      blk.rested=true; log(`${who(G.enemy)}'s <b>${blk.name}</b> &lt;Blocker&gt; intercepts${target?'':' your attack'}!`, 'ai');
+      blk.rested=true; log(`${whose(G.enemy,true)} <b>${blk.name}</b> &lt;Blocker&gt; intercepts${target?'':' your attack'}!`, 'ai');
       afterBlockDeclared(blk, G.enemy); G.curBattle={ atk, def:blk, blk, orig:target };
       cont(blk); return;
     }
@@ -16599,6 +16618,9 @@ function renderSound(ac, kind){
     o.connect(g); g.connect(out); o.start(t); o.stop(t+.55); l.start(t); l.stop(t+.55);
   } else if(kind==='base'){       // a Base comes online — a low fortress chord and the bulkheads locking
     [98,147,196].forEach(f=>tone(f,.7,{type:'sawtooth',gain:.05,lp:700,lpTo:1400,atk:.05})); tone(260,.08,{type:'square',gain:.05,lp:1200,delay:.3,atk:.002}); tone(220,.08,{type:'square',gain:.05,lp:1100,delay:.42,atk:.002}); sub(60,.4,.14,.3);
+  } else if(kind==='undock'){     // a Base replaced — the docking clamps release with a hiss and it slides off its berth
+    tone(520,.05,{type:'square',gain:.05,lp:1600,atk:.002}); tone(390,.05,{type:'square',gain:.05,lp:1400,delay:.09,atk:.002});
+    whoosh(.5,.05,5200,900,.12); tone(140,.55,{type:'sawtooth',gain:.04,to:70,lp:500,delay:.16,atk:.04});
   } else if(kind==='exile'){      // removed from the game — a warp-out that falls through the floor
     tone(1400,.5,{type:'sine',gain:.07,to:70,atk:.01}); whoosh(.45,.07,6000,300);
   } else if(kind==='spark'){      // a light hit — short beam crack and sparks
@@ -16640,7 +16662,7 @@ function vfxSnap(){
   for (const k of ['player','enemy']){ const sd=G[k]; if (!sd) continue; const units={};
     for (const u of sd.field||[]) units[u.uid]={ hp:u.hp, ap:u.ap, rested:!!u.rested, pilot:u.pilotCard?u.pilotCard.uid:null, pname:u.pilotCard?u.pilotCard.name:'', linked:!!u.linked, name:u.name, img:u.img };
     if (sd.base) units[sd.base.uid]={ hp:sd.base.hp, base:true, rested:!!sd.base.rested, name:sd.base.name, img:sd.base.img };
-    s.sides[k]={ units, shields:(sd.shields||[]).length, res:(sd.resMax||0)+(sd.ex||0), avail:sd.resAvail||0 };
+    s.sides[k]={ units, shields:(sd.shields||[]).length, shieldIds:(sd.shields||[]).map(c=>c.uid), res:(sd.resMax||0)+(sd.ex||0), avail:sd.resAvail||0, hand:(sd.hand||[]).length, trash:(sd.trash||[]).length };
   }
   return s;
 }
@@ -16660,7 +16682,10 @@ function vfxDiff(){
   const now={}; for (const k in cur.sides) Object.assign(now, cur.sides[k].units);
   for (const k in prev.sides){ const P=prev.sides[k], C=cur.sides[k]; if (!C) continue;
     for (const id in P.units){ const p=P.units[id], c=now[id];
-      if (!c){ const w=vfxWhere(+id); ev.push({ t: w==='hand' ? 'bounce' : w==='exile' || w==='deck' ? 'exile' : p.base ? 'boomBig' : 'boom', uid:+id, side:k, img:p.img }); continue; }
+      if (!c){ const w=vfxWhere(+id);
+        // a Base replaced by a new one (played over it, a Burst, a token) is undocked, not blown up
+        const swapped = p.base && Object.keys(C.units).some(j=>C.units[j].base && !P.units[j]);
+        ev.push({ t: w==='hand' ? 'bounce' : w==='exile' || w==='deck' ? 'exile' : swapped ? 'baseOut' : p.base ? 'boomBig' : 'boom', uid:+id, side:k, img:p.img }); continue; }
       const piloted = c.pilot!=null && c.pilot!==p.pilot;
       if (piloted) ev.push({ t: c.linked && !p.linked ? 'link' : 'eye', uid:+id, side:k, name:c.name, pname:c.pname });
       else if (c.linked && !p.linked) ev.push({ t:'link', uid:+id, side:k, name:c.name, pname:c.pname });
@@ -16671,8 +16696,12 @@ function vfxDiff(){
     }
     for (const id in C.units) if (!prev.sides.player.units[id] && !(prev.sides.enemy && prev.sides.enemy.units[id]))
       ev.push({ t: C.units[id].base ? 'base' : 'launch', uid:+id, side:k, name:C.units[id].name });
-    if (C.shields<P.shields) ev.push({ t:'shatter', side:k, n:P.shields-C.shields });
+    // a Shield that went to the hand without breaking (a Base's 【Deploy】, an effect) is picked up, not shattered
+    if (C.shields<P.shields){ const gone=P.shieldIds.filter(u=>!C.shieldIds.includes(u)), took=gone.filter(u=>vfxWhere(u)==='hand').length;
+      if (took && !vfxRecent(['shield','direct','burst'], 900)) ev.push({ t:'shieldTake', side:k, n:took });
+      if (gone.length>took || (took && vfxRecent(['shield','direct','burst'], 900))) ev.push({ t:'shatter', side:k, n:P.shields-C.shields }); }
     else if (C.shields>P.shields) ev.push({ t:'shieldUp', side:k });
+    if (C.hand<P.hand && C.trash>P.trash) ev.push({ t:'discard', side:k });   // discards (costs, the hand limit); a Command played makes its own sound
     if (C.res>P.res) ev.push({ t:'charge', side:k });
     else if (C.avail<P.avail) ev.push({ t:'spend', side:k });
   }
@@ -16706,7 +16735,7 @@ const vfxRecent=(kinds, ms)=>kinds.some(k=>_sndAt[k] && Date.now()-_sndAt[k]<(ms
 function vfxFlush(){
   VFX.raf=0;
   const q=VFX.q.splice(0), played=new Set(), lite=vfxReduced();
-  const snd=(k, skipIf)=>{ if (played.has(k) || (skipIf && vfxRecent(skipIf))) return; played.add(k); sound(k, true); };
+  const snd=(k, skipIf, ms)=>{ if (played.has(k) || (skipIf && vfxRecent(skipIf, ms))) return; played.add(k); sound(k, true); };
   let shake=false;
   for (const e of q){ try{
     const r = e.uid!=null ? vfxRect(e.uid) : null;
@@ -16721,6 +16750,9 @@ function vfxFlush(){
       case 'exile': if (!r) break;
         vxAt(r, 'vx-ghost vx-exile', `<b class="gimg" style="${e.img?`background-image:url('${vxEsc(e.img)}')`:''}"></b><b class="scan"></b>`, 1000);
         snd('exile', ['exile']); break;
+      case 'baseOut': if (!r) break;
+        vxAt(r, 'vx-ghost vx-undock '+(e.side==='player'?'down':'up'), `<b class="gimg" style="${e.img?`background-image:url('${vxEsc(e.img)}')`:''}"></b><b class="clamp"></b>`, 1000);
+        snd('undock'); break;
       case 'launch': if (!r) break;
         vxAt(r, 'vx-launch '+(e.side==='player'?'from-below':'from-above'), `<b class="rail"></b><b class="lines"></b><b class="fl f1"></b><b class="fl f2"></b>`, 900); break;
       case 'base': if (!r) break;
@@ -16746,6 +16778,8 @@ function vfxFlush(){
       case 'shatter': { const z=vfxZone(e.side==='player'?'playerShieldZone':'enemyShieldZone'); if (!z) break;
         for (let i=0;i<Math.min(e.n,3);i++) setTimeout(()=>vxAt(z, 'vx-shatter', `<b class="flash"></b>${vxBits(lite?6:14, Math.max(60, z.height*.9), 'shard', .8)}`, 1000), i*160);
         break; }
+      case 'shieldTake': { const z=vfxZone(e.side==='player'?'playerShieldZone':'enemyShieldZone'); if (z) vxAt(z, 'vx-shieldup', `<b class="sweep"></b>`, 900); snd('draw', ['draw']); break; }
+      case 'discard': snd('mill', ['mill','command','deploy','activate','effect','burst','die','pair','link'], 900); break;
       case 'shieldUp': { const z=vfxZone(e.side==='player'?'playerShieldZone':'enemyShieldZone'); if (z) vxAt(z, 'vx-shieldup', `<b class="sweep"></b>`, 900); break; }
       case 'charge': { const z=vfxZone(e.side==='player'?'playerResources':'enemyResources'); if (z) vxAt(z, 'vx-charge', `<b class="sweep"></b>`, 900); snd('charge', ['turn','eturn']); break; }
       case 'spend': { const z=vfxZone(e.side==='player'?'playerResources':'enemyResources'); if (z) vxAt(z, 'vx-spend', `<b class="sweep"></b>`, 600); break; }
